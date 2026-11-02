@@ -266,4 +266,4 @@ gboolean pluginInit(GstPlugin* plugin) {
 
 #define PACKAGE "gstpipestudio"  // GST_PLUGIN_DEFINE wants it
 GST_PLUGIN_DEFINE(GST_VERSION_MAJOR, GST_VERSION_MINOR, gpsconf, "GstPipeStudio .conf files as elements", pluginInit, GPS_VERSION,
-                  "LGPL", "gstpipestudio", "https://github.com/mevlt01001/GstPipeStudio")
+                  "MIT/X11", "gstpipestudio", "https://github.com/mevlt01001/GstPipeStudio")

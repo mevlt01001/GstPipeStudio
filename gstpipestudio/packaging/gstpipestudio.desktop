@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=GstPipeStudio
+GenericName=Media pipeline designer
+Comment=Build GStreamer and DeepStream pipelines by clicking
+Exec=gstpipestudio %f
+Icon=gstpipestudio
+Terminal=false
+Categories=AudioVideo;Video;
+Keywords=GStreamer;DeepStream;pipeline;media;video;
