@@ -1,0 +1,5 @@
+add_executable(plan_test plan_test.cpp)
+target_link_libraries(plan_test PRIVATE gps_plan)
+target_include_directories(plan_test PRIVATE ${GPS_TEST_DIR})
+add_test(NAME unit.plan COMMAND plan_test)
+set_tests_properties(unit.plan PROPERTIES LABELS unit)

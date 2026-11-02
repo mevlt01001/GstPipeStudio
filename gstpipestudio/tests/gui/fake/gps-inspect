@@ -1,0 +1,83 @@
+#!/usr/bin/env python3
+"""Fake gps-inspect for the GUI tests: list, element, compatible, caps (SPEC 7)."""
+import json
+import sys
+
+from fakecatalog import CATALOG, caps_text, is_nvidia, is_source
+
+
+def templates_of(factory):
+    result = []
+    for t in CATALOG[factory]["templates"]:
+        entry = dict(t)
+        entry["caps"] = caps_text(t["structures"])
+        result.append(entry)
+    return result
+
+
+def list_all():
+    rows = []
+    for factory, e in sorted(CATALOG.items()):
+        directions = [t["direction"] for t in e["templates"]]
+        rows.append({"factory": factory, "klass": e["klass"], "longName": e["longName"], "rank": e["rank"],
+                     "plugin": e["plugin"], "isSource": is_source(factory), "isSink": "src" not in directions,
+                     "hasRequestSrc": any(t["direction"] == "src" and t["presence"] == "request" for t in e["templates"]),
+                     "nvidia": is_nvidia(factory)})
+    return {"elements": rows}
+
+
+def element(factory):
+    e = CATALOG[factory]
+    directions = [t["direction"] for t in e["templates"]]
+    return {"factory": factory, "longName": e["longName"], "klass": e["klass"], "description": e["longName"] + " (fake)",
+            "author": "gui tests", "plugin": e["plugin"], "rank": e["rank"], "isSource": is_source(factory),
+            "isSink": "src" not in directions, "padTemplates": templates_of(factory), "properties": e["properties"]}
+
+
+def media_of(structure_text):
+    return structure_text.split(",")[0].split("(")[0].strip()
+
+
+def compatible(caps):
+    medias = [media_of(s) for s in caps.split(";") if s.strip()] if caps and caps.strip() != "ANY" else []
+    found = []
+    for factory, e in CATALOG.items():
+        sinks = [t for t in e["templates"] if t["direction"] == "sink"]
+        if not sinks:
+            continue
+        fits = not medias or any(not t["structures"] or any(s["media"] in medias for s in t["structures"]) for t in sinks)
+        if fits:
+            found.append(factory)
+    return {"factories": sorted(found, key=lambda f: (-CATALOG[f]["rank"], f))}
+
+
+def parse_caps(text):
+    first = media_of(text)
+    if "/" not in first or not first.replace("/", "").replace("-", "").replace("_", "").replace(".", "").isalnum():
+        return {"ok": False, "error": "could not parse caps: " + text}
+    return {"ok": True, "text": text, "structures": []}
+
+
+def main(argv):
+    if len(argv) >= 2 and argv[1] == "list":
+        out = list_all()
+    elif len(argv) >= 3 and argv[1] == "element":
+        if argv[2] not in CATALOG:
+            print("no such element: " + argv[2], file=sys.stderr)
+            print(json.dumps({"error": "no such element"}))
+            return 1
+        out = element(argv[2])
+    elif len(argv) >= 2 and argv[1] == "compatible":
+        caps = argv[argv.index("--caps") + 1] if "--caps" in argv else ""
+        out = compatible(caps)
+    elif len(argv) >= 3 and argv[1] == "caps":
+        out = parse_caps(argv[2])
+    else:
+        print("usage: gps-inspect list | element <factory> | compatible [--caps <caps>] | caps <caps>", file=sys.stderr)
+        return 2
+    print(json.dumps(out))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

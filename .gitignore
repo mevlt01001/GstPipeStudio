@@ -1,0 +1,10 @@
+# Local only, never pushed: prototype history and the dependency-finding Docker images
+/.archive/
+/docker/
+
+# Build output and editor files
+/build*/
+/*.configure.log
+__pycache__/
+/gstpipestudio/report/
+/.vscode/

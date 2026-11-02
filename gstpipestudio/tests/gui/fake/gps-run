@@ -1,0 +1,44 @@
+#!/usr/bin/env python3
+"""Fake gps-run for the GUI tests. Refuses an incomplete plan (exit 3), finishes with eos after a moment (exit 0),
+runs until SIGINT when an element has the property fake-hang=run (then: interrupted, exit 1)."""
+import json
+import signal
+import sys
+import time
+
+from fakecatalog import read_plan
+
+interrupted = False
+
+
+def on_interrupt(signum, frame):
+    global interrupted
+    interrupted = True
+
+
+def main(argv):
+    if len(argv) < 2:
+        print("usage: gps-run <plan.conf> [name=value ...] [--timeout-ms N]", file=sys.stderr)
+        return 2
+    plan = read_plan(argv[1])
+    if not plan["complete"]:
+        print(json.dumps({"status": "refused", "message": "the plan has free src pads", "ms": 0}))
+        return 3
+    signal.signal(signal.SIGINT, on_interrupt)
+    forever = any(e["props"].get("fake-hang") == "run" for e in plan["elements"].values())
+    print("fake gps-run: running %d elements" % len(plan["elements"]), file=sys.stderr, flush=True)
+    started = time.time()
+    while not interrupted and (forever or time.time() - started < 0.3):
+        time.sleep(0.02)
+    ms = round((time.time() - started) * 1000, 1)
+    if interrupted:
+        print("fake gps-run: SIGINT, sending EOS", file=sys.stderr, flush=True)
+        print(json.dumps({"status": "interrupted", "message": "", "ms": ms}))
+        return 1
+    print("fake gps-run: EOS", file=sys.stderr, flush=True)
+    print(json.dumps({"status": "eos", "message": "", "ms": ms}))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

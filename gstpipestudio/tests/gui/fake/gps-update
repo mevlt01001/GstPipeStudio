@@ -1,0 +1,247 @@
+#!/usr/bin/env python3
+"""Fake gps-update for the GUI tests: reads the plan and answers in the schema of SPEC 7 without GStreamer.
+
+Plan-aware: pads follow the templates (Always / Sometimes / Request), caps travel along the links and a link's caps
+choice changes them, a link whose media types do not meet is refused. Test switches are plain element properties:
+  fake-error=<text>  the update fails with this message, reported for that element
+  fake-crash=1       the helper dies with SIGSEGV
+  fake-slow=<ms>     the helper answers after this many milliseconds
+  fake-hang=1        the helper never answers (fake-hang=run only keeps gps-run running)"""
+import json
+import os
+import signal
+import sys
+import time
+
+from fakecatalog import CATALOG, FAMILIES, caps_text, read_plan, structure_text
+
+SHORT = {"gint": "int", "gchararray": "string", "GstFraction": "fraction", "gboolean": "boolean"}
+DEFAULTS = {"format": "I420", "width": "320", "height": "240", "framerate": "30/1", "rate": "44100", "channels": "2", "parsed": "true"}
+
+
+def concrete(template, **override):
+    """A template structure with every field pinned to a value."""
+    fields = []
+    for f in template["fields"]:
+        value = override.get(f["name"], DEFAULTS.get(f["name"], f["values"][0]))
+        if f["name"] == "format" and template["media"] == "audio/x-raw" and "format" not in override:
+            value = "S16LE"
+        fields.append((f["name"], f["type"], value))
+    return {"media": template["media"], "features": list(template["features"]), "fields": fields}
+
+
+def struct_text(s):
+    head = s["media"] + ("(" + ", ".join(s["features"]) + ")" if s["features"] else "")
+    return head + "".join(", %s=(%s)%s" % (n, SHORT.get(t, t), v) for n, t, v in s["fields"])
+
+
+def constrain(s, caps_choice):
+    """The caps of the pad after a link's caps choice (a capsfilter). None when the media types differ."""
+    if not caps_choice:
+        return s
+    parts = [p.strip() for p in caps_choice.split(", ")]
+    head = parts[0]
+    media = head.split("(")[0]
+    features = head[head.index("(") + 1:-1].split(", ") if "(" in head else []
+    if media != s["media"] or features != s["features"]:
+        return None
+    fields = {n: (t, v) for n, t, v in s["fields"]}
+    for part in parts[1:]:
+        name, _, rest = part.partition("=")
+        value = rest.split(")", 1)[1] if rest.startswith("(") else rest
+        if name in fields:
+            fields[name] = (fields[name][0], value.strip('"'))
+    return {"media": s["media"], "features": features, "fields": [(n, t, v) for n, (t, v) in fields.items()]}
+
+
+def accepts(template, s):
+    return not template["structures"] or any(t["media"] == s["media"] and t["features"] == s["features"] for t in template["structures"])
+
+
+def pad_name(template_name, k):
+    return template_name.replace("%u", str(k)).replace("%d", str(k))
+
+
+def identity_of(template, k):
+    return template["name"] if template["presence"] == "always" else "%s#%d" % (template["name"], k)
+
+
+def split_identity(identity):
+    if "#" in identity:
+        name, _, k = identity.rpartition("#")
+        return name, int(k)
+    return identity, 0
+
+
+class Failure(Exception):
+    def __init__(self, element, message):
+        super().__init__(message)
+        self.element, self.message = element, message
+
+
+class Update:
+    def __init__(self, plan):
+        self.plan = plan
+        self.elements = plan["elements"]
+        self.links = plan["links"]
+        self.pads = {}      # (element, identity) -> {"name","template"}
+        self.refused = []
+        self.missing = []
+        self.memo = {}
+
+    def check_elements(self):
+        for name in self.plan["order"]:
+            e = self.elements[name]
+            if "fake-crash" in e["props"]:
+                os.kill(os.getpid(), signal.SIGSEGV)
+            if "fake-slow" in e["props"]:
+                time.sleep(int(e["props"]["fake-slow"]) / 1000.0)
+            if e["props"].get("fake-hang", "run") != "run":
+                time.sleep(60)
+            if "fake-error" in e["props"]:
+                raise Failure(name, e["props"]["fake-error"])
+            if e["factory"] not in CATALOG:
+                raise Failure(name, "no such element factory: " + e["factory"])
+            if e["factory"] == "filesrc" and not e["props"].get("location"):
+                raise Failure(name, "No file name specified for reading.")
+
+    def make_pads(self):
+        for name in self.plan["order"]:
+            e = self.elements[name]
+            fed = any(l["sink"] == name for l in self.links)
+            for t in CATALOG[e["factory"]]["templates"]:
+                if t["direction"] != "src":
+                    continue
+                if t["presence"] == "always":
+                    self.pads[(name, t["name"])] = {"name": t["name"], "template": t}
+                elif t["presence"] == "request":
+                    used = [split_identity(l["srcpad"])[1] + 1 for l in self.links if l["src"] == name and split_identity(l["srcpad"])[0] == t["name"]]
+                    for k in range(max(e["request"].get(t["name"], 0), max(used, default=0))):
+                        self.pads[(name, "%s#%d" % (t["name"], k))] = {"name": pad_name(t["name"], k), "template": t}
+                elif fed:
+                    self.pads[(name, "%s#0" % t["name"])] = {"name": pad_name(t["name"], 0), "template": t}
+        for l in self.links:
+            if (l["src"], l["srcpad"]) not in self.pads:
+                self.missing.append("%s: %s" % (l["src"], l["srcpad"]))
+
+    def link_from(self, name, identity):
+        return next((l for l in self.links if l["src"] == name and l["srcpad"] == identity), None)
+
+    def inputs(self, name):
+        return [l for l in self.links if l["sink"] == name]
+
+    def natural(self, name, identity):
+        """What the pad produces before any caps choice; None = data nobody can name."""
+        e = self.elements[name]
+        f = e["factory"]
+        if f == "videotestsrc":
+            return concrete(FAMILIES["video/x-raw"])
+        if f == "audiotestsrc":
+            return concrete(FAMILIES["audio/x-raw"])
+        if f == "nvarguscamerasrc":
+            return concrete({**FAMILIES["video/x-raw"], "features": ["memory:NVMM"]}, width="1920", height="1080", format="NV12")
+        if f == "filesrc":
+            location = e["props"].get("location", "")
+            if location.endswith(".avi"):
+                return {"media": "video/x-msvideo", "features": [], "fields": []}
+            return None if "random" in location else {"media": "application/octet-stream", "features": [], "fields": []}
+        if f == "avidemux":
+            return concrete(FAMILIES["image/jpeg" if identity.startswith("video") else "audio/x-raw"])
+        incoming = self.inputs(name)
+        upstream = self.out(incoming[0]["src"], incoming[0]["srcpad"]) if incoming else None
+        if f == "jpegdec" and upstream:
+            fields = {n: v for n, _, v in upstream["fields"]}
+            return concrete(FAMILIES["video/x-raw"], width=fields.get("width", "320"), height=fields.get("height", "240"))
+        return upstream  # queue, tee, converters, overlay, compositor: the caps pass through
+
+    def out(self, name, identity):
+        key = (name, identity)
+        if key not in self.memo:
+            s = self.natural(name, identity)
+            link = self.link_from(name, identity)
+            self.memo[key] = constrain(s, link["caps"]) if s and link else s
+        return self.memo[key]
+
+    def effective(self, link):
+        """A link GStreamer accepts: its pad exists and the media types meet."""
+        src = (link["src"], link["srcpad"])
+        if src not in self.pads:
+            return False
+        s = self.natural(*src)
+        sink_element = self.elements[link["sink"]]
+        template = next((t for t in CATALOG[sink_element["factory"]]["templates"] if t["direction"] == "sink" and t["name"] == link["sinkpad"]), None)
+        label = "%s.%s -> %s.%s" % (link["src"], self.pads[src]["name"], link["sink"], link["sinkpad"])
+        if s is None:
+            if template and template["structures"]:
+                raise Failure(link["sink"], "Stream format could not be determined (unknown data from %s)" % link["src"])
+            return True
+        if template is None:
+            self.refused.append(label + ": no such sink pad")
+            return False
+        if not accepts(template, s):
+            self.refused.append("%s: caps do not meet (%s vs %s)" % (label, s["media"], caps_text(template["structures"])))
+            return False
+        if constrain(s, link["caps"]) is None:
+            self.refused.append("%s: caps choice '%s' does not meet %s" % (label, link["caps"], s["media"]))
+            return False
+        return True
+
+    def report(self):
+        good = [l for l in self.links if self.effective(l)]
+        reports = []
+        for (name, identity), pad in self.pads.items():
+            link = self.link_from(name, identity)
+            linked = link is not None and link in good
+            s = self.out(name, identity) if linked else self.natural(name, identity)
+            family = None if s is None else FAMILIES.get(s["media"])
+            if family is not None and s["features"]:
+                family = {**family, "features": s["features"]}
+            t = pad["template"]
+            reports.append({"element": name, "pad": pad["name"], "identity": identity, "template": t["name"], "presence": t["presence"],
+                            "isSrc": True, "linked": linked, "temporaryEnd": not linked, "unknownData": s is None and not linked,
+                            "caps": "" if s is None else struct_text(s), "allowed": caps_text([family] if family else []),
+                            "allowedStructures": [family] if family else []})
+        for name in self.plan["order"]:
+            for t in CATALOG[self.elements[name]["factory"]]["templates"]:
+                if t["direction"] != "sink":
+                    continue
+                into = [l for l in good if l["sink"] == name and l["sinkpad"] == t["name"]]
+                for k, l in enumerate(into or ([None] if t["presence"] != "request" else [])):
+                    s = self.out(l["src"], l["srcpad"]) if l else None
+                    reports.append({"element": name, "pad": pad_name(t["name"], k), "identity": t["name"], "template": t["name"],
+                                    "presence": t["presence"], "isSrc": False, "linked": l is not None, "temporaryEnd": False,
+                                    "unknownData": False, "caps": "" if s is None else struct_text(s), "allowed": caps_text(t["structures"]),
+                                    "allowedStructures": []})
+        return reports
+
+
+def run(plan):
+    u = Update(plan)
+    u.check_elements()
+    u.make_pads()
+    reports = u.report()
+    status = "pad-missing" if u.missing else "ok"
+    free = any(p["isSrc"] and not p["linked"] for p in reports)
+    complete = status == "ok" and not free and not u.refused
+    return {"status": status, "message": "pad did not appear: " + ", ".join(u.missing) if u.missing else "", "errorElement": u.missing[0].split(":")[0] if u.missing else "",
+            "pads": reports, "missing": u.missing, "refused": u.refused, "complete": complete}
+
+
+def main(argv):
+    if len(argv) < 2:
+        print("usage: gps-update <plan.conf> [--timeout-ms N]", file=sys.stderr)
+        return 2
+    started = time.time()
+    plan = read_plan(argv[1])
+    print("fake gps-update: %d elements, %d links" % (len(plan["elements"]), len(plan["links"])), file=sys.stderr)
+    try:
+        result = run(plan)
+    except Failure as f:
+        result = {"status": "error", "message": f.message, "errorElement": f.element, "pads": [], "missing": [], "refused": [], "complete": False}
+    result["ms"] = round((time.time() - started) * 1000, 1)
+    print(json.dumps(result))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

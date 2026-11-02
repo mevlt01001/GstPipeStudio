@@ -1,0 +1,34 @@
+// updateresult.h – what gps-update reports (SPEC 7), plus the two failures only the GUI can see.
+#pragma once
+
+#include <QJsonObject>
+#include <QList>
+#include <QString>
+#include <QStringList>
+
+#include "elementinfo.h"
+
+struct PadReport {
+    QString element, pad, identity, templateName, presence, caps, allowed;
+    bool isSrc = true, linked = false, temporaryEnd = false, unknownData = false;
+    QList<StructureInfo> allowedStructures;
+};
+
+struct UpdateResult {
+    // ok | error | timeout | pad-missing come from gps-update; crashed | hung are decided by the GUI watchdog.
+    QString status;
+    QString message, errorElement;
+    double ms = 0;
+    QList<PadReport> pads;
+    QStringList missing, refused;
+    bool complete = false;
+
+    bool valid() const { return !status.isEmpty(); }  // false before the first update
+    bool ok() const { return status == "ok"; }
+    bool isComplete() const { return ok() && complete; }
+    QString statusText() const;  // Turkish, for the panel
+
+    static UpdateResult fromJson(const QJsonObject& json);
+    static UpdateResult failure(const QString& status, const QString& message, const QString& element);
+    const PadReport* pad(const QString& element, const QString& identity, bool isSrc) const;
+};
