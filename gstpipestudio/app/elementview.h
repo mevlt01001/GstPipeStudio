@@ -38,6 +38,6 @@ struct ElementView {
 struct LinkView {
     int index = -1;
     QString srcElement, srcIdentity, sinkElement, sinkIdentity;
-    QString badge;  // "caps · 2": the link carries a caps choice with 2 pinned fields; "" when Otomatik
+    QString badge;  // "caps · 2": the link carries a caps choice with 2 pinned fields; "" when Auto
     QString tip;    // the choice itself
 };

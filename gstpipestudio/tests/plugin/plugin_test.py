@@ -91,15 +91,23 @@ def main():
         code, out, err = env.run("gst-launch-1.0", "-q", "demo", "frames=2", f"where={target}")
         check_eq((code, env.size("other.raw")), (0, 2 * FRAME), "string parameter redirects the output")
 
-        # ---- an unknown parameter is rejected
+        # ---- an unknown parameter: gst-launch 1.20 rejects it and names it, 1.16 ignores it. Either way the output
+        # is what the pipeline gives without it.
+        env.run("gst-launch-1.0", "-q", "demo")
+        full = env.size("demo.raw")
         code, out, err = env.run("gst-launch-1.0", "-q", "demo", "bogus=1")
-        check(code != 0, "unknown parameter: non-zero exit")
-        check("bogus" in err, f"unknown parameter is named: {err[-200:]}")
+        if code != 0:
+            check("bogus" in err, f"unknown parameter is named: {err[-200:]}")
+        else:
+            check_eq(env.size("demo.raw"), full, "an ignored unknown parameter changes nothing")
         code, out, err = env.run("gst-launch-1.0", "-q", "demo", "frames=abc")
         check(code != 0, "bad parameter value: non-zero exit")
-        # gst-launch 1.20.3 does not reject an unknown child property (CRITICAL on stderr, exit 0); it must change nothing
+        # gst-launch 1.20 does not reject an unknown child property (CRITICAL on stderr, exit 0), newer ones refuse it
+        # (exit 1). Either way it must not change what the pipeline produces.
+        env.run("gst-launch-1.0", "-q", "demo")
+        full = env.size("demo.raw")
         code, out, err = env.run("gst-launch-1.0", "-q", "demo", "src::nonsense=1")
-        check_eq((code, env.size("demo.raw")), (0, 4 * FRAME), "unknown child property changes nothing")
+        check(code != 0 or env.size("demo.raw") == full, "unknown child property changes nothing (or is refused)")
 
         # ---- a conf placed later is found (the plugin depends on the conf folder)
         env.write("second", recorder(env, "second.raw", frames=2))
@@ -133,7 +141,7 @@ def main():
         check(code != 0 and "no_such_factory_xyz" in err, f"broken conf: {err[-300:]}")
         env.write("badvalue", conf([("a", "audiotestsrc", {"volume": 5}), ("k", "fakesink", {})], [("a", "src", "k", "sink")]))
         code, out, err = env.run("gst-launch-1.0", "-q", "badvalue")
-        check(code != 0 and "a.volume: '5' gecersiz" in err, f"invalid value in conf: {err[-300:]}")
+        check(code != 0 and "a.volume: '5' is not valid, " in err, f"invalid value in conf: {err[-300:]}")
 
         # ---- a file that is not a conf is not an element
         env.write("garbage", "this is not a conf\n")

@@ -18,13 +18,13 @@ CapsFieldEditor::CapsFieldEditor(const FieldInfo& field, QWidget* parent) : QWid
 
     if (field.kind == "list") {
         combo_ = new QComboBox(this);
-        combo_->addItem("Otomatik", QString());
+        combo_->addItem("Auto", QString());
         for (const QString& v : field.values) combo_->addItem(v, v);
         layout->addWidget(combo_, 1);
         return;
     }
 
-    pin_ = new QCheckBox("Sabitle", this);
+    pin_ = new QCheckBox("Pin", this);
     layout->addWidget(pin_);
 
     QWidget* input = nullptr;
@@ -56,7 +56,7 @@ CapsFieldEditor::CapsFieldEditor(const FieldInfo& field, QWidget* parent) : QWid
         if (field.type == "GstFraction") {
             line->setValidator(new QRegularExpressionValidator(QRegularExpression("-?[0-9]+/[0-9]+"), line));
             line->setText(field.values.value(0));
-            line->setToolTip("pay/payda, örn. 30/1");
+            line->setToolTip("numerator/denominator, for example 30/1");
         }
         input = line;
         read_ = [line] { return line->text(); };

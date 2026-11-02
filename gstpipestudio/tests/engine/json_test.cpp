@@ -14,7 +14,7 @@ int main() {
     CHECK_EQ(jsonEscape(std::string("x\x01y", 3)), "x\\u0001y");
     CHECK_EQ(jsonEscape(std::string("x\0y", 3)), "x\\u0000y");
     CHECK_EQ(jsonEscape("\b\f"), "\\b\\f");
-    CHECK_EQ(jsonEscape("ğüşçö İ 日本 😀"), "ğüşçö İ 日本 😀");  // valid UTF-8 passes through untouched
+    CHECK_EQ(jsonEscape("éñ ß 日本 😀"), "éñ ß 日本 😀");  // valid UTF-8 passes through untouched
     CHECK_EQ(jsonEscape("a\xff" "b"), "a\xEF\xBF\xBD" "b");        // invalid byte
     CHECK_EQ(jsonEscape("a\xC3"), "a\xEF\xBF\xBD");                // cut sequence at the end
     CHECK_EQ(jsonEscape("\xC0\x80"), "\xEF\xBF\xBD\xEF\xBF\xBD");  // overlong NUL

@@ -35,8 +35,8 @@ int main(int argc, char** argv) {
         CHECK_EQ(brief(r), "ok");
         CHECK(r.refused.empty());
         CHECK(r.complete());
-        CHECK(contains(log.text, "'sink_%u' kabul edilmedi, 'sink_0' istendi"));
-        CHECK(contains(log.text, "'sink_1' istendi"));
+        CHECK(contains(log.text, "'sink_%u' was not accepted, asked for 'sink_0'"));
+        CHECK(contains(log.text, "asked for 'sink_1'"));
         int linked = 0;
         for (const gps::PadReport& pr : r.pads) linked += (pr.element == "mux" && !pr.isSrc && pr.linked);
         CHECK_EQ(linked, 2);

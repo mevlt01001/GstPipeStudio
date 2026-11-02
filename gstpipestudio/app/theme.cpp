@@ -7,6 +7,8 @@
 #include <QPainter>
 #include <QPolygonF>
 #include <QTemporaryDir>
+#include <algorithm>
+#include <cmath>
 
 namespace {
 
@@ -28,7 +30,17 @@ QString arrowFile(bool up) {
     return path;
 }
 
+double luminance(const QColor& c) {
+    auto channel = [](double v) { return v <= 0.03928 ? v / 12.92 : std::pow((v + 0.055) / 1.055, 2.4); };
+    return 0.2126 * channel(c.redF()) + 0.7152 * channel(c.greenF()) + 0.0722 * channel(c.blueF());
+}
+
 }  // namespace
+
+double Theme::contrast(const QColor& a, const QColor& b) {
+    double la = luminance(a), lb = luminance(b);
+    return (std::max(la, lb) + 0.05) / (std::min(la, lb) + 0.05);
+}
 
 QString Theme::styleSheet() {
     QString css = R"(
@@ -39,10 +51,12 @@ QToolTip { background: @panel@; color: @text@; border: 1px solid @line@; padding
 QToolBar { background: @panel@; border: none; border-bottom: 1px solid @line@; spacing: 6px; padding: 4px 8px; }
 QToolButton { background: transparent; border: 1px solid transparent; border-radius: 3px; padding: 5px 12px; }
 QToolButton:hover { border-color: @accent@; }
+QToolButton:focus { border: 2px solid @focus@; padding: 4px 11px; }
 QToolButton:pressed { background: @line@; }
 QToolButton:disabled { color: #5c5c5c; }
-QToolButton#primaryAction { background: @accent@; color: #101010; font-weight: bold; }
+QToolButton#primaryAction { background: @accent@; color: @onAccent@; font-weight: bold; }
 QToolButton#primaryAction:hover { background: @hover@; }
+QToolButton#primaryAction:focus { border: 2px solid @text@; }
 QToolButton#primaryAction:disabled { background: #36401f; color: #6c7358; }
 
 QMenuBar { background: @panel@; border-bottom: 1px solid @line@; }
@@ -50,7 +64,7 @@ QMenuBar::item { background: transparent; padding: 5px 10px; }
 QMenuBar::item:selected { background: @line@; }
 QMenu { background: @panel@; border: 1px solid @line@; padding: 4px; }
 QMenu::item { padding: 6px 22px; background: transparent; }
-QMenu::item:selected { background: @accent@; color: #101010; }
+QMenu::item:selected { background: @accent@; color: @onAccent@; }
 QMenu::item:disabled { color: #5c5c5c; }
 QMenu::separator { height: 1px; background: @line@; margin: 4px 6px; }
 
@@ -68,16 +82,25 @@ QTabBar::tab:hover { color: @text@; }
 
 QPushButton { background: #303030; border: 1px solid @line@; border-radius: 3px; padding: 6px 18px; min-width: 64px; }
 QPushButton:hover { border-color: @accent@; }
+QPushButton:focus { border: 2px solid @focus@; padding: 5px 17px; }
+QPushButton[link="true"] { background: transparent; border: none; color: @accent@; padding: 2px 8px; min-width: 0; }
+QPushButton[link="true"]:hover { text-decoration: underline; }
+QPushButton[link="true"]:focus { border: 2px solid @focus@; padding: 0 6px; }
+QPushButton[link="true"]:disabled { color: #5c5c5c; }
+QToolButton#drawerBack, QToolButton#drawerClose { border: 1px solid transparent; padding: 3px 8px; font-size: 12pt; }
 QPushButton:pressed { background: @line@; }
 QPushButton:disabled { color: #5c5c5c; border-color: #2c2c2c; }
-QPushButton#saveButton, QPushButton[accent="true"] { background: @accent@; color: #101010; border-color: @accent@; font-weight: bold; }
+QPushButton#saveButton, QPushButton[accent="true"] { background: @accent@; color: @onAccent@; border-color: @accent@; font-weight: bold; }
 QPushButton#saveButton:hover, QPushButton[accent="true"]:hover { background: @hover@; border-color: @hover@; }
+QPushButton#saveButton:focus, QPushButton[accent="true"]:focus { border: 2px solid @text@; padding: 5px 17px; }
 QPushButton#saveButton:disabled { background: #36401f; color: #6c7358; border-color: #36401f; }
 
 QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QPlainTextEdit, QTextEdit {
     background: @panel@; border: 1px solid @line@; border-radius: 3px; padding: 4px 6px;
-    selection-background-color: @accent@; selection-color: #101010; }
-QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus, QPlainTextEdit:focus { border-color: @accent@; }
+    selection-background-color: @accent@; selection-color: @onAccent@; }
+QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus, QPlainTextEdit:focus { border: 2px solid @focus@; padding: 3px 5px; }
+QListWidget:focus, QTableWidget:focus { border: 2px solid @focus@; }
+QCheckBox::indicator:focus { border: 2px solid @focus@; }
 QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled, QComboBox:disabled { color: #5c5c5c; }
 QSpinBox::up-button, QDoubleSpinBox::up-button { subcontrol-origin: border; subcontrol-position: top right; width: 18px; border-left: 1px solid @line@; background: #303030; }
 QSpinBox::down-button, QDoubleSpinBox::down-button { subcontrol-origin: border; subcontrol-position: bottom right; width: 18px; border-left: 1px solid @line@; background: #303030; }
@@ -85,7 +108,7 @@ QSpinBox::up-arrow, QDoubleSpinBox::up-arrow { image: url(@arrowUp@); width: 10p
 QSpinBox::down-arrow, QDoubleSpinBox::down-arrow { image: url(@arrowDown@); width: 10px; height: 6px; }
 QComboBox::drop-down { border: none; width: 22px; }
 QComboBox::down-arrow { image: url(@arrowDown@); width: 10px; height: 6px; }
-QComboBox QAbstractItemView { background: @panel@; border: 1px solid @line@; selection-background-color: @accent@; selection-color: #101010; outline: none; }
+QComboBox QAbstractItemView { background: @panel@; border: 1px solid @line@; selection-background-color: @accent@; selection-color: @onAccent@; outline: none; }
 
 QCheckBox { spacing: 8px; background: transparent; }
 QCheckBox::indicator { width: 14px; height: 14px; border: 1px solid #5a5a5a; border-radius: 2px; background: @bg@; }
@@ -117,12 +140,14 @@ QProgressBar::chunk { background: @accent@; }
 QGraphicsView { border: none; background: @bg@; }
 QLabel { background: transparent; }
 QLabel#muted { color: @muted@; }
-QLabel#heading { font-size: 12pt; font-weight: bold; }
+QLabel#heading, QLabel#drawerTitle { font-size: 12pt; font-weight: bold; }
+QLabel#setupTitle { font-size: 18pt; font-weight: bold; }
+QWidget#drawer { border-right: 1px solid @line@; }
 QSplitter::handle { background: @line@; }
 QFrame#separator { background: @line@; max-height: 1px; }
 )";
     const QList<QPair<QString, QColor>> colours = {
-        {"@bg@", background()}, {"@panel@", panel()}, {"@line@", line()},     {"@text@", text()},
+        {"@onAccent@", onAccent()}, {"@focus@", focusRing()}, {"@bg@", background()}, {"@panel@", panel()}, {"@line@", line()},     {"@text@", text()},
         {"@muted@", muted()},   {"@accent@", accent()}, {"@hover@", accentHover()},
     };
     for (const auto& c : colours) css.replace(c.first, c.second.name());

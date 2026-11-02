@@ -1,5 +1,5 @@
 // propertyeditor.h – the input widget for one property, chosen from its kind (SPEC 7 and 8).
-// Used for element properties (PropertyDialog) and for sink pad properties (CapsDialog).
+// Used for element properties (properties page) and for sink pad properties (caps page).
 #pragma once
 
 #include <QWidget>
@@ -15,7 +15,7 @@ public:
     // current: the value the plan holds, none = show the default
     PropertyEditor(const PropertyInfo& info, const std::optional<QString>& current, QWidget* parent = nullptr);
 
-    // Writable properties of a kind a text can set. "name" belongs to the Plan, not to the user.
+    // Writable properties of a kind a text can set.
     static bool editable(const PropertyInfo& info);
     // The plan keeps only what differs from the default: touched editors with a non-default text are written,
     // untouched ones keep what the plan had, and plan entries no editor knows about stay as they are.

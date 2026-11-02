@@ -3,6 +3,7 @@
 
 #include <QCoreApplication>
 #include <QFileInfo>
+#include <QStandardPaths>
 #include <QJsonDocument>
 #include <QTimer>
 #include <csignal>
@@ -20,7 +21,15 @@ QString findHelper(const QString& name) {
     return QString();
 }
 
-HelperClient::HelperClient(QObject* parent) : QObject(parent), process_(new QProcess(this)), watchdog_(new QTimer(this)) {
+QString findSystemTool(const QString& name) {
+    return qEnvironmentVariableIsSet("GPS_BIN_DIR") ? findHelper(name) : QStandardPaths::findExecutable(name);
+}
+
+HelperClient::HelperClient(QObject* parent)
+    : QObject(parent), process_(new QProcess(this)), watchdog_(new QTimer(this)), escalate_(new QTimer(this)) {
+    escalate_->setSingleShot(true);
+    escalate_->setTimerType(Qt::PreciseTimer);
+    connect(escalate_, &QTimer::timeout, this, [this] { process_->kill(); });
     watchdog_->setSingleShot(true);
     watchdog_->setTimerType(Qt::PreciseTimer);  // a coarse timer may fire up to 5 % early: "timeout + 2 s" is a promise
     connect(process_, &QProcess::readyReadStandardError, this, &HelperClient::readError);
@@ -47,6 +56,13 @@ void HelperClient::interrupt() {
     if (process_->state() == QProcess::Running) ::kill(static_cast<pid_t>(process_->processId()), SIGINT);
 }
 
+void HelperClient::cancel() {
+    if (done_ || process_->state() == QProcess::NotRunning) return;
+    cancelled_ = true;
+    process_->terminate();
+    escalate_->start(kKillAfterTermMs);
+}
+
 void HelperClient::readError() {
     errBuffer_ += process_->readAllStandardError();
     int end;
@@ -60,7 +76,8 @@ void HelperClient::onFinished(int code, QProcess::ExitStatus status) {
     readError();
     if (!errBuffer_.isEmpty()) emit stderrLine(QString::fromUtf8(errBuffer_));
     errBuffer_.clear();
-    HelperResult::Outcome outcome = timedOut_ ? HelperResult::TimedOut
+    HelperResult::Outcome outcome = cancelled_ ? HelperResult::Cancelled
+                                    : timedOut_ ? HelperResult::TimedOut
                                     : status == QProcess::CrashExit ? HelperResult::Crashed
                                                                     : HelperResult::Finished;
     finish(outcome, code);
@@ -70,6 +87,7 @@ void HelperClient::finish(HelperResult::Outcome outcome, int code) {
     if (done_) return;
     done_ = true;
     watchdog_->stop();
+    escalate_->stop();
 
     HelperResult r;
     r.outcome = outcome;

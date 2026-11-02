@@ -2,7 +2,9 @@
 #include "updatepanel.h"
 
 #include <QHeaderView>
+#include <QHBoxLayout>
 #include <QLabel>
+#include <QPushButton>
 #include <QTableWidget>
 #include <QVBoxLayout>
 
@@ -29,7 +31,7 @@ UpdatePanel::UpdatePanel(Controller* controller, QWidget* parent) : QWidget(pare
 
     table_ = new QTableWidget(0, 7, this);
     table_->setObjectName("padsTable");
-    table_->setHorizontalHeaderLabels({"Element", "Pad", "Tür", "Yön", "Durum", "Caps", "İzin verilen"});
+    table_->setHorizontalHeaderLabels({"Element", "Pad", "Presence", "Direction", "State", "Caps", "Allowed"});
     table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     table_->setSelectionBehavior(QAbstractItemView::SelectRows);
     table_->setAlternatingRowColors(true);
@@ -40,7 +42,14 @@ UpdatePanel::UpdatePanel(Controller* controller, QWidget* parent) : QWidget(pare
     // Whatever the text is, the labels never decide how wide the window is.
     for (QLabel* label : {message_, lists_}) label->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
 
-    root->addWidget(status_);
+    support_ = new QPushButton("Request support", this);
+    support_->setObjectName("supportButton");
+    support_->setToolTip("Open a prefilled problem report on GitHub");
+    connect(support_, &QPushButton::clicked, controller_, [this] { controller_->requestSupport("Validation problem"); });
+    auto* head = new QHBoxLayout;
+    head->addWidget(status_, 1);
+    head->addWidget(support_);
+    root->addLayout(head);
     root->addWidget(message_);
     root->addWidget(lists_);
     root->addWidget(table_, 1);
@@ -56,9 +65,9 @@ QString breakable(const QString& text) { return QString(text).replace("/", "/\u2
 
 void UpdatePanel::refresh() {
     const UpdateResult& r = controller_->result();
-    QColor colour = !r.valid() ? Theme::muted() : r.ok() ? (r.complete ? Theme::accent() : Theme::warning()) : Theme::error();
-    QString status = controller_->updating() ? "Güncelleniyor…" : r.statusText();
-    if (r.valid() && !controller_->updating()) status += QString("   (%1 ms)").arg(r.ms, 0, 'f', 1);
+    QColor colour = controller_->notValidated() ? Theme::warning() : !r.valid() ? Theme::muted() : r.ok() ? (r.complete ? Theme::accent() : Theme::warning()) : Theme::error();
+    QString status = controller_->updating() ? "Validating…" : controller_->notValidated() ? "Validation was cancelled — press Validate" : r.statusText();
+    if (r.valid() && !controller_->updating() && !controller_->notValidated() && r.ms > 0) status += QString("   (%1 ms)").arg(r.ms, 0, 'f', 1);
     status_->setText(status);
     status_->setStyleSheet(QString("font-weight: bold; color: %1;").arg(colour.name()));
 
@@ -67,17 +76,18 @@ void UpdatePanel::refresh() {
     message_->setStyleSheet(QString("color: %1;").arg(r.ok() ? Theme::text().name() : Theme::error().name()));
 
     QStringList lists;
-    if (!r.missing.isEmpty()) lists << "Oluşmayan pad'ler: " + r.missing.join("; ");
-    if (!r.refused.isEmpty()) lists << "Reddedilen bağlantılar: " + r.refused.join("; ");
+    if (!r.missing.isEmpty()) lists << "Pads that did not appear: " + r.missing.join("; ");
+    if (!r.refused.isEmpty()) lists << "Refused links: " + r.refused.join("; ");
     lists_->setText(breakable(lists.join("\n")));
     lists_->setStyleSheet(QString("color: %1;").arg(Theme::warning().name()));
+    support_->setVisible(r.valid() && !r.ok() && !controller_->updating());  // something went wrong: offer the report
     message_->setVisible(!message_->text().isEmpty());
     lists_->setVisible(!lists_->text().isEmpty());
 
     table_->setRowCount(r.pads.size());
     for (int i = 0; i < r.pads.size(); ++i) {
         const PadReport& p = r.pads[i];
-        QString state = p.unknownData ? "bilinmeyen veri" : p.linked ? "bağlı" : p.temporaryEnd ? "boşta (geçici uç)" : "boşta";
+        QString state = p.unknownData ? "unknown data" : p.linked ? "linked" : p.temporaryEnd ? "free (temporary end)" : "free";
         QStringList cells = {p.element, p.pad, p.presence, p.isSrc ? "src" : "sink", state, p.caps, p.allowed};
         for (int c = 0; c < cells.size(); ++c) {
             auto* item = new QTableWidgetItem(cells[c]);

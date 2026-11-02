@@ -22,7 +22,7 @@ struct CapsChoice {
     std::string toText() const;
 };
 
-// One string value inside caps text: bare only with [A-Za-z0-9_+-./:], otherwise "..." with \" and \\.
+// One string value inside caps text: bare only with [A-Za-z0-9_+-./:], otherwise "..." with \", \\ and a space escaped.
 std::string capsString(const std::string& value);
 
 }  // namespace gps

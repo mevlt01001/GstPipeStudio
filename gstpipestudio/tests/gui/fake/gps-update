@@ -6,7 +6,9 @@ choice changes them, a link whose media types do not meet is refused. Test switc
   fake-error=<text>  the update fails with this message, reported for that element
   fake-crash=1       the helper dies with SIGSEGV
   fake-slow=<ms>     the helper answers after this many milliseconds
-  fake-hang=1        the helper never answers (fake-hang=run only keeps gps-run running)"""
+  fake-hang=1        the helper never answers (fake-hang=run only keeps gps-run running)
+Environment switches (for every plan): GPS_FAKE_SLOW_MS=<ms> waits before answering, GPS_FAKE_PIDFILE=<path> gets the
+process id, GPS_FAKE_IGNORE_TERM=1 ignores SIGTERM (only SIGKILL stops it)."""
 import json
 import os
 import signal
@@ -232,8 +234,15 @@ def main(argv):
         print("usage: gps-update <plan.conf> [--timeout-ms N]", file=sys.stderr)
         return 2
     started = time.time()
+    if os.environ.get("GPS_FAKE_PIDFILE"):
+        with open(os.environ["GPS_FAKE_PIDFILE"], "w") as f:
+            f.write(str(os.getpid()))
+    if os.environ.get("GPS_FAKE_IGNORE_TERM"):
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    time.sleep(int(os.environ.get("GPS_FAKE_SLOW_MS", "0")) / 1000.0)
     plan = read_plan(argv[1])
-    print("fake gps-update: %d elements, %d links" % (len(plan["elements"]), len(plan["links"])), file=sys.stderr)
+    timeout = argv[argv.index("--timeout-ms") + 1] if "--timeout-ms" in argv else "none"
+    print("fake gps-update: %d elements, %d links, timeout-ms=%s" % (len(plan["elements"]), len(plan["links"]), timeout), file=sys.stderr, flush=True)
     try:
         result = run(plan)
     except Failure as f:

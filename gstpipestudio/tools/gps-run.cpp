@@ -1,12 +1,8 @@
 // gps-run – runs the Plan for real, with no temporary ends (SPEC 6 and 7).
 //   gps-run <plan.conf> [name=value ...] [--timeout-ms N]
 // SIGINT and SIGTERM become EOS, so files get finished properly.
-#include <signal.h>
-
 #include "builder.h"
 #include "common.h"
-
-static volatile sig_atomic_t g_stop = 0;
 
 int main(int argc, char** argv) {
     gps::Output out;
@@ -22,9 +18,9 @@ int main(int argc, char** argv) {
         size_t eq = a.find('=');
         if (eq != std::string::npos && eq > 0 && a.rfind("--", 0) != 0) params[a.substr(0, eq)] = a.substr(eq + 1);
         else if (path.empty() && a.rfind("--", 0) != 0) path = a;
-        else return gps::usageError(out, "gps-run <plan.conf> [ad=deger ...] [--timeout-ms N]");
+        else return gps::usageError(out, "gps-run <plan.conf> [name=value ...] [--timeout-ms N]");
     }
-    if (path.empty()) return gps::usageError(out, "gps-run <plan.conf> [ad=deger ...] [--timeout-ms N]");
+    if (path.empty()) return gps::usageError(out, "gps-run <plan.conf> [name=value ...] [--timeout-ms N]");
 
     gps::Plan plan;
     if (!gps::Plan::load(path, &plan, &error)) {
@@ -37,14 +33,11 @@ int main(int argc, char** argv) {
     for (const auto& p : params) {
         bool known = false;
         for (const gps::ExposedParam& e : plan.exposed) known = known || e.name == p.first;
-        if (!known) return gps::usageError(out, "bilinmeyen parametre: " + p.first);
+        if (!known) return gps::usageError(out, "unknown parameter: " + p.first + ", the plan exposes no such name");
     }
 
-    struct sigaction action = {};
-    action.sa_handler = [](int) { g_stop = 1; };
-    sigaction(SIGINT, &action, nullptr);
-    sigaction(SIGTERM, &action, nullptr);
-    options.shouldStop = [] { return g_stop != 0; };
+    gps::installStopHandler();
+    options.shouldStop = gps::stopRequested;
 
     gps::RunResult result = gps::run(plan, params, options, gps::logLine);
     out.json(gps::runJson(result));

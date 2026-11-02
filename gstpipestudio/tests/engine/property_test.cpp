@@ -18,14 +18,14 @@ static UpdateResult with(const std::string& factory, const std::string& property
     return update(p.plan, 5000);
 }
 
-// The update must fail, name element "e" and say "e.<property>: '<value>' gecersiz (<reason part>)".
+// The update must fail, name element "e" and say "e.<property>: '<value>' is not valid, <reason part>".
 static void rejected(const std::string& label, const std::string& factory, const std::string& property,
                      const std::string& value, const std::string& reasonPart) {
     std::printf("-- rejected: %s\n", label.c_str());
     UpdateResult r = with(factory, property, value);
     CHECK_EQ(r.status, "error");
     CHECK_EQ(r.errorElement, "e");
-    std::string prefix = "e." + property + ": '" + value + "' gecersiz (";
+    std::string prefix = "e." + property + ": '" + value + "' is not valid, ";
     CHECK(startsWith(r.message, prefix));
     CHECK(contains(r.message, reasonPart));
     if (!startsWith(r.message, prefix) || !contains(r.message, reasonPart)) std::printf("    message was: %s\n", r.message.c_str());
@@ -42,22 +42,22 @@ int main(int argc, char** argv) {
     gst_init(&argc, &argv);
 
     // GStreamer alone ignores these silently (volume=5) or turns them into something else (-5 -> 4294967291, "" -> 0)
-    rejected("float out of range", "audiotestsrc", "volume", "5", "aralik disinda");
-    rejected("float out of range, with the allowed range", "audiotestsrc", "volume", "-1", "0 .. 1");
-    rejected("negative on an unsigned property", "queue", "max-size-buffers", "-5", "negatif");
-    rejected("negative on a 64 bit unsigned property", "queue", "max-size-time", "-1", "negatif");
-    rejected("empty text on an int", "videotestsrc", "num-buffers", "", "bos");
-    rejected("blank text on an int", "videotestsrc", "num-buffers", "   ", "bos");
-    rejected("empty text on a float", "audiotestsrc", "volume", "", "bos");
-    rejected("empty text on a boolean", "videotestsrc", "is-live", "", "bos");
-    rejected("empty text on an enum", "videotestsrc", "pattern", "", "bos");
-    rejected("unknown enum name", "videotestsrc", "pattern", "nonsense", "okunamadi");
-    rejected("text on a number", "videotestsrc", "num-buffers", "abc", "okunamadi");
+    rejected("float out of range", "audiotestsrc", "volume", "5", "allowed range is 0 to 1");
+    rejected("float out of range, with the allowed range", "audiotestsrc", "volume", "-1", "0 to 1");
+    rejected("negative on an unsigned property", "queue", "max-size-buffers", "-5", "negative number");
+    rejected("negative on a 64 bit unsigned property", "queue", "max-size-time", "-1", "negative number");
+    rejected("empty text on an int", "videotestsrc", "num-buffers", "", "empty text");
+    rejected("blank text on an int", "videotestsrc", "num-buffers", "   ", "empty text");
+    rejected("empty text on a float", "audiotestsrc", "volume", "", "empty text");
+    rejected("empty text on a boolean", "videotestsrc", "is-live", "", "empty text");
+    rejected("empty text on an enum", "videotestsrc", "pattern", "", "empty text");
+    rejected("unknown enum name", "videotestsrc", "pattern", "nonsense", "cannot be read as");
+    rejected("text on a number", "videotestsrc", "num-buffers", "abc", "cannot be read as");
     rejected("int out of range for gint", "videotestsrc", "num-buffers", "99999999999", "");
-    rejected("bad boolean", "videotestsrc", "is-live", "maybe", "okunamadi");
-    rejected("property that does not exist", "videotestsrc", "no-such-property", "1", "yok");
+    rejected("bad boolean", "videotestsrc", "is-live", "maybe", "cannot be read as");
+    rejected("property that does not exist", "videotestsrc", "no-such-property", "1", "no such property");
     rejected("the GstObject name property", "videotestsrc", "name", "other", "GstObject");
-    rejected("construct-only or read-only is not writable", "queue", "current-level-buffers", "3", "yazilamaz");
+    rejected("construct-only or read-only is not writable", "queue", "current-level-buffers", "3", "read-only");
 
     accepted("float in range", "audiotestsrc", "volume", "0.5");
     accepted("float at the edge", "audiotestsrc", "volume", "1");
@@ -69,7 +69,7 @@ int main(int argc, char** argv) {
     {
         std::puts("-- accepted: an empty text on a string property (filesrc then fails at run time, not at the value)");
         UpdateResult r = with("filesrc", "location", "");
-        CHECK(!contains(r.message, "gecersiz"));
+        CHECK(!contains(r.message, "is not valid"));
         CHECK_EQ(r.errorElement, "e");
     }
     accepted("negative on a signed property", "videotestsrc", "num-buffers", "-1");
@@ -81,7 +81,7 @@ int main(int argc, char** argv) {
         UpdateResult r = update(p.plan);
         CHECK_EQ(r.status, "error");
         CHECK_EQ(r.errorElement, "bad");
-        CHECK(startsWith(r.message, "bad.volume: '99' gecersiz ("));
+        CHECK(startsWith(r.message, "bad.volume: '99' is not valid, "));
     }
 
     std::puts("-- a bad value writes nothing: the element keeps its default");
@@ -106,21 +106,21 @@ int main(int argc, char** argv) {
         UpdateResult r = update(p.plan, 5000);
         CHECK_EQ(r.status, "error");
         CHECK_EQ(r.errorElement, "mix");
-        CHECK(startsWith(r.message, "mix.sink_%u::xpos: 'abc' gecersiz ("));
+        CHECK(startsWith(r.message, "mix.sink_%u::xpos: 'abc' is not valid, "));
 
         P q;
         q.el("a", "videotestsrc", {{"num-buffers", "3"}}).el("mix", "compositor").el("out", "fakesink");
         q.link("a", "src", "mix", "sink_%u", "", {{"alpha", "3"}}).link("mix", "src", "out", "sink");
         r = update(q.plan, 5000);
         CHECK_EQ(r.status, "error");
-        CHECK(startsWith(r.message, "mix.sink_%u::alpha: '3' gecersiz ("));
+        CHECK(startsWith(r.message, "mix.sink_%u::alpha: '3' is not valid, "));
 
         P s;
         s.el("a", "videotestsrc", {{"num-buffers", "3"}}).el("mix", "compositor").el("out", "fakesink");
         s.link("a", "src", "mix", "sink_%u", "", {{"nothing", "1"}}).link("mix", "src", "out", "sink");
         r = update(s.plan, 5000);
         CHECK_EQ(r.status, "error");
-        CHECK(contains(r.message, "yok"));
+        CHECK(contains(r.message, "no such property"));
     }
     return finish("property_test");
 }

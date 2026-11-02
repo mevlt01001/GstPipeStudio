@@ -1,4 +1,4 @@
-// capsparse.h – the inverse of CapsChoice::toText, for the caps texts the CapsDialog writes.
+// capsparse.h – the inverse of CapsChoice::toText, for the caps texts the caps page writes.
 #pragma once
 
 #include <QString>

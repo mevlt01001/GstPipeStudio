@@ -5,4 +5,5 @@ endif()
 
 add_library(gstgpsconf MODULE gstgpsconf.cpp)
 target_link_libraries(gstgpsconf PRIVATE gps_engine)
+target_compile_definitions(gstgpsconf PRIVATE GPS_VERSION="${PROJECT_VERSION}")
 set_target_properties(gstgpsconf PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib/gstreamer-1.0)

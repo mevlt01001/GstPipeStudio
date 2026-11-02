@@ -1,4 +1,4 @@
-// logpanel.h – the Günlük tab: helper stderr and events, monospace.
+// logpanel.h – the Log tab: helper stderr and events, monospace.
 #pragma once
 
 #include <QPlainTextEdit>

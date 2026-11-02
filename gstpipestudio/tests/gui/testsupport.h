@@ -1,6 +1,8 @@
 // testsupport.h – small helpers shared by the GUI tests. They wait for the asynchronous helpers.
 #pragma once
 
+#include <QSettings>
+#include <QTemporaryDir>
 #include <QtTest>
 #include <memory>
 
@@ -8,6 +10,19 @@
 #include "theme.h"
 
 namespace support {
+
+// Screenshots go to $GPS_SHOT_DIR when it is set, else to the folder CMake compiled in.
+inline QString shotDir() { return qEnvironmentVariable("GPS_SHOT_DIR", GPS_SHOT_DIR); }
+
+// Window size and splitter state go to a temporary place, never to the user's real settings.
+inline void isolateSettings() {
+    static QTemporaryDir dir;
+    QCoreApplication::setOrganizationName("GstPipeStudioTests");
+    QCoreApplication::setApplicationName("gui-tests");
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, dir.path());
+    QSettings().clear();
+}
 
 inline bool waitFor(const std::function<bool()>& condition, int ms = 10000) { return QTest::qWaitFor(condition, ms); }
 

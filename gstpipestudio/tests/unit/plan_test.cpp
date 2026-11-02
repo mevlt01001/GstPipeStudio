@@ -53,13 +53,15 @@ static void chain() {
     Plan p;
     std::string s = p.addSource("src", {{"num", "1"}});
     CHECK_EQ(s, std::string("src_0"));
-    std::string a = p.addAfter(s, "src", "filter", "sink");
+    std::string a = p.addAfter(s, "src", "filter", "sink", {}, 280, 5);
     CHECK_EQ(a, std::string("filter_1"));
     std::string b = p.addAfter(a, "src", "input-selector", "sink");
     CHECK_EQ(b, std::string("input_selector_2"));  // dashes become '_'
     CHECK_EQ(p.addAfter(s, "src", "filter", "sink"), std::string(""));  // the src pad is taken
     CHECK_EQ(p.addAfter("nope", "src", "filter", "sink"), std::string(""));
-    CHECK_EQ(p.find(a)->x, 280.0);  // placed to the right of its source
+    CHECK_EQ(p.find(a)->x, 280.0);  // the plan stores the position it is given and chooses none
+    CHECK_EQ(p.find(a)->y, 5.0);
+    CHECK_EQ(p.find(b)->x, 0.0);
     CHECK_EQ(p.linkFrom(s, "src"), 0);
     CHECK_EQ(p.linkFrom(a, "src"), 1);
     CHECK_EQ(p.linkFrom(b, "src"), -1);
@@ -373,13 +375,13 @@ static void capsText() {
 
     CHECK_EQ(capsString("abc_1.2/x:y-z+w"), std::string("abc_1.2/x:y-z+w"));
     CHECK_EQ(capsString(""), std::string("\"\""));
-    CHECK_EQ(capsString("a b"), std::string("\"a b\""));
+    CHECK_EQ(capsString("a b"), std::string("\"a\\ b\""));
     CHECK_EQ(capsString("rtsp://u@h/s"), std::string("\"rtsp://u@h/s\""));
     CHECK_EQ(capsString("q\"b\\"), std::string("\"q\\\"b\\\\\""));
     CapsChoice s;
     s.media = "application/x-test";
     s.fields = {{"note", "gchararray", "a b"}};
-    CHECK_EQ(s.toText(), std::string("application/x-test, note=(string)\"a b\""));
+    CHECK_EQ(s.toText(), std::string("application/x-test, note=(string)\"a\\ b\""));
 }
 
 int main() {

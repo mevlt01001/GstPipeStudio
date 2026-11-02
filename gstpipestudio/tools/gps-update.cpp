@@ -1,5 +1,6 @@
 // gps-update – builds the Plan, gives free src pads a temporary end, reads every caps, prints JSON (SPEC 5 and 7).
 //   gps-update <plan.conf> [--timeout-ms N]
+// SIGINT and SIGTERM end it within about 2 s (status error, no process left).
 #include "builder.h"
 #include "common.h"
 
@@ -20,6 +21,8 @@ int main(int argc, char** argv) {
         out.json(gps::updateJson(failed));
         return 0;
     }
+    gps::installStopHandler();
+    options.shouldStop = gps::stopRequested;
     out.json(gps::updateJson(gps::update(plan, options, gps::logLine)));
     return 0;
 }

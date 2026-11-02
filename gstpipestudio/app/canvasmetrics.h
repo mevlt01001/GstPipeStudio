@@ -11,7 +11,7 @@ inline constexpr double kPropLine = 16;
 inline constexpr double kPadRadius = 6;
 inline constexpr int kMaxPropLines = 4;
 inline constexpr int kNoteLines = 3;  // an error text of GStreamer needs about three lines at this width
-inline constexpr double kColumn = 280; // distance between the left edges of two neighbours: Plan::addAfter's step
+inline constexpr double kColumn = 280; // distance between the left edges of two neighbours: where Controller::addAfter puts a new box
 inline constexpr double kGap = 28;
 
 inline double boxHeight(int padRows, int propLines, bool note) {

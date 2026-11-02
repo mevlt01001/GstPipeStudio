@@ -57,10 +57,15 @@ int main(int argc, char** argv) {
     const FactoryEntry* conv = findEntry(all, "videoconvert");
     CHECK(conv && !conv->hasRequestSrc);
     const FactoryEntry* nv = findEntry(all, "nvvideoconvert");
-    CHECK(nv && nv->nvidia);
     int nvidia = 0;
     for (const FactoryEntry& e : all) nvidia += e.nvidia;
-    CHECK(nvidia >= 20);  // DeepStream 7.1 image: dozens of nv* elements
+    const bool deepstream = nv != nullptr;  // a plain Ubuntu has no nv* elements: those checks are skipped
+    if (deepstream) {
+        CHECK(nv->nvidia);
+        CHECK(nvidia >= 20);  // DeepStream 7.1 image: dozens of nv* elements
+    } else {
+        CHECK_EQ(nvidia, 0);
+    }
     std::printf("  info: %zu factories, %d nvidia\n", all.size(), nvidia);
 
     // ---- inspect: properties
@@ -140,14 +145,16 @@ int main(int argc, char** argv) {
         if (rate) CHECK_EQ(rate->values[0], "0/1");
     }
 
-    CHECK(inspect("nvvideoconvert", &info, &error));
-    bool nvmem = false;
-    for (const PadTemplateInfo& t : info.padTemplates) {
-        for (const StructureInfo& s : t.structures) {
-            for (const std::string& f : s.features) nvmem = nvmem || f == "memory:NVMM";
+    if (deepstream) {
+        CHECK(inspect("nvvideoconvert", &info, &error));
+        bool nvmem = false;
+        for (const PadTemplateInfo& t : info.padTemplates) {
+            for (const StructureInfo& s : t.structures) {
+                for (const std::string& f : s.features) nvmem = nvmem || f == "memory:NVMM";
+            }
         }
+        CHECK(nvmem);
     }
-    CHECK(nvmem);
 
     CHECK(!inspect("no-such-element-xyz", &info, &error));
     CHECK(gpstest::contains(error, "no-such-element-xyz"));
@@ -191,7 +198,7 @@ int main(int argc, char** argv) {
         CHECK_EQ(structures[0].fields[0].kind, "fixed");
         CHECK_EQ(structures[0].fields[0].values[0], "640");
     }
-    CHECK(parseCaps("video/x-raw(memory:NVMM), format=(string){ NV12, RGBA }, width=(int)[ 16, 4096, 2 ], note=(string)\"a b\"", &text,
+    CHECK(parseCaps("video/x-raw(memory:NVMM), format=(string){ NV12, RGBA }, width=(int)[ 16, 4096, 2 ], note=(string)\"a\\ b\"", &text,
                     &structures, &error));
     if (!structures.empty()) {
         CHECK(structures[0].features == std::vector<std::string>{"memory:NVMM"});
@@ -212,5 +219,20 @@ int main(int argc, char** argv) {
     // ---- JSON text (the parse check is in the cli tests)
     CHECK(gpstest::contains(listJson(all), "\"factory\":\"videotestsrc\""));
     CHECK(gpstest::contains(capsJson(false, "bad \"caps\"", {}), "\"ok\":false,\"error\":\"bad \\\"caps\\\"\""));
+
+    // ---- version: numbers from gst_version(), counts from the same list
+    {
+        guint major, minor, micro, nano;
+        gst_version(&major, &minor, &micro, &nano);
+        int nvidia = 0;
+        for (const FactoryEntry& e : all) nvidia += e.nvidia ? 1 : 0;
+        std::string json = versionJson(all);
+        std::string want = "{\"gstreamer\":{\"version\":\"" + std::to_string(major) + "." + std::to_string(minor) + "." + std::to_string(micro) +
+                           "\",\"major\":" + std::to_string(major) + ",\"minor\":" + std::to_string(minor) + ",\"micro\":" + std::to_string(micro) +
+                           "},\"nvidia\":{\"present\":" + (nvidia > 0 ? "true" : "false") + ",\"elements\":" + std::to_string(nvidia) +
+                           "},\"plugins\":{\"count\":";
+        CHECK(gpstest::contains(json, want));
+        CHECK(gpstest::contains(json, "\"elements\":" + std::to_string(all.size()) + "}}"));
+    }
     return finish("inspector_test");
 }

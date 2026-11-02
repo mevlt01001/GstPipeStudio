@@ -17,6 +17,15 @@ GST_DEBUG_CATEGORY_STATIC(gpsconf_debug);
 
 namespace {
 
+// GLib's rule for a property name: a letter, then letters, digits, '-' or '_' (g_param_spec_is_valid_name needs GLib 2.66).
+bool validPropertyName(const std::string& name) {
+    if (name.empty() || !g_ascii_isalpha(name[0])) return false;
+    for (char c : name) {
+        if (!g_ascii_isalnum(c) && c != '-' && c != '_') return false;
+    }
+    return true;
+}
+
 struct Slot {
     guint id;
     gps::ExposedParam param;
@@ -96,7 +105,7 @@ void setProp(GObject* object, guint id, const GValue* value, GParamSpec*) {
     std::string reason;
     // Same path as gps-run: checked against the target's own spec, then gst_util_set_object_arg.
     if (!gps::setProperty(G_OBJECT(child), slot->param.property, text ? text : "", &reason)) {
-        GST_WARNING_OBJECT(self, "%s -> %s.%s: '%s' gecersiz (%s)", slot->param.name.c_str(), slot->param.element.c_str(),
+        GST_WARNING_OBJECT(self, "%s -> %s.%s: '%s' is not valid, %s", slot->param.name.c_str(), slot->param.element.c_str(),
                            slot->param.property.c_str(), text ? text : "", reason.c_str());
     }
     g_free(text);
@@ -169,7 +178,7 @@ void classInit(gpointer g_class, gpointer classData) {
 
     guint id = 1;
     for (const gps::ExposedParam& param : klass->plan->exposed) {
-        if (!g_param_spec_is_valid_name(param.name.c_str()) || g_object_class_find_property(object, param.name.c_str())) {
+        if (!validPropertyName(param.name) || g_object_class_find_property(object, param.name.c_str())) {
             GST_WARNING("parameter '%s' skipped: not a property name, or the bin has it already", param.name.c_str());
             continue;
         }
@@ -187,7 +196,7 @@ void instanceInit(GTypeInstance* instance, gpointer g_class) {
     self->error = new std::string;
     self->builder = nullptr;
     if (!klass->loadError->empty()) {
-        *self->error = "conf okunamadi: " + *klass->loadError;
+        *self->error = "unable to read the conf: " + *klass->loadError;
         return;
     }
     gps::BuildOptions options;
@@ -256,5 +265,5 @@ gboolean pluginInit(GstPlugin* plugin) {
 }  // namespace
 
 #define PACKAGE "gstpipestudio"  // GST_PLUGIN_DEFINE wants it
-GST_PLUGIN_DEFINE(GST_VERSION_MAJOR, GST_VERSION_MINOR, gpsconf, "GstPipeStudio .conf files as elements", pluginInit, "0.1",
-                  "LGPL", "gstpipestudio", "https://invalid.example/")
+GST_PLUGIN_DEFINE(GST_VERSION_MAJOR, GST_VERSION_MINOR, gpsconf, "GstPipeStudio .conf files as elements", pluginInit, GPS_VERSION,
+                  "LGPL", "gstpipestudio", "https://github.com/mevlt01001/GstPipeStudio")

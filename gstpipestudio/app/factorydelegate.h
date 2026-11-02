@@ -1,4 +1,4 @@
-// factorydelegate.h – one row look for every list of elements: name, long name, and small pills (NVIDIA, uyumlu ...).
+// factorydelegate.h – one row look for every list of elements: name, long name, and small pills (NVIDIA, compatible ...).
 #pragma once
 
 #include <QStyledItemDelegate>
@@ -6,7 +6,7 @@
 enum FactoryRole {
     LongNameRole = Qt::UserRole + 1,  // muted text after the name
     NvidiaRole,                       // bool: green NVIDIA pill
-    HintRole,                         // text of an outlined pill, e.g. "uyumlu"
+    HintRole,                         // text of an outlined pill, e.g. "compatible"
     SearchRole,                       // lower-case text the search box matches
     HeaderRole,                       // bool: a section title, not selectable
 };

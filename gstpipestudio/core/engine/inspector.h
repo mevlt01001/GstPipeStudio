@@ -68,6 +68,8 @@ PropertyInfo describeProperty(GParamSpec* spec);
 
 // ---- JSON (SPEC 7)
 void writeStructure(JsonWriter& w, const StructureInfo& s);
+// gps-inspect version: GStreamer numbers from gst_version(), the nvidia flag count and the registry counts.
+std::string versionJson(const std::vector<FactoryEntry>& entries);
 std::string listJson(const std::vector<FactoryEntry>& entries);
 std::string elementJson(const ElementInfo& info);
 std::string compatibleJson(const std::vector<std::string>& factories);

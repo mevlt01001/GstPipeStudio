@@ -1,4 +1,4 @@
-// confirmdialog.h – "Şu N element silinecek" list shown before replace, cut and delete source (SPEC 8, step 5).
+// confirmdialog.h – "These N elements will be removed" list shown before replace, cut and delete source: the one modal dialog.
 #pragma once
 
 #include <QDialog>

@@ -2,14 +2,13 @@
 #include "flows.h"
 
 #include <QAction>
-#include <QInputDialog>
 #include <QMenu>
-#include <memory>
 
-#include "capsdialog.h"
+#include "capspage.h"
 #include "confirmdialog.h"
-#include "pickerdialog.h"
-#include "propertydialog.h"
+#include "drawer.h"
+#include "pickerpage.h"
+#include "propertypage.h"
 
 namespace {
 
@@ -17,17 +16,19 @@ QString fromStd(const std::string& s) { return QString::fromStdString(s); }
 
 QString pathText(const QString& element, const QString& identity) { return element + "." + identity; }
 
+QString pluralElements(int n) { return QString("%1 element%2").arg(n).arg(n == 1 ? "" : "s"); }
+
 }  // namespace
 
-Flows::Flows(Controller* controller, QWidget* window) : QObject(window), controller_(controller), window_(window) {}
-
-void Flows::present(QDialog* dialog, std::function<void()> accepted) {
-    connect(dialog, &QDialog::accepted, this, std::move(accepted));
-    connect(dialog, &QDialog::finished, dialog, &QObject::deleteLater);
-    dialog->open();
+Flows::Flows(Controller* controller, Drawer* drawer, QWidget* window)
+    : QObject(window), controller_(controller), drawer_(drawer), window_(window) {
+    connect(drawer_, &Drawer::closed, this, &Flows::abandonPending);
 }
 
-void Flows::confirmRemoval(const gps::Removal& removal, const QString& confirmText, std::function<void()> accepted) {
+// The user closed the drawer while the validation of an edit was still running: no caps page opens afterwards.
+void Flows::abandonPending() { disconnect(pending_); }
+
+void Flows::confirmRemoval(const gps::Removal& removal, const QString& verb, std::function<void()> accepted) {
     if (removal.elements.empty()) {
         accepted();
         return;
@@ -37,38 +38,42 @@ void Flows::confirmRemoval(const gps::Removal& removal, const QString& confirmTe
         const gps::PlanElement* e = controller_->plan().find(name);
         lines << fromStd(name) + (e ? "   (" + fromStd(e->factory) + ")" : QString());
     }
-    QString heading = QString("Şu %1 element silinecek (%2 bağlantıyla birlikte)").arg(removal.elements.size()).arg(removal.links);
-    present(new ConfirmDialog("Silinecekler", heading, lines, confirmText, window_), std::move(accepted));
+    int n = static_cast<int>(removal.elements.size());
+    QString heading = QString("These %1 will be removed, with %2 link%3").arg(pluralElements(n)).arg(removal.links).arg(removal.links == 1 ? "" : "s");
+    auto* dialog = new ConfirmDialog("Remove elements", heading, lines, verb + " " + pluralElements(n), window_);
+    connect(dialog, &QDialog::accepted, this, std::move(accepted));
+    connect(dialog, &QDialog::finished, dialog, &QObject::deleteLater);
+    dialog->open();
 }
 
-// ---- Kaynak ekle
-
-void Flows::addSource(const QString& factory) {
-    if (controller_->busy()) return;
-    controller_->fetchInfo(factory, [this, factory](const ElementInfo* info) {
-        if (!info) return;
-        PropertyDialogInput in;
-        in.info = *info;
-        in.title = "Kaynak ekle: " + factory;
-        std::vector<std::pair<std::string, std::string>> srcTemplates;
-        for (const PadTemplateInfo& t : info->srcTemplates()) srcTemplates.emplace_back(t.name.toStdString(), t.presence.toStdString());
-        in.requestSrc = gps::defaultRequestSrc(srcTemplates);
-        auto* dialog = new PropertyDialog(in, window_);
-        present(dialog, [this, dialog, factory] { controller_->addSource(factory, dialog->edit()); });
-    });
-}
+// ---- Add source
 
 void Flows::chooseSource() {
     if (controller_->busy()) return;
     PickerData data;
-    data.title = "Kaynak ekle";
-    data.subtitle = "Pipeline'ın başlangıç elementini seç.";
-    data.newHeader = "Kaynaklar";
+    data.newHeader = "Sources";
     for (const ListEntry& e : controller_->catalog()) {
         if (e.isSource) data.candidates << e;
     }
-    auto* dialog = new PickerDialog(data, window_);
-    present(dialog, [this, dialog] { addSource(dialog->choice().factory); });
+    auto* page = new PickerPage(data);
+    connect(page, &PickerPage::picked, this, [this](const PickerChoice& choice) { sourceProperties(choice.factory); });
+    drawer_->present(page, "Add source", "Choose the first element of the pipeline.", Drawer::Replace);
+}
+
+void Flows::sourceProperties(const QString& factory) {
+    controller_->fetchInfo(factory, [this, factory](const ElementInfo* info) {
+        if (!info) return;
+        PropertyPageInput in;
+        in.info = *info;
+        std::vector<std::pair<std::string, std::string>> srcTemplates;
+        for (const PadTemplateInfo& t : info->srcTemplates()) srcTemplates.emplace_back(t.name.toStdString(), t.presence.toStdString());
+        in.requestSrc = gps::defaultRequestSrc(srcTemplates);
+        auto* page = new PropertyPage(in);
+        connect(page, &PropertyPage::confirmed, this, [this, page, factory] {
+            if (controller_->addSource(factory, page->edit())) drawer_->dismiss();
+        });
+        drawer_->present(page, "Add source · " + factory, QString(), Drawer::Push);
+    });
 }
 
 // ---- left click on a free src pad
@@ -78,16 +83,13 @@ void Flows::fromFreePad(const QString& element, const QString& identity) {
     QString allowed = controller_->padAllowed(element, identity);
     controller_->fetchCompatible(allowed, [this, element, identity, allowed](const QStringList& compatible) {
         PickerData data;
-        data.title = "Seçici";
-        data.subtitle = pathText(element, identity) + (allowed.isEmpty() ? QString() : "   ·   " + mediaOf(allowed));
         data.existing = controller_->existingTargets(element, identity);
         data.compatible = compatible;
         for (const ListEntry& e : controller_->catalog()) {
             if (!e.isSource) data.candidates << e;
         }
-        auto* dialog = new PickerDialog(data, window_);
-        present(dialog, [this, dialog, element, identity] {
-            PickerChoice choice = dialog->choice();
+        auto* page = new PickerPage(data);
+        connect(page, &PickerPage::picked, this, [this, element, identity](const PickerChoice& choice) {
             if (choice.kind == PickerChoice::Existing) {
                 editThenCaps(element, identity, [=] {
                     return controller_->linkExisting(element, identity, choice.existing.element, choice.existing.sinkPad);
@@ -96,85 +98,82 @@ void Flows::fromFreePad(const QString& element, const QString& identity) {
                 newElement(Mode::Add, element, identity, choice.factory);
             }
         });
+        drawer_->present(page, "Add after " + element + " · " + identity, allowed.isEmpty() ? QString() : mediaOf(allowed), Drawer::Replace);
     });
 }
 
 void Flows::newElement(Mode mode, const QString& element, const QString& identity, const QString& factory) {
     controller_->fetchInfo(factory, [this, mode, element, identity, factory](const ElementInfo* info) {
         if (!info) return;
-        PropertyDialogInput in;
+        PropertyPageInput in;
         in.info = *info;
-        in.title = (mode == Mode::Add ? "Element ekle: " : "Element değiştir: ") + factory;
+        in.acceptText = mode == Mode::Add ? "Add element" : "Replace";
         std::vector<std::pair<std::string, std::string>> srcTemplates;
         for (const PadTemplateInfo& t : info->srcTemplates()) srcTemplates.emplace_back(t.name.toStdString(), t.presence.toStdString());
         in.requestSrc = gps::defaultRequestSrc(srcTemplates);
-        auto* dialog = new PropertyDialog(in, window_);
-        present(dialog, [this, mode, dialog, info, element, identity, factory] {
-            ElementEdit edit = dialog->edit();
-            chooseSinkPad(controller_->sinkChoices(*info, element, identity), [=](const QString& sinkPad) {
-                auto apply = [=] {
-                    editThenCaps(element, identity, [=] {
-                        return mode == Mode::Add ? controller_->addAfter(element, identity, factory, sinkPad, edit)
-                                                 : controller_->replace(element, identity, factory, sinkPad, edit);
-                    });
-                };
-                if (mode == Mode::Replace) confirmRemoval(controller_->previewReplace(element, identity), "Değiştir", apply);
-                else apply();
-            });
+        QList<PadTemplateInfo> choices = controller_->sinkChoices(*info, element, identity);
+        if (choices.isEmpty()) return;
+        for (const PadTemplateInfo& t : choices) in.sinkPads << t.name;
+        auto* page = new PropertyPage(in);
+        connect(page, &PropertyPage::confirmed, this, [this, mode, page, element, identity, factory, onlyPad = choices.first().name] {
+            ElementEdit edit = page->edit();
+            QString sinkPad = page->sinkPad().isEmpty() ? onlyPad : page->sinkPad();
+            auto apply = [=] {
+                editThenCaps(element, identity, [=] {
+                    return mode == Mode::Add ? controller_->addAfter(element, identity, factory, sinkPad, edit)
+                                             : controller_->replace(element, identity, factory, sinkPad, edit);
+                });
+            };
+            if (mode == Mode::Replace) confirmRemoval(controller_->previewReplace(element, identity), "Replace", apply);
+            else apply();
         });
+        QString title = (mode == Mode::Add ? "Add after " : "Replace after ") + pathText(element, identity) + " · " + factory;
+        drawer_->present(page, title, QString(), Drawer::Push);
     });
-}
-
-void Flows::chooseSinkPad(const QList<PadTemplateInfo>& choices, std::function<void(const QString&)> chosen) {
-    if (choices.size() == 1) {
-        chosen(choices.first().name);
-        return;
-    }
-    if (choices.isEmpty()) return;
-
-    QStringList names;
-    for (const PadTemplateInfo& t : choices) names << t.name;
-    auto* dialog = new QInputDialog(window_);
-    dialog->setObjectName("sinkPadDialog");
-    dialog->setWindowTitle("Sink pad");
-    dialog->setLabelText("Hangi sink pad'e bağlansın?");
-    dialog->setComboBoxItems(names);
-    dialog->setOkButtonText("Seç");
-    dialog->setCancelButtonText("İptal");
-    present(dialog, [dialog, chosen] { chosen(dialog->textValue()); });
 }
 
 void Flows::editThenCaps(const QString& element, const QString& identity, std::function<bool()> edit) {
     auto connection = std::make_shared<QMetaObject::Connection>();
     *connection = connect(controller_, &Controller::updateFinished, this, [this, connection, element, identity](bool ok) {
         disconnect(*connection);
-        if (ok) openCaps(element, identity, false);
+        if (ok) openCaps(element, identity, true);
+        else drawer_->dismiss();
     });
-    if (!edit()) disconnect(*connection);
+    pending_ = *connection;
+    if (!edit()) disconnect(*connection);  // refused: the page stays as it is
 }
 
-void Flows::openCaps(const QString& element, const QString& identity, bool always) {
+void Flows::openCaps(const QString& element, const QString& identity, bool afterEdit) {
     int link = controller_->plan().linkFrom(element.toStdString(), identity.toStdString());
-    if (link < 0) return;
-
-    CapsDialogInput in;
-    in.title = "Caps düzenle";
+    if (link < 0) {
+        drawer_->dismiss();
+        return;
+    }
+    CapsPageInput in;
     const gps::PlanLink& l = controller_->plan().links[link];
-    in.subtitle = pathText(element, identity) + "  →  " + pathText(fromStd(l.sinkElement), fromStd(l.sinkPad));
     in.allowed = controller_->padStructures(element, identity);
     in.current = fromStd(l.caps);
+    in.skippable = afterEdit;
     if (const PadTemplateInfo* sink = controller_->linkSinkTemplate(link)) {
         for (const PropertyInfo& p : sink->padProperties) {
             if (PropertyEditor::editable(p)) in.padProperties << p;
         }
     }
     in.padProps = l.sinkPadProps;
-    if (!always && in.allowed.isEmpty() && in.padProperties.isEmpty()) return;  // nothing to choose
+    if (afterEdit && in.allowed.isEmpty() && in.padProperties.isEmpty()) {  // nothing to choose
+        drawer_->dismiss();
+        return;
+    }
 
-    auto* dialog = new CapsDialog(in, window_);
-    present(dialog, [this, dialog, element, identity] {
-        controller_->setCaps(element, identity, dialog->caps(), dialog->padProps());
+    auto* page = new CapsPage(in);
+    connect(page, &CapsPage::applied, this, [this, page, element, identity] {
+        controller_->setCaps(element, identity, page->caps(), page->padProps());
+        drawer_->dismiss();
     });
+    connect(page, &CapsPage::skipped, drawer_, &Drawer::dismiss);
+    QString title = (afterEdit ? "Caps · " : "Edit caps · ") + pathText(element, identity);
+    QString sub = pathText(element, identity) + "  →  " + pathText(fromStd(l.sinkElement), fromStd(l.sinkPad));
+    drawer_->present(page, title, sub, Drawer::Replace);
 }
 
 // ---- menus
@@ -184,10 +183,10 @@ void Flows::showLinkMenu(const QString& element, const QString& identity, const 
     auto* menu = new QMenu(window_);
     menu->setObjectName("linkMenu");
     menu->setAttribute(Qt::WA_DeleteOnClose);
-    menu->addAction("Caps düzenle", this, [=] { editCaps(element, identity); })->setObjectName("actionEditCaps");
-    menu->addAction("Element değiştir", this, [=] { replaceBehind(element, identity); })->setObjectName("actionReplace");
-    menu->addAction("Bağlantıyı kaldır", this, [=] { cutLink(element, identity); })->setObjectName("actionCut");
-    menu->addAction("Queue ekle", this, [=] { addQueue(element, identity); })->setObjectName("actionInsertQueue");
+    menu->addAction("Edit caps…", this, [=] { editCaps(element, identity); })->setObjectName("actionEditCaps");
+    menu->addAction("Replace element…", this, [=] { replaceBehind(element, identity); })->setObjectName("actionReplace");
+    menu->addAction("Cut link", this, [=] { cutLink(element, identity); })->setObjectName("actionCut");
+    menu->addAction("Insert queue", this, [=] { addQueue(element, identity); })->setObjectName("actionInsertQueue");
     menu->popup(at);
 }
 
@@ -198,10 +197,10 @@ void Flows::showElementMenu(const QString& element, const QPoint& at) {
     auto* menu = new QMenu(window_);
     menu->setObjectName("elementMenu");
     menu->setAttribute(Qt::WA_DeleteOnClose);
-    menu->addAction("Property düzenle", this, [=] { editProperties(element); })->setObjectName("actionProperties");
-    if (controller_->view(element).isSource) menu->addAction("Sil", this, [=] { deleteSource(element); })->setObjectName("actionDelete");
+    menu->addAction("Edit properties…", this, [=] { editProperties(element); })->setObjectName("actionProperties");
+    if (controller_->view(element).isSource) menu->addAction("Delete source", this, [=] { deleteSource(element); })->setObjectName("actionDelete");
     if (e->factory == gps::kQueueFactory) {
-        menu->addAction("Queue kaldır", this, [=] { controller_->removeQueue(element); })->setObjectName("actionRemoveQueue");
+        menu->addAction("Remove queue", this, [=] { controller_->removeQueue(element); })->setObjectName("actionRemoveQueue");
     }
     menu->popup(at);
 }
@@ -209,28 +208,29 @@ void Flows::showElementMenu(const QString& element, const QPoint& at) {
 // ---- link and element actions
 
 void Flows::editCaps(const QString& element, const QString& identity) {
-    if (!controller_->busy()) openCaps(element, identity, true);
+    if (!controller_->busy()) openCaps(element, identity, false);
 }
 
 void Flows::replaceBehind(const QString& element, const QString& identity) {
     if (controller_->busy()) return;
     QString allowed = controller_->padAllowed(element, identity);
-    controller_->fetchCompatible(allowed, [this, element, identity, allowed](const QStringList& compatible) {
+    controller_->fetchCompatible(allowed, [this, element, identity](const QStringList& compatible) {
         PickerData data;
-        data.title = "Element değiştir";
-        data.subtitle = pathText(element, identity) + " arkasındaki element yerine";
         data.compatible = compatible;
         for (const ListEntry& e : controller_->catalog()) {
             if (!e.isSource) data.candidates << e;
         }
-        auto* dialog = new PickerDialog(data, window_);
-        present(dialog, [this, dialog, element, identity] { newElement(Mode::Replace, element, identity, dialog->choice().factory); });
+        auto* page = new PickerPage(data);
+        connect(page, &PickerPage::picked, this, [this, element, identity](const PickerChoice& choice) {
+            newElement(Mode::Replace, element, identity, choice.factory);
+        });
+        drawer_->present(page, "Replace after " + pathText(element, identity), "Choose the element that takes the place of the one behind this pad.", Drawer::Replace);
     });
 }
 
 void Flows::cutLink(const QString& element, const QString& identity) {
     if (controller_->busy()) return;
-    confirmRemoval(controller_->previewCut(element, identity), "Kaldır", [this, element, identity] { controller_->cut(element, identity); });
+    confirmRemoval(controller_->previewCut(element, identity), "Remove", [this, element, identity] { controller_->cut(element, identity); });
 }
 
 void Flows::addQueue(const QString& element, const QString& identity) {
@@ -246,9 +246,9 @@ void Flows::editProperties(const QString& element) {
     const ElementInfo* info = e ? controller_->info(fromStd(e->factory)) : nullptr;
     if (!info) return;
 
-    PropertyDialogInput in;
+    PropertyPageInput in;
     in.info = *info;
-    in.title = "Property düzenle: " + element;
+    in.acceptText = "Save";
     in.props = e->props;
     in.requestSrc = e->requestSrc;
     for (const gps::PlanLink& l : controller_->plan().links) {
@@ -259,11 +259,14 @@ void Flows::editProperties(const QString& element) {
     for (const gps::ExposedParam& p : controller_->plan().exposed) {
         if (p.element == e->name) in.exposed.push_back(p.property);
     }
-    auto* dialog = new PropertyDialog(in, window_);
-    present(dialog, [this, dialog, element] { controller_->editElement(element, dialog->edit()); });
+    auto* page = new PropertyPage(in);
+    connect(page, &PropertyPage::confirmed, this, [this, page, element] {
+        if (controller_->editElement(element, page->edit())) drawer_->dismiss();
+    });
+    drawer_->present(page, "Edit properties · " + element, QString(), Drawer::Replace);
 }
 
 void Flows::deleteSource(const QString& element) {
     if (controller_->busy()) return;
-    confirmRemoval(controller_->previewDeleteSource(element), "Sil", [this, element] { controller_->deleteSource(element); });
+    confirmRemoval(controller_->previewDeleteSource(element), "Delete", [this, element] { controller_->deleteSource(element); });
 }

@@ -1,13 +1,12 @@
-// pickerdialog.h – the Seçici (SPEC 8): what can follow a free src pad. Existing elements first, then new ones.
+// pickerpage.h – drawer page 1 (UI_RULES 2): what can follow a free src pad, or the sources to start with.
+// Existing elements first, then new ones, compatible ones ranked on top.
 #pragma once
 
-#include <QDialog>
-
 #include "controller.h"
+#include "drawer.h"
 
 struct PickerData {
-    QString title, subtitle;
-    QString newHeader = "Yeni element";
+    QString newHeader = "New element";
     QList<ExistingTarget> existing;   // free Always sink pads and Request sink templates of elements in the plan
     QStringList compatible;           // factories whose sink meets the pad, ranked
     QList<ListEntry> candidates;      // every factory that may be offered
@@ -24,17 +23,24 @@ class QLineEdit;
 class QListWidget;
 class QListWidgetItem;
 
-class PickerDialog : public QDialog {
+class PickerPage : public DrawerPage {
     Q_OBJECT
 public:
-    PickerDialog(const PickerData& data, QWidget* parent = nullptr);
-    PickerChoice choice() const;  // valid after accept
+    explicit PickerPage(const PickerData& data, QWidget* parent = nullptr);
+    PickerChoice choice() const;  // the selected row
+
+    void focusFirst() override;
+    void focusSearch() override;
+
+signals:
+    void picked(const PickerChoice& choice);  // Choose, double click or Enter
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
     void filter(const QString& text);
+    void choose();
 
     PickerData data_;
     QLineEdit* search_;

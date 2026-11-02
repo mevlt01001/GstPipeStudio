@@ -27,13 +27,13 @@ conf="$1"
 if grep -q 'factory=identity' "$conf"; then kill -SEGV $$; fi
 if grep -q 'factory=queue2' "$conf"; then sleep 300; fi
 if grep -q 'name=props' "$conf" && grep -q 'factory=fakesink' "$conf" && grep -q '^prop.sync=' "$conf"; then
-  echo '{"status":"error","message":"dut.sync: '"'"'true'"'"' gecersiz (stub: reddedildi)","errorElement":"dut","ms":1,"pads":[],"missing":[],"refused":[],"complete":false}'; exit 0; fi
+  echo '{"status":"error","message":"dut.sync: '"'"'true'"'"' is not valid, stub refused it","errorElement":"dut","ms":1,"pads":[],"missing":[],"refused":[],"complete":false}'; exit 0; fi
 if grep -q 'factory=funnel' "$conf"; then
-  echo '{"status":"error","message":"dut: '"'"'funnel'"'"' olusturulamadi","errorElement":"dut","ms":1,"pads":[],"missing":[],"refused":[],"complete":false}'; exit 0; fi
+  echo '{"status":"error","message":"dut: unable to create element '"'"'funnel'"'"'","errorElement":"dut","ms":1,"pads":[],"missing":[],"refused":[],"complete":false}'; exit 0; fi
 if grep -q 'factory=valve' "$conf"; then
-  echo '{"status":"error","message":"dut.drop: konfigurasyon eksik","errorElement":"dut","ms":1,"pads":[],"missing":[],"refused":[],"complete":false}'; exit 0; fi
+  echo '{"status":"error","message":"dut.drop: configuration is missing","errorElement":"dut","ms":1,"pads":[],"missing":[],"refused":[],"complete":false}'; exit 0; fi
 if grep -q 'factory=concat' "$conf" && grep -q 'factory=fakesink' "$conf"; then
-  echo '{"status":"timeout","message":"zaman asimi","errorElement":"","ms":1,"pads":[],"missing":[],"refused":[],"complete":false}'; exit 0; fi
+  echo '{"status":"timeout","message":"timed out","errorElement":"","ms":1,"pads":[],"missing":[],"refused":[],"complete":false}'; exit 0; fi
 exec REAL/gps-update "$@"
 """
 
@@ -64,19 +64,19 @@ def main():
     print(p.stderr[-1500:])
     data = json.load(open(os.path.join(report, "elements.json")))
     by = {e["factory"]: e for e in data["elements"]}
-    want = {"identity": "çöktü", "queue2": "takıldı", "funnel": "oluşturulamadı", "valve": "kurulum-gerek",
-            "audiomixer": "çöktü", "tee": "tamam", "fakesink": "tamam", "videotestsrc": "tamam"}
+    want = {"identity": "crashed", "queue2": "hung", "funnel": "cannot-create", "valve": "needs-setup",
+            "audiomixer": "crashed", "tee": "ok", "fakesink": "ok", "videotestsrc": "ok"}
     for f, cls in want.items():
         check(f in by and by[f]["class"] == cls, f"{f}: class {by.get(f, {}).get('class')!r}, want {cls!r}")
     check("signal 11" in by["identity"]["reason"], "identity reason names the signal: " + by["identity"]["reason"])
-    check("kurulum" not in by["valve"]["reason"] and "konfigurasyon eksik" in by["valve"]["reason"], "valve reason is the real message")
+    check("needs-setup" not in by["valve"]["reason"] and "configuration is missing" in by["valve"]["reason"], "valve reason is the real message")
     check(any(f["kind"] == "inspect-schema" and "klass" in f["detail"] for f in by["adder"]["findings"]), "adder: schema violation found")
     check(by["audiomixer"]["reason"].startswith("gps-inspect element") and "signal 6" in by["audiomixer"]["reason"], "audiomixer: inspect crash recorded")
     rej = by["fakesink"]["properties"].get("rejected", [])
     check([r["name"] for r in rej] == ["sync"], f"fakesink: only 'sync' rejected (stub), got {[r['name'] for r in rej]}")
-    check(any(f["kind"] == "property-default-rejected" and "stub: reddedildi" in f["detail"] for f in by["fakesink"]["findings"]), "property rejection becomes a finding with the real message")
+    check(any(f["kind"] == "property-default-rejected" and "stub refused it" in f["detail"] for f in by["fakesink"]["findings"]), "property rejection becomes a finding with the real message")
     check(by["tee"]["properties"].get("rejected") == [], "tee: nothing rejected")
-    check(by["concat"]["class"] == "takıldı", f"concat (stub timeout): {by['concat']['class']}")
+    check(by["concat"]["class"] == "hung", f"concat (stub timeout): {by['concat']['class']}")
     check(p.returncode == 0, f"sweep exit code {p.returncode}")
     check(data["summary"]["orchestrationErrors"] == [], "no orchestration errors")
     check(os.path.exists(os.path.join(report, "sweep-repro", "identity.conf")), "repro conf of the crasher was copied")

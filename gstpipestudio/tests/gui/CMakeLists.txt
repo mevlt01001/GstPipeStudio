@@ -18,7 +18,13 @@ endfunction()
 gps_gui_test(controller_test)
 gps_gui_test(widgets_test)
 gps_gui_test(screens_test)
-gps_gui_test(real_tools_test)  # skips itself unless GPS_REAL_BIN_DIR is set
+gps_gui_test(ux_test)
+gps_gui_test(support_test)
+gps_gui_test(real_tools_test)  # needs the real helpers: it gets their folder from this build
+if(TARGET gps-update AND TARGET gps-inspect AND TARGET gps-run)
+    add_dependencies(real_tools_test gps-update gps-inspect gps-run)
+    set_property(TEST gui.real_tools_test APPEND PROPERTY ENVIRONMENT "GPS_REAL_BIN_DIR=$<TARGET_FILE_DIR:gps-update>")
+endif()
 
 # Real tools + real GStreamer (needs core/engine and tools in the build)
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/integration/CMakeLists.txt)

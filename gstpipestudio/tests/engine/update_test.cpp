@@ -229,7 +229,7 @@ static void refusedLink() {
     q.link("a", "src", "conv", "sink");
     r = update(q.plan, 1500);
     CHECK_EQ(r.refused.size(), size_t(1));
-    if (!r.refused.empty()) CHECK(gpstest::contains(r.refused[0], "caps uyusmuyor"));
+    if (!r.refused.empty()) CHECK(gpstest::contains(r.refused[0], "caps do not match"));
     CHECK(!r.complete());
 
     std::puts("-- refused link into a sink that waits: timeout, and the message still names the refusal");
@@ -238,14 +238,14 @@ static void refusedLink() {
     r = update(s.plan, 1200);
     CHECK_EQ(r.refused.size(), size_t(1));
     CHECK_EQ(r.status, "timeout");
-    CHECK(gpstest::contains(r.message, "reddedilen"));
+    CHECK(gpstest::contains(r.message, "refused link"));
 
     std::puts("-- caps text GStreamer cannot read is a refusal too");
     P t;
     t.el("v", "videotestsrc", {{"num-buffers", "5"}}).el("k", "fakesink", {{"async", "false"}}).link("v", "src", "k", "sink", "video/x-raw, width=(int");
     r = update(t.plan);
     CHECK_EQ(r.refused.size(), size_t(1));
-    if (!r.refused.empty()) CHECK(gpstest::contains(r.refused[0], "okunamadi"));
+    if (!r.refused.empty()) CHECK(gpstest::contains(r.refused[0], "cannot be read"));
 
     std::puts("-- a refused Request sink is released again");
     P m;

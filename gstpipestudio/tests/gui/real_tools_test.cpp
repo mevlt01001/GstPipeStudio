@@ -1,5 +1,6 @@
 // real_tools_test.cpp – the Controller against the real gps-inspect / gps-update / gps-run.
-// Skipped unless GPS_REAL_BIN_DIR names the folder that holds them, e.g.
+// CMake sets GPS_REAL_BIN_DIR to the folder of the helpers built in the same tree, so it runs with them. It skips
+// itself (and says so) only when the build has no helpers and the variable is not set by hand, e.g.
 //   GPS_REAL_BIN_DIR=/workspace/build/bin GPS_BUILD_DIR=build-gui docker/studio/test.sh gui
 // The GUI depends only on the JSON of SPEC 7, so this is the check that the real tools speak it.
 #include <QDir>
@@ -8,7 +9,8 @@
 #include "canvasscene.h"
 #include "canvasview.h"
 #include "mainwindow.h"
-#include "pickerdialog.h"
+#include "drawer.h"
+#include "pickerpage.h"
 #include "theme.h"
 
 #include "testsupport.h"
@@ -22,13 +24,25 @@ class RealToolsTest : public QObject {
 
 private slots:
     void initTestCase() {
+        isolateSettings();
         Theme::apply(*qApp);
         QByteArray dir = qgetenv("GPS_REAL_BIN_DIR");
         if (dir.isEmpty()) QSKIP("GPS_REAL_BIN_DIR is not set");
         qputenv("GPS_BIN_DIR", dir);
+        qInfo() << "REAL TOOLS in" << dir;
         c = makeController();
     }
     void cleanupTestCase() { c.reset(); }
+
+    void theRealVersionAnswerMeetsTheMinimum() {
+        StartupCheck check;
+        QSignalSpy done(&check, &StartupCheck::finished);
+        check.start();
+        QVERIFY(waitFor([&] { return done.count() == 1; }));
+        QCOMPARE(check.result().state, StartupResult::Ready);
+        qInfo() << "gps-inspect version:" << check.result().statusText();
+        QVERIFY(check.result().version.startsWith("1."));
+    }
 
     void catalogHasTheUsualElementsAndNvidiaBadges() {
         QVERIFY(c->catalogLoaded());
@@ -104,27 +118,25 @@ private slots:
         w.scene()->rebuild();
         w.view()->fitAll();
         QTest::qWait(200);
-        QDir().mkpath(GPS_SHOT_DIR);
-        QVERIFY(w.grab().save(QString("%1/20-gercek-yardimcilar.png").arg(GPS_SHOT_DIR)));
+        QDir().mkpath(shotDir());
+        QVERIFY(w.grab().save(QString("%1/ux_30_real_helpers.png").arg(shotDir())));
 
         QStringList compatible;
         c->fetchCompatible(c->padAllowed(nv, "src"), [&](const QStringList& l) { compatible = l; });
         QVERIFY(waitFor([&] { return !compatible.isEmpty(); }));
         PickerData data;
-        data.title = "Seçici";
-        data.subtitle = nv + ".src";
         data.compatible = compatible;
         for (const ListEntry& e : c->catalog()) {
             if (!e.isSource) data.candidates << e;
         }
         QElapsedTimer timer;
         timer.start();
-        PickerDialog picker(data);
-        picker.show();
+        w.drawer()->present(new PickerPage(data), "Add after " + nv + " · src", "video/x-raw", Drawer::Replace);
         qInfo() << "picker with" << data.candidates.size() << "candidates opened in" << timer.elapsed() << "ms," << compatible.size() << "compatible";
         QVERIFY(timer.elapsed() < 2000);
+        QVERIFY(waitFor([&] { return w.drawer()->width() == Drawer::kWidth; }, 3000));
         QTest::qWait(150);
-        QVERIFY(picker.grab().save(QString("%1/21-gercek-secici.png").arg(GPS_SHOT_DIR)));
+        QVERIFY(w.grab().save(QString("%1/ux_31_real_drawer_picker.png").arg(shotDir())));
     }
 
     void aBadPropertyShowsAsAnErrorOnTheElement() {

@@ -34,6 +34,8 @@ void CanvasScene::rebuild() {
     for (const gps::PlanElement& e : controller_->plan().elements) {
         auto* item = new ElementItem(controller_->view(QString::fromStdString(e.name)));
         item->setPos(e.x, e.y);
+        item->setFlag(QGraphicsItem::ItemIsMovable, !locked_);
+        item->setOpacity(stale_ ? 0.5 : 1.0);
         addItem(item);
         elements_.insert(item->view().name, item);
         for (PadItem* p : item->pads()) pads_.insert(key(p->view().element, p->view().identity, p->view().isSrc), p);
@@ -43,6 +45,7 @@ void CanvasScene::rebuild() {
         PadItem* to = pad(l.sinkElement, l.sinkIdentity, false);
         if (!from || !to) continue;  // the element's info is not cached yet; the next rebuild draws it
         auto* link = new LinkItem(l, from, to);
+        link->setOpacity(stale_ ? 0.5 : 1.0);
         addItem(link);
         links_ << link;
     }
@@ -54,7 +57,19 @@ void CanvasScene::updateLinks() {
     for (LinkItem* l : links_) l->updatePath();
 }
 
+void CanvasScene::setLocked(bool locked) {
+    locked_ = locked;
+    for (ElementItem* e : std::as_const(elements_)) e->setFlag(QGraphicsItem::ItemIsMovable, !locked);
+}
+
+void CanvasScene::setStale(bool stale) {
+    if (stale_ == stale) return;
+    stale_ = stale;
+    scheduleRebuild();
+}
+
 void CanvasScene::padClicked(const PadView& pad, Qt::MouseButton button, const QPoint& screenPos) {
+    if (locked_) return;
     if (button == Qt::LeftButton && pad.isSrc && pad.state != PadView::Linked) {
         emit freeSrcPadClicked(pad.element, pad.identity, screenPos);
     } else if (button == Qt::RightButton && pad.link >= 0) {
@@ -64,9 +79,15 @@ void CanvasScene::padClicked(const PadView& pad, Qt::MouseButton button, const Q
     }
 }
 
-void CanvasScene::elementContext(const QString& element, const QPoint& screenPos) { emit elementMenuRequested(element, screenPos); }
-void CanvasScene::elementDoubleClicked(const QString& element) { emit elementActivated(element); }
-void CanvasScene::elementDragged(const QString& element, const QPointF& pos) { emit elementMoved(element, pos.x(), pos.y()); }
+void CanvasScene::elementContext(const QString& element, const QPoint& screenPos) {
+    if (!locked_) emit elementMenuRequested(element, screenPos);
+}
+void CanvasScene::elementDoubleClicked(const QString& element) {
+    if (!locked_) emit elementActivated(element);
+}
+void CanvasScene::elementDragged(const QString& element, const QPointF& pos) {
+    if (!locked_) emit elementMoved(element, pos.x(), pos.y());
+}
 void CanvasScene::linkContext(const QString& srcElement, const QString& srcIdentity, const QPoint& screenPos) {
-    emit linkMenuRequested(srcElement, srcIdentity, screenPos);
+    if (!locked_) emit linkMenuRequested(srcElement, srcIdentity, screenPos);
 }

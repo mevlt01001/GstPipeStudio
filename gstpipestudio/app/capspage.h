@@ -1,36 +1,39 @@
-// capsdialog.h – the caps choice of one link plus the settings of its sink pad (SPEC 8, step 4).
+// capspage.h – drawer page 3 (UI_RULES 2): the caps choice of one link plus the settings of its sink pad.
 #pragma once
 
-#include <QDialog>
-
 #include "capsparse.h"
+#include "drawer.h"
 #include "elementinfo.h"
 #include "plan.h"
 #include "propertyeditor.h"
 
 class QComboBox;
-class QGroupBox;
 class QStackedWidget;
 class CapsFieldEditor;
 
-struct CapsDialogInput {
-    QString title;
-    QString subtitle;                        // "videotestsrc_0.src → videoconvert_1.sink"
+struct CapsPageInput {
     QList<StructureInfo> allowed;            // what the src pad can produce, from the last update
-    QString current;                         // the link's caps text now, "" = Otomatik
+    QString current;                         // the link's caps text now, "" = Auto
     QList<PropertyInfo> padProperties;       // of the sink pad this link ends on
     gps::Props padProps;                     // their current values
+    bool skippable = false;                  // right after an element was added: Skip keeps Auto caps
 };
 
-class CapsDialog : public QDialog {
+class CapsPage : public DrawerPage {
     Q_OBJECT
 public:
-    CapsDialog(const CapsDialogInput& input, QWidget* parent = nullptr);
-    QString caps() const;        // "" when the media type is Otomatik
+    explicit CapsPage(const CapsPageInput& input, QWidget* parent = nullptr);
+    QString caps() const;        // "" when the media type is Auto
     gps::Props padProps() const;
 
+    void focusFirst() override;
+
+signals:
+    void applied();  // Apply or Enter
+    void skipped();
+
 private:
-    CapsDialogInput input_;
+    CapsPageInput input_;
     QComboBox* media_ = nullptr;
     QStackedWidget* pages_ = nullptr;
     QList<QList<CapsFieldEditor*>> fields_;  // per structure

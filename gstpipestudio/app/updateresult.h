@@ -15,7 +15,7 @@ struct PadReport {
 };
 
 struct UpdateResult {
-    // ok | error | timeout | pad-missing come from gps-update; crashed | hung are decided by the GUI watchdog.
+    // ok | error | timeout | pad-missing come from gps-update; crashed | stopped | hung are decided by the GUI.
     QString status;
     QString message, errorElement;
     double ms = 0;
@@ -26,7 +26,7 @@ struct UpdateResult {
     bool valid() const { return !status.isEmpty(); }  // false before the first update
     bool ok() const { return status == "ok"; }
     bool isComplete() const { return ok() && complete; }
-    QString statusText() const;  // Turkish, for the panel
+    QString statusText() const;  // for the panel and the log
 
     static UpdateResult fromJson(const QJsonObject& json);
     static UpdateResult failure(const QString& status, const QString& message, const QString& element);

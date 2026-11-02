@@ -20,6 +20,12 @@ public:
     PadItem* pad(const QString& element, const QString& identity, bool isSrc) const;
     const QList<LinkItem*>& links() const { return links_; }
 
+    // Locked while an update runs (UI_RULES 3.1): clicks, menus and dragging do nothing. Pan and zoom belong to the view.
+    void setLocked(bool locked);
+    bool locked() const { return locked_; }
+    // Dimmed after a cancelled validation: the pad information on screen is from before the last edit.
+    void setStale(bool stale);
+
     // Called by the items.
     void padClicked(const PadView& pad, Qt::MouseButton button, const QPoint& screenPos);
     void elementContext(const QString& element, const QPoint& screenPos);
@@ -48,4 +54,6 @@ private:
     QHash<QString, PadItem*> pads_;
     QList<LinkItem*> links_;
     bool pending_ = false;
+    bool locked_ = false;
+    bool stale_ = false;
 };

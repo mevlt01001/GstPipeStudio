@@ -30,7 +30,7 @@ ConfirmDialog::ConfirmDialog(const QString& title, const QString& heading, const
     auto* buttons = new QDialogButtonBox(this);
     QPushButton* confirm = buttons->addButton(confirmText, QDialogButtonBox::AcceptRole);
     confirm->setObjectName("saveButton");
-    QPushButton* cancel = buttons->addButton("Vazgeç", QDialogButtonBox::RejectRole);
+    QPushButton* cancel = buttons->addButton("Cancel", QDialogButtonBox::RejectRole);
     cancel->setObjectName("cancelButton");
     cancel->setDefault(true);  // the safe answer is the default
     connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);

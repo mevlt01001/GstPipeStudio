@@ -1,4 +1,8 @@
-"""gps-update: JSON schema of SPEC 7, exit codes, malformed input, --timeout-ms."""
+"""gps-update: JSON schema of SPEC 7, exit codes, malformed input, --timeout-ms, SIGTERM (the GUI's Cancel)."""
+import json
+import os
+import signal
+import subprocess
 import sys
 import time
 
@@ -49,7 +53,7 @@ def main():
         check(f and f["linked"] and not f["temporaryEnd"], "file pad linked")
         s = pad(d, "dm", "sink", src=False)
         check(s and s["linked"] and not s["isSrc"], "sink pad is reported")
-        check("PLAYING" in err and "gecici uc" in err, "log lines on stderr")
+        check("PLAYING" in err and "temporary end" in err, "log lines on stderr")
 
         # ---- complete plan, exit code and flag
         done = t.write("done.conf", conf(
@@ -69,7 +73,7 @@ def main():
         wrong = t.write("badvalue.conf", conf([("a", "audiotestsrc", {"volume": 5})], []))
         code, d, err = t.json("gps-update", wrong)
         check_eq((code, d["status"], d["errorElement"]), (0, "error", "a"), "bad value result")
-        check(d["message"].startswith("a.volume: '5' gecersiz"), f"bad value message: {d['message']}")
+        check(d["message"].startswith("a.volume: '5' is not valid, "), f"bad value message: {d['message']}")
 
         code, d, err = t.json("gps-update", t.write("nofactory.conf", conf([("x", "no_such_factory_xyz", {})], [])))
         check_eq((code, d["status"], d["errorElement"]), (0, "error", "x"), "unknown factory result")
@@ -110,6 +114,36 @@ def main():
         code, d, err = t.json("gps-update", "--timeout-ms", "700", stall)  # option first
         check_eq((code, d["status"]), (0, "timeout"), "option before file")
         check(700 <= d["ms"] < 3000, f"700 ms timeout took {d['ms']}")
+
+        # ---- the GUI's Cancel: SIGTERM in the middle of a wait that would last 10 minutes. Gone within 2 s, one JSON
+        # line as always, no process and no temp file left behind.
+        tmp = t.path("cancel-tmp")
+        os.mkdir(tmp)
+        for tool in ("gps-update", "gps-run"):
+            p = subprocess.Popen([os.path.join(t.bin, tool), stall, "--timeout-ms", "600000"], stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE, text=True, env=dict(os.environ, TMPDIR=tmp))
+            time.sleep(1)
+            check(p.poll() is None, f"{tool}: still waiting 1 s after the start")
+            begin = time.time()
+            p.send_signal(signal.SIGTERM)
+            try:
+                stdout, stderr = p.communicate(timeout=10)
+            except subprocess.TimeoutExpired:
+                p.kill()
+                stdout, stderr = p.communicate()
+                check(False, f"{tool}: SIGTERM did not end it within 10 s")
+            took = time.time() - begin
+            print(f"   {tool}: exit {took:.2f} s after SIGTERM")
+            check(took < 2.0, f"{tool}: exit {took:.2f} s after SIGTERM, want under 2 s")
+            check(not os.path.exists(f"/proc/{p.pid}"), f"{tool}: no process left")
+            check_eq(os.listdir(tmp), [], f"{tool}: no temp file left")
+            lines = [l for l in stdout.split("\n") if l]
+            check_eq(len(lines), 1, f"{tool}: one JSON line after SIGTERM")
+            if lines:
+                d = json.loads(lines[0])
+                check_eq(d["status"], "error" if tool == "gps-update" else "interrupted", f"{tool}: status after SIGTERM")
+                if tool == "gps-update":
+                    check("asked to stop" in d["message"], f"{tool}: message says why: {d['message']}")
 
         # ---- malformed and missing files: still a result, exit 0
         for name, text in (("malformed.conf", "this is not a conf file\n"),

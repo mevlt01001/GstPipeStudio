@@ -6,8 +6,7 @@ Child:   sweep.py --one FACTORY ...      (the parent starts one per factory: tim
 
 Phases: A inventory (list, coverage against gst-inspect, inspect every factory, schema)
         B feed library (feeds.py)    C one child per factory    D report (report.py)
-SPEC 9 / task: classes tamam, kismi, kurulum-gerek, coktu, takildi, olusturulamadi, besleme-yok
-(written with Turkish letters in the report).
+SPEC 9 / task: classes ok, partial, needs-setup, crashed, hung, cannot-create, no-feed.
 """
 import argparse
 import collections
@@ -32,12 +31,11 @@ UPDATE_MS = 8000        # preroll wait of the plan updates
 RUN_MS = 6000           # gps-run limit
 FEED_MS = 5000          # preroll wait when a feed chain is tried
 CREATE_MS = 600         # update of a lone element: only creation and property checks matter
-MAX_FEED_TRIES = 4       # feeds tried for one dut before it is called besleme-yok
+MAX_FEED_TRIES = 4       # feeds tried for one dut before it is called no-feed
 CHILD_TIMEOUT = 420     # seconds, whole test of one factory
 SLACK = float(os.environ.get("GPS_SWEEP_SLACK", "20"))   # seconds a tool may need on top of its own timeout before it counts as hung
 
-CLASSES = ["tamam", "kısmi", "kurulum-gerek", "çöktü", "takıldı", "oluşturulamadı", "besleme-yok"]
-# ASCII spellings used inside the code
+CLASSES = report.CLASSES
 C_OK, C_PART, C_SETUP, C_CRASH, C_HANG, C_NOCREATE, C_NOFEED = CLASSES
 
 
@@ -286,8 +284,8 @@ def test_factory(ctx, factory, entry, lib):
         """A tool that was killed or hung ends the test of this factory."""
         rec["steps"].append(dict(short(res), step=step, conf=conf))
         if res.signal:
-            return finish(C_CRASH, f"{step}: {res.cmd[0]} signal {res.signal} ile öldü", conf)
-        return finish(C_HANG, f"{step}: {res.cmd[0]} {res.ms / 1000:.0f} sn içinde bitmedi, öldürüldü", conf)
+            return finish(C_CRASH, f"{step}: {res.cmd[0]} died from signal {res.signal}", conf)
+        return finish(C_HANG, f"{step}: {res.cmd[0]} did not finish within {res.ms / 1000:.0f} s, killed", conf)
 
     # ---- 2. creation: a lone element
     plan = PlanBuilder("create")
@@ -302,9 +300,9 @@ def test_factory(ctx, factory, entry, lib):
     if r.json is None:
         rec["findings"].append({"kind": "update-json", "detail": "create: " + r.json_problem})
     msg = str(j.get("message", ""))
-    if j.get("status") == "error" and ("olusturulamadi" in msg or "diye bir element yok" in msg):
+    if j.get("status") == "error" and ("unable to create element" in msg or "was not found, its plugin" in msg):
         libs = missing_library(ctx, entry["plugin"])
-        text = f"{msg}" + (f" | eksik kütüphane: {libs}" if libs else "") + (f" | stderr: {tail(r.err, 300)}" if r.err.strip() else "")
+        text = f"{msg}" + (f" | missing library: {libs}" if libs else "") + (f" | stderr: {tail(r.err, 300)}" if r.err.strip() else "")
         return finish(C_NOCREATE, text, conf)
 
     # ---- 3. property defaults written back
@@ -331,9 +329,9 @@ def test_factory(ctx, factory, entry, lib):
             if not used or not (set(used) - skip):
                 break
             skip |= set(used)
-    reason = first[0] if first else "besleme kurulamadı"
+    reason = first[0] if first else "no feed could be built"
     if tried:
-        reason += " (denenen besleme: " + "; ".join(dict.fromkeys(tried)) + ")"
+        reason += " (feeds tried: " + "; ".join(dict.fromkeys(tried)) + ")"
     return finish(C_NOFEED, reason, first[1] if first else "")
 
 
@@ -369,7 +367,7 @@ def prop_step(ctx, rec, info, factory, confdir):
         if died:
             rec["findings"].append({"kind": "props-tool", "conf": conf, "detail": f"all defaults at once: {short(r)['cmd']} " +
                                     (f"signal {r.signal}" if r.signal else "hung") + "; the properties are tried one by one"})
-        if died or ((r.json or {}).get("status") == "error" and " gecersiz (" in m):
+        if died or ((r.json or {}).get("status") == "error" and " is not valid, " in m):
             for p in testable:
                 r1, conf1 = attempt([p], re.sub(r"[^A-Za-z0-9_]", "_", p["name"]))
                 j1 = r1.json or {}
@@ -377,10 +375,10 @@ def prop_step(ctx, rec, info, factory, confdir):
                     result["rejected"].append({"name": p["name"], "kind": p["kind"], "text": p["default"], "conf": conf1,
                                                "reason": "tool " + (f"signal {r1.signal}" if r1.signal else "hung") +
                                                          " when this default is written"})
-                elif j1.get("status") == "error" and " gecersiz (" in str(j1.get("message", "")):
+                elif j1.get("status") == "error" and " is not valid, " in str(j1.get("message", "")):
                     reason = str(j1["message"])
                     result["rejected"].append({"name": p["name"], "kind": p["kind"], "text": p["default"],
-                                               "reason": reason[reason.index(" gecersiz (") + 1:], "conf": conf1})
+                                               "reason": reason[reason.index(" is not valid, ") + 1:], "conf": conf1})
     for rej in result["rejected"]:
         rec["findings"].append({"kind": "property-default-crash" if rej["reason"].startswith("tool ") else "property-default-rejected",
                                 "conf": rej.get("conf", ""), "detail": f"{rej['name']} ({rej['kind']}) = {rej['text']!r}: {rej['reason']}"})
@@ -451,7 +449,7 @@ def plan_step(ctx, rec, info, factory, lib, confdir, finish, broke, prefer=None,
         j = r.json
         if j is None:
             rec["findings"].append({"kind": "update-json", "detail": r.json_problem})
-            return finish(C_SETUP, f"gps-update JSON üretmedi (çıkış kodu {r.rc}): {r.json_problem} | stderr: {tail(r.err, 160)}", conf)
+            return finish(C_SETUP, f"gps-update printed no JSON (exit code {r.rc}): {r.json_problem} | stderr: {tail(r.err, 160)}", conf)
         rec["padsSeen"] = pads_of(j)
         if rnd == 0:
             request_findings(rec, info, j)
@@ -477,13 +475,13 @@ def request_findings(rec, info, j):
         ok = any(p["isSrc"] and p["template"] == t["name"] and p["element"] == "dut" for p in j["pads"])
         if j["status"] == "ok" and not ok:
             rec["findings"].append({"kind": "request-src", "detail": f"template {t['name']}: no src pad appeared although requestSrc=1"})
-        rec.setdefault("requestSrc", {})[t["name"]] = "ok" if ok else ("belirsiz: " + j["status"] if j["status"] != "ok" else "pad yok")
+        rec.setdefault("requestSrc", {})[t["name"]] = "ok" if ok else ("unclear: " + j["status"] if j["status"] != "ok" else "no pad")
     tmpl = rec.get("requestSinkTemplate")
     if tmpl:
         ok = any((not p["isSrc"]) and p["template"] == tmpl and p["linked"] and p["element"] == "dut" for p in j["pads"])
         if j["status"] == "ok" and not ok:
             rec["findings"].append({"kind": "request-sink", "detail": f"template {tmpl}: no linked sink pad in the report"})
-        rec["requestSink"] = {tmpl: "ok" if ok else ("belirsiz: " + j["status"] if j["status"] != "ok" else "bağlı pad yok")}
+        rec["requestSink"] = {tmpl: "ok" if ok else ("unclear: " + j["status"] if j["status"] != "ok" else "no linked pad")}
 
 
 NEGOTIATION = re.compile(r"not-negotiated|not negotiated|negotiat|no common|could not link|incompatible", re.I)
@@ -496,29 +494,29 @@ def decide(ctx, rec, info, factory, plan, j, r, conf, finish, broke):
     err_elem = j.get("errorElement", "")
     if status == "error":
         if re.match(r"^f\d+_\d+$", err_elem) or re.match(r"^f\d+_\d+:", message):
-            return finish(C_NOFEED, f"besleme zinciri hata verdi ({err_elem}): {message}", conf)
+            return finish(C_NOFEED, f"the feed chain stopped ({err_elem}): {message}", conf)
         if rec["feed"] and NEGOTIATION.search(message):
-            return finish(C_NOFEED, f"uyuşmayan besleme olabilir: {message}", conf)
+            return finish(C_NOFEED, f"the feed may not fit: {message}", conf)
         return finish(C_SETUP, message, conf)
     if status == "timeout":
         if feed_refusal:
-            return finish(C_NOFEED, "besleme bağlantısı reddedildi: " + "; ".join(feed_refusal)[:400], conf)
-        return finish(C_HANG, message + (" | reddedilen: " + "; ".join(refused)[:300] if refused else ""), conf)
+            return finish(C_NOFEED, "the feed link was refused: " + "; ".join(feed_refusal)[:400], conf)
+        return finish(C_HANG, message + (" | refused: " + "; ".join(refused)[:300] if refused else ""), conf)
     if status == "pad-missing":
-        return finish(C_PART, f"pad-missing: {message} | eksik: {j.get('missing')}", conf)
+        return finish(C_PART, f"pad-missing: {message} | missing: {j.get('missing')}", conf)
     if feed_refusal:
-        return finish(C_NOFEED, "besleme bağlantısı reddedildi: " + "; ".join(feed_refusal)[:400], conf)
+        return finish(C_NOFEED, "the feed link was refused: " + "; ".join(feed_refusal)[:400], conf)
     if not j.get("complete"):
-        left = [f"{p['element']}.{p['identity']}" + (" (bilinmeyen veri)" if p["unknownData"] else "")
+        left = [f"{p['element']}.{p['identity']}" + (" (unknown data)" if p["unknownData"] else "")
                 for p in j["pads"] if p["isSrc"] and (not p["linked"] or p["unknownData"])]
         parts = []
         if left:
-            parts.append("boşta/bilinmeyen pad: " + ", ".join(left[:8]))
+            parts.append("free or unknown-data pads: " + ", ".join(left[:8]))
         if j.get("missing"):
-            parts.append("oluşmayan: " + ", ".join(j["missing"][:5]))
+            parts.append("never appeared: " + ", ".join(j["missing"][:5]))
         if refused:
-            parts.append("reddedilen: " + "; ".join(refused)[:300])
-        return finish(C_PART, "; ".join(parts) or "güncelleme tamamlanmadı (complete=false)", conf)
+            parts.append("refused: " + "; ".join(refused)[:300])
+        return finish(C_PART, "; ".join(parts) or "the update did not complete (complete=false)", conf)
 
     # complete: really run it
     t0 = time.monotonic()
@@ -530,17 +528,17 @@ def decide(ctx, rec, info, factory, plan, j, r, conf, finish, broke):
     jr = rr.json
     if jr is None:
         rec["findings"].append({"kind": "run-json", "detail": rr.json_problem})
-        return finish(C_SETUP, "gps-run JSON üretmedi: " + rr.json_problem, conf)
+        return finish(C_SETUP, "gps-run printed no JSON: " + rr.json_problem, conf)
     st = jr.get("status")
     if st == "eos":
-        return finish(C_OK, f"güncelleme tamam, çalıştırma EOS ile bitti ({jr.get('ms', 0):.0f} ms)", conf)
+        return finish(C_OK, f"update ok, the run ended with EOS ({jr.get('ms', 0):.0f} ms)", conf)
     if st == "timeout":
         if info["isSource"]:
-            return finish(C_OK, f"güncelleme tamam, çalıştırma {RUN_MS} ms boyunca hatasız aktı (kaynak EOS vermiyor)", conf)
-        return finish(C_PART, f"güncelleme tamam ama çalıştırmada {RUN_MS} ms içinde EOS gelmedi: {jr.get('message', '')}", conf)
+            return finish(C_OK, f"update ok, the run flowed cleanly for {RUN_MS} ms (a source gives no EOS)", conf)
+        return finish(C_PART, f"update ok, but no EOS came within {RUN_MS} ms of running: {jr.get('message', '')}", conf)
     if st == "error":
-        return finish(C_SETUP, "çalıştırma hatası: " + str(jr.get("message", "")), conf)
-    return finish(C_PART, f"gps-run durumu {st}: {jr.get('message', '')}", conf)
+        return finish(C_SETUP, "the run stopped: " + str(jr.get("message", "")), conf)
+    return finish(C_PART, f"gps-run ended with status {st}: {jr.get('message', '')}", conf)
 
 
 def inspect_failed_record(ctx, entry, ins):
@@ -557,7 +555,7 @@ def inspect_failed_record(ctx, entry, ins):
     else:
         libs = missing_library(Ctx(ctx.bin_dir, ctx.work, slot=0), entry["plugin"])
         rec["class"] = C_NOCREATE
-        rec["reason"] = "gps-inspect element: " + text + (f" | eksik kütüphane: {libs}" if libs else "")
+        rec["reason"] = "gps-inspect element: " + text + (f" | missing library: {libs}" if libs else "")
     rec["findings"].append({"kind": "inspect", "detail": text})
     return rec
 

@@ -1,18 +1,30 @@
 // gps-inspect – element information from the registry as JSON (SPEC 7).
-//   gps-inspect list | element <factory> | compatible [--caps "<caps>"] | caps "<caps>"
+//   gps-inspect version | list | element <factory> | compatible [--caps "<caps>"] | caps "<caps>"
 #include "common.h"
 #include "inspector.h"
 #include "json.h"
 
 int main(int argc, char** argv) {
     gps::Output out;
-    if (!gps::initGst(&argc, &argv)) return 2;
+    bool asksVersion = argc == 2 && std::string(argv[1]) == "version";
+    std::string why;
+    if (!gps::initGst(&argc, &argv, &why)) {
+        if (!asksVersion) return 2;
+        gps::JsonWriter w;  // the GUI asks "version" first: a broken GStreamer is answered, not left silent
+        w.beginObject().field("error", "GStreamer cannot start: " + why + ". Check that GStreamer is installed.").end();
+        out.json(w.str());
+        return 1;
+    }
     std::vector<std::string> args(argv + 1, argv + argc);
-    if (args.empty()) return gps::usageError(out, "gps-inspect list | element <factory> | compatible [--caps <caps>] | caps <caps>");
+    if (args.empty()) return gps::usageError(out, "gps-inspect version | list | element <factory> | compatible [--caps <caps>] | caps <caps>");
     const std::string& command = args[0];
 
     if (command == "list" && args.size() == 1) {
         out.json(gps::listJson(gps::listFactories()));
+        return 0;
+    }
+    if (command == "version" && args.size() == 1) {
+        out.json(gps::versionJson(gps::listFactories()));
         return 0;
     }
     if (command == "element" && args.size() == 2) {
@@ -46,5 +58,5 @@ int main(int argc, char** argv) {
         out.json(gps::capsJson(ok, ok ? text : error, structures));
         return 0;
     }
-    return gps::usageError(out, "bilinmeyen komut veya eksik arguman: " + command);
+    return gps::usageError(out, "unknown command or missing argument: " + command);
 }

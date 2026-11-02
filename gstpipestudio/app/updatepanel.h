@@ -1,10 +1,11 @@
-// updatepanel.h – the Güncelleme tab: status of the last update, the error, the pads table, missing and refused lists.
+// updatepanel.h – the Validation tab: status of the last update, the error, the pads table, missing and refused lists.
 #pragma once
 
 #include <QWidget>
 
 class Controller;
 class QLabel;
+class QPushButton;
 class QTableWidget;
 
 class UpdatePanel : public QWidget {
@@ -23,4 +24,5 @@ private:
     QLabel* message_;
     QLabel* lists_;
     QTableWidget* table_;
+    QPushButton* support_;
 };

@@ -171,18 +171,17 @@ def s4b():
 
 
 def s4c():
-    # KNOWN ISSUE of the engine: the second Request src pad of nvstreamdemux freezes gps-update (see report/DEEPSTREAM.md).
-    # The check only records what happens; it passes either way and says FIXED when the engine learns to skip existing pad names.
-    print("-- s4c: nvstreamdemux with TWO outputs (known engine issue: the tool hangs)")
+    print("-- s4c: nvstreamdemux with TWO outputs (the second numbered Request pad must not ask for an existing name)")
     n = "s4c"
-    code, obj, err, wall = tool("gps-update", plan_path("s4c_demux_two_outputs.conf"), "--timeout-ms", "5000", timeout=25)
-    if code is None:
-        print(f"KNOWN-ISSUE s4c: gps-update did not return in 25 s (killed). Same as documented.")
-        results.append({"scenario": n, "tool": "gps-update", "status": "hang (known engine issue)", "wall_ms": round(wall), "pads": []})
-    else:
-        print(f"FIXED? s4c: gps-update returned: {obj and obj['status']}. Update tests/deepstream and the report.")
-        results.append({"scenario": n, "tool": "gps-update", "status": (obj or {}).get("status", "?") + " (FIXED?)", "wall_ms": round(wall), "pads": []})
-        check(obj is not None and obj["status"] == "ok" and obj["complete"], "s4c: the engine now returns; the plan must then be ok and complete")
+    u = update_plan(n, plan_path("s4c_demux_two_outputs.conf"), timeout_ms=10000)
+    if u:
+        names = sorted(p["pad"] for p in u["pads"] if p["element"] == "nvstreamdemux_1" and p["isSrc"])
+        check_eq(names, ["src_0", "src_1"], "s4c: the demux made two src pads, each with its own number")
+    caps_ok(n, u, "nvstreamdemux_1", "src_0", must=(NVMM, "width=(int)640"))
+    caps_ok(n, u, "nvstreamdemux_1", "src_1", must=(NVMM, "width=(int)640"))
+    caps_ok(n, u, "fakesink_1", "sink", must=(NVMM,))
+    caps_ok(n, u, "fakesink_2", "sink", must=(NVMM,))
+    run_plan(n, plan_path("s4c_demux_two_outputs.conf"))
 
 
 def s5():
@@ -200,7 +199,7 @@ def s5():
     u = update_plan(n, plan_path("s5n_nvmm_on_raw_refused.conf"), timeout_ms=3000, expect_ok=False)
     if u:
         check(len(u["refused"]) == 1, f"s5n: one refused link: {u['refused']}")
-        check(u["refused"] and "uyusmuyor" in u["refused"][0], "s5n: the refusal says the caps do not match")
+        check(u["refused"] and "do not fit" in u["refused"][0], "s5n: the refusal says the caps do not match")
         check(not u["complete"], "s5n: not complete")
         check(u["status"] != "ok" or u["refused"], "s5n: not a silent ok")
     code, obj, err = run_plan(n, plan_path("s5n_nvmm_on_raw_refused.conf"), expect="refused")
@@ -276,7 +275,7 @@ def s6():
     check(obj is not None and "width" in obj["message"], f"s6: the error names the parameter: {obj and obj['message']!r}")
     check_eq(code, 1, "s6: exit code for a bad value")
     code, obj, err = run_plan(n + "-neg", plan, "width=-5", expect="error")
-    check(obj is not None and "negatif" in obj["message"], f"s6: negative on an unsigned property is refused: {obj and obj['message']!r}")
+    check(obj is not None and "negative" in obj["message"], f"s6: negative on an unsigned property is refused: {obj and obj['message']!r}")
     code, out, err = tool("gps-run", plan, "bogus=1", timeout=60)[0:3]
     check_eq(code, 2, "s6: unknown parameter is a usage error (2)")
 
@@ -330,16 +329,16 @@ def write_reports():
     os.makedirs(OUT, exist_ok=True)
     with open(os.path.join(OUT, f"deepstream-{GROUP}.json"), "w") as f:
         json.dump(results, f, indent=1)
-    lines = [f"<!-- deepstream-{GROUP}: uretildi, elle degistirme -->"]
+    lines = [f"<!-- deepstream-{GROUP}: generated, do not edit by hand -->"]
     for r in results:
-        lines.append(f"\n#### {r['scenario']} - `{r['tool']}`: {r['status']}, {r.get('ms', '-')} ms (toplam {r['wall_ms']} ms)")
+        lines.append(f"\n#### {r['scenario']} - `{r['tool']}`: {r['status']}, {r.get('ms', '-')} ms (total {r['wall_ms']} ms)")
         if r.get("message"):
-            lines.append(f"\nMesaj: `{r['message'][:300]}`")
+            lines.append(f"\nMessage: `{r['message'][:300]}`")
         if r.get("pads"):
-            lines += ["", "| pad | yon | bagli | caps |", "|---|---|---|---|"]
+            lines += ["", "| pad | direction | linked | caps |", "|---|---|---|---|"]
             for p in r["pads"]:
                 caps = p["caps"].replace("|", "\\|") or "-"
-                lines.append(f"| {p['element']}.{p['pad']} | {p['dir']} | {'evet' if p['linked'] else 'hayir'}{' (gecici uc)' if p['temporaryEnd'] else ''} | `{caps}` |")
+                lines.append(f"| {p['element']}.{p['pad']} | {p['dir']} | {'yes' if p['linked'] else 'no'}{' (temporary end)' if p['temporaryEnd'] else ''} | `{caps}` |")
     with open(os.path.join(OUT, f"deepstream-{GROUP}.md"), "w") as f:
         f.write("\n".join(lines) + "\n")
 

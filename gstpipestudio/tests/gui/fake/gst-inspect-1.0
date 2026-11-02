@@ -1,0 +1,13 @@
+#!/usr/bin/env python3
+"""Fake gst-inspect-1.0 for the first-run check. GPS_FAKE_NO_GST=1: not installed (exit 127);
+otherwise it prints the version of GPS_FAKE_GST_VERSION (default 1.20.3) like the real tool."""
+import os
+import sys
+
+if os.environ.get("GPS_FAKE_NO_GST"):
+    print("gst-inspect-1.0: command not found", file=sys.stderr)
+    sys.exit(127)
+version = os.environ.get("GPS_FAKE_GST_VERSION", "1.20.3")
+print("gst-inspect-1.0 version " + version)
+print("GStreamer " + version)
+print("https://launchpad.net/distros/ubuntu/+source/gstreamer1.0")

@@ -12,6 +12,8 @@ namespace gps {
 
 // The single deliberate exception to "no element specific code" (SPEC 4.4).
 inline constexpr const char* kQueueFactory = "queue";
+inline constexpr const char* kQueueSinkPad = "sink";  // the queue's pad names belong to the same exception
+inline constexpr const char* kQueueSrcPad = "src";
 
 // What the rules need to know about a factory. The caller supplies it:
 // the GUI from gps-inspect, the engine from the registry.
@@ -83,9 +85,9 @@ public:
 
     // ---- additions
     std::string addSource(const std::string& factory, const Props& props = {}, double x = 0, double y = 0);
-    // New element behind a free src pad. Refused ("" ) when the pad is taken.
+    // New element behind a free src pad, stored at (x, y). Refused ("" ) when the pad is taken.
     std::string addAfter(const std::string& srcElement, const std::string& srcPad, const std::string& factory,
-                         const std::string& sinkPad, const Props& props = {});
+                         const std::string& sinkPad, const Props& props = {}, double x = 0, double y = 0);
     // Free src pad to a free Always sink pad or a new Request pad of an element already in the plan.
     bool linkExisting(const std::string& srcElement, const std::string& srcPad, const std::string& sinkElement,
                       const std::string& sinkPad, const std::string& caps = "", const Props& sinkPadProps = {});

@@ -64,7 +64,7 @@ bool sameValue(const PropertyInfo& info, const QString& a, const QString& b) {
 bool PropertyEditor::editable(const PropertyInfo& info) {
     static const QStringList kinds = {"boolean", "int", "uint", "int64", "uint64", "float", "double",
                                       "string",  "enum", "flags", "caps", "fraction"};
-    return info.writable && kinds.contains(info.kind) && info.name != "name";
+    return info.writable && kinds.contains(info.kind);
 }
 
 PropertyEditor::PropertyEditor(const PropertyInfo& info, const std::optional<QString>& current, QWidget* parent)

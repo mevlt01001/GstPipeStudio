@@ -3,13 +3,11 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDoubleSpinBox>
-#include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
 #include <QPainter>
-#include <QProgressBar>
 #include <QPushButton>
 #include <QScrollBar>
 #include <QSignalSpy>
@@ -20,8 +18,9 @@
 
 #include "canvasscene.h"
 #include "canvasview.h"
-#include "capsdialog.h"
+#include "capspage.h"
 #include "confirmdialog.h"
+#include "drawer.h"
 #include "elementitem.h"
 #include "factorydelegate.h"
 #include "flows.h"
@@ -29,9 +28,8 @@
 #include "logpanel.h"
 #include "mainwindow.h"
 #include "paditem.h"
-#include "pickerdialog.h"
-#include "propertydialog.h"
-#include "sourcepanel.h"
+#include "pickerpage.h"
+#include "propertypage.h"
 #include "testsupport.h"
 #include "theme.h"
 #include "updatepanel.h"
@@ -55,7 +53,15 @@ T* shown(QWidget* parent) {
     return found;
 }
 
-void press(QDialog* dialog, const char* buttonName) {
+// The page of the drawer on top, once it is there.
+template <class T>
+T* pageOf(MainWindow& w, int ms = 8000) {
+    T* found = nullptr;
+    (void)QTest::qWaitFor([&] { return (found = w.drawer()->page<T>()) != nullptr; }, ms);
+    return found;
+}
+
+void press(QWidget* dialog, const char* buttonName) {
     auto* button = dialog->findChild<QPushButton*>(buttonName);
     QVERIFY2(button, buttonName);
     QTest::mouseClick(button, Qt::LeftButton);
@@ -81,20 +87,21 @@ QPoint viewPoint(CanvasView* view, const QPointF& scenePoint) { return view->map
 
 QString text(const std::string& s) { return QString::fromStdString(s); }
 
-PropertyDialogInput inputFor(const ElementInfo* info) {
-    PropertyDialogInput in;
+PropertyPageInput inputFor(const ElementInfo* info) {
+    PropertyPageInput in;
     in.info = *info;
-    in.title = "test";
     return in;
 }
 
 template <class W>
-W* in(QDialog& dialog, const QString& objectName) {
-    auto* row = dialog.findChild<QWidget*>(objectName);
+W* in(QWidget& page, const QString& objectName) {
+    auto* row = page.findChild<QWidget*>(objectName);
     return row ? row->findChild<W*>() : nullptr;
 }
 
 }  // namespace
+
+Q_DECLARE_METATYPE(PickerChoice)
 
 class WidgetsTest : public QObject {
     Q_OBJECT
@@ -111,7 +118,10 @@ class WidgetsTest : public QObject {
     }
 
 private slots:
-    void initTestCase() { Theme::apply(*qApp); }  // widgets are tested the way they look
+    void initTestCase() {
+        isolateSettings();
+        Theme::apply(*qApp);  // widgets are tested the way they look
+    }
     void init() { c = makeController(); }
     void cleanup() { c.reset(); }
 
@@ -124,7 +134,7 @@ private slots:
         QCOMPARE(Theme::text().name(), QString("#e8e8e8"));
         QCOMPARE(Theme::accent().name(), QString("#76b900"));
         QCOMPARE(Theme::accentHover().name(), QString("#8ed000"));
-        QCOMPARE(Theme::error().name(), QString("#e5484d"));
+        QCOMPARE(Theme::error().name(), QString("#ff6369"));  // light enough for 4.5:1 text on every surface
         QCOMPARE(Theme::warning().name(), QString("#f5a524"));
         QVERIFY(Theme::styleSheet().contains("#76b900"));
         QVERIFY(!Theme::styleSheet().contains("@"));  // every token was replaced
@@ -132,11 +142,11 @@ private slots:
         QCOMPARE(QApplication::font().pointSize(), 10);
     }
 
-    // ---- PropertyDialog
+    // ---- PropertyPage
 
-    void propertyDialogMakesTheRightEditor() {
+    void propertyPageMakesTheRightEditor() {
         const ElementInfo* info = need(*c, "propdemo");
-        PropertyDialog d(inputFor(info));
+        PropertyPage d(inputFor(info));
         QVERIFY(in<QCheckBox>(d, "editor_p-bool"));
         auto* spin = in<QSpinBox>(d, "editor_p-int");
         QVERIFY(spin);
@@ -166,23 +176,22 @@ private slots:
         QVERIFY(in<QLineEdit>(d, "editor_p-fraction")->validator());
         QCOMPARE(in<QLineEdit>(d, "editor_p-string")->text(), QString("hello"));
 
-        // Read-only, object-like and the Plan's own `name` are not offered; deprecated ones are dimmed.
+        // Read-only and object-like properties are not offered; deprecated ones are dimmed.
+        // (gps-inspect never lists GstObject's name and parent, so the GUI has no rule for them.)
         QVERIFY(!d.findChild<QWidget*>("row_p-readonly"));
         QVERIFY(!d.findChild<QWidget*>("row_p-object"));
-        QVERIFY(!d.findChild<QWidget*>("row_name"));
-        QVERIFY(!d.findChild<QWidget*>("row_parent"));
         QWidget* old = d.findChild<QWidget*>("row_p-old");
         QVERIFY(old);
-        QVERIFY(old->findChild<QLabel*>()->text().contains("(eski)"));
+        QVERIFY(old->findChild<QLabel*>()->text().contains("(deprecated)"));
         QVERIFY(old->findChild<QLabel*>()->styleSheet().contains(Theme::muted().name()));
-        QVERIFY(!d.findChild<QWidget*>("row_p-int")->findChild<QLabel*>()->text().contains("(eski)"));
+        QVERIFY(!d.findChild<QWidget*>("row_p-int")->findChild<QLabel*>()->text().contains("(deprecated)"));
     }
 
-    void propertyDialogReturnsOnlyWhatChanged() {
+    void propertyPageReturnsOnlyWhatChanged() {
         const ElementInfo* info = need(*c, "propdemo");
-        PropertyDialogInput input = inputFor(info);
+        PropertyPageInput input = inputFor(info);
         input.props = {{"fake-unknown", "keep-me"}};
-        PropertyDialog d(input);
+        PropertyPage d(input);
         d.show();
         QVERIFY(d.edit().props.size() == 1);  // untouched: only the entry no editor knows
 
@@ -199,8 +208,9 @@ private slots:
         QTest::keyClicks(in<QLineEdit>(d, "editor_p-int64"), "-5");
         QTest::keyClicks(in<QLineEdit>(d, "editor_p-fraction"), "x");  // rejected by the validator
         d.findChild<QCheckBox*>("expose_p-int")->click();
+        QSignalSpy confirmed(&d, &PropertyPage::confirmed);
         press(&d, "saveButton");
-        QCOMPARE(d.result(), int(QDialog::Accepted));
+        QCOMPARE(confirmed.count(), 1);
 
         ElementEdit e = d.edit();
         QCOMPARE(e.props.at("p-int"), std::string("42"));
@@ -222,12 +232,12 @@ private slots:
         QVERIFY(back.find("p-int") == back.end());
     }
 
-    void propertyDialogStartsFromThePlansValues() {
+    void propertyPageStartsFromThePlansValues() {
         const ElementInfo* info = need(*c, "propdemo");
-        PropertyDialogInput input = inputFor(info);
+        PropertyPageInput input = inputFor(info);
         input.props = {{"p-int", "77"}, {"p-enum", "3"}, {"p-flags", "b+c"}, {"p-bool", "true"}};
         input.exposed = {"p-string"};
-        PropertyDialog d(input);
+        PropertyPage d(input);
         QCOMPARE(in<QSpinBox>(d, "editor_p-int")->value(), 77);
         QCOMPARE(in<QComboBox>(d, "editor_p-enum")->currentData().toString(), QString("three"));  // number -> nick
         QVERIFY(in<QCheckBox>(d, "editor_p-bool")->isChecked());
@@ -239,8 +249,8 @@ private slots:
         QCOMPARE(d.edit().exposed, std::vector<std::string>{"p-string"});
     }
 
-    void propertyDialogSearchHidesRows() {
-        PropertyDialog d(inputFor(need(*c, "propdemo")));
+    void propertyPageSearchHidesRows() {
+        PropertyPage d(inputFor(need(*c, "propdemo")));
         d.show();
         auto* search = d.findChild<QLineEdit*>("searchBox");
         QTest::keyClicks(search, "frac");
@@ -252,26 +262,26 @@ private slots:
         QVERIFY(!d.findChild<QWidget*>("row_p-fraction")->isVisible());
     }
 
-    void propertyDialogCancelChangesNothing() {
-        PropertyDialog d(inputFor(need(*c, "propdemo")));
+    void propertyPageCancelChangesNothing() {
+        PropertyPage d(inputFor(need(*c, "propdemo")));
         d.show();
         in<QSpinBox>(d, "editor_p-int")->setValue(50);
+        QSignalSpy cancelled(&d, &DrawerPage::cancelled);
         press(&d, "cancelButton");
-        QCOMPARE(d.result(), int(QDialog::Rejected));
-        QVERIFY(!d.isVisible());
+        QCOMPARE(cancelled.count(), 1);
     }
 
-    void propertyDialogRequestSrcPads() {
+    void propertyPageRequestSrcPads() {
         const ElementInfo* tee = need(*c, "tee");
-        PropertyDialogInput input = inputFor(tee);
+        PropertyPageInput input = inputFor(tee);
         input.requestSrc = gps::defaultRequestSrc({{"src_%u", "request"}});  // a new tee: one pad
-        PropertyDialog fresh(input);
+        PropertyPage fresh(input);
         QCOMPARE(fresh.findChild<QSpinBox*>("padCount_src_%u")->value(), 1);
         QCOMPARE(fresh.findChild<QSpinBox*>("padCount_src_%u")->minimum(), 0);
 
         input.requestSrc = {{"src_%u", 3}};
         input.linkedSrc = {{"src_%u", 2}};
-        PropertyDialog d(input);
+        PropertyPage d(input);
         auto* pads = d.findChild<QSpinBox*>("padCount_src_%u");
         QCOMPARE(pads->value(), 3);
         QCOMPARE(pads->minimum(), 2);  // cannot go below the linked pads
@@ -279,45 +289,47 @@ private slots:
         QCOMPARE(d.edit().requestSrc.at("src_%u"), 4);
 
         // An element with only Always pads has no such section.
-        PropertyDialog plain(inputFor(need(*c, "queue")));
+        PropertyPage plain(inputFor(need(*c, "queue")));
         QVERIFY(plain.findChildren<QSpinBox*>().isEmpty());
     }
 
-    // ---- CapsDialog
+    // ---- CapsPage
 
     void capsTextRoundTrips() {
         for (const char* t : {"video/x-raw", "video/x-raw, width=(int)640",
                               "video/x-raw(memory:NVMM), format=(string)NV12, framerate=(fraction)30/1",
-                              "audio/x-raw, layout=(string)\"a b, c\", rate=(gint64)44100, ok=(boolean)true"}) {
+                              "audio/x-raw, layout=(string)\"a\\ b,\\ c\", rate=(gint64)44100, ok=(boolean)true"}) {
             QString original = QString::fromUtf8(t);
             QCOMPARE(QString::fromStdString(parseCapsChoice(original).toText()), original);
         }
+        // The older spelling, with plain spaces inside the quotes, reads as the same value and is written back escaped.
+        QCOMPARE(parseCapsChoice("audio/x-raw, layout=(string)\"a b, c\"").toText(),
+                 std::string("audio/x-raw, layout=(string)\"a\\ b,\\ c\""));
         QVERIFY(parseCapsChoice("").media.empty());
         QCOMPARE(parseCapsChoice("video/x-raw(memory:NVMM, memory:DMABuf)").features.size(), size_t(2));
     }
 
-    void capsDialogBuildsTheChoice() {
-        CapsDialogInput input;
-        input.title = "Caps düzenle";
+    void capsPageBuildsTheChoice() {
+        CapsPageInput input;
         const ElementInfo* src = need(*c, "videotestsrc");
         input.allowed = src->padTemplate("src", "src")->structures;
-        CapsDialog d(input);
+        CapsPage d(input);
         d.show();
-        QCOMPARE(d.caps(), QString());  // Otomatik
+        QCOMPARE(d.caps(), QString());  // Auto
         auto* media = d.findChild<QComboBox*>("mediaCombo");
         QCOMPARE(media->count(), 2);
         QCOMPARE(media->itemText(1), QString("video/x-raw"));
         media->setCurrentIndex(1);
-        QCOMPARE(d.caps(), QString("video/x-raw"));  // every field still Otomatik
+        QCOMPARE(d.caps(), QString("video/x-raw"));  // every field still Auto
 
-        // list -> combo box with Otomatik first
+        // list -> combo box with Auto first
         auto* format = d.findChild<QWidget*>("field_format")->findChild<QComboBox*>();
-        QCOMPARE(format->itemText(0), QString("Otomatik"));
+        QCOMPARE(format->itemText(0), QString("Auto"));
         QCOMPARE(format->count(), 4);
         format->setCurrentIndex(2);
         QCOMPARE(d.caps(), QString("video/x-raw, format=(string)NV12"));
 
-        // range -> number box, active once "Sabitle" is ticked
+        // range -> number box, active once "Pin" is ticked
         QWidget* width = d.findChild<QWidget*>("field_width");
         auto* pin = width->findChild<QCheckBox*>();
         auto* number = width->findChild<QSpinBox*>();
@@ -330,17 +342,17 @@ private slots:
         rate->findChild<QCheckBox*>()->click();
         rate->findChild<QLineEdit*>()->setText("15/1");
         QCOMPARE(d.caps(), QString("video/x-raw, format=(string)NV12, width=(int)640, framerate=(fraction)15/1"));
-        pin->click();  // unticked: Otomatik again
+        pin->click();  // unticked: Auto again
         QCOMPARE(d.caps(), QString("video/x-raw, format=(string)NV12, framerate=(fraction)15/1"));
         media->setCurrentIndex(0);
         QCOMPARE(d.caps(), QString());
     }
 
-    void capsDialogFixedFieldsAndFeatures() {
+    void capsPageFixedFieldsAndFeatures() {
         const ElementInfo* dec = need(*c, "jpegdec");
-        CapsDialogInput input;
+        CapsPageInput input;
         input.allowed = dec->padTemplate("sink", "sink")->structures;
-        CapsDialog d(input);
+        CapsPage d(input);
         d.findChild<QComboBox*>("mediaCombo")->setCurrentIndex(1);
         QWidget* parsed = d.findChild<QWidget*>("field_parsed");
         QVERIFY(parsed->findChild<QLabel*>());  // fixed: shown as a label
@@ -349,22 +361,22 @@ private slots:
         QCOMPARE(d.caps(), QString("image/jpeg, parsed=(boolean)true"));
 
         const ElementInfo* nv = need(*c, "nvvideoconvert");
-        CapsDialogInput nvInput;
+        CapsPageInput nvInput;
         nvInput.allowed = nv->padTemplate("src", "src")->structures;
-        CapsDialog n(nvInput);
+        CapsPage n(nvInput);
         auto* media = n.findChild<QComboBox*>("mediaCombo");
         QCOMPARE(media->itemText(1), QString("video/x-raw(memory:NVMM)"));
         media->setCurrentIndex(1);
         QCOMPARE(n.caps(), QString("video/x-raw(memory:NVMM)"));
     }
 
-    void capsDialogPadSettings() {
+    void capsPagePadSettings() {
         const ElementInfo* mixer = need(*c, "compositor");
-        CapsDialogInput input;
+        CapsPageInput input;
         input.allowed = mixer->padTemplate("src", "src")->structures;
         input.padProperties = mixer->padTemplate("sink_%u", "sink")->padProperties;
         input.padProps = {{"xpos", "100"}};
-        CapsDialog d(input);
+        CapsPage d(input);
         d.show();
         QVERIFY(d.findChild<QWidget*>("padSettings")->isVisible());
         QCOMPARE(d.findChild<QWidget*>("padEditor_xpos")->findChild<QSpinBox*>()->value(), 100);
@@ -373,44 +385,46 @@ private slots:
         QCOMPARE(d.padProps().at("ypos"), std::string("-20"));
 
         // No pad properties: the section is not there.
-        CapsDialogInput plain;
+        CapsPageInput plain;
         plain.allowed = input.allowed;
-        CapsDialog p(plain);
+        CapsPage p(plain);
         p.show();
         QVERIFY(!p.findChild<QWidget*>("padSettings")->isVisible());
     }
 
-    void capsDialogPrefillsAndHandlesNothingKnown() {
+    void capsPagePrefillsAndHandlesNothingKnown() {
         const ElementInfo* src = need(*c, "videotestsrc");
-        CapsDialogInput input;
+        CapsPageInput input;
         input.allowed = src->padTemplate("src", "src")->structures;
         input.current = "video/x-raw, format=(string)RGBA, width=(int)800";
-        CapsDialog d(input);
+        CapsPage d(input);
         QCOMPARE(d.findChild<QComboBox*>("mediaCombo")->currentIndex(), 1);
         QCOMPARE(d.caps(), QString("video/x-raw, format=(string)RGBA, width=(int)800"));
 
-        CapsDialogInput empty;  // an update gave no structures
-        CapsDialog e(empty);
+        CapsPageInput empty;  // an update gave no structures
+        CapsPage e(empty);
         e.show();
         QCOMPARE(e.findChild<QComboBox*>("mediaCombo")->count(), 1);
         QCOMPARE(e.caps(), QString());
+        QSignalSpy applied(&e, &CapsPage::applied);
         press(&e, "saveButton");
-        QCOMPARE(e.result(), int(QDialog::Accepted));
+        QCOMPARE(applied.count(), 1);
     }
 
-    // ---- PickerDialog and ConfirmDialog
+    // ---- PickerPage and ConfirmDialog
 
     void pickerRanksAndSearches() {
         PickerData data;
-        data.title = "Seçici";
         data.existing = {{"mix_1", "compositor", "sink_%u", true}, {"over_2", "textoverlay", "video_sink", false}};
         data.compatible = {"jpegdec", "videoconvert"};
         for (const ListEntry& e : c->catalog()) {
             if (!e.isSource) data.candidates << e;
         }
-        PickerDialog d(data);
-        d.show();
-        auto* list = d.findChild<QListWidget*>("pickerList");
+        Drawer drawer;  // Enter and Esc are the drawer's
+        drawer.show();
+        auto* d = new PickerPage(data);
+        drawer.present(d, "Add after x · src", "video/x-raw", Drawer::Replace);
+        auto* list = d->findChild<QListWidget*>("pickerList");
         auto rows = [&] {
             QStringList out;
             for (int i = 0; i < list->count(); ++i) {
@@ -419,44 +433,47 @@ private slots:
             return out;
         };
         QStringList all = rows();
-        QCOMPARE(all[0], QString("Var olan elementler"));
+        QCOMPARE(all[0], QString("Elements in the pipeline"));
         QCOMPARE(all[1], QString("mix_1 · sink_%u"));
         QCOMPARE(list->item(1)->data(HintRole).toString(), QString("Request a pad"));
-        QCOMPARE(all[3], QString("Yeni element"));
+        QCOMPARE(all[3], QString("New element"));
         QCOMPARE(all[4], QString("jpegdec"));       // compatible first, in the helper's order
         QCOMPARE(all[5], QString("videoconvert"));
-        QCOMPARE(list->item(4)->data(HintRole).toString(), QString("uyumlu"));
+        QCOMPARE(list->item(4)->data(HintRole).toString(), QString("compatible"));
         QVERIFY(list->item(6)->data(HintRole).toString().isEmpty());
         QVERIFY(!all.contains("videotestsrc"));     // sources are never offered behind a pad
         // the rest by rank (256 first), then name
         QCOMPARE(all[6], QString("compositor"));
         QVERIFY(list->currentItem() == list->item(1));
 
-        auto* search = d.findChild<QLineEdit*>("searchBox");
+        auto* search = d->findChild<QLineEdit*>("searchBox");
+        QCOMPARE(search->window()->focusWidget(), search);  // first focus: the search box
         QTest::keyClicks(search, "tee");
-        QCOMPARE(rows(), QStringList({"Yeni element", "tee"}));  // the empty section header goes too
-        QCOMPARE(d.choice().kind, PickerChoice::NewElement);
-        QCOMPARE(d.choice().factory, QString("tee"));
+        QCOMPARE(rows(), QStringList({"New element", "tee"}));  // the empty section header goes too
+        QCOMPARE(d->choice().kind, PickerChoice::NewElement);
+        QCOMPARE(d->choice().factory, QString("tee"));
         search->clear();
         QTest::keyClicks(search, "request");
-        QCOMPARE(rows(), QStringList({"Var olan elementler", "mix_1 · sink_%u"}));
-        QCOMPARE(d.choice().kind, PickerChoice::Existing);
-        QCOMPARE(d.choice().existing.element, QString("mix_1"));
-        QVERIFY(d.choice().existing.request);
+        QCOMPARE(rows(), QStringList({"Elements in the pipeline", "mix_1 · sink_%u"}));
+        QCOMPARE(d->choice().kind, PickerChoice::Existing);
+        QCOMPARE(d->choice().existing.element, QString("mix_1"));
+        QVERIFY(d->choice().existing.request);
         search->clear();
         QTest::keyClicks(search, "zzzz");
         QVERIFY(rows().isEmpty());
-        QCOMPARE(d.choice().kind, PickerChoice::None);
+        QCOMPARE(d->choice().kind, PickerChoice::None);
 
         // Enter takes the best hit; Down moves on.
         search->clear();
         QTest::keyClicks(search, "con");
         QTest::keyClick(search, Qt::Key_Down);
-        QCOMPARE(d.choice().factory, QString("nvvideoconvert"));
+        QCOMPARE(d->choice().factory, QString("nvvideoconvert"));
         QTest::keyClick(search, Qt::Key_Up);
-        QCOMPARE(d.choice().factory, QString("videoconvert"));
+        QCOMPARE(d->choice().factory, QString("videoconvert"));
+        QSignalSpy picked(d, &PickerPage::picked);
         QTest::keyClick(search, Qt::Key_Return);
-        QCOMPARE(d.result(), int(QDialog::Accepted));
+        QCOMPARE(picked.count(), 1);
+        QCOMPARE(picked[0][0].value<PickerChoice>().factory, QString("videoconvert"));
     }
 
     void pickerDoubleClickAndCancel() {
@@ -465,28 +482,30 @@ private slots:
         for (const ListEntry& e : c->catalog()) {
             if (!e.isSource) data.candidates << e;
         }
-        PickerDialog d(data);
-        d.show();
-        press(&d, "cancelButton");
-        QCOMPARE(d.result(), int(QDialog::Rejected));
+        PickerPage first(data);
+        first.show();
+        QSignalSpy cancelled(&first, &DrawerPage::cancelled);
+        press(&first, "cancelButton");
+        QCOMPARE(cancelled.count(), 1);
 
-        PickerDialog second(data);
+        PickerPage second(data);
         second.show();
+        QSignalSpy picked(&second, &PickerPage::picked);
         auto* list = second.findChild<QListWidget*>("pickerList");
         QListWidgetItem* item = list->item(1);
         doubleClick(list->viewport(), list->visualItemRect(item).center());
-        QCOMPARE(second.result(), int(QDialog::Accepted));
+        QCOMPARE(picked.count(), 1);
         QCOMPARE(second.choice().factory, QString("queue"));
     }
 
     void confirmDialogDefaultsToTheSafeAnswer() {
-        ConfirmDialog d("Silinecekler", "Şu 2 element silinecek", {"a (x)", "b (y)"}, "Sil");
+        ConfirmDialog d("Remove elements", "These 2 elements will be removed, with 1 link", {"a (x)", "b (y)"}, "Delete 2 elements");
         d.show();
         QCOMPARE(d.findChild<QListWidget*>("removalList")->count(), 2);
         QVERIFY(d.findChild<QPushButton*>("cancelButton")->isDefault());
         QTest::keyClick(&d, Qt::Key_Return);
         QCOMPARE(d.result(), int(QDialog::Rejected));
-        ConfirmDialog e("Silinecekler", "x", {"a"}, "Sil");
+        ConfirmDialog e("Remove elements", "x", {"a"}, "Delete 1 element");
         e.show();
         press(&e, "saveButton");
         QCOMPARE(e.result(), int(QDialog::Accepted));
@@ -709,7 +728,7 @@ private slots:
         QVERIFY(view->zoom() <= 1.0);
     }
 
-    // ---- main window and the dialog flows
+    // ---- main window and the drawer flows
 
     void actionsFollowTheStateOfTheUpdate() {
         MainWindow w(c.get());
@@ -719,35 +738,37 @@ private slots:
         // empty canvas
         QVERIFY(act("actionNew")->isEnabled() && act("actionOpen")->isEnabled() && act("actionAddSource")->isEnabled());
         QVERIFY(!act("actionSave")->isEnabled() && !act("actionRun")->isEnabled() && !act("actionUpdate")->isEnabled());
-        QVERIFY(label().contains("Boş tuval"));
+        QVERIFY(label().contains("Empty canvas"));
+        QVERIFY(act("actionSave")->toolTip().contains("The canvas is empty"));  // a disabled action says why
 
         // updating: everything that edits is off
         need(*c, "videotestsrc");
         QVERIFY(c->addSource("videotestsrc", {}));
         QVERIFY(!act("actionNew")->isEnabled() && !act("actionOpen")->isEnabled() && !act("actionAddSource")->isEnabled());
         QVERIFY(!act("actionSave")->isEnabled() && !act("actionRun")->isEnabled());
-        QCOMPARE(label(), QString("Güncelleniyor…"));
-        QVERIFY(w.findChild<QProgressBar*>() != nullptr);
+        QVERIFY(label().contains("locked while validating"));
+        QVERIFY(act("actionSave")->toolTip().contains("Validation is running"));
         QVERIFY(settle(*c));
 
         // ok but incomplete: Save yes, Run no
         QVERIFY(act("actionSave")->isEnabled());
         QVERIFY(act("actionSaveAs")->isEnabled());
         QVERIFY(!act("actionRun")->isEnabled());
-        QVERIFY(label().contains("tamamlanmadı"));
+        QVERIFY(label().contains("not complete"));
+        QVERIFY(act("actionRun")->toolTip().contains("link every free src pad"));
 
         // complete: both
         QString src = QString::fromStdString(c->plan().elements[0].name);
         QString sink = addAfter(*c, src, "src", "fakesink");
         QVERIFY(act("actionRun")->isEnabled());
-        QCOMPARE(label(), QString("Pipeline tamamlandı"));
+        QCOMPARE(label(), QString("Pipeline is complete"));
 
         // failed: both off, red text
         QVERIFY(c->editElement(sink, withProps({{"fake-error", "bad"}})));
         QVERIFY(settle(*c));
         QVERIFY(!act("actionSave")->isEnabled() && !act("actionSaveAs")->isEnabled() && !act("actionRun")->isEnabled());
         QVERIFY(act("actionUpdate")->isEnabled());  // retrying is allowed
-        QVERIFY(label().contains("başarısız"));
+        QVERIFY(label().contains("reported a problem"));
         QVERIFY(w.findChild<QLabel*>("stateLabel")->styleSheet().contains(Theme::error().name()));
         QVERIFY(w.windowTitle().endsWith("*"));
     }
@@ -765,7 +786,7 @@ private slots:
         QVERIFY(shown.contains("GPS_PIPELINE_PATH="));
         QVERIFY(w.windowTitle().contains("demo.conf"));
         QVERIFY(!w.windowTitle().endsWith("*"));
-        QVERIFY(w.saveFile(QString()));  // Kaydet again, same file
+        QVERIFY(w.saveFile(QString()));  // Save again, same file
     }
 
     void updateAndLogPanelsShowTheHelpersAnswer() {
@@ -774,26 +795,28 @@ private slots:
         QString src = addSource(*c, "videotestsrc");
         QString sink = addAfter(*c, src, "src", "fakesink", "sink", withProps({{"fake-error", "kaput"}}));
         UpdatePanel* panel = w.updatePanel();
-        QVERIFY(panel->findChild<QLabel*>("updateStatus")->text().startsWith("Hata"));
+        QVERIFY(panel->findChild<QLabel*>("updateStatus")->text().startsWith("Problem"));
         QVERIFY(panel->findChild<QLabel*>("updateMessage")->text().contains(sink));  // the element is named
         QVERIFY(panel->findChild<QLabel*>("updateMessage")->text().contains("kaput"));
         QVERIFY(panel->findChild<QLabel*>("updateStatus")->styleSheet().contains(Theme::error().name()));
+        QVERIFY(panel->findChild<QPushButton*>("supportButton")->isVisibleTo(&w));  // an update failed: the report is offered
 
         QVERIFY(c->editElement(sink, {}));
         QVERIFY(settle(*c));
-        QVERIFY(panel->findChild<QLabel*>("updateStatus")->text().startsWith("Tamam, pipeline tamamlandı"));
+        QVERIFY(panel->findChild<QLabel*>("updateStatus")->text().startsWith("Valid, pipeline complete"));
+        QVERIFY(!panel->findChild<QPushButton*>("supportButton")->isVisibleTo(&w));
         QCOMPARE(panel->table()->rowCount(), c->result().pads.size());
         QCOMPARE(panel->table()->rowCount(), 2);  // the src pad and the sink pad
         QCOMPARE(panel->table()->item(0, 0)->text(), src);
 
         QString log = w.logPanel()->toPlainText();
         QVERIFY(log.contains("[gps-update] fake gps-update: 2 elements, 1 links"));
-        QVERIFY(log.contains("Güncelleme: Hata"));
+        QVERIFY(log.contains("Validation: Problem"));
         QVERIFY(log.contains("kaput"));
         QVERIFY(w.logPanel()->isReadOnly());
         QVERIFY(w.logPanel()->font().styleHint() == QFont::Monospace || w.logPanel()->font().family().contains("Mono"));
-        QCOMPARE(w.bottomTabs()->tabText(0), QString("Günlük"));
-        QCOMPARE(w.bottomTabs()->tabText(1), QString("Güncelleme"));
+        QCOMPARE(w.bottomTabs()->tabText(0), QString("Log"));
+        QCOMPARE(w.bottomTabs()->tabText(1), QString("Validation"));
     }
 
     void refusedAndUnknownShowInTheUpdatePanel() {
@@ -801,78 +824,82 @@ private slots:
         w.show();
         QString src = addSource(*c, "videotestsrc");
         addAfter(*c, src, "src", "jpegdec");
-        QVERIFY(w.updatePanel()->findChild<QLabel*>("updateLists")->text().contains("Reddedilen bağlantılar"));
+        QVERIFY(w.updatePanel()->findChild<QLabel*>("updateLists")->text().contains("Refused links"));
         QVERIFY(w.updatePanel()->findChild<QLabel*>("updateStatus")->styleSheet().contains(Theme::warning().name()));
     }
 
-    void sourcePanelListsSourcesWithTheNvidiaBadge() {
+    void theDrawerIsClosedAtFirstAndThereIsNoPermanentSourcePanel() {
         MainWindow w(c.get());
         w.show();
-        auto* list = w.sourcePanel()->findChild<QListWidget*>("sourceList");
-        QStringList names;
-        QMap<QString, bool> nvidia;
-        for (int i = 0; i < list->count(); ++i) {
-            names << list->item(i)->text();
-            nvidia[list->item(i)->text()] = list->item(i)->data(NvidiaRole).toBool();
-        }
-        QVERIFY(names.contains("videotestsrc") && names.contains("filesrc") && names.contains("audiotestsrc"));
-        QVERIFY(!names.contains("queue") && !names.contains("fakesink"));  // only sources
-        QVERIFY(nvidia["nvarguscamerasrc"]);
-        QVERIFY(!nvidia["videotestsrc"]);
-
-        auto* search = w.sourcePanel()->findChild<QLineEdit*>("sourceSearch");
-        QTest::keyClicks(search, "argus");
-        int visible = 0;
-        for (int i = 0; i < list->count(); ++i) visible += !list->item(i)->isHidden();
-        QCOMPARE(visible, 1);
+        QVERIFY(!w.drawer()->isOpen());
+        QCOMPARE(w.drawer()->width(), 0);
+        QVERIFY(!w.findChild<QWidget*>("sourcePanel"));
+        QVERIFY(w.view()->width() > 900);  // the canvas has the whole window
     }
 
-    void addSourceFromThePanelAndCancel() {
-        MainWindow w(c.get());
-        w.show();
-        auto* list = w.sourcePanel()->findChild<QListWidget*>("sourceList");
-        QListWidgetItem* item = nullptr;
-        for (int i = 0; i < list->count(); ++i) {
-            if (list->item(i)->text() == "videotestsrc") item = list->item(i);
-        }
-        QVERIFY(item);
-        // Cancel: nothing happens.
-        doubleClick(list->viewport(), list->visualItemRect(item).center());
-        auto* dialog = shown<PropertyDialog>(&w);
-        QVERIFY(dialog);
-        QCOMPARE(dialog->findChildren<QLineEdit*>("searchBox").size(), 1);
-        press(dialog, "cancelButton");
-        QTest::qWait(100);
-        QVERIFY(c->plan().empty());
-        QVERIFY(!c->dirty());
-
-        // Save: the element is in the plan and an update runs.
-        doubleClick(list->viewport(), list->visualItemRect(item).center());
-        dialog = shown<PropertyDialog>(&w);
-        QVERIFY(dialog);
-        in<QSpinBox>(*dialog, "editor_num-buffers")->setValue(25);
-        press(dialog, "saveButton");
-        QVERIFY(waitFor([&] { return c->plan().elements.size() == 1 && !c->busy(); }, 8000));
-        QCOMPARE(c->plan().elements[0].props.at("num-buffers"), std::string("25"));
-        QVERIFY(c->result().ok());
-        QVERIFY(waitFor([&] { return w.scene()->element("videotestsrc_0") != nullptr; }));
-    }
-
-    void toolbarAddSourceUsesThePicker() {
+    void toolbarAddSourceOpensThePickerAndTheFlowAddsTheSource() {
         MainWindow w(c.get());
         w.show();
         w.findChild<QAction*>("actionAddSource")->trigger();
-        auto* picker = shown<PickerDialog>(&w);
+        auto* picker = pageOf<PickerPage>(w);
         QVERIFY(picker);
+        QVERIFY(w.drawer()->isOpen());
+        QCOMPARE(w.drawer()->title(), QString("Add source"));
+        QVERIFY(waitFor([&] { return w.drawer()->width() == Drawer::kWidth; }, 2000));  // the slide ends
         auto* list = picker->findChild<QListWidget*>("pickerList");
-        QCOMPARE(list->item(0)->text(), QString("Kaynaklar"));
+        QCOMPARE(list->item(0)->text(), QString("Sources"));
+        QStringList names;
+        for (int i = 1; i < list->count(); ++i) names << list->item(i)->text();
+        QVERIFY(names.contains("videotestsrc") && names.contains("filesrc") && names.contains("nvarguscamerasrc"));
+        QVERIFY(!names.contains("queue") && !names.contains("fakesink"));  // only sources
+        QVERIFY(list->item(names.indexOf("nvarguscamerasrc") + 1)->data(NvidiaRole).toBool());
+
+        // Cancel on the picker: nothing happens and the drawer closes.
+        press(picker, "cancelButton");
+        QVERIFY(!w.drawer()->isOpen());
+        QVERIFY(c->plan().empty());
+        QVERIFY(!c->dirty());
+
+        // Picker -> properties -> Back -> properties -> Add element.
+        w.findChild<QAction*>("actionAddSource")->trigger();
+        picker = pageOf<PickerPage>(w);
         QTest::keyClicks(picker->findChild<QLineEdit*>("searchBox"), "audiot");
         QTest::keyClick(picker->findChild<QLineEdit*>("searchBox"), Qt::Key_Return);
-        auto* dialog = shown<PropertyDialog>(&w);
-        QVERIFY(dialog);
-        press(dialog, "saveButton");
+        auto* props = pageOf<PropertyPage>(w);
+        QVERIFY(props);
+        QCOMPARE(w.drawer()->title(), QString("Add source · audiotestsrc"));
+        QCOMPARE(w.drawer()->depth(), 2);
+        QCOMPARE(props->primary()->text(), QString("Add element"));
+        w.drawer()->goBack();
+        QVERIFY(pageOf<PickerPage>(w));
+        QTest::keyClick(w.drawer()->page<PickerPage>()->findChild<QLineEdit*>("searchBox"), Qt::Key_Return);
+        props = pageOf<PropertyPage>(w);
+        QVERIFY(props);
+        in<QSpinBox>(*props, "editor_num-buffers")->setValue(25);
+        press(props, "saveButton");
         QVERIFY(waitFor([&] { return c->plan().elements.size() == 1 && !c->busy(); }, 8000));
         QCOMPARE(c->plan().elements[0].factory, std::string("audiotestsrc"));
+        QCOMPARE(c->plan().elements[0].props.at("num-buffers"), std::string("25"));
+        QVERIFY(!w.drawer()->isOpen());  // a source has no caps step: the drawer closes
+        QVERIFY(waitFor([&] { return w.scene()->element("audiotestsrc_0") != nullptr; }));
+    }
+
+    void escAndEnterWorkInTheDrawer() {
+        MainWindow w(c.get());
+        w.show();
+        w.flows()->chooseSource();
+        auto* picker = pageOf<PickerPage>(w);
+        QTest::keyClicks(picker->findChild<QLineEdit*>("searchBox"), "videot");
+        QTest::keyClick(picker->findChild<QLineEdit*>("searchBox"), Qt::Key_Escape);
+        QVERIFY(!w.drawer()->isOpen());
+        QVERIFY(c->plan().empty());
+        // Ctrl+F puts the cursor in the search box of the picker.
+        w.flows()->chooseSource();
+        picker = pageOf<PickerPage>(w);
+        picker->findChild<QListWidget*>("pickerList")->setFocus();
+        w.findChild<QAction*>("actionFind")->trigger();
+        QCOMPARE(picker->window()->focusWidget(), picker->findChild<QLineEdit*>("searchBox"));
+        w.drawer()->dismiss();
     }
 
     void addElementBehindAPadWithEveryCancelPoint() {
@@ -887,99 +914,103 @@ private slots:
         };
         QString before = text(c->plan().toConf());
 
-        // 1. Picker: Cancel.
+        // 1. Picker: the drawer opens with the pad in its title. Cancel.
         clickFreePad(src);
-        auto* picker = shown<PickerDialog>(&w);
+        auto* picker = pageOf<PickerPage>(w);
         QVERIFY(picker);
-        QCOMPARE(picker->findChild<QListWidget*>("pickerList")->item(0)->text(), QString("Yeni element"));  // nothing existing yet
+        QCOMPARE(w.drawer()->title(), "Add after " + src + " · src");
+        QCOMPARE(w.drawer()->subtitle(), QString("video/x-raw"));
+        QCOMPARE(picker->findChild<QListWidget*>("pickerList")->item(0)->text(), QString("New element"));  // nothing existing yet
         press(picker, "cancelButton");
-        QTest::qWait(50);
+        QVERIFY(!w.drawer()->isOpen());
         QCOMPARE(text(c->plan().toConf()), before);
 
-        // 2. PropertyDialog: Cancel.
+        // 2. Properties page: Cancel.
         clickFreePad(src);
-        picker = shown<PickerDialog>(&w);
+        picker = pageOf<PickerPage>(w);
         QTest::keyClicks(picker->findChild<QLineEdit*>("searchBox"), "videoconvert");
         press(picker, "saveButton");
-        auto* props = shown<PropertyDialog>(&w);
+        auto* props = pageOf<PropertyPage>(w);
         QVERIFY(props);
-        QVERIFY(props->windowTitle().contains("videoconvert"));
+        QVERIFY(w.drawer()->title().contains("videoconvert"));
         press(props, "cancelButton");
-        QTest::qWait(50);
+        QVERIFY(!w.drawer()->isOpen());
         QCOMPARE(text(c->plan().toConf()), before);
 
-        // 3. Save, then the CapsDialog: Cancel leaves the element.
+        // 3. Add element, then the caps page: Cancel leaves the element with Auto caps.
         clickFreePad(src);
-        picker = shown<PickerDialog>(&w);
+        picker = pageOf<PickerPage>(w);
         QTest::keyClicks(picker->findChild<QLineEdit*>("searchBox"), "videoconvert");
         press(picker, "saveButton");
-        props = shown<PropertyDialog>(&w);
+        props = pageOf<PropertyPage>(w);
         press(props, "saveButton");
-        auto* caps = shown<CapsDialog>(&w);
+        auto* caps = pageOf<CapsPage>(w);
         QVERIFY(caps);
         QVERIFY(!c->busy());
         QCOMPARE(c->plan().elements.size(), size_t(2));
+        QVERIFY(w.drawer()->isOpen());
         QCOMPARE(caps->findChild<QComboBox*>("mediaCombo")->itemText(1), QString("video/x-raw"));
         press(caps, "cancelButton");
-        QTest::qWait(50);
+        QVERIFY(!w.drawer()->isOpen());
         QCOMPARE(c->plan().elements.size(), size_t(2));
         QVERIFY(c->plan().links[0].caps.empty());
         QString convert = text(c->plan().elements[1].name);
 
-        // 4. A second element, and this time the CapsDialog is saved with a choice.
+        // 4. Skip keeps Auto too.
         clickFreePad(convert);
-        picker = shown<PickerDialog>(&w);
+        picker = pageOf<PickerPage>(w);
+        QTest::keyClicks(picker->findChild<QLineEdit*>("searchBox"), "queue");
+        QTest::keyClick(picker->findChild<QLineEdit*>("searchBox"), Qt::Key_Return);
+        press(pageOf<PropertyPage>(w), "saveButton");
+        caps = pageOf<CapsPage>(w);
+        QVERIFY(caps);
+        press(caps, "skipButton");
+        QVERIFY(!w.drawer()->isOpen());
+        QVERIFY(c->plan().links[1].caps.empty());
+        QString queue = text(c->plan().elements[2].name);
+
+        // 5. A last element, and this time the caps page is applied with a choice.
+        clickFreePad(queue);
+        picker = pageOf<PickerPage>(w);
         QTest::keyClicks(picker->findChild<QLineEdit*>("searchBox"), "fakesink");
         QTest::keyClick(picker->findChild<QLineEdit*>("searchBox"), Qt::Key_Return);
-        props = shown<PropertyDialog>(&w);
+        props = pageOf<PropertyPage>(w);
         press(props, "saveButton");
-        caps = shown<CapsDialog>(&w);
+        caps = pageOf<CapsPage>(w);
         QVERIFY(caps);
         caps->findChild<QComboBox*>("mediaCombo")->setCurrentIndex(1);
         caps->findChild<QWidget*>("field_format")->findChild<QComboBox*>()->setCurrentIndex(2);  // NV12
         press(caps, "saveButton");
-        QVERIFY(waitFor([&] { return !c->busy() && c->plan().links[1].caps == "video/x-raw, format=(string)NV12"; }, 8000));
+        QVERIFY(waitFor([&] { return !c->busy() && c->plan().links[2].caps == "video/x-raw, format=(string)NV12"; }, 8000));
+        QVERIFY(!w.drawer()->isOpen());
         QVERIFY(c->result().isComplete());
         QVERIFY(c->canRun());
     }
 
-    void severalSinkPadsAreAskedAfterThePropertyDialog() {
+    void severalSinkPadsAreChosenOnThePropertiesPage() {
         MainWindow w(c.get());
         w.show();
         QString src = addSource(*c, "videotestsrc");
         w.scene()->rebuild();
         w.view()->fitAll();
-        auto start = [&] {
-            w.scene()->rebuild();
-            QTest::mouseClick(w.view()->viewport(), Qt::LeftButton, Qt::NoModifier, viewPoint(w.view(), w.scene()->pad(src, "src", true)->center()));
-            auto* picker = shown<PickerDialog>(&w);
-            QTest::keyClicks(picker->findChild<QLineEdit*>("searchBox"), "dualsink");
-            press(picker, "saveButton");
-            auto* props = shown<PropertyDialog>(&w);
-            press(props, "saveButton");
-            return shown<QInputDialog>(&w);
-        };
-        QString before = text(c->plan().toConf());
-
-        // Cancel at the question: nothing changed.
-        QInputDialog* question = start();
-        QVERIFY(question);
-        QCOMPARE(question->comboBoxItems(), QStringList({"main", "aux"}));
-        QVERIFY(question->labelText().contains("sink pad"));
-        question->reject();
-        QTest::qWait(100);
-        QCOMPARE(text(c->plan().toConf()), before);
-
-        // Choose the second pad.
-        question = start();
-        QVERIFY(question);
-        question->setTextValue("aux");
-        question->accept();
+        QTest::mouseClick(w.view()->viewport(), Qt::LeftButton, Qt::NoModifier, viewPoint(w.view(), w.scene()->pad(src, "src", true)->center()));
+        auto* picker = pageOf<PickerPage>(w);
+        QTest::keyClicks(picker->findChild<QLineEdit*>("searchBox"), "dualsink");
+        press(picker, "saveButton");
+        auto* props = pageOf<PropertyPage>(w);
+        QVERIFY(props);
+        auto* pads = props->findChild<QComboBox*>("sinkPadCombo");
+        QVERIFY(pads);
+        QStringList items;
+        for (int i = 0; i < pads->count(); ++i) items << pads->itemText(i);
+        QCOMPARE(items, QStringList({"main", "aux"}));
+        pads->setCurrentText("aux");
+        press(props, "saveButton");
         QVERIFY(waitFor([&] { return c->plan().elements.size() == 2 && !c->busy(); }, 8000));
         QCOMPARE(c->plan().links[0].sinkPad, std::string("aux"));
         QCOMPARE(c->view(text(c->plan().elements[1].name)).sinks[1].state, PadView::Linked);
         QCOMPARE(c->view(text(c->plan().elements[1].name)).sinks[0].state, PadView::Empty);
-        auto* caps = shown<CapsDialog>(&w);
+        auto* caps = pageOf<CapsPage>(w);
         QVERIFY(caps);
         press(caps, "cancelButton");
     }
@@ -993,16 +1024,16 @@ private slots:
         w.scene()->rebuild();
         w.view()->fitAll();
         QTest::mouseClick(w.view()->viewport(), Qt::LeftButton, Qt::NoModifier, viewPoint(w.view(), w.scene()->pad(second, "src", true)->center()));
-        auto* picker = shown<PickerDialog>(&w);
+        auto* picker = pageOf<PickerPage>(w);
         QVERIFY(picker);
         auto* list = picker->findChild<QListWidget*>("pickerList");
-        QCOMPARE(list->item(0)->text(), QString("Var olan elementler"));
+        QCOMPARE(list->item(0)->text(), QString("Elements in the pipeline"));
         QCOMPARE(list->item(1)->text(), mix + " · sink_%u");
         QCOMPARE(list->item(1)->data(HintRole).toString(), QString("Request a pad"));
         QCOMPARE(list->currentItem(), list->item(1));
         press(picker, "saveButton");  // the first row is selected: "Request a pad"
-        // The new Request pad is made, an update runs, and the CapsDialog offers the pad settings.
-        auto* caps = shown<CapsDialog>(&w);
+        // The new Request pad is made, an update runs, and the caps page offers the pad settings.
+        auto* caps = pageOf<CapsPage>(w);
         QVERIFY(caps);
         QVERIFY(caps->findChild<QWidget*>("padSettings")->isVisible());
         QCOMPARE(c->plan().links.size(), size_t(2));
@@ -1025,7 +1056,7 @@ private slots:
         QCOMPARE(menu->objectName(), QString("linkMenu"));
         QStringList texts;
         for (QAction* a : menu->actions()) texts << a->text();
-        QCOMPARE(texts, QStringList({"Caps düzenle", "Element değiştir", "Bağlantıyı kaldır", "Queue ekle"}));
+        QCOMPARE(texts, QStringList({"Edit caps…", "Replace element…", "Cut link", "Insert queue"}));
         menu->close();
 
         w.flows()->showElementMenu(src, QPoint(200, 200));
@@ -1033,13 +1064,13 @@ private slots:
         QVERIFY(menu);
         texts.clear();
         for (QAction* a : menu->actions()) texts << a->text();
-        QCOMPARE(texts, QStringList({"Property düzenle", "Sil"}));  // a source can be deleted
+        QCOMPARE(texts, QStringList({"Edit properties…", "Delete source"}));  // a source can be deleted
         menu->close();
         w.flows()->showElementMenu(convert, QPoint(200, 200));
         menu = visibleChild<QMenu>(&w);
         texts.clear();
         for (QAction* a : menu->actions()) texts << a->text();
-        QCOMPARE(texts, QStringList({"Property düzenle"}));  // no Sil on a plain element, no Queue kaldır
+        QCOMPARE(texts, QStringList({"Edit properties…"}));  // no delete on a plain element, no queue removal
         menu->close();
     }
 
@@ -1071,6 +1102,7 @@ private slots:
         choose(&w, "actionCut");
         auto* confirm = shown<ConfirmDialog>(&w);
         QVERIFY(confirm);
+        QCOMPARE(confirm->findChild<QPushButton*>("saveButton")->text(), QString("Remove 2 elements"));
         auto* list = confirm->findChild<QListWidget*>("removalList");
         QCOMPARE(list->count(), 2);
         QVERIFY(list->item(0)->text().startsWith(convert));
@@ -1095,17 +1127,18 @@ private slots:
 
         w.flows()->showLinkMenu(src, "src", QPoint(200, 200));
         choose(&w, "actionReplace");
-        auto* picker = shown<PickerDialog>(&w);
+        auto* picker = pageOf<PickerPage>(w);
         QVERIFY(picker);
-        QVERIFY(picker->windowTitle().contains("değiştir"));
+        QVERIFY(w.drawer()->title().startsWith("Replace after"));
         auto* list = picker->findChild<QListWidget*>("pickerList");
-        QCOMPARE(list->item(0)->text(), QString("Yeni element"));  // replacing never offers existing elements
+        QCOMPARE(list->item(0)->text(), QString("New element"));  // replacing never offers existing elements
         QTest::keyClicks(picker->findChild<QLineEdit*>("searchBox"), "queue");
         press(picker, "saveButton");
-        auto* props = shown<PropertyDialog>(&w);
+        auto* props = pageOf<PropertyPage>(w);
         QVERIFY(props);
+        QCOMPARE(props->primary()->text(), QString("Replace"));
         press(props, "saveButton");
-        auto* confirm = shown<ConfirmDialog>(&w);  // after Save, before anything changes
+        auto* confirm = shown<ConfirmDialog>(&w);  // after Replace, before anything changes
         QVERIFY(confirm);
         QCOMPARE(c->plan().elements.size(), size_t(3));
         QCOMPARE(confirm->findChild<QListWidget*>("removalList")->count(), 2);
@@ -1113,19 +1146,20 @@ private slots:
         QTest::qWait(50);
         QCOMPARE(c->plan().elements.size(), size_t(3));
         QVERIFY(c->plan().find(convert.toStdString()));
+        QVERIFY(w.drawer()->isOpen());  // still on the properties page
 
         // Again, and this time confirmed: the old elements go, the new one sits behind the same pad.
         w.flows()->replaceBehind(src, "src");
-        picker = shown<PickerDialog>(&w);
+        picker = pageOf<PickerPage>(w);
         QTest::keyClicks(picker->findChild<QLineEdit*>("searchBox"), "queue");
         press(picker, "saveButton");
-        press(shown<PropertyDialog>(&w), "saveButton");
+        press(pageOf<PropertyPage>(w), "saveButton");
         press(shown<ConfirmDialog>(&w), "saveButton");
         QVERIFY(waitFor([&] { return c->plan().elements.size() == 2 && !c->busy(); }, 8000));
         QVERIFY(!c->plan().find(convert.toStdString()));
         QCOMPARE(c->plan().links[0].srcElement, src.toStdString());
         QCOMPARE(text(c->plan().elements[1].factory), QString("queue"));
-        QVERIFY(shown<CapsDialog>(&w));  // the update succeeded, so the link's caps are offered
+        QVERIFY(pageOf<CapsPage>(w));  // the update succeeded, so the link's caps are offered
     }
 
     void deleteSourceAsksFirst() {
@@ -1138,9 +1172,28 @@ private slots:
         auto* confirm = shown<ConfirmDialog>(&w);
         QVERIFY(confirm);
         QCOMPARE(confirm->findChild<QListWidget*>("removalList")->count(), 3);  // source + everything behind it
+        QCOMPARE(confirm->findChild<QPushButton*>("saveButton")->text(), QString("Delete 3 elements"));
         press(confirm, "saveButton");
         QVERIFY(waitFor([&] { return c->plan().empty(); }, 8000));
         QVERIFY(!c->canSave());
+    }
+
+    void deleteKeyOnTheCanvasDeletesTheSelectedSourceAfterAsking() {
+        MainWindow w(c.get());
+        w.show();
+        QString src, convert, sink;
+        buildChain(w, &src, &convert, &sink);
+        w.scene()->element(convert)->setSelected(true);  // not a source: nothing to delete
+        QTest::keyClick(w.view(), Qt::Key_Delete);
+        QTest::qWait(50);
+        QVERIFY(!shown<ConfirmDialog>(&w));
+        w.scene()->clearSelection();
+        w.scene()->element(src)->setSelected(true);
+        QTest::keyClick(w.view(), Qt::Key_Delete);
+        auto* confirm = shown<ConfirmDialog>(&w);
+        QVERIFY(confirm);
+        press(confirm, "cancelButton");
+        QCOMPARE(c->plan().elements.size(), size_t(3));
     }
 
     void editPropertiesByDoubleClickAndExpose() {
@@ -1151,16 +1204,19 @@ private slots:
         w.view()->fitAll();
         QPointF body = w.scene()->element(src)->pos() + QPointF(120, 12);
         doubleClick(w.view()->viewport(), viewPoint(w.view(), body));
-        auto* dialog = shown<PropertyDialog>(&w);
-        QVERIFY(dialog);
-        QVERIFY(dialog->windowTitle().contains(src));
-        in<QComboBox>(*dialog, "editor_pattern")->setCurrentIndex(1);
-        dialog->findChild<QCheckBox*>("expose_num-buffers")->click();
-        press(dialog, "saveButton");
+        auto* page = pageOf<PropertyPage>(w);
+        QVERIFY(page);
+        QCOMPARE(w.drawer()->title(), "Edit properties · " + src);
+        QCOMPARE(w.drawer()->depth(), 1);
+        QCOMPARE(page->primary()->text(), QString("Save"));
+        in<QComboBox>(*page, "editor_pattern")->setCurrentIndex(1);
+        page->findChild<QCheckBox*>("expose_num-buffers")->click();
+        press(page, "saveButton");
         QVERIFY(waitFor([&] { return !c->busy() && c->plan().exposed.size() == 1; }, 8000));
         QCOMPARE(c->plan().find(src.toStdString())->props.at("pattern"), std::string("snow"));
         QCOMPARE(c->plan().exposed[0].property, std::string("num-buffers"));
         QCOMPARE(c->plan().exposed[0].name, std::string("num-buffers"));
+        QVERIFY(!w.drawer()->isOpen());
     }
 
     void editCapsFromTheMenu() {
@@ -1170,8 +1226,10 @@ private slots:
         buildChain(w, &src, &convert, &sink);
         w.flows()->showLinkMenu(src, "src", QPoint(200, 200));
         choose(&w, "actionEditCaps");
-        auto* caps = shown<CapsDialog>(&w);
+        auto* caps = pageOf<CapsPage>(w);
         QVERIFY(caps);
+        QVERIFY(w.drawer()->title().startsWith("Edit caps"));
+        QVERIFY(!caps->findChild<QPushButton*>("skipButton"));  // Skip belongs to the step after an add
         caps->findChild<QComboBox*>("mediaCombo")->setCurrentIndex(1);
         auto* width = caps->findChild<QWidget*>("field_width");
         width->findChild<QCheckBox*>()->click();
@@ -1180,12 +1238,13 @@ private slots:
         QVERIFY(waitFor([&] { return !c->busy() && !c->plan().links[0].caps.empty(); }, 8000));
         QCOMPARE(c->plan().links[0].caps, std::string("video/x-raw, width=(int)1280"));
         QVERIFY(c->result().isComplete());
-        // Open it again: the dialog starts from the choice.
+        // Open it again: the page starts from the choice. Cancel changes nothing.
         w.flows()->editCaps(src, "src");
-        caps = shown<CapsDialog>(&w);
+        caps = pageOf<CapsPage>(w);
         QVERIFY(caps);
         QCOMPARE(caps->caps(), QString("video/x-raw, width=(int)1280"));
         press(caps, "cancelButton");
+        QCOMPARE(c->plan().links[0].caps, std::string("video/x-raw, width=(int)1280"));
     }
 
     void everythingIsRefusedWhileBusy() {
@@ -1201,10 +1260,10 @@ private slots:
         w.flows()->deleteSource(src);
         w.flows()->editProperties(src);
         w.flows()->chooseSource();
-        w.flows()->addSource("audiotestsrc");
         QTest::qWait(50);
         QVERIFY(!visibleChild<QMenu>(&w));
         QVERIFY(!visibleChild<QDialog>(&w));
+        QVERIFY(!w.drawer()->isOpen());
         QVERIFY(settle(*c));
         QCOMPARE(c->plan().elements.size(), size_t(2));
     }
@@ -1216,13 +1275,13 @@ private slots:
         addAfter(*c, src, "src", "fakesink");
         auto* run = w.findChild<QAction*>("actionRun");
         QVERIFY(run->isEnabled());
-        QCOMPARE(run->text(), QString("Çalıştır"));
+        QCOMPARE(run->text(), QString("&Run"));
         QSignalSpy ended(c.get(), &Controller::runFinished);
         run->trigger();
-        QCOMPARE(run->text(), QString("Durdur"));
+        QCOMPARE(run->text(), QString("&Stop"));
         QVERIFY(waitFor([&] { return ended.count() == 1; }));
-        QCOMPARE(run->text(), QString("Çalıştır"));
-        QVERIFY(w.logPanel()->toPlainText().contains("Çalıştırma bitti: eos"));
+        QCOMPARE(run->text(), QString("&Run"));
+        QVERIFY(w.logPanel()->toPlainText().contains("Run finished: eos"));
     }
 
     void openFileFitsAndShowsThePlan() {

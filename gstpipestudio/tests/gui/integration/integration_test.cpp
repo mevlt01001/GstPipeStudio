@@ -1,6 +1,6 @@
 // integration_test.cpp – the real GUI (offscreen) driven like a user, against the REAL gps-inspect / gps-update / gps-run.
 // Nothing here is faked except the two helpers that crash or hang on purpose (written to a temp folder).
-// Every flow of SPEC 8 goes through widgets: toolbar, canvas clicks, Seçici, PropertyDialog, CapsDialog, menus.
+// Every flow of SPEC 8 goes through widgets: toolbar, canvas clicks, the drawer pages (picker, properties, caps), menus.
 // File dialogs are not driven (QFileDialog is native); the window's saveFile()/openFile() are called instead.
 #include <QAction>
 #include <QCheckBox>
@@ -9,7 +9,6 @@
 #include <QDoubleSpinBox>
 #include <QElapsedTimer>
 #include <QFile>
-#include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -28,8 +27,9 @@
 #include "canvasmetrics.h"
 #include "canvasscene.h"
 #include "canvasview.h"
-#include "capsdialog.h"
+#include "capspage.h"
 #include "confirmdialog.h"
+#include "drawer.h"
 #include "elementitem.h"
 #include "factorydelegate.h"
 #include "flows.h"
@@ -37,9 +37,8 @@
 #include "logpanel.h"
 #include "mainwindow.h"
 #include "paditem.h"
-#include "pickerdialog.h"
-#include "propertydialog.h"
-#include "sourcepanel.h"
+#include "pickerpage.h"
+#include "propertypage.h"
 #include "testsupport.h"
 #include "theme.h"
 #include "updatepanel.h"
@@ -61,7 +60,7 @@ namespace {
 
 struct Timing {
     QString step;
-    double uiMs;      // from the click on Kaydet (or the menu action) until the canvas shows the new result
+    double uiMs;      // from the click on Save / Add element (or the menu action) until the canvas shows the new result
     double helperMs;  // the helper's own "ms" in its JSON
 };
 QList<Timing> g_timings;
@@ -83,12 +82,17 @@ class IntegrationTest : public QObject {
 
     // ------------------------------------------------------------------ waiting and finding
 
+    // A drawer page is found by asking the drawer; menus and the confirmation by looking for a visible child.
     template <class T>
     T* visibleChild() {
-        for (T* d : w->findChildren<T*>()) {
-            if (d->isVisible()) return d;
+        if constexpr (std::is_base_of_v<DrawerPage, T>) {
+            return w->drawer()->page<T>();
+        } else {
+            for (T* d : w->findChildren<T*>()) {
+                if (d->isVisible()) return d;
+            }
+            return nullptr;
         }
-        return nullptr;
     }
     template <class T>
     T* shown(int ms = 8000) {
@@ -96,11 +100,11 @@ class IntegrationTest : public QObject {
         return QTest::qWaitFor([&] { return (found = visibleChild<T>()) != nullptr; }, ms) ? found : nullptr;
     }
     template <class W>
-    static W* in(QDialog* dialog, const QString& objectName) {
+    static W* in(QWidget* dialog, const QString& objectName) {
         auto* row = dialog->findChild<QWidget*>(objectName);
         return row ? row->findChild<W*>() : nullptr;
     }
-    static void press(QDialog* dialog, const char* button) {
+    static void press(QWidget* dialog, const char* button) {
         auto* b = dialog->findChild<QPushButton*>(button);
         QVERIFY2(b, button);
         QTest::mouseClick(b, Qt::LeftButton);
@@ -163,13 +167,13 @@ class IntegrationTest : public QObject {
     bool shot(const QString& name) {
         fit();
         QTest::qWait(250);
-        QDir().mkpath(GPS_SHOT_DIR);
-        return w->grab().save(QString("%1/integration_%2.png").arg(GPS_SHOT_DIR, name));
+        QDir().mkpath(shotDir());
+        return w->grab().save(QString("%1/ux_int_%2.png").arg(shotDir(), name));
     }
     static bool shotOf(QWidget* widget, const QString& name) {
         QTest::qWait(150);
-        QDir().mkpath(GPS_SHOT_DIR);
-        return widget->grab().save(QString("%1/integration_%2.png").arg(GPS_SHOT_DIR, name));
+        QDir().mkpath(shotDir());
+        return widget->grab().save(QString("%1/ux_int_%2.png").arg(shotDir(), name));
     }
 
     // ------------------------------------------------------------------ pixels
@@ -238,8 +242,8 @@ class IntegrationTest : public QObject {
 
     // ------------------------------------------------------------------ dialogs
 
-    // Selects a row of the open Seçici by its exact text and presses "Seç".
-    void pickRow(PickerDialog* picker, const QString& rowText, const QString& hint = QString()) {
+    // Selects a row of the open picker page by its exact text and presses "Choose".
+    void pickRow(PickerPage* picker, const QString& rowText, const QString& hint = QString()) {
         auto* list = picker->findChild<QListWidget*>("pickerList");
         QListWidgetItem* row = nullptr;
         for (int i = 0; i < list->count(); ++i) {
@@ -251,38 +255,38 @@ class IntegrationTest : public QObject {
         press(picker, "saveButton");
     }
 
-    static void setText(PropertyDialog* d, const QString& property, const QString& value) {
+    static void setText(PropertyPage* d, const QString& property, const QString& value) {
         auto* line = in<QLineEdit>(d, "editor_" + property);
         QVERIFY2(line, qPrintable(property));
         line->clear();
         QTest::keyClicks(line, value);
     }
-    static void setNumber(PropertyDialog* d, const QString& property, int value) {
+    static void setNumber(PropertyPage* d, const QString& property, int value) {
         auto* spin = in<QSpinBox>(d, "editor_" + property);
         QVERIFY2(spin, qPrintable(property));
         spin->setValue(value);
     }
-    static void setChoice(PropertyDialog* d, const QString& property, const QString& nick) {
+    static void setChoice(PropertyPage* d, const QString& property, const QString& nick) {
         auto* combo = in<QComboBox>(d, "editor_" + property);
         QVERIFY2(combo, qPrintable(property));
         int i = combo->findData(nick);
         QVERIFY2(i >= 0, qPrintable(property + "=" + nick));
         combo->setCurrentIndex(i);
     }
-    static void expose(PropertyDialog* d, const QString& property) {
+    static void expose(PropertyPage* d, const QString& property) {
         auto* box = d->findChild<QCheckBox*>("expose_" + property);
         QVERIFY2(box, qPrintable(property));
         box->click();
     }
 
-    static void selectMedia(CapsDialog* d, const QString& media) {
+    static void selectMedia(CapsPage* d, const QString& media) {
         auto* combo = d->findChild<QComboBox*>("mediaCombo");
         int i = combo->findText(media);
         QVERIFY2(i >= 0, qPrintable("no media " + media));
         combo->setCurrentIndex(i);
     }
     // A list field takes the value from its combo; a range field is ticked and gets the number.
-    static void pinField(CapsDialog* d, const QString& field, const QString& value) {
+    static void pinField(CapsPage* d, const QString& field, const QString& value) {
         // every structure has its own page and may have a field of this name: take the one on the visible page
         QWidget* row = nullptr;
         for (QWidget* candidate : d->findChildren<QWidget*>("field_" + field)) {
@@ -303,63 +307,63 @@ class IntegrationTest : public QObject {
         else if (auto* line = row->findChild<QLineEdit*>()) line->setText(value);
     }
 
-    // A CapsDialog that opened (or null). It opens as soon as an update ends, so a short wait is enough.
-    CapsDialog* capsDialog(int ms = 1500) { return shown<CapsDialog>(ms); }
+    // A CapsPage that opened (or null). It opens as soon as an update ends, so a short wait is enough.
+    CapsPage* capsPage(int ms = 1500) { return shown<CapsPage>(ms); }
 
     // ------------------------------------------------------------------ whole flows
 
-    // Kaynak ekle (toolbar) -> Seçici -> PropertyDialog -> Kaydet. Returns the new element's name.
-    QString addSource(const QString& factory, const std::function<void(PropertyDialog*)>& fill = {}, const QString& step = QString()) {
+    // Add source (toolbar) -> picker page -> properties page -> Add element. Returns the new element's name.
+    QString addSource(const QString& factory, const std::function<void(PropertyPage*)>& fill = {}, const QString& step = QString()) {
         w->findChild<QAction*>("actionAddSource")->trigger();
-        auto* picker = shown<PickerDialog>();
+        auto* picker = shown<PickerPage>();
         NEED_R(picker, QString());
         pickRow(picker, factory);
-        auto* dialog = shown<PropertyDialog>();
+        auto* dialog = shown<PropertyPage>();
         NEED_R(dialog, QString());
         if (fill) fill(dialog);
         if (QTest::currentTestFailed()) return QString();
-        timed(step.isEmpty() ? "Kaynak ekle: " + factory : step, [&] { press(dialog, "saveButton"); });
+        timed(step.isEmpty() ? "Add source: " + factory : step, [&] { press(dialog, "saveButton"); });
         if (QTest::currentTestFailed()) return QString();
         idle();
         NEED_R(!c->plan().elements.empty(), QString());
         return text(c->plan().elements.back().name);
     }
 
-    // Free src pad -> Seçici -> a new factory -> PropertyDialog -> Kaydet -> (CapsDialog). Returns the new element's name.
-    // capsFill == null: the CapsDialog is saved with everything on Otomatik. capsFill given: it fills the dialog, then Kaydet.
+    // Free src pad -> picker page -> a new factory -> properties page -> Add element -> (caps page). Returns the new element's name.
+    // capsFill == null: the caps page is applied with everything on Auto. capsFill given: it fills the page, then Apply.
     QString addBehind(const QString& element, const QString& identity, const QString& factory,
-                      const std::function<void(PropertyDialog*)>& fill = {}, const std::function<void(CapsDialog*)>& capsFill = {}) {
+                      const std::function<void(PropertyPage*)>& fill = {}, const std::function<void(CapsPage*)>& capsFill = {}) {
         clickPad(element, identity, true);
-        auto* picker = shown<PickerDialog>();
+        auto* picker = shown<PickerPage>();
         NEED_R(picker, QString());
         pickRow(picker, factory);
-        auto* dialog = shown<PropertyDialog>();
+        auto* dialog = shown<PropertyPage>();
         NEED_R(dialog, QString());
         if (fill) fill(dialog);
         if (QTest::currentTestFailed()) return QString();
-        timed("Element ekle: " + factory + " (arkasına)", [&] { press(dialog, "saveButton"); });
+        timed("Add element: " + factory + " (behind a pad)", [&] { press(dialog, "saveButton"); });
         if (QTest::currentTestFailed()) return QString();
         idle();
         QString created = text(c->plan().elements.back().name);
-        if (auto* caps = capsDialog()) {
+        if (auto* caps = capsPage()) {
             if (capsFill) capsFill(caps);
             if (QTest::currentTestFailed()) return QString();
-            timed("Caps kaydet: " + created, [&] { press(caps, "saveButton"); });
+            timed("Apply caps: " + created, [&] { press(caps, "saveButton"); });
             if (QTest::currentTestFailed()) return QString();
             idle();
         }
         return created;
     }
 
-    // Free src pad -> Seçici -> an existing element's row ("Request a pad" or a free sink) -> (CapsDialog, saved as is).
+    // Free src pad -> picker page -> an existing element's row ("Request a pad" or a free sink) -> (CapsPage, saved as is).
     void linkTo(const QString& element, const QString& identity, const QString& rowText) {
         clickPad(element, identity, true);
-        auto* picker = shown<PickerDialog>();
+        auto* picker = shown<PickerPage>();
         NEED(picker);
-        timed("Var olan elemente bağla: " + rowText, [&] { pickRow(picker, rowText); });
+        timed("Link to an existing element: " + rowText, [&] { pickRow(picker, rowText); });
         idle();
-        if (auto* caps = capsDialog()) {
-            timed("Caps kaydet (Otomatik): " + rowText, [&] { press(caps, "saveButton"); });
+        if (auto* caps = capsPage()) {
+            timed("Apply caps (Auto): " + rowText, [&] { press(caps, "saveButton"); });
             idle();
         }
     }
@@ -385,7 +389,7 @@ class IntegrationTest : public QObject {
     };
     AviPipeline buildAvi(bool complete) {
         AviPipeline p;
-        p.file = addSource("filesrc", [&](PropertyDialog* d) { setText(d, "location", avi); });
+        p.file = addSource("filesrc", [&](PropertyPage* d) { setText(d, "location", avi); });
         if (QTest::currentTestFailed()) return p;
         p.demux = addBehind(p.file, "src", "avidemux");
         if (QTest::currentTestFailed()) return p;
@@ -420,6 +424,7 @@ class IntegrationTest : public QObject {
 
 private slots:
     void initTestCase() {
+        isolateSettings();
         Theme::apply(*qApp);
         goodBin = qgetenv("GPS_BIN_DIR");
         if (goodBin.isEmpty()) QSKIP("GPS_BIN_DIR is not set");
@@ -448,14 +453,14 @@ private slots:
 
     void cleanupTestCase() {
         if (g_timings.isEmpty()) return;
-        QDir().mkpath(GPS_REPORT_DIR);
-        QFile f(QString("%1/integration_timings.md").arg(GPS_REPORT_DIR));
+        QDir().mkpath(shotDir());
+        QFile f(QString("%1/ux_int_timings.md").arg(shotDir()));
         if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) return;
         QTextStream out(&f);
-        out << "# Entegrasyon süreleri (gerçek yardımcılar, GPU'lu imaj)\n\n";
-        out << "Kaydet'e (veya menü eylemine) basıldığı andan tuvalin yeni sonucu çizdiği ana kadar, ms. "
-               "\"Yardımcı\" sütunu gps-update'in kendi bildirdiği süredir; fark süreç başlatma, JSON, Plan kaydı ve çizimdir.\n\n";
-        out << "| Adım | Tuvale kadar (ms) | Yardımcı (ms) |\n|---|---:|---:|\n";
+        out << "# Integration timings (real helpers, GPU image)\n\n";
+        out << "From the click on Add element / Save (or the menu action) until the canvas shows the new result, in ms. "
+               "The helper column is the time gps-update reports itself; the difference is process start, JSON, saving the plan and drawing.\n\n";
+        out << "| Step | Until the canvas (ms) | Helper (ms) |\n|---|---:|---:|\n";
         for (const Timing& t : g_timings) out << "| " << t.step << " | " << int(t.uiMs) << " | " << QString::number(t.helperMs, 'f', 1) << " |\n";
     }
 
@@ -463,25 +468,29 @@ private slots:
     // 1. The catalog the GUI gets from the real gps-inspect
     // =================================================================================================================
 
-    void realCatalogFillsThePanelsAndTheSecici() {
+    void realCatalogFillsTheAddSourcePicker() {
         QVERIFY2(c->catalog().size() > 300, qPrintable(QString::number(c->catalog().size())));
-        auto* list = w->sourcePanel()->findChild<QListWidget*>("sourceList");
+        w->findChild<QAction*>("actionAddSource")->trigger();
+        auto* picker = shown<PickerPage>();
+        QVERIFY(picker);
+        QVERIFY(w->drawer()->isOpen());
+        auto* list = picker->findChild<QListWidget*>("pickerList");
         QStringList names;
         int nvidia = 0;
-        for (int i = 0; i < list->count(); ++i) {
+        for (int i = 1; i < list->count(); ++i) {  // row 0 is the "Sources" header
             names << list->item(i)->text();
             nvidia += list->item(i)->data(NvidiaRole).toBool();
         }
         for (const char* f : {"videotestsrc", "filesrc", "audiotestsrc", "v4l2src"}) QVERIFY2(names.contains(f), f);
         QVERIFY(!names.contains("fakesink"));
-        QVERIFY2(nvidia > 0, "no NVIDIA badge among the sources");
-        qInfo() << "factories" << c->catalog().size() << "sources" << list->count() << "nvidia sources" << nvidia;
-
-        w->findChild<QAction*>("actionAddSource")->trigger();
-        auto* picker = shown<PickerDialog>();
-        QVERIFY(picker);
-        QVERIFY(shotOf(picker, "00_kaynak_secici"));
+        bool deepstream = false;  // a plain Ubuntu has no nv* elements, so no badge is expected there
+        for (const ListEntry& e : c->catalog()) deepstream = deepstream || e.nvidia;
+        if (deepstream) QVERIFY2(nvidia > 0, "no NVIDIA badge among the sources");
+        qInfo() << "factories" << c->catalog().size() << "sources" << names.size() << "nvidia sources" << nvidia;
+        QVERIFY(waitFor([&] { return w->drawer()->width() == Drawer::kWidth; }, 3000));
+        QVERIFY(shotOf(w->drawer(), "00_add_source_picker"));
         press(picker, "cancelButton");
+        QVERIFY(!w->drawer()->isOpen());
     }
 
     // =================================================================================================================
@@ -489,11 +498,11 @@ private slots:
     // =================================================================================================================
 
     void demuxSometimesPadsAppearAndTheWholePipelineRuns() {
-        QString file = addSource("filesrc", [&](PropertyDialog* d) { setText(d, "location", avi); });
+        QString file = addSource("filesrc", [&](PropertyPage* d) { setText(d, "location", avi); });
         QVERIFY(!file.isEmpty());
         QVERIFY2(c->result().ok(), qPrintable(c->result().message));
         QCOMPARE(w->scene()->pad(file, "src", true)->view().state, PadView::Free);
-        // filesrc's own pad has no caps; the Seçici's caps come from the temporary end (video/x-msvideo)
+        // filesrc's own pad has no caps; the picker's caps come from the temporary end (video/x-msvideo)
         QCOMPARE(c->view(file).srcs[0].media, QString("video/x-msvideo"));
 
         QString demux = addBehind(file, "src", "avidemux");
@@ -514,37 +523,37 @@ private slots:
         QVERIFY(c->canSave());
         QVERIFY(w->findChild<QAction*>("actionSave")->isEnabled());
         QVERIFY(!w->findChild<QAction*>("actionRun")->isEnabled());
-        // the Güncelleme panel shows exactly the pads of the JSON
+        // the Validation panel shows exactly the pads of the JSON
         QCOMPARE(w->updatePanel()->table()->rowCount(), c->result().pads.size());
         QVERIFY(shot("01_demux_sometimes_pad"));
 
-        // video_%u#0 -> jpegdec: the Seçici must rank jpegdec as compatible (its sink takes image/jpeg)
+        // video_%u#0 -> jpegdec: the picker must rank jpegdec as compatible (its sink takes image/jpeg)
         clickPad(demux, "video_%u#0", true);
-        auto* picker = shown<PickerDialog>();
+        auto* picker = shown<PickerPage>();
         QVERIFY(picker);
-        QVERIFY(shotOf(picker, "02_secici_jpeg_pad"));
+        QVERIFY(shotOf(w->drawer(), "02_picker_jpeg_pad"));
         auto* list = picker->findChild<QListWidget*>("pickerList");
         QStringList firstRows;
         for (int i = 0; i < list->count() && firstRows.size() < 40; ++i) {
-            if (list->item(i)->data(HintRole).toString() == "uyumlu") firstRows << list->item(i)->text();
+            if (list->item(i)->data(HintRole).toString() == "compatible") firstRows << list->item(i)->text();
         }
         QVERIFY2(firstRows.contains("jpegdec"), qPrintable(firstRows.join(",")));
         QVERIFY2(!firstRows.contains("videoconvert"), "raw video converter offered for image/jpeg");
-        pickRow(picker, "jpegdec", "uyumlu");
-        auto* props = shown<PropertyDialog>();
+        pickRow(picker, "jpegdec", "compatible");
+        auto* props = shown<PropertyPage>();
         QVERIFY(props);
-        QVERIFY(props->windowTitle().contains("jpegdec"));
-        timed("Element ekle: jpegdec (Sometimes pad'den)", [&] { press(props, "saveButton"); });
+        QVERIFY(w->drawer()->title().contains("jpegdec"));
+        timed("Add element: jpegdec (behind a Sometimes pad)", [&] { press(props, "saveButton"); });
         idle();
         QVERIFY2(c->result().ok(), qPrintable(c->result().message));
         // the same Sometimes pad must have been linked by the second update (Plan persists, pads come back)
         QCOMPARE(c->plan().links.size(), size_t(2));
         QCOMPARE(text(c->plan().links[1].srcPad), QString("video_%u#0"));
-        auto* caps = capsDialog();
+        auto* caps = capsPage();
         QVERIFY(caps);
         QCOMPARE(caps->findChild<QComboBox*>("mediaCombo")->itemText(1), QString("image/jpeg"));
-        QVERIFY(shotOf(caps, "03_caps_sabit_alanlar"));
-        timed("Caps kaydet (Otomatik)", [&] { press(caps, "saveButton"); });
+        QVERIFY(shotOf(w->drawer(), "03_caps_fixed_fields"));
+        timed("Apply caps (Auto)", [&] { press(caps, "saveButton"); });
         idle();
         QString dec = text(c->plan().elements.back().name);
         QCOMPARE(c->view(dec).srcs[0].media, QString("video/x-raw"));
@@ -556,14 +565,16 @@ private slots:
         QString conv = addBehind(dec, "src", "videoconvert");
         QVERIFY(!conv.isEmpty());
         qInfo() << "jpegdec -> videoconvert: status" << c->result().status << "element" << c->result().errorElement << c->result().message;
-        QCOMPARE(c->result().status, QString("error"));
-        QCOMPARE(c->result().errorElement, dec);
-        QVERIFY(!c->canSave());
-        QVERIFY(w->scene()->element(dec)->view().isError);
-        QVERIFY(shot("03b_jpegdec_hatasi_elementte"));
-        // the user's way out: Queue ekle on that link
-        timed("Queue ekle (jpegdec -> videoconvert hatasından sonra)", [&] { linkMenu(dec, "src", "actionInsertQueue"); });
-        idle();
+        // GStreamer 1.20 fails here (a libjpeg problem), newer ones decode fine: the failure path is checked when it happens.
+        if (c->result().status == "error") {
+            QCOMPARE(c->result().errorElement, dec);
+            QVERIFY(!c->canSave());
+            QVERIFY(w->scene()->element(dec)->view().isError);
+            QVERIFY(shot("03b_jpegdec_problem_on_element"));
+            // the user's way out: Insert queue on that link
+            timed("Insert queue (after the jpegdec -> videoconvert problem)", [&] { linkMenu(dec, "src", "actionInsertQueue"); });
+            idle();
+        }
         QVERIFY2(c->result().ok(), qPrintable(c->result().status + ": " + c->result().message));
         QVERIFY(c->canSave());
 
@@ -573,20 +584,20 @@ private slots:
         // Both demuxer pads end in a sink: what does the real update say about a demuxer without queues?
         qInfo() << "demux -> two sinks: status" << c->result().status << "ms" << c->result().ms << "message" << c->result().message;
         if (!c->result().isComplete()) {
-            QVERIFY(shot("03c_demux_iki_sink_kuyruksuz"));
-            timed("Queue ekle (ses kolu)", [&] { linkMenu(demux, "audio_%u#0", "actionInsertQueue"); });
+            QVERIFY(shot("03c_demux_two_sinks_no_queue"));
+            timed("Insert queue (audio branch)", [&] { linkMenu(demux, "audio_%u#0", "actionInsertQueue"); });
             idle();
             qInfo() << "after a queue on the audio branch only: status" << c->result().status << c->result().message;
             if (!c->result().isComplete()) {
-                timed("Queue ekle (video kolu)", [&] { linkMenu(demux, "video_%u#0", "actionInsertQueue"); });
+                timed("Insert queue (video branch)", [&] { linkMenu(demux, "video_%u#0", "actionInsertQueue"); });
                 idle();
             }
         }
         QVERIFY2(c->result().isComplete(), qPrintable(c->result().status + ": " + c->result().message + " | " + c->result().missing.join(";") + " | " + c->result().refused.join(";")));
         QVERIFY(c->canRun());
-        QVERIFY(shot("04_avi_hatti_tamam"));
+        QVERIFY(shot("04_avi_pipeline_complete"));
 
-        // Kaydet, then Çalıştır through the toolbar
+        // Save, then Run through the toolbar
         QString conf = work.filePath("avi.conf");
         QVERIFY(w->saveFile(conf));
         QVERIFY(w->findChild<QLabel*>("commandLabel")->text().contains("gst-launch-1.0 avi"));
@@ -594,12 +605,12 @@ private slots:
         QElapsedTimer clock;
         clock.start();
         w->findChild<QAction*>("actionRun")->trigger();
-        QCOMPARE(w->findChild<QAction*>("actionRun")->text(), QString("Durdur"));
+        QCOMPARE(w->findChild<QAction*>("actionRun")->text(), QString("&Stop"));
         QVERIFY(waitFor([&] { return ended.count() == 1; }, 30000));
-        qInfo() << "TIMING Çalıştır (avi hattı):" << clock.elapsed() << "ms, sonuç" << ended[0][0].toString();
-        g_timings.append({"Çalıştır: filesrc ! avidemux ! jpegdec ! videoconvert ! fakesink (+ ses)", double(clock.elapsed()), 0});
+        qInfo() << "TIMING Run (avi pipeline):" << clock.elapsed() << "ms, result" << ended[0][0].toString();
+        g_timings.append({"Run: filesrc ! avidemux ! jpegdec ! videoconvert ! fakesink (+ audio)", double(clock.elapsed()), 0});
         QCOMPARE(ended[0][0].toString(), QString("eos"));
-        QVERIFY(w->logPanel()->toPlainText().contains("Çalıştırma bitti: eos"));
+        QVERIFY(w->logPanel()->toPlainText().contains("Run finished: eos"));
     }
 
     // =================================================================================================================
@@ -607,9 +618,9 @@ private slots:
     // =================================================================================================================
 
     void teeTwoRequestPadsAndQueueInsertRemove() {
-        QString src = addSource("videotestsrc", [&](PropertyDialog* d) { setNumber(d, "num-buffers", 20); });
+        QString src = addSource("videotestsrc", [&](PropertyPage* d) { setNumber(d, "num-buffers", 20); });
         QVERIFY(!src.isEmpty());
-        QString tee = addBehind(src, "src", "tee", [&](PropertyDialog* d) {
+        QString tee = addBehind(src, "src", "tee", [&](PropertyPage* d) {
             auto* pads = d->findChild<QSpinBox*>("padCount_src_%u");
             QVERIFY(pads);
             QCOMPARE(pads->value(), 1);  // all templates Request: the default is 1
@@ -622,7 +633,7 @@ private slots:
         QCOMPARE(w->scene()->pad(tee, "src_%u#0", true)->view().state, PadView::Free);
         QCOMPARE(w->scene()->pad(tee, "src_%u#1", true)->view().state, PadView::Free);
         QVERIFY(w->scene()->pad(tee, "src_%u#0", true)->view().label.startsWith("src_"));
-        QVERIFY(shot("05_tee_iki_request_pad"));
+        QVERIFY(shot("05_tee_two_request_pads"));
 
         QString q0 = addBehind(tee, "src_%u#0", "queue");
         QString sink0 = addBehind(q0, "src", "fakesink");
@@ -632,8 +643,8 @@ private slots:
         QString before = linkText();
         size_t elementsBefore = c->plan().elements.size();
 
-        // Queue ekle on tee.src_%u#1 -> sink1
-        timed("Queue ekle", [&] { linkMenu(tee, "src_%u#1", "actionInsertQueue"); });
+        // Insert queue on tee.src_%u#1 -> sink1
+        timed("Insert queue", [&] { linkMenu(tee, "src_%u#1", "actionInsertQueue"); });
         idle();
         QCOMPARE(c->plan().elements.size(), elementsBefore + 1);
         QVERIFY2(c->result().isComplete(), qPrintable(c->result().status + ": " + c->result().message));
@@ -641,10 +652,10 @@ private slots:
         QCOMPARE(text(c->plan().find(queue.toStdString())->factory), QString("queue"));
         QVERIFY(w->scene()->element(queue));
         QCOMPARE(c->plan().linkFrom(tee.toStdString(), "src_%u#1") >= 0, true);
-        QVERIFY(shot("06_queue_eklendi"));
+        QVERIFY(shot("06_queue_inserted"));
 
-        // Queue kaldır through the element menu: the links are as before
-        timed("Queue kaldır", [&] {
+        // Remove queue through the element menu: the links are as before
+        timed("Remove queue", [&] {
             rightClickElement(queue);
             choose("actionRemoveQueue");
         });
@@ -659,7 +670,7 @@ private slots:
     // =================================================================================================================
 
     void compositorTwoBranchesCapsAndPadSettings() {
-        QString a = addSource("videotestsrc", [&](PropertyDialog* d) {
+        QString a = addSource("videotestsrc", [&](PropertyPage* d) {
             setNumber(d, "num-buffers", 30);
             setChoice(d, "pattern", "ball");
         });
@@ -667,9 +678,9 @@ private slots:
 
         // The real allowedStructures of videotestsrc.src drive the dialog
         QStringList seenFormats;
-        QString mix = addBehind(a, "src", "compositor", {}, [&](CapsDialog* d) {
-            QVERIFY(shotOf(d, "07_caps_dialog_gercek_alanlar"));
-            QCOMPARE(d->findChild<QLabel*>("heading")->text(), QString("Caps düzenle"));
+        QString mix = addBehind(a, "src", "compositor", {}, [&](CapsPage* d) {
+            QVERIFY(shotOf(w->drawer(), "07_caps_page_real_fields"));
+            QVERIFY(w->drawer()->title().startsWith("Caps ·"));
             auto* media = d->findChild<QComboBox*>("mediaCombo");
             QVERIFY2(media->findText("video/x-raw") >= 0, qPrintable(media->itemText(media->count() - 1)));
             selectMedia(d, "video/x-raw");
@@ -697,21 +708,21 @@ private slots:
                  qPrintable(real->caps));
         QCOMPARE(c->view(mix).sinks.size(), 1);
 
-        // second source by "Kaynak ekle", linked to the same compositor with "Request a pad"
-        QString b = addSource("videotestsrc", [&](PropertyDialog* d) {
+        // second source by "Add source", linked to the same compositor with "Request a pad"
+        QString b = addSource("videotestsrc", [&](PropertyPage* d) {
             setNumber(d, "num-buffers", 30);
             setChoice(d, "pattern", "smpte");
         });
         QVERIFY(!b.isEmpty());
         clickPad(b, "src", true);
-        auto* picker = shown<PickerDialog>();
+        auto* picker = shown<PickerPage>();
         QVERIFY(picker);
         auto* list = picker->findChild<QListWidget*>("pickerList");
-        QCOMPARE(list->item(0)->text(), QString("Var olan elementler"));
+        QCOMPARE(list->item(0)->text(), QString("Elements in the pipeline"));
         QCOMPARE(list->item(1)->text(), mix + " · sink_%u");
-        QVERIFY(shotOf(picker, "08_secici_request_a_pad"));
+        QVERIFY(shotOf(w->drawer(), "08_picker_request_a_pad"));
         pickRow(picker, mix + " · sink_%u", "Request a pad");
-        auto* caps = capsDialog();
+        auto* caps = capsPage();
         QVERIFY(caps);
         QCOMPARE(c->plan().links.size(), size_t(2));  // the link exists before the dialog's answer
         QVERIFY(caps->findChild<QWidget*>("padSettings")->isVisible());
@@ -720,8 +731,8 @@ private slots:
         pinField(caps, "width", "320");
         pinField(caps, "height", "240");
         caps->findChild<QWidget*>("padEditor_xpos")->findChild<QSpinBox*>()->setValue(160);
-        QVERIFY(shotOf(caps, "09_caps_dialog_pad_ayarlari"));
-        timed("Request pad'e bağla: caps + xpos kaydet", [&] { press(caps, "saveButton"); });
+        QVERIFY(shotOf(w->drawer(), "09_caps_page_pad_settings"));
+        timed("Link to a Request pad: apply caps + xpos", [&] { press(caps, "saveButton"); });
         idle();
         QVERIFY2(c->result().ok(), qPrintable(c->result().status + ": " + c->result().message));
         QCOMPARE(c->plan().links[1].sinkPadProps.at("xpos"), std::string("160"));
@@ -733,7 +744,7 @@ private slots:
         QVERIFY(c->view(mix).sinks[0].label != c->view(mix).sinks[1].label);
         // The pad behind link k must be the pad the GUI shows in row k (label, caps tooltip). The tool reports the Request
         // sink pads of one template in reverse order (newest first), so the rows are swapped: a TOOL deviation (SPEC 3:
-        // "şablon ve sıraya dayanır"), reported to the engine owner. XPASS here means the tool was fixed.
+        // "depends on the template and the order"), reported to the engine owner. XPASS here means the tool was fixed.
         bool inOrder = c->view(mix).sinks[0].tip.contains("width=(int)160") && c->view(mix).sinks[1].tip.contains("width=(int)320");
         qInfo() << "compositor sink rows:" << c->view(mix).sinks[0].label << c->view(mix).sinks[0].tip.left(70) << "|" << c->view(mix).sinks[1].label << c->view(mix).sinks[1].tip.left(70);
         if (!inOrder) QEXPECT_FAIL("", "gps-update lists Request sink pads newest first (tool deviates from SPEC 3)", Continue);
@@ -745,11 +756,11 @@ private slots:
         QString sink = addBehind(conv, "src", "fakesink");
         QVERIFY(!sink.isEmpty());
         QVERIFY2(c->result().isComplete(), qPrintable(c->result().status + ": " + c->result().message));
-        QVERIFY(shot("10_compositor_iki_kol"));
+        QVERIFY(shot("10_compositor_two_branches"));
 
-        // the pad setting stays editable: Caps düzenle shows xpos=160 again
+        // the pad setting stays editable: Edit caps shows xpos=160 again
         linkMenu(b, "src", "actionEditCaps");
-        caps = capsDialog();
+        caps = capsPage();
         QVERIFY(caps);
         QCOMPARE(caps->findChild<QWidget*>("padEditor_xpos")->findChild<QSpinBox*>()->value(), 160);
         QCOMPARE(caps->findChild<QComboBox*>("mediaCombo")->currentText(), QString("video/x-raw"));
@@ -769,7 +780,7 @@ private slots:
     // =================================================================================================================
 
     void cutAndReplaceAskWithTheRealLists() {
-        QString a = addSource("videotestsrc", [&](PropertyDialog* d) { setNumber(d, "num-buffers", 10); });
+        QString a = addSource("videotestsrc", [&](PropertyPage* d) { setNumber(d, "num-buffers", 10); });
         QString b = addBehind(a, "src", "videoconvert");
         QString cc = addBehind(b, "src", "videoscale");
         QString d = addBehind(cc, "src", "fakesink");
@@ -777,7 +788,7 @@ private slots:
         QVERIFY2(c->result().isComplete(), qPrintable(c->result().message));
         QString original = text(c->plan().toConf());
 
-        // Bağlantıyı kaldır on a.src: b, c, d all lose their input
+        // Cut link on a.src: b, c, d all lose their input
         linkMenu(a, "src", "actionCut");
         auto* confirm = shown<ConfirmDialog>();
         QVERIFY(confirm);
@@ -785,7 +796,7 @@ private slots:
         QCOMPARE(items->count(), 3);
         QVERIFY(items->item(0)->text().startsWith(b) && items->item(0)->text().contains("videoconvert"));
         QVERIFY(items->item(2)->text().startsWith(d) && items->item(2)->text().contains("fakesink"));
-        QVERIFY(shotOf(confirm, "11_onay_3_element_silinecek"));
+        QVERIFY(shotOf(confirm, "11_confirm_3_elements"));
         press(confirm, "cancelButton");
         QTest::qWait(100);
         QCOMPARE(text(c->plan().toConf()), original);  // nothing changed
@@ -795,7 +806,7 @@ private slots:
         confirm = shown<ConfirmDialog>();
         QVERIFY(confirm);
         QCOMPARE(confirm->findChild<QListWidget*>("removalList")->count(), 2);
-        timed("Bağlantıyı kaldır (onaylı)", [&] { press(confirm, "saveButton"); });
+        timed("Cut link (confirmed)", [&] { press(confirm, "saveButton"); });
         idle();
         QCOMPARE(c->plan().elements.size(), size_t(2));
         QVERIFY2(c->result().ok(), qPrintable(c->result().message));
@@ -804,19 +815,19 @@ private slots:
         QVERIFY(!c->canRun());
         QVERIFY(c->canSave());
 
-        // Element değiştir: rebuild a chain behind b, then replace what is behind b.src
+        // Replace element: rebuild a chain behind b, then replace what is behind b.src
         QString c2 = addBehind(b, "src", "videoscale");
         QString d2 = addBehind(c2, "src", "fakesink");
         QVERIFY(!d2.isEmpty());
         QString planBefore = text(c->plan().toConf());
         linkMenu(b, "src", "actionReplace");
-        auto* picker = shown<PickerDialog>();
+        auto* picker = shown<PickerPage>();
         QVERIFY(picker);
-        QVERIFY(picker->windowTitle().contains("değiştir"));
+        QVERIFY(w->drawer()->title().startsWith("Replace after"));
         pickRow(picker, "videoflip");
-        auto* props = shown<PropertyDialog>();
+        auto* props = shown<PropertyPage>();
         QVERIFY(props);
-        QVERIFY(props->windowTitle().contains("Element değiştir"));
+        QVERIFY(w->drawer()->title().startsWith("Replace after"));
         setChoice(props, "method", "vertical-flip");
         press(props, "saveButton");
         confirm = shown<ConfirmDialog>();
@@ -828,15 +839,15 @@ private slots:
         QCOMPARE(text(c->plan().toConf()), planBefore);
 
         linkMenu(b, "src", "actionReplace");
-        picker = shown<PickerDialog>();
+        picker = shown<PickerPage>();
         pickRow(picker, "videoflip");
-        props = shown<PropertyDialog>();
+        props = shown<PropertyPage>();
         QVERIFY(props);
         setChoice(props, "method", "vertical-flip");
         press(props, "saveButton");
         confirm = shown<ConfirmDialog>();
         QVERIFY(confirm);
-        timed("Element değiştir (onaylı)", [&] { press(confirm, "saveButton"); });
+        timed("Replace element (confirmed)", [&] { press(confirm, "saveButton"); });
         idle();
         QVERIFY2(c->result().ok(), qPrintable(c->result().message));
         QVERIFY(c->plan().find(c2.toStdString()) == nullptr);
@@ -845,21 +856,21 @@ private slots:
         QCOMPARE(text(flip->factory), QString("videoflip"));
         QCOMPARE(flip->props.at("method"), std::string("vertical-flip"));
         QCOMPARE(c->plan().linkFrom(b.toStdString(), "src") >= 0, true);
-        QVERIFY(shot("12_element_degistirildi"));
+        QVERIFY(shot("12_element_replaced"));
     }
 
     void deleteSourceCascades() {
-        QString a = addSource("videotestsrc", [&](PropertyDialog* d) { setNumber(d, "num-buffers", 10); });
+        QString a = addSource("videotestsrc", [&](PropertyPage* d) { setNumber(d, "num-buffers", 10); });
         QString convA = addBehind(a, "src", "videoconvert");
         QString mix = addBehind(convA, "src", "compositor");
-        QString bb = addSource("videotestsrc", [&](PropertyDialog* d) { setNumber(d, "num-buffers", 10); });
+        QString bb = addSource("videotestsrc", [&](PropertyPage* d) { setNumber(d, "num-buffers", 10); });
         linkTo(bb, "src", mix + " · sink_%u");
         QString sink = addBehind(mix, "src", "fakesink");
         QVERIFY(!sink.isEmpty());
         QVERIFY2(c->result().isComplete(), qPrintable(c->result().status + ": " + c->result().message));
         QCOMPARE(c->view(mix).sinks.size(), 2);
 
-        // Sil on source a: a and its converter go; the compositor still has bb's input
+        // Delete source a: a and its converter go; the compositor still has bb's input
         rightClickElement(a);
         STEP(choose("actionDelete"));
         auto* confirm = shown<ConfirmDialog>();
@@ -868,15 +879,15 @@ private slots:
         QCOMPARE(items->count(), 2);
         QVERIFY(items->item(0)->text().startsWith(a));
         QVERIFY(items->item(1)->text().startsWith(convA));
-        QVERIFY(shotOf(confirm, "13_kaynak_sil_zincir"));
-        timed("Kaynak sil (onaylı): zincir", [&] { press(confirm, "saveButton"); });
+        QVERIFY(shotOf(confirm, "13_delete_source_chain"));
+        timed("Delete source (confirmed): chain", [&] { press(confirm, "saveButton"); });
         idle();
         QVERIFY2(c->result().isComplete(), qPrintable(c->result().status + ": " + c->result().message));
         QCOMPARE(c->plan().elements.size(), size_t(3));  // bb, mix, sink
         QCOMPARE(c->view(mix).sinks.size(), 1);          // the Request pad was renumbered, not left empty
         QCOMPARE(c->view(mix).sinks[0].state, PadView::Linked);
 
-        // Sil on the last source: everything goes, the canvas is empty
+        // Delete the last source: everything goes, the canvas is empty
         rightClickElement(bb);
         STEP(choose("actionDelete"));
         confirm = shown<ConfirmDialog>();
@@ -886,7 +897,7 @@ private slots:
         QVERIFY(waitFor([&] { return c->plan().empty() && !c->busy(); }, 15000));
         idle();
         QCOMPARE(w->scene()->items().size(), 0);
-        QVERIFY(w->findChild<QLabel*>("stateLabel")->text().contains("Boş tuval"));
+        QVERIFY(w->findChild<QLabel*>("stateLabel")->text().contains("Empty canvas"));
         QVERIFY(!w->findChild<QAction*>("actionSave")->isEnabled());
     }
 
@@ -895,7 +906,7 @@ private slots:
     // =================================================================================================================
 
     void failedUpdateKeepsTheChangeAndDisablesSave() {
-        QString file = addSource("filesrc", [&](PropertyDialog* d) { setText(d, "location", "/does/not/exist.avi"); });
+        QString file = addSource("filesrc", [&](PropertyPage* d) { setText(d, "location", "/does/not/exist.avi"); });
         QVERIFY(!file.isEmpty());
         QVERIFY(c->plan().find(file.toStdString()));  // the change stayed
         QCOMPARE(c->result().status, QString("error"));
@@ -908,18 +919,18 @@ private slots:
         QVERIFY(!QFile::exists(work.filePath("must-not-exist.conf")));
         QVERIFY(w->scene()->element(file)->view().isError);
         QCOMPARE(w->scene()->element(file)->view().note, c->result().message);
-        QVERIFY(w->updatePanel()->findChild<QLabel*>("updateStatus")->text().startsWith("Hata"));
-        QVERIFY(w->findChild<QLabel*>("stateLabel")->text().contains("başarısız"));
+        QVERIFY(w->updatePanel()->findChild<QLabel*>("updateStatus")->text().startsWith("Problem"));
+        QVERIFY(w->findChild<QLabel*>("stateLabel")->text().contains("reported a problem"));
         QVERIFY(w->windowTitle().endsWith("*"));
-        QVERIFY(shot("14_basarisiz_guncelleme"));
+        QVERIFY(shot("14_failed_validation"));
 
         // add an element behind the failed one? The update failed before the pad was known; the user fixes the property
         doubleClickElement(file);
-        auto* dialog = shown<PropertyDialog>();
+        auto* dialog = shown<PropertyPage>();
         QVERIFY(dialog);
         QCOMPARE(in<QLineEdit>(dialog, "editor_location")->text(), QString("/does/not/exist.avi"));
         setText(dialog, "location", avi);
-        timed("Property düzenle: konumu düzelt", [&] { press(dialog, "saveButton"); });
+        timed("Edit properties: fix the location", [&] { press(dialog, "saveButton"); });
         idle();
         QCOMPARE(c->result().status, QString("ok"));
         QVERIFY(c->canSave());
@@ -931,42 +942,42 @@ private slots:
     void refusedLinkIsReportedAndNothingBreaks() {
         // raw video cannot enter jpegdec: GStreamer refuses the link
         c->setUpdateTimeoutMs(3000);
-        QString a = addSource("videotestsrc", [&](PropertyDialog* d) { setNumber(d, "num-buffers", 5); });
+        QString a = addSource("videotestsrc", [&](PropertyPage* d) { setNumber(d, "num-buffers", 5); });
         clickPad(a, "src", true);
-        auto* picker = shown<PickerDialog>();
+        auto* picker = shown<PickerPage>();
         QVERIFY(picker);
         pickRow(picker, "jpegdec");  // not in the compatible list, but the user may still choose it
-        auto* props = shown<PropertyDialog>();
+        auto* props = shown<PropertyPage>();
         QVERIFY(props);
         QElapsedTimer clock;
         clock.start();
-        timed("Reddedilen bağlantı (jpegdec <- raw video)", [&] { press(props, "saveButton"); });
+        timed("Refused link (jpegdec <- raw video)", [&] { press(props, "saveButton"); });
         idle();
         qInfo() << "refused link: status" << c->result().status << "message" << c->result().message << "refused" << c->result().refused
                 << "after" << clock.elapsed() << "ms";
         QVERIFY(c->result().status == "ok" || c->result().status == "timeout" || c->result().status == "error");
-        // whichever status the tool answers, the GUI must not offer Çalıştır
+        // whichever status the tool answers, the GUI must not offer Run
         QVERIFY(!c->canRun());
         if (c->result().status == "ok") QVERIFY(!c->result().refused.isEmpty());
         QVERIFY(c->plan().elements.size() == 2);  // the change stayed
-        QVERIFY(shot("15_reddedilen_baglanti"));
+        QVERIFY(shot("15_refused_link"));
     }
 
     // =================================================================================================================
-    // 7. exposed parameter, caps choice on a file output, Çalıştır through the GUI, gps-run with a parameter
+    // 7. exposed parameter, caps choice on a file output, Run through the GUI, gps-run with a parameter
     // =================================================================================================================
 
     void exposedParameterAndRunFromTheSavedConf() {
         QString out = work.filePath("out.raw");
         QFile::remove(out);
-        QString src = addSource("videotestsrc", [&](PropertyDialog* d) {
+        QString src = addSource("videotestsrc", [&](PropertyPage* d) {
             setNumber(d, "num-buffers", 5);
             expose(d, "num-buffers");
         });
         QVERIFY(!src.isEmpty());
         QCOMPARE(c->plan().exposed.size(), size_t(1));
         QVERIFY(c->view(src).propLines.join("\n").contains("↗ num-buffers = 5"));
-        QString sink = addBehind(src, "src", "filesink", [&](PropertyDialog* d) { setText(d, "location", out); }, [&](CapsDialog* d) {
+        QString sink = addBehind(src, "src", "filesink", [&](PropertyPage* d) { setText(d, "location", out); }, [&](CapsPage* d) {
             selectMedia(d, "video/x-raw");
             pinField(d, "format", "I420");
             pinField(d, "width", "160");
@@ -979,7 +990,7 @@ private slots:
         QString conf = work.filePath("expose.conf");
         QVERIFY(w->saveFile(conf));
         QString launch = w->findChild<QLabel*>("commandLabel")->text();
-        QVERIFY2(launch.contains("gst-launch-1.0 expose") && launch.contains("num-buffers=DEĞER"), qPrintable(launch));
+        QVERIFY2(launch.contains("gst-launch-1.0 expose") && launch.contains("num-buffers=VALUE"), qPrintable(launch));
         QFile f(conf);
         QVERIFY(f.open(QIODevice::ReadOnly));
         QString saved = QString::fromUtf8(f.readAll());
@@ -992,10 +1003,10 @@ private slots:
         clock.start();
         w->findChild<QAction*>("actionRun")->trigger();
         QVERIFY(waitFor([&] { return ended.count() == 1; }, 30000));
-        g_timings.append({"Çalıştır: videotestsrc ! filesink (5 kare, I420 160x120)", double(clock.elapsed()), 0});
+        g_timings.append({"Run: videotestsrc ! filesink (5 frames, I420 160x120)", double(clock.elapsed()), 0});
         QCOMPARE(ended[0][0].toString(), QString("eos"));
         QCOMPARE(QFileInfo(out).size(), qint64(5 * 160 * 120 * 3 / 2));  // 5 raw I420 frames, so the caps choice reached the real pipeline
-        QVERIFY(shot("16_calistirildi"));
+        QVERIFY(shot("16_ran"));
 
         // the exposed name reaches the pipeline from the command line
         QFile::remove(out);
@@ -1026,20 +1037,20 @@ private slots:
         QStringList names;
         for (const gps::PlanElement& e : c->plan().elements) names << text(e.name);
 
-        // Yeni: empty canvas
+        // New: empty canvas
         c->newPlan();
         idle();
         QVERIFY(c->plan().empty());
         QCOMPARE(w->scene()->items().size(), 0);
 
-        // Aç: the plan returns; the update brings the Sometimes pads back and the pipeline is complete again
+        // Open: the plan returns; the update brings the Sometimes pads back and the pipeline is complete again
         QElapsedTimer clock;
         clock.start();
         w->openFile(conf);
         QVERIFY(waitFor([&] { return !c->busy() && !c->plan().empty() && c->result().valid(); }, 30000));
         idle();
-        g_timings.append({"Aç: 6 elementli avi hattı", double(clock.elapsed()), c->result().ms});
-        qInfo() << "TIMING Aç (avi hattı):" << clock.elapsed() << "ms";
+        g_timings.append({"Open: 6 element avi pipeline", double(clock.elapsed()), c->result().ms});
+        qInfo() << "TIMING Open (avi pipeline):" << clock.elapsed() << "ms";
         QCOMPARE(linkText(), links);
         QStringList again;
         for (const gps::PlanElement& e : c->plan().elements) again << text(e.name);
@@ -1049,7 +1060,7 @@ private slots:
         QCOMPARE(w->scene()->links().size(), int(c->plan().links.size()));
         QVERIFY(!c->dirty());
         QVERIFY(w->windowTitle().contains("roundtrip.conf"));
-        QVERIFY(shot("17_acilan_dosya"));
+        QVERIFY(shot("17_opened_file"));
 
         // saving the opened plan again writes the same text (positions, names, links)
         QVERIFY(w->saveFile(work.filePath("roundtrip2.conf")));
@@ -1080,18 +1091,18 @@ private slots:
         QString conv = text(c->plan().elements.back().name);
         QCOMPARE(c->result().status, QString("crashed"));
         QVERIFY2(c->result().message.contains(conv), qPrintable(c->result().message));
-        QVERIFY(c->result().message.contains("çökert"));
+        QVERIFY(c->result().message.contains("stop unexpectedly"));
         QVERIFY(!c->canSave());
         idle();
         QVERIFY(w->scene()->element(conv)->view().isError);
-        QVERIFY(w->updatePanel()->findChild<QLabel*>("updateStatus")->text().contains("çöktü"));
+        QVERIFY(w->updatePanel()->findChild<QLabel*>("updateStatus")->text().contains("stopped unexpectedly"));
         QVERIFY(w->isVisible());
-        QVERIFY(shot("18_yardimci_coktu"));
+        QVERIFY(shot("18_helper_crashed"));
 
-        // alive and well: the real helper comes back and Güncelle (F5) heals the state
+        // alive and well: the real helper comes back and Validate (F5) heals the state
         qputenv("GPS_BIN_DIR", goodBin);
         QVERIFY(w->findChild<QAction*>("actionUpdate")->isEnabled());
-        timed("Güncelle (F5) çökmeden sonra", [&] { w->findChild<QAction*>("actionUpdate")->trigger(); });
+        timed("Validate (F5) after the crash", [&] { w->findChild<QAction*>("actionUpdate")->trigger(); });
         idle();
         QCOMPARE(c->result().status, QString("ok"));
         QVERIFY(c->canSave());
@@ -1112,23 +1123,23 @@ private slots:
         // while the helper hangs, the GUI is still alive: it paints, and the actions are off
         QVERIFY(!w->findChild<QAction*>("actionSave")->isEnabled());
         QVERIFY(!w->findChild<QAction*>("actionAddSource")->isEnabled());
-        QVERIFY(w->findChild<QLabel*>("stateLabel")->text().contains("Güncelleniyor"));
-        QVERIFY(shot("19_guncelleniyor_takildi"));
+        QVERIFY(w->findChild<QLabel*>("stateLabel")->text().contains("locked while validating"));
+        QVERIFY(shot("19_validating_hung"));
         QVERIFY(waitFor([&] { return !c->busy(); }, 20000));
         qint64 took = clock.elapsed();
         qInfo() << "hanging gps-update killed after" << took << "ms (timeout 500 + 2000)";
         QVERIFY2(took >= 2400 && took < 9000, qPrintable(QString::number(took)));
         QCOMPARE(c->result().status, QString("hung"));
-        QVERIFY(c->result().message.contains("zaman aşımı"));
+        QVERIFY(c->result().message.contains("did not answer in time"));
         QVERIFY(!c->canSave());
         QVERIFY(w->isVisible());
         idle();
         QVERIFY(w->findChild<QAction*>("actionAddSource")->isEnabled());
-        QVERIFY(shot("20_takilan_yardimci_oldurulduktan_sonra"));
+        QVERIFY(shot("20_after_the_hung_helper_was_killed"));
     }
 
     void garbageAndCrashingRunHelpersAreSurvived() {
-        QString src = addSource("videotestsrc", [&](PropertyDialog* d) { setNumber(d, "num-buffers", 3); });
+        QString src = addSource("videotestsrc", [&](PropertyPage* d) { setNumber(d, "num-buffers", 3); });
         QString sink = addBehind(src, "src", "fakesink");
         QVERIFY(!sink.isEmpty());
         QVERIFY(c->canRun());
@@ -1146,8 +1157,8 @@ private slots:
         qputenv("GPS_BIN_DIR", helperDirWith("gps-update", "#!/bin/sh\necho 'this is not json'\nexit 0\n").toUtf8());
         QVERIFY(c->refresh());
         QVERIFY(waitFor([&] { return !c->busy(); }, 15000));
-        QCOMPARE(c->result().status, QString("error"));
-        QVERIFY(c->result().message.contains("geçersiz"));
+        QCOMPARE(c->result().status, QString("stopped"));
+        QVERIFY(c->result().message.contains("stopped unexpectedly"));
         QVERIFY(!c->canSave());
 
         // the real tools again: everything works
@@ -1167,8 +1178,8 @@ private slots:
 
     // The "caps · N" chip sits on a 40 px link: it must not hide the pad circles at either end.
     void aCapsChipLeavesTheBothPadCirclesVisible() {
-        QString src = addSource("videotestsrc", [&](PropertyDialog* d) { setNumber(d, "num-buffers", 5); });
-        QString sink = addBehind(src, "src", "fakesink", {}, [&](CapsDialog* d) {
+        QString src = addSource("videotestsrc", [&](PropertyPage* d) { setNumber(d, "num-buffers", 5); });
+        QString sink = addBehind(src, "src", "fakesink", {}, [&](CapsPage* d) {
             selectMedia(d, "video/x-raw");
             pinField(d, "width", "160");
             pinField(d, "height", "120");
@@ -1180,7 +1191,7 @@ private slots:
         QImage image = renderScene(&area);
         QVERIFY2(padIsDrawn(image, area, src, "src", true, true), "the chip covers the source pad circle");
         QVERIFY2(padIsDrawn(image, area, sink, "sink", false, true), "the chip covers the sink pad circle");
-        QVERIFY(shot("21_caps_cipi_pad_daireleri_gorunur"));
+        QVERIFY(shot("21_caps_chip_pad_circles_visible"));
     }
 
     // GStreamer error texts are long. Up to three lines must be drawn inside the box; more must end in "…" (tooltip: all of it).
@@ -1188,12 +1199,12 @@ private slots:
         for (int pathLength : {25, 45, 400}) {
             QString path = "/does/not/exist/" + QString("d").repeated(pathLength) + ".avi";
             c->newPlan();
-            QString file = addSource("filesrc", [&](PropertyDialog* d) { setText(d, "location", path); });
+            QString file = addSource("filesrc", [&](PropertyPage* d) { setText(d, "location", path); });
             QVERIFY(!file.isEmpty());
             QCOMPARE(c->result().status, QString("error"));
             const ElementView view = c->view(file);
             QVERIFY(view.isError);
-            // a path without spaces in the message must not stretch the window (the Güncelleme label cannot wrap it)
+            // a path without spaces in the message must not stretch the window (the Validation label cannot wrap it)
             QVERIFY2(w->width() <= 1400, qPrintable(QString("window grew to %1 px").arg(w->width())));
             QRectF area;
             QImage image = renderScene(&area);
@@ -1232,7 +1243,7 @@ private slots:
             QVERIFY2(item->toolTip().contains(view.note), "the tooltip must hold the whole text");
             if (lines > 3) QVERIFY(ElementItem::fitNote(view.note, small).endsWith("…"));
             else QCOMPARE(ElementItem::fitNote(view.note, small), view.note);
-            QVERIFY(shot(QString("22_uzun_hata_metni_%1").arg(pathLength)));
+            QVERIFY(shot(QString("22_long_error_text_%1").arg(pathLength)));
         }
     }
 
@@ -1256,46 +1267,46 @@ private slots:
     }
 
     // With pad settings on screen (compositor), the caps fields must keep a usable area.
-    void capsDialogKeepsRoomForTheFieldsWhenThePadHasSettings() {
+    void capsPageKeepsRoomForTheFieldsWhenThePadHasSettings() {
         QString a = addSource("videotestsrc");
         QVERIFY(!a.isEmpty());
         QString mix;
         {
             clickPad(a, "src", true);
-            auto* picker = shown<PickerDialog>();
+            auto* picker = shown<PickerPage>();
             QVERIFY(picker);
             pickRow(picker, "compositor");
-            auto* props = shown<PropertyDialog>();
+            auto* props = shown<PropertyPage>();
             QVERIFY(props);
             press(props, "saveButton");
             idle();
             mix = text(c->plan().elements.back().name);
         }
-        auto* caps = capsDialog();
+        auto* caps = capsPage();
         QVERIFY(caps);
         selectMedia(caps, "video/x-raw");
         QTest::qWait(100);
         auto* pages = caps->findChild<QStackedWidget*>();
         QVERIFY(pages);
-        qInfo() << "caps dialog size" << caps->size() << "field area" << pages->size();
+        qInfo() << "caps page size" << caps->size() << "field area" << pages->size();
         // width, height, format, framerate, ... one row is about 36 px: four rows must be visible
         QVERIFY2(pages->height() >= 4 * 36, qPrintable(QString("field area is only %1 px high").arg(pages->height())));
         press(caps, "cancelButton");
     }
 
-    // Queue ekle on a link between two boxes that are 280 px apart: the queue takes the place between them, left to right.
+    // Insert queue on a link between two boxes that are 280 px apart: the queue takes the place between them, left to right.
     void insertedQueueKeepsTheFlowLeftToRight() {
-        QString src = addSource("videotestsrc", [&](PropertyDialog* d) { setNumber(d, "num-buffers", 5); });
+        QString src = addSource("videotestsrc", [&](PropertyPage* d) { setNumber(d, "num-buffers", 5); });
         QString a = addBehind(src, "src", "videoconvert");
         QString sink = addBehind(a, "src", "fakesink");
         QVERIFY(!sink.isEmpty());
-        timed("Queue ekle (yerleşim)", [&] { linkMenu(a, "src", "actionInsertQueue"); });
+        timed("Insert queue (layout)", [&] { linkMenu(a, "src", "actionInsertQueue"); });
         idle();  // checkLayout() runs here: no overlap, no backwards link
         QString queue = text(c->plan().elements.back().name);
         const gps::PlanElement* q = c->plan().find(queue.toStdString());
         QVERIFY(q->x > c->plan().find(a.toStdString())->x);
         QVERIFY(q->x < c->plan().find(sink.toStdString())->x);
-        QVERIFY(shot("23_queue_yerlesim"));
+        QVERIFY(shot("23_queue_layout"));
     }
 };
 

@@ -1,21 +1,25 @@
-// screens_test.cpp – saves screenshots of the main window and the dialogs in key states to report/screenshots/.
+// screens_test.cpp – saves screenshots of the main window, the drawer pages and the setup page in key states to GPS_SHOT_DIR.
 // They are looked at by a human (or by Claude with the Read tool); the test only checks that they were written
 // and are not blank.
 #include <QDir>
 #include <QMenu>
+#include <QLineEdit>
 #include <QPushButton>
 #include <QTabWidget>
 
 #include "canvasscene.h"
 #include "canvasview.h"
-#include "capsdialog.h"
+#include "capspage.h"
 #include "confirmdialog.h"
+#include "drawer.h"
 #include "elementitem.h"
 #include "flows.h"
 #include "mainwindow.h"
-#include "pickerdialog.h"
-#include "propertydialog.h"
+#include "pickerpage.h"
+#include "propertypage.h"
+#include "setuppage.h"
 #include "testsupport.h"
+#include "validationindicator.h"
 #include "theme.h"
 
 using namespace support;
@@ -34,7 +38,7 @@ class ScreensTest : public QObject {
     }
 
     void save(QWidget* widget, const QString& name) {
-        QDir().mkpath(GPS_SHOT_DIR);
+        QDir().mkpath(shotDir());
         QImage image = widget->grab().toImage();
         QVERIFY2(image.width() > 100 && image.height() > 50, qPrintable(name));
         QSet<QRgb> colours;
@@ -42,7 +46,7 @@ class ScreensTest : public QObject {
             for (int x = 0; x < image.width(); x += 7) colours.insert(image.pixel(x, y));
         }
         QVERIFY2(colours.size() > 3, qPrintable(name + " looks blank"));
-        QVERIFY(image.save(QString("%1/%2.png").arg(GPS_SHOT_DIR, name)));
+        QVERIFY(image.save(QString("%1/%2.png").arg(shotDir(), name)));
     }
 
     // A pipeline with a tee, a compositor, a caps choice, a queue, an NVIDIA element and an exposed parameter.
@@ -68,7 +72,10 @@ class ScreensTest : public QObject {
     }
 
 private slots:
-    void initTestCase() { Theme::apply(*qApp); }
+    void initTestCase() {
+        isolateSettings();
+        Theme::apply(*qApp);
+    }
     void init() { c = makeController(); }
     void cleanup() { c.reset(); }
 
@@ -76,7 +83,7 @@ private slots:
         MainWindow w(c.get());
         w.show();
         QTest::qWait(200);
-        save(&w, "01-bos-tuval");
+        save(&w, "ux_01_empty_canvas");
     }
 
     void firstSource() {
@@ -84,7 +91,7 @@ private slots:
         w.show();
         addSource(*c, "videotestsrc", withProps({{"pattern", "snow"}, {"is-live", "true"}}));
         settleWindow(w);
-        save(&w, "02-ilk-kaynak");
+        save(&w, "ux_02_first_source");
     }
 
     void completePipeline() {
@@ -93,14 +100,14 @@ private slots:
         buildRichPipeline();
         QVERIFY(c->result().isComplete());
         settleWindow(w);
-        save(&w, "03-tamamlanmis-pipeline");
+        save(&w, "ux_03_finished_pipeline");
         w.view()->resetTransform();
         w.view()->centerOn(w.scene()->element("tee_1"));
         QTest::qWait(100);
-        save(w.view(), "03b-tuval-1-e-1");
+        save(w.view(), "ux_03b_canvas_1to1");
         w.bottomTabs()->setCurrentIndex(0);
         QTest::qWait(100);
-        save(&w, "04-gunluk-paneli");
+        save(&w, "ux_04_log_panel");
     }
 
     void demuxWithSometimesPadsAndUnknownData() {
@@ -112,7 +119,7 @@ private slots:
         addSource(*c, "filesrc", withProps({{"location", "/data/random.bin"}}));
         addSource(*c, "nvarguscamerasrc");
         settleWindow(w);
-        save(&w, "05-sometimes-ve-bilinmeyen-veri");
+        save(&w, "ux_05_sometimes_and_unknown");
     }
 
     void failedUpdate() {
@@ -123,7 +130,7 @@ private slots:
         addAfter(*c, conv, "src", "fakesink", "sink", withProps({{"fake-error", "Could not open resource for writing: /readonly/out.mp4"}}));
         settleWindow(w);
         QVERIFY(!c->canSave());
-        save(&w, "06-basarisiz-guncelleme");
+        save(&w, "ux_06_failed_validation");
     }
 
     void refusedLink() {
@@ -132,7 +139,7 @@ private slots:
         QString src = addSource(*c, "videotestsrc");
         addAfter(*c, src, "src", "jpegdec");
         settleWindow(w);
-        save(&w, "07-reddedilen-baglanti");
+        save(&w, "ux_07_refused_link");
     }
 
     void crashedHelper() {
@@ -142,72 +149,61 @@ private slots:
         QString bad = addSource(*c, "audiotestsrc", withProps({{"fake-crash", "1"}}));
         settleWindow(w);
         QCOMPARE(c->result().status, QString("crashed"));
-        save(&w, "08-yardimci-coktu");
+        save(&w, "ux_08_crashed_helper");
     }
 
-    void dialogs() {
+    // Waits for the 150 ms slide to end, then saves the whole window.
+    void saveWithDrawer(MainWindow& w, const QString& name) {
+        QVERIFY(waitFor([&] { return w.drawer()->width() == Drawer::kWidth; }, 3000));
+        QTest::qWait(100);
+        save(&w, name);
+    }
+
+    void drawerPages() {
         MainWindow w(c.get());
         w.show();
         buildRichPipeline();
         settleWindow(w);
-
-        PropertyDialogInput input;
-        input.info = *need(*c, "videotestsrc");
-        input.title = "Kaynak ekle: videotestsrc";
-        input.props = {{"pattern", "ball"}};
-        input.exposed = {"num-buffers"};
-        PropertyDialog properties(input);
-        properties.show();
-        QTest::qWait(100);
-        save(&properties, "10-property-dialog");
-
-        PropertyDialogInput tee;
-        tee.info = *need(*c, "propdemo");
-        tee.title = "Property düzenle: propdemo_0";
-        tee.props = {{"p-int", "42"}, {"p-flags", "a+c"}};
-        PropertyDialog all(tee);
-        all.resize(700, 760);
-        all.show();
-        QTest::qWait(100);
-        save(&all, "11-property-dialog-tum-turler");
-
-        CapsDialogInput caps;
-        caps.title = "Caps düzenle";
-        caps.subtitle = "videoconvert_4.src  →  compositor_3.sink_%u";
-        caps.allowed = need(*c, "videoconvert")->padTemplate("src", "src")->structures;
-        caps.current = "video/x-raw, format=(string)NV12, width=(int)640";
-        caps.padProperties = need(*c, "compositor")->padTemplate("sink_%u", "sink")->padProperties;
-        caps.padProps = {{"xpos", "320"}};
-        CapsDialog capsDialog(caps);
-        capsDialog.show();
-        QTest::qWait(100);
-        save(&capsDialog, "12-caps-dialog");
-
-        PickerData picker;
-        picker.title = "Seçici";
         QString free = addSource(*c, "videotestsrc");
-        picker.subtitle = free + ".src   ·   video/x-raw";
-        picker.existing = c->existingTargets(free, "src");
-        QStringList compatible;
-        c->fetchCompatible("video/x-raw", [&](const QStringList& l) { compatible = l; });
-        QVERIFY(waitFor([&] { return !compatible.isEmpty(); }));
-        picker.compatible = compatible;
-        for (const ListEntry& e : c->catalog()) {
-            if (!e.isSource) picker.candidates << e;
-        }
-        PickerDialog pick(picker);
-        pick.show();
-        QTest::qWait(100);
-        save(&pick, "13-secici");
+        settleWindow(w);
 
-        ConfirmDialog confirm("Silinecekler", "Şu 3 element silinecek (3 bağlantıyla birlikte)",
-                              {"nvvideoconvert_5   (nvvideoconvert)", "textoverlay_6   (textoverlay)", "fakesink_7   (fakesink)"}, "Kaldır");
+        // Picker: a free pad of a second source, with an existing compositor pad on offer.
+        w.flows()->fromFreePad(free, "src");
+        auto* picker = w.drawer()->page<PickerPage>();
+        QVERIFY(waitFor([&] { return (picker = w.drawer()->page<PickerPage>()) != nullptr; }));
+        saveWithDrawer(w, "ux_10_drawer_picker");
+
+        // Properties of the element chosen there.
+        QTest::keyClicks(picker->findChild<QLineEdit*>("searchBox"), "propdemo");
+        QTest::keyClick(picker->findChild<QLineEdit*>("searchBox"), Qt::Key_Return);
+        auto* props = static_cast<PropertyPage*>(nullptr);
+        QVERIFY(waitFor([&] { return (props = w.drawer()->page<PropertyPage>()) != nullptr; }));
+        saveWithDrawer(w, "ux_11_drawer_properties");
+        w.drawer()->dismiss();
+
+        // Caps and pad settings of the compositor link.
+        QVERIFY(waitFor([&] { return !w.drawer()->isOpen(); }));
+        w.flows()->editCaps("videoconvert_4", "src");
+        QVERIFY(w.drawer()->page<CapsPage>());
+        saveWithDrawer(w, "ux_12_drawer_caps");
+        w.drawer()->dismiss();
+        QTest::qWait(300);
+
+        // Add source.
+        w.flows()->chooseSource();
+        QVERIFY(w.drawer()->page<PickerPage>());
+        saveWithDrawer(w, "ux_13_drawer_add_source");
+        w.drawer()->dismiss();
+        QTest::qWait(300);
+
+        ConfirmDialog confirm("Remove elements", "These 3 elements will be removed, with 3 links",
+                              {"nvvideoconvert_5   (nvvideoconvert)", "textoverlay_6   (textoverlay)", "fakesink_7   (fakesink)"}, "Remove 3 elements");
         confirm.show();
         QTest::qWait(100);
-        save(&confirm, "14-onay");
+        save(&confirm, "ux_14_confirm");
     }
 
-    void menusAndSourcePanel() {
+    void menus() {
         MainWindow w(c.get());
         w.show();
         buildRichPipeline();
@@ -216,26 +212,69 @@ private slots:
         QTest::qWait(100);
         QMenu* menu = w.findChild<QMenu*>("linkMenu");
         QVERIFY(menu);
-        save(menu, "15-baglanti-menusu");
+        save(menu, "ux_15_link_menu");
         menu->close();
         w.flows()->showElementMenu("videotestsrc_0", w.mapToGlobal(QPoint(400, 300)));
         QTest::qWait(100);
         menu = w.findChild<QMenu*>("elementMenu");
         QVERIFY(menu);
-        save(menu, "16-element-menusu");
+        save(menu, "ux_16_element_menu");
         menu->close();
     }
 
-    void updatingState() {
+    void validatingAndSlow() {
         MainWindow w(c.get());
         w.show();
         buildRichPipeline();
         settleWindow(w);
-        QVERIFY(c->editElement("videotestsrc_0", withProps({{"pattern", "ball"}, {"fake-slow", "1500"}})));
-        QTest::qWait(400);
+        qint64 now = 0;
+        c->slowWatch()->setClock([&now] { return now; });
+        QVERIFY(c->editElement("videotestsrc_0", withProps({{"pattern", "ball"}, {"fake-slow", "8000"}})));
+        QTest::qWait(500);
         QVERIFY(c->updating());
-        save(&w, "17-guncelleniyor");
+        now = 12000;
+        c->slowWatch()->check();
+        save(&w, "ux_17_validating");
+        now = 61000;
+        c->slowWatch()->check();
+        QVERIFY(c->slowAsked());
+        QTest::qWait(100);
+        save(&w, "ux_18_slow_message");
+        c->cancelUpdate();
         QVERIFY(settle(*c));
+        QTest::qWait(300);
+        w.scene()->rebuild();
+        save(&w, "ux_19_cancelled");
+    }
+
+    void helperStopped() {
+        MainWindow w(c.get());
+        w.show();
+        addSource(*c, "videotestsrc");
+        addSource(*c, "audiotestsrc", withProps({{"fake-crash", "1"}}));
+        settleWindow(w);
+        save(&w, "ux_20_helper_stopped");
+    }
+
+    void setupPages() {
+        struct Case {
+            const char* name;
+            const char* version;
+            const char* noGst;
+            const char* broken;
+        };
+        for (const Case& k : {Case{"ux_21_setup_not_installed", "1.20.3", "1", ""}, Case{"ux_22_setup_too_old", "1.14.5", "", ""},
+                              Case{"ux_23_setup_helper_broken", "1.20.3", "", "1"}}) {
+            qputenv("GPS_FAKE_GST_VERSION", k.version);
+            qputenv("GPS_FAKE_NO_GST", k.noGst);
+            qputenv("GPS_FAKE_BROKEN", k.broken);
+            MainWindow w(c.get());
+            w.show();
+            QVERIFY(waitFor([&] { return w.showingSetup(); }));
+            QTest::qWait(100);
+            save(&w, k.name);
+        }
+        for (const char* name : {"GPS_FAKE_GST_VERSION", "GPS_FAKE_NO_GST", "GPS_FAKE_BROKEN"}) qunsetenv(name);
     }
 };
 

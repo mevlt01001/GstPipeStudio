@@ -49,13 +49,12 @@ TEXT = structure("text/x-raw", [one_of("format", "gchararray", ["utf8", "pango-m
 FAMILIES = {"video/x-raw": VIDEO, "audio/x-raw": AUDIO, "image/jpeg": JPEG, "video/x-msvideo": AVI}
 
 BUFFERS = prop("num-buffers", "int", "-1", "-1", "2147483647", blurb="Number of buffers to output before sending EOS")
-BASE = [prop("name", "string", "element0"), prop("parent", "object")]
 PATTERN = [("smpte", 0), ("snow", 1), ("black", 2), ("white", 3), ("red", 4)]
 
 
 def element(longname, klass, rank, plugin, templates, properties):
     return {"longName": longname, "klass": klass, "rank": rank, "plugin": plugin, "templates": templates,
-            "properties": BASE + properties}
+            "properties": properties}
 
 
 CATALOG = {

@@ -277,13 +277,13 @@ std::vector<FactoryEntry> listFactories() {
 bool inspect(const std::string& name, ElementInfo* out, std::string* error) {
     GstElementFactory* found = gst_element_factory_find(name.c_str());
     if (!found) {
-        if (error) *error = "factory bulunamadi: " + name;
+        if (error) *error = "element '" + name + "' was not found, its plugin may not be installed";
         return false;
     }
     GstPluginFeature* loaded = gst_plugin_feature_load(GST_PLUGIN_FEATURE(found));
     gst_object_unref(found);
     if (!loaded) {
-        if (error) *error = "eklenti yuklenemedi: " + name;
+        if (error) *error = "unable to load the plugin of element '" + name + "', its libraries may be missing";
         return false;
     }
     GstElementFactory* factory = GST_ELEMENT_FACTORY(loaded);
@@ -308,7 +308,7 @@ bool compatibleFactories(const std::string& capsText, std::vector<std::string>* 
     if (!capsText.empty()) {
         caps = gst_caps_from_string(capsText.c_str());
         if (!caps) {
-            if (error) *error = "caps metni okunamadi: " + capsText;
+            if (error) *error = "the caps text cannot be read: '" + capsText + "'";
             return false;
         }
     }
@@ -341,7 +341,7 @@ bool compatibleFactories(const std::string& capsText, std::vector<std::string>* 
 bool parseCaps(const std::string& text, std::string* normalized, std::vector<StructureInfo>* out, std::string* error) {
     GstCaps* caps = text.empty() ? nullptr : gst_caps_from_string(text.c_str());
     if (!caps) {
-        if (error) *error = "caps metni okunamadi: '" + text + "'";
+        if (error) *error = "the caps text cannot be read: '" + text + "'";
         return false;
     }
     *normalized = take(gst_caps_to_string(caps));
@@ -418,6 +418,24 @@ std::string elementJson(const ElementInfo& info) {
     w.key("properties").beginArray();
     for (const PropertyInfo& p : info.properties) writeProperty(w, p);
     w.end().end();
+    return w.str();
+}
+
+std::string versionJson(const std::vector<FactoryEntry>& entries) {
+    guint major, minor, micro, nano;
+    gst_version(&major, &minor, &micro, &nano);
+    int nvidia = 0;
+    for (const FactoryEntry& e : entries) nvidia += e.nvidia ? 1 : 0;
+    GList* plugins = gst_registry_get_plugin_list(gst_registry_get());
+    int pluginCount = static_cast<int>(g_list_length(plugins));
+    gst_plugin_list_free(plugins);
+    JsonWriter w;
+    w.beginObject().key("gstreamer").beginObject();
+    w.field("version", std::to_string(major) + "." + std::to_string(minor) + "." + std::to_string(micro));
+    w.field("major", static_cast<int>(major)).field("minor", static_cast<int>(minor)).field("micro", static_cast<int>(micro)).end();
+    w.key("nvidia").beginObject().field("present", nvidia > 0).field("elements", nvidia).end();
+    w.key("plugins").beginObject().field("count", pluginCount).field("elements", static_cast<int>(entries.size())).end();
+    w.end();
     return w.str();
 }
 

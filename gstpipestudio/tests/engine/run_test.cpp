@@ -50,7 +50,7 @@ int main(int argc, char** argv) {
     {
         RunResult r = run(recorder(dir + "/bad.raw", "3").plan, {{"frames", "abc"}});
         CHECK_EQ(r.status, "error");
-        CHECK(startsWith(r.message, "src.num-buffers: 'abc' gecersiz ("));
+        CHECK(startsWith(r.message, "src.num-buffers: 'abc' is not valid, "));
         r = run(recorder(dir + "/bad.raw", "3").plan, {{"frames", ""}});
         CHECK_EQ(r.status, "error");
         r = run(recorder(dir + "/bad.raw", "3").plan, {{"nope", "1"}});

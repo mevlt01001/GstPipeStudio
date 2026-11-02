@@ -107,16 +107,15 @@ std::string Plan::addSource(const std::string& factory, const Props& props, doub
 }
 
 std::string Plan::addAfter(const std::string& srcElement, const std::string& srcPad, const std::string& factory,
-                           const std::string& sinkPad, const Props& props) {
-    const PlanElement* src = find(srcElement);
-    if (!src || linkFrom(srcElement, srcPad) >= 0) return "";
+                           const std::string& sinkPad, const Props& props, double x, double y) {
+    if (!find(srcElement) || linkFrom(srcElement, srcPad) >= 0) return "";
 
     PlanElement e;
     e.name = newName(factory);
     e.factory = factory;
     e.props = props;
-    e.x = src->x + 280;
-    e.y = src->y;
+    e.x = x;
+    e.y = y;
     PlanLink l;
     l.srcElement = srcElement;
     l.srcPad = srcPad;
@@ -246,9 +245,18 @@ Removal Plan::previewCut(const std::string& srcElement, const std::string& srcPa
 Addition Plan::replace(const std::string& srcElement, const std::string& srcPad, const std::string& factory,
                        const std::string& sinkPad, const Props& props, const TraitsFn& traits) {
     Addition result;
+    // The new element takes the place of the one it replaces.
+    double x = 0, y = 0;
+    int old = linkFrom(srcElement, srcPad);
+    if (old >= 0) {
+        if (const PlanElement* replaced = find(links[old].sinkElement)) {
+            x = replaced->x;
+            y = replaced->y;
+        }
+    }
     result.removed = cut(srcElement, srcPad, traits);
     if (result.removed.links == 0) return result;  // the pad was free, there was nothing to replace
-    result.element = addAfter(srcElement, srcPad, factory, sinkPad, props);
+    result.element = addAfter(srcElement, srcPad, factory, sinkPad, props, x, y);
     return result;
 }
 
@@ -292,11 +300,11 @@ std::string Plan::insertQueue(const std::string& srcElement, const std::string& 
     // The second link takes the old link's place in the list, so a Request sink keeps its pad order.
     PlanLink in = original;
     in.sinkElement = q.name;
-    in.sinkPad = "sink";
+    in.sinkPad = kQueueSinkPad;
     in.sinkPadProps.clear();
     PlanLink out;
     out.srcElement = q.name;
-    out.srcPad = "src";
+    out.srcPad = kQueueSrcPad;
     out.sinkElement = original.sinkElement;
     out.sinkPad = original.sinkPad;
     out.sinkPadProps = original.sinkPadProps;
@@ -314,7 +322,7 @@ bool Plan::removeQueue(const std::string& queueName) {
     if (in.size() != 1) return false;
 
     int inIndex = in[0];
-    int outIndex = linkFrom(queueName, "src");
+    int outIndex = linkFrom(queueName, kQueueSrcPad);
     Removal removed;
     if (outIndex < 0) {
         dropElement(queueName, &removed);  // a free output: the queue and its input link simply go

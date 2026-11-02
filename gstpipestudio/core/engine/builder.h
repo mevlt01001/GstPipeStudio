@@ -21,7 +21,7 @@ namespace gps {
 using LogFn = std::function<void(const std::string& line)>;
 
 // Writes one property after checking the text against the property's own spec. Returns false with a
-// reason (Turkish, short) and writes nothing when the property is missing, not writable, or the text is bad.
+// reason (English, short; it reads after "is not valid, ") and writes nothing when the property is missing, not writable, or the text is bad.
 // Used for elements and for pads.
 bool setProperty(GObject* object, const std::string& property, const std::string& text, std::string* reason);
 
@@ -34,6 +34,7 @@ struct PadReport {
 
 struct UpdateOptions {
     int timeoutMs = 10000;
+    std::function<bool()> shouldStop;  // polled; true ends update() at once with status error (gps-update: SIGINT, SIGTERM)
 };
 
 struct UpdateResult {
@@ -50,7 +51,7 @@ std::string updateJson(const UpdateResult& result);
 
 struct RunOptions {
     int timeoutMs = 0;                  // 0 = no limit
-    std::function<bool()> shouldStop;   // polled; true makes run() send EOS (gps-run: SIGINT)
+    std::function<bool()> shouldStop;   // polled; true makes run() send EOS (gps-run: SIGINT, SIGTERM)
 };
 
 struct RunResult {

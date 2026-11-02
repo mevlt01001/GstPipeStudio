@@ -1,8 +1,8 @@
-// propertydialog.cpp
-#include "propertydialog.h"
+// propertypage.cpp
+#include "propertypage.h"
 
 #include <QCheckBox>
-#include <QDialogButtonBox>
+#include <QComboBox>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -15,27 +15,27 @@
 
 #include "theme.h"
 
-PropertyDialog::PropertyDialog(const PropertyDialogInput& input, QWidget* parent) : QDialog(parent), input_(input) {
-    setWindowTitle(input.title);
-    setObjectName("propertyDialog");
-    resize(700, 620);
+PropertyPage::PropertyPage(const PropertyPageInput& input, QWidget* parent) : DrawerPage(parent), input_(input) {
+    setObjectName("propertyPage");
 
     auto* root = new QVBoxLayout(this);
+    root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(10);
 
     auto* heading = new QLabel(input.info.factory + "  —  " + input.info.longName, this);
     heading->setObjectName("heading");
+    heading->setWordWrap(true);
     root->addWidget(heading);
     auto* sub = new QLabel(input.info.klass + (input.info.description.isEmpty() ? "" : "  ·  " + input.info.description), this);
     sub->setObjectName("muted");
     sub->setWordWrap(true);
     root->addWidget(sub);
 
-    auto* search = new QLineEdit(this);
-    search->setObjectName("searchBox");
-    search->setPlaceholderText("Property ara…");
-    search->setClearButtonEnabled(true);
-    root->addWidget(search);
+    search_ = new QLineEdit(this);
+    search_->setObjectName("searchBox");
+    search_->setPlaceholderText("Search properties…");
+    search_->setClearButtonEnabled(true);
+    root->addWidget(search_);
 
     // One row per editable property. Rows are hidden, not removed, by the search box.
     auto* list = new QWidget;
@@ -51,11 +51,12 @@ PropertyDialog::PropertyDialog(const PropertyDialogInput& input, QWidget* parent
 
         auto* row = new QWidget(list);
         row->setObjectName("row_" + p.name);
-        auto* line = new QHBoxLayout(row);
+        auto* line = new QVBoxLayout(row);
         line->setContentsMargins(0, 0, 0, 0);
+        line->setSpacing(3);
 
-        auto* label = new QLabel(p.deprecated ? p.name + "  (eski)" : p.name, row);
-        label->setFixedWidth(200);
+        // The drawer is narrow: the name sits above its editor.
+        auto* label = new QLabel(p.deprecated ? p.name + "  (deprecated)" : p.name, row);
         label->setToolTip(p.blurb);
         label->setWordWrap(true);
         if (p.deprecated) label->setStyleSheet("color: " + Theme::muted().name() + ";");
@@ -64,13 +65,16 @@ PropertyDialog::PropertyDialog(const PropertyDialogInput& input, QWidget* parent
         auto* editor = new PropertyEditor(p, current, row);
         editor->setObjectName("editor_" + p.name);
 
-        auto* expose = new QCheckBox("dışarı aç", row);
+        auto* expose = new QCheckBox("Expose", row);
+        expose->setToolTip("Make this property a parameter of the saved pipeline (name=value on the gst-launch line)");
         expose->setObjectName("expose_" + p.name);
         expose->setChecked(std::find(input.exposed.begin(), input.exposed.end(), p.name.toStdString()) != input.exposed.end());
 
-        line->addWidget(label, 0, Qt::AlignTop);
-        line->addWidget(editor, 1, Qt::AlignTop);
-        line->addWidget(expose, 0, Qt::AlignTop);
+        auto* head = new QHBoxLayout;
+        head->addWidget(label, 1);
+        head->addWidget(expose, 0, Qt::AlignRight);
+        line->addLayout(head);
+        line->addWidget(editor);
         rows->addWidget(row);
         editors_ << editor;
         expose_[p.name] = expose;
@@ -78,7 +82,7 @@ PropertyDialog::PropertyDialog(const PropertyDialogInput& input, QWidget* parent
         ++shown;
     }
     if (shown == 0) {
-        auto* none = new QLabel("Bu elementin düzenlenebilir property'si yok.", list);
+        auto* none = new QLabel("This element has no editable properties.", list);
         none->setObjectName("muted");
         rows->addWidget(none);
     }
@@ -95,7 +99,7 @@ PropertyDialog::PropertyDialog(const PropertyDialogInput& input, QWidget* parent
         if (t.isRequest()) requestSrc << t;
     }
     if (!requestSrc.isEmpty()) {
-        auto* group = new QGroupBox("Request src pad sayısı", this);
+        auto* group = new QGroupBox("Request src pads", this);
         auto* form = new QVBoxLayout(group);
         for (const PadTemplateInfo& t : requestSrc) {
             auto* line = new QHBoxLayout;
@@ -114,20 +118,36 @@ PropertyDialog::PropertyDialog(const PropertyDialogInput& input, QWidget* parent
         root->addWidget(group);
     }
 
-    auto* buttons = new QDialogButtonBox(this);
-    QPushButton* save = buttons->addButton("Kaydet", QDialogButtonBox::AcceptRole);
-    save->setObjectName("saveButton");
-    save->setDefault(true);
-    QPushButton* cancel = buttons->addButton("İptal", QDialogButtonBox::RejectRole);
-    cancel->setObjectName("cancelButton");
-    connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
-    connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
-    root->addWidget(buttons);
+    if (input.sinkPads.size() > 1) {
+        auto* group = new QGroupBox("Connect to sink pad", this);
+        auto* form = new QVBoxLayout(group);
+        sinkPads_ = new QComboBox(group);
+        sinkPads_->setObjectName("sinkPadCombo");
+        sinkPads_->addItems(input.sinkPads);
+        form->addWidget(sinkPads_);
+        root->addWidget(group);
+    }
 
-    connect(search, &QLineEdit::textChanged, this, &PropertyDialog::filter);
+    auto* buttons = new QHBoxLayout;
+    buttons->addStretch(1);
+    auto* cancel = new QPushButton("Cancel", this);
+    cancel->setObjectName("cancelButton");
+    primary_ = new QPushButton(input.acceptText, this);
+    primary_->setObjectName("saveButton");
+    buttons->addWidget(cancel);
+    buttons->addWidget(primary_);
+    root->addLayout(buttons);
+    connect(cancel, &QPushButton::clicked, this, &DrawerPage::cancelled);
+    connect(primary_, &QPushButton::clicked, this, &PropertyPage::confirmed);
+
+    connect(search_, &QLineEdit::textChanged, this, &PropertyPage::filter);
 }
 
-void PropertyDialog::filter(const QString& text) {
+void PropertyPage::focusFirst() { search_->setFocus(); }
+
+QString PropertyPage::sinkPad() const { return sinkPads_ ? sinkPads_->currentText() : QString(); }
+
+void PropertyPage::filter(const QString& text) {
     for (const PropertyInfo& p : input_.info.properties) {
         QWidget* row = rows_.value(p.name);
         if (!row) continue;
@@ -136,7 +156,7 @@ void PropertyDialog::filter(const QString& text) {
     }
 }
 
-ElementEdit PropertyDialog::edit() const {
+ElementEdit PropertyPage::edit() const {
     ElementEdit e;
     e.props = PropertyEditor::collect(editors_, input_.props);
     for (auto it = pads_.begin(); it != pads_.end(); ++it) {

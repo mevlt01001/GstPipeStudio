@@ -1,8 +1,8 @@
-// capsdialog.cpp
-#include "capsdialog.h"
+// capspage.cpp
+#include "capspage.h"
 
 #include <QComboBox>
-#include <QDialogButtonBox>
+#include <QHBoxLayout>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QLabel>
@@ -14,32 +14,25 @@
 #include "capsfieldeditor.h"
 #include "capsparse.h"
 
-CapsDialog::CapsDialog(const CapsDialogInput& input, QWidget* parent) : QDialog(parent), input_(input) {
-    setWindowTitle(input.title);
-    setObjectName("capsDialog");
-    resize(620, 560);
+CapsPage::CapsPage(const CapsPageInput& input, QWidget* parent) : DrawerPage(parent), input_(input) {
+    setObjectName("capsPage");
 
     auto* root = new QVBoxLayout(this);
+    root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(10);
-    auto* heading = new QLabel(input.title, this);
-    heading->setObjectName("heading");
-    root->addWidget(heading);
-    auto* sub = new QLabel(input.subtitle, this);
-    sub->setObjectName("muted");
-    root->addWidget(sub);
 
-    // Media type: Otomatik or one of the structures the pad can produce.
+    // Media type: Auto or one of the structures the pad can produce.
     media_ = new QComboBox(this);
     media_->setObjectName("mediaCombo");
-    media_->addItem("Otomatik");
+    media_->addItem("Auto");
     pages_ = new QStackedWidget(this);
-    pages_->addWidget(new QLabel("Caps seçilmez: GStreamer pazarlık eder.", this));
+    pages_->addWidget(new QLabel("No caps are chosen: GStreamer negotiates them.", this));
     for (const StructureInfo& s : input.allowed) {
         media_->addItem(s.title());
         auto* page = new QWidget(pages_);
         auto* form = new QFormLayout(page);
         form->setContentsMargins(0, 8, 0, 0);
-        form->setLabelAlignment(Qt::AlignLeft);
+        form->setRowWrapPolicy(QFormLayout::WrapAllRows);  // the drawer is narrow
         QList<CapsFieldEditor*> editors;
         for (const FieldInfo& f : s.fields) {
             auto* editor = new CapsFieldEditor(f, page);
@@ -54,10 +47,10 @@ CapsDialog::CapsDialog(const CapsDialogInput& input, QWidget* parent) : QDialog(
         pages_->addWidget(scroll);
     }
     auto* mediaRow = new QFormLayout;
-    mediaRow->addRow("Medya türü", media_);
+    mediaRow->addRow("Media type", media_);
     root->addLayout(mediaRow);
     if (input.allowed.isEmpty()) {
-        auto* none = new QLabel("Bu pad için seçilebilir caps bilgisi yok (son güncelleme vermedi).", this);
+        auto* none = new QLabel("The last validation gave no caps to choose from for this pad.", this);
         none->setObjectName("muted");
         none->setWordWrap(true);
         root->addWidget(none);
@@ -80,7 +73,7 @@ CapsDialog::CapsDialog(const CapsDialogInput& input, QWidget* parent) : QDialog(
     }
 
     // The sink pad's own settings (xpos of a compositor pad ...). Hidden when the pad has none.
-    auto* padBox = new QGroupBox("Pad ayarları", this);
+    auto* padBox = new QGroupBox("Pad settings", this);
     padBox->setObjectName("padSettings");
     // The settings scroll inside a box of their own, so ten of them cannot squeeze the caps fields above.
     auto* padLayout = new QVBoxLayout(padBox);
@@ -89,6 +82,7 @@ CapsDialog::CapsDialog(const CapsDialogInput& input, QWidget* parent) : QDialog(
     padScroll->setWidgetResizable(true);
     auto* padInner = new QWidget;
     auto* padForm = new QFormLayout(padInner);
+    padForm->setRowWrapPolicy(QFormLayout::WrapAllRows);
     padScroll->setWidget(padInner);
     padLayout->addWidget(padScroll);
     for (const PropertyInfo& p : input.padProperties) {
@@ -103,20 +97,30 @@ CapsDialog::CapsDialog(const CapsDialogInput& input, QWidget* parent) : QDialog(
     }
     padBox->setVisible(!padEditors_.isEmpty());
     root->addWidget(padBox, 2);
-    if (!padEditors_.isEmpty()) resize(660, 760);
 
-    auto* buttons = new QDialogButtonBox(this);
-    QPushButton* save = buttons->addButton("Kaydet", QDialogButtonBox::AcceptRole);
-    save->setObjectName("saveButton");
-    save->setDefault(true);
-    QPushButton* cancel = buttons->addButton("İptal", QDialogButtonBox::RejectRole);
+    auto* buttons = new QHBoxLayout;
+    buttons->addStretch(1);
+    auto* cancel = new QPushButton("Cancel", this);
     cancel->setObjectName("cancelButton");
-    connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
-    connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
-    root->addWidget(buttons);
+    buttons->addWidget(cancel);
+    if (input.skippable) {
+        auto* skip = new QPushButton("Skip", this);
+        skip->setObjectName("skipButton");
+        skip->setToolTip("Keep Auto caps");
+        buttons->addWidget(skip);
+        connect(skip, &QPushButton::clicked, this, &CapsPage::skipped);
+    }
+    primary_ = new QPushButton("Apply", this);
+    primary_->setObjectName("saveButton");
+    buttons->addWidget(primary_);
+    root->addLayout(buttons);
+    connect(cancel, &QPushButton::clicked, this, &DrawerPage::cancelled);
+    connect(primary_, &QPushButton::clicked, this, &CapsPage::applied);
 }
 
-QString CapsDialog::caps() const {
+void CapsPage::focusFirst() { media_->setFocus(); }
+
+QString CapsPage::caps() const {
     int index = media_->currentIndex() - 1;
     if (index < 0) return QString();
 
@@ -132,4 +136,4 @@ QString CapsDialog::caps() const {
     return QString::fromStdString(choice.toText());
 }
 
-gps::Props CapsDialog::padProps() const { return PropertyEditor::collect(padEditors_, input_.padProps); }
+gps::Props CapsPage::padProps() const { return PropertyEditor::collect(padEditors_, input_.padProps); }

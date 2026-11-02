@@ -1,4 +1,4 @@
-// theme.h – the colours of SPEC 8 and the one style sheet built from them.
+// theme.h – the colours of UI_RULES 1 (rule 10) and the one style sheet built from them.
 #pragma once
 
 #include <QColor>
@@ -16,9 +16,13 @@ public:
     static QColor muted() { return QColor("#9a9a9a"); }
     static QColor accent() { return QColor("#76B900"); }
     static QColor accentHover() { return QColor("#8ed000"); }
-    static QColor error() { return QColor("#e5484d"); }
+    static QColor onAccent() { return QColor("#101010"); }  // text on an accent button
+    static QColor focusRing() { return accent(); }
+    static QColor error() { return QColor("#ff6369"); }
     static QColor warning() { return QColor("#f5a524"); }
 
+    // WCAG contrast ratio of two colours, 1 to 21.
+    static double contrast(const QColor& a, const QColor& b);
     static QString styleSheet();
     // DejaVu Sans 10 and the style sheet.
     static void apply(QApplication& app);

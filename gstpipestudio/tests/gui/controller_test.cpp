@@ -250,7 +250,7 @@ private slots:
         QCOMPARE(c->linkViews()[0].tip, QString("video/x-raw, width=(int)640"));
         QVERIFY(c->result().pad(ch.src, "src", true)->caps.contains("width=(int)640"));
         QVERIFY(c->result().isComplete());
-        // Empty text = Otomatik again.
+        // Empty text = Auto again.
         QVERIFY(c->setCaps(ch.src, "src", "", {}));
         QVERIFY(settle(*c));
         QCOMPARE(c->linkViews()[0].badge, QString());
@@ -356,8 +356,8 @@ private slots:
         QCOMPARE(c->result().errorElement, sink);
         QVERIFY(c->plan().find(sink.toStdString()));   // the change stays
         QVERIFY(c->dirty());
-        QVERIFY(!c->canSave());                       // Kaydet closes
-        QVERIFY(!c->canRun());                        // Çalıştır closes
+        QVERIFY(!c->canSave());                       // Save closes
+        QVERIFY(!c->canRun());                        // Run closes
         QTemporaryDir dir;
         QString error;
         QVERIFY(!c->save(dir.filePath("x.conf"), &error));
@@ -379,7 +379,7 @@ private slots:
         QCOMPARE(c->result().status, QString("crashed"));
         QCOMPARE(c->result().errorElement, src);
         QVERIFY(c->result().message.contains(src));
-        QVERIFY(c->result().message.contains("çökert"));
+        QVERIFY(c->result().message.contains("stop unexpectedly"));
         QVERIFY(!c->canSave());
         QVERIFY(c->view(src).isError);
         // Still alive: fix the element and carry on.
@@ -395,7 +395,7 @@ private slots:
         timer.start();
         QString src = addSource(*c, "videotestsrc", withProps({{"fake-hang", "1"}}));
         QCOMPARE(c->result().status, QString("hung"));
-        QVERIFY(c->result().message.contains("zaman aşımı"));
+        QVERIFY(c->result().message.contains("did not answer in time"));
         QVERIFY2(timer.elapsed() >= 2300, "killed before timeout + 2 s");
         QVERIFY2(timer.elapsed() < 6000, "watchdog too slow");
         QVERIFY(!c->canSave());
@@ -420,11 +420,11 @@ private slots:
         QVERIFY(c->addSource("videotestsrc", {}));
         QVERIFY(settle(*c));
         QCOMPARE(c->result().status, QString("error"));
-        QVERIFY(c->result().message.contains("gps-update bulunamadı"));
+        QVERIFY(c->result().message.contains("gps-update was not found"));
     }
 
     void cancelLeavesThePlanAlone() {
-        // Everything before the last dialog's Save is a read: previews, info and compatible lists change nothing.
+        // Everything before the last page's Add / Save is a read: previews, info and compatible lists change nothing.
         Chain ch = makeChain();
         QString before = text(c->plan().toConf());
         c->previewCut(ch.src, "src");
@@ -465,7 +465,7 @@ private slots:
         QCOMPARE(other->filePath(), path);
         QCOMPARE(other->linkViews()[0].badge, QString("caps · 1"));
 
-        // "Kaydet" with no path writes to the same file.
+        // "Save" with no path writes to the same file.
         QVERIFY(other->addSource("videotestsrc", {}));
         QVERIFY(settle(*other));
         QVERIFY(other->dirty());
@@ -549,7 +549,7 @@ private slots:
         QTemporaryDir dir;
         QString error;
         QVERIFY(c->save(dir.filePath("p.conf"), &error));
-        QVERIFY(c->launchCommand().endsWith("gst-launch-1.0 p num-buffers=DEĞER"));
+        QVERIFY(c->launchCommand().endsWith("gst-launch-1.0 p num-buffers=VALUE"));
     }
 
     void requestSrcCounts() {

@@ -1,6 +1,8 @@
 // builder.cpp – see builder.h. SPEC 5 and 6.
 #include "builder.h"
 
+#include "gstcompat.h"
+
 #include <algorithm>
 #include <chrono>
 #include <thread>
@@ -11,9 +13,10 @@ namespace {
 // The temporary end of a free src pad (SPEC 5.4) names three factories; the queue is the SPEC 4.4 exception.
 const char* const kTypefindFactory = "typefind";
 const char* const kFakesinkFactory = "fakesink";
-const char* const kQueueSinkPad = "sink";  // pad name of the queue, part of the queue exception
+const char* const kFakesinkSinkPad = "sink";  // part of the temporary end, like its factory names above
 const int kPollMs = 20;
 const int kUnknownGraceMs = 500;
+const int kEosWaitMs = 1500;  // after a stop request EOS gets this long to come back (the tools exit within 2 s)
 
 std::string take(gchar* text) {
     std::string out = text ? text : "";
@@ -39,7 +42,7 @@ double nowMs() { return g_get_monotonic_time() / 1000.0; }
 
 // "Resource not found." plus what the debug text adds after its last line break ("No such file or directory").
 std::string errorText(const GError* error, const gchar* debug) {
-    std::string text = error && error->message ? error->message : "bilinmeyen hata";
+    std::string text = error && error->message ? error->message : "unknown problem";
     std::string detail = debug ? debug : "";
     size_t nl = detail.rfind('\n');
     if (nl != std::string::npos && nl + 1 < detail.size()) text += " (" + detail.substr(nl + 1) + ")";
@@ -47,9 +50,10 @@ std::string errorText(const GError* error, const gchar* debug) {
 }
 
 // A new Request pad from a template name ("sink_%u"). Almost every element takes the bare template; some want a
-// number in the name ("sink_0"). Then the numbers are tried from 0 up, until the element gives one. No element is known.
+// number in the name ("sink_0"). Then the numbers are tried from 0 up, skipping names the element already has
+// (asking for an existing name can freeze some elements). No element is known.
 GstPad* requestPad(GstElement* element, const std::string& templateName, const LogFn& say) {
-    GstPad* pad = gst_element_request_pad_simple(element, templateName.c_str());
+    GstPad* pad = requestPadByName(element, templateName.c_str());
     if (pad) return pad;
     size_t slot = templateName.find("%u");
     if (slot == std::string::npos) slot = templateName.find("%d");
@@ -57,9 +61,13 @@ GstPad* requestPad(GstElement* element, const std::string& templateName, const L
     for (int n = 0; n < 64; ++n) {
         std::string numbered = templateName;
         numbered.replace(slot, 2, std::to_string(n));
-        pad = gst_element_request_pad_simple(element, numbered.c_str());
+        if (GstPad* existing = gst_element_get_static_pad(element, numbered.c_str())) {
+            gst_object_unref(existing);
+            continue;
+        }
+        pad = requestPadByName(element, numbered.c_str());
         if (pad) {
-            if (say) say("istek: '" + templateName + "' kabul edilmedi, '" + numbered + "' istendi");
+            if (say) say("request: '" + templateName + "' was not accepted, asked for '" + numbered + "'");
             return pad;
         }
     }
@@ -76,10 +84,10 @@ bool setProperty(GObject* object, const std::string& property, const std::string
         return false;
     };
     GParamSpec* spec = g_object_class_find_property(G_OBJECT_GET_CLASS(object), property.c_str());
-    if (!spec) return refuse("boyle bir ozellik yok");
-    if (!(spec->flags & G_PARAM_WRITABLE)) return refuse("yazilamaz");
-    if (spec->flags & G_PARAM_CONSTRUCT_ONLY) return refuse("yalnizca olusturulurken ayarlanir");
-    if (spec->owner_type == GST_TYPE_OBJECT) return refuse("GstObject ozelligi, plan bunu degistiremez");
+    if (!spec) return refuse("there is no such property");
+    if (!(spec->flags & G_PARAM_WRITABLE)) return refuse("the property is read-only");
+    if (spec->flags & G_PARAM_CONSTRUCT_ONLY) return refuse("it can only be set when the element is created");
+    if (spec->owner_type == GST_TYPE_OBJECT) return refuse("it is a GstObject property that a plan cannot change");
 
     // GStreamer's reader takes "" as 0 and "-5" as a huge unsigned number; both are caught by type.
     GType kind = G_TYPE_FUNDAMENTAL(spec->value_type);
@@ -88,19 +96,19 @@ bool setProperty(GObject* object, const std::string& property, const std::string
                       kind == G_TYPE_CHAR || kind == G_TYPE_FLOAT || kind == G_TYPE_DOUBLE || kind == G_TYPE_ENUM ||
                       kind == G_TYPE_BOOLEAN;
     std::string trimmed = trim(text);
-    if (needsValue && trimmed.empty()) return refuse("bos metin deger olamaz");
-    if (unsignedNumber && trimmed[0] == '-') return refuse("negatif sayi olamaz, isaretsiz sayi bekleniyor");
+    if (needsValue && trimmed.empty()) return refuse("an empty text is not a value");
+    if (unsignedNumber && trimmed[0] == '-') return refuse("a negative number is not allowed, expected an unsigned number");
 
     GValue value = G_VALUE_INIT;
     g_value_init(&value, spec->value_type);
-    if (!gst_value_deserialize_with_pspec(&value, text.c_str(), spec)) {
+    if (!deserializeValue(&value, text.c_str(), spec)) {
         g_value_unset(&value);
-        return refuse(std::string("okunamadi, beklenen tur ") + g_type_name(spec->value_type));
+        return refuse(std::string("it cannot be read as ") + g_type_name(spec->value_type));
     }
     if (g_param_value_validate(spec, &value)) {  // TRUE: GLib had to change it, so it was out of range
         g_value_unset(&value);
         PropertyInfo info = describeProperty(spec);
-        return refuse("aralik disinda" + (info.min.empty() ? "" : ", izin verilen " + info.min + " .. " + info.max));
+        return refuse(info.min.empty() ? "it is outside the allowed range" : "allowed range is " + info.min + " to " + info.max);
     }
     g_value_unset(&value);
     gst_util_set_object_arg(object, property.c_str(), text.c_str());
@@ -109,9 +117,9 @@ bool setProperty(GObject* object, const std::string& property, const std::string
 
 namespace {
 
-// "<label>: '<text>' gecersiz (<reason>)", label = "element.property"
+// "<label>: '<text>' is not valid, <reason>", label = "element.property"
 std::string badValue(const std::string& label, const std::string& text, const std::string& reason) {
-    return label + ": '" + text + "' gecersiz (" + reason + ")";
+    return label + ": '" + text + "' is not valid, " + reason;
 }
 
 }  // namespace
@@ -144,7 +152,7 @@ void Builder::say(const std::string& line) const {
 
 void Builder::fail(const std::string& element, const std::string& message) {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
-    say("HATA " + element + ": " + message);
+    say("problem " + element + ": " + message);
     if (failed_) return;  // the first one is the cause, later ones follow from it
     failed_ = true;
     failure_ = {element, message};
@@ -156,12 +164,12 @@ bool Builder::build() {
         GstElementFactory* known = gst_element_factory_find(pe.factory.c_str());
         if (known) gst_object_unref(known);
         if (!known) {
-            fail(pe.name, pe.name + ": '" + pe.factory + "' diye bir element yok (eklenti kurulu degil olabilir)");
+            fail(pe.name, pe.name + ": element '" + pe.factory + "' was not found, its plugin may not be installed");
             return false;
         }
         GstElement* element = gst_element_factory_make(pe.factory.c_str(), pe.name.c_str());
         if (!element) {
-            fail(pe.name, pe.name + ": '" + pe.factory + "' olusturulamadi");
+            fail(pe.name, pe.name + ": unable to create element '" + pe.factory + "'");
             return false;
         }
         say("element: " + pe.name + " (" + pe.factory + ")");
@@ -175,7 +183,7 @@ bool Builder::build() {
             say("property: " + pe.name + "." + kv.first + " = " + kv.second);
         }
         if (!gst_bin_add(bin_, element)) {  // takes the floating reference
-            fail(pe.name, pe.name + ": pipeline'a eklenemedi");
+            fail(pe.name, "unable to add " + pe.name + " to the pipeline");
             return false;
         }
         gst_object_ref(element);
@@ -190,12 +198,12 @@ bool Builder::build() {
             if (p.name == param.first) target = &p;
         }
         if (!target) {
-            fail("", "bilinmeyen parametre: " + param.first);
+            fail("", "unknown parameter: " + param.first);
             return false;
         }
         auto it = byName_.find(target->element);
         if (it == byName_.end()) {
-            fail(target->element, "parametre '" + param.first + "': element yok: " + target->element);
+            fail(target->element, "parameter '" + param.first + "': the plan has no element " + target->element);
             return false;
         }
         std::string reason;
@@ -229,7 +237,7 @@ bool Builder::build() {
             for (int i = 0; i < request.second; ++i) {
                 GstPad* pad = requestPad(byName_[pe.name], request.first, [this](const std::string& l) { say(l); });
                 if (!pad) {
-                    fail(pe.name, pe.name + ": '" + request.first + "' pad'i istenemedi");
+                    fail(pe.name, pe.name + ": unable to request pad '" + request.first + "'");
                     return false;
                 }
                 say("request pad: " + pe.name + "." + GST_PAD_NAME(pad));
@@ -302,7 +310,7 @@ void Builder::onSrcPad(GstElement* element, GstPad* pad) {
         attachEnd(pads_[index]);
     } else {
         free_.push_back(info.element + "." + info.identity);
-        say("bos src pad: " + info.element + "." + info.identity);
+        say("free src pad: " + info.element + "." + info.identity);
         if (options_.ghostPads) {
             GstPad* ghost = gst_ghost_pad_new((info.element + "_" + padName).c_str(), pad);
             gst_pad_set_active(ghost, TRUE);
@@ -315,22 +323,22 @@ namespace {
 
 // Why a link was refused, from the pads' own caps. GStreamer only answers yes or no.
 std::string whyRefused(GstPad* src, GstPad* sink, const GstCaps* filter) {
-    if (gst_pad_is_linked(sink)) return "sink pad zaten bagli";
+    if (gst_pad_is_linked(sink)) return "the sink pad is already linked";
     GstCaps* a = gst_pad_query_caps(src, nullptr);
     GstCaps* b = gst_pad_query_caps(sink, nullptr);
     std::string why;
     if (!gst_caps_can_intersect(a, b)) {
-        why = "caps uyusmuyor: [" + cut(capsText(a)) + "] ve [" + cut(capsText(b)) + "]";
+        why = "caps do not match: [" + cut(capsText(a)) + "] and [" + cut(capsText(b)) + "]";
     } else if (filter) {
         GstCaps* both = gst_caps_intersect(a, b);
         if (!gst_caps_can_intersect(both, filter)) {
-            why = "secilen caps uyusmuyor: [" + cut(capsText(filter)) + "]; pad'ler [" + cut(capsText(both)) + "] kabul eder";
+            why = "the chosen caps [" + cut(capsText(filter)) + "] do not fit, the pads accept [" + cut(capsText(both)) + "]";
         }
         gst_caps_unref(both);
     }
     gst_caps_unref(a);
     gst_caps_unref(b);
-    return why.empty() ? "baglanti reddedildi" : why;
+    return why.empty() ? "GStreamer refused the link" : why;
 }
 
 }  // namespace
@@ -339,7 +347,7 @@ Builder::Link Builder::link(PadInfo& info, const PlanLink& l) {
     std::string label = info.element + "." + info.identity + " -> " + l.sinkElement + "." + l.sinkPad;
     auto sinkIt = byName_.find(l.sinkElement);
     if (sinkIt == byName_.end()) {
-        fail(info.element, label + ": hedef element yok");
+        fail(info.element, label + ": the target element does not exist");
         return Link::Failed;
     }
     GstElement* sinkElement = sinkIt->second;
@@ -350,8 +358,8 @@ Builder::Link Builder::link(PadInfo& info, const PlanLink& l) {
     GstPad* sinkPad = requested ? requestPad(sinkElement, l.sinkPad, [this](const std::string& line) { say(line); })
                                 : gst_element_get_static_pad(sinkElement, l.sinkPad.c_str());
     if (!sinkPad) {
-        refused_.push_back(label + ": sink pad " + (requested ? "istenemedi" : "yok"));
-        say("reddedildi: " + refused_.back());
+        refused_.push_back(label + ": " + (requested ? "unable to request the sink pad" : "the sink pad does not exist"));
+        say("refused: " + refused_.back());
         return Link::Refused;
     }
 
@@ -369,7 +377,7 @@ Builder::Link Builder::link(PadInfo& info, const PlanLink& l) {
     GstCaps* filter = l.caps.empty() ? nullptr : gst_caps_from_string(l.caps.c_str());
     Link result = Link::Done;
     if (!l.caps.empty() && !filter) {
-        refused_.push_back(label + ": caps metni okunamadi: " + cut(l.caps));
+        refused_.push_back(label + ": the caps text cannot be read: " + cut(l.caps));
         result = Link::Refused;
     } else if (!gst_element_link_pads_filtered(byName_[info.element], GST_PAD_NAME(info.pad), sinkElement, GST_PAD_NAME(sinkPad),
                                                filter)) {
@@ -377,7 +385,7 @@ Builder::Link Builder::link(PadInfo& info, const PlanLink& l) {
         result = Link::Refused;
     }
     if (result == Link::Refused) {
-        say("reddedildi: " + refused_.back());
+        say("refused: " + refused_.back());
         if (requested) gst_element_release_request_pad(sinkElement, sinkPad);
     } else {
         say("link: " + label + (l.caps.empty() ? "" : " [" + cut(l.caps) + "]"));
@@ -394,7 +402,7 @@ void Builder::attachEnd(PadInfo& info) {
     GstElement* typefind = gst_element_factory_make(kTypefindFactory, nullptr);
     GstElement* fakesink = gst_element_factory_make(kFakesinkFactory, nullptr);
     if (!queue || !typefind || !fakesink) {
-        fail(info.element, "gecici uc kurulamadi: queue, typefind veya fakesink eksik");
+        fail(info.element, "unable to build a temporary end: queue, typefind or fakesink is missing");
         return;
     }
     gst_bin_add_many(GST_BIN(bin), queue, typefind, fakesink, nullptr);
@@ -412,11 +420,11 @@ void Builder::attachEnd(PadInfo& info) {
 
     gst_bin_add(bin_, bin);
     if (GST_PAD_LINK_FAILED(gst_pad_link(info.pad, ghost))) {
-        fail(info.element, "gecici uc " + info.element + "." + GST_PAD_NAME(info.pad) + " pad'ine baglanamadi");
+        fail(info.element, "unable to link a temporary end to " + info.element + "." + GST_PAD_NAME(info.pad));
         return;
     }
     gst_element_sync_state_with_parent(bin);
-    say("gecici uc: " + name);
+    say("temporary end: " + name);
 }
 
 bool Builder::failed() const {
@@ -454,7 +462,7 @@ void Builder::checkMissing(const std::string& element) {
         if (identities_.count(l.srcElement + "\t" + l.srcPad)) continue;
         if (std::find(missing_.begin(), missing_.end(), label) == missing_.end()) {
             missing_.push_back(label);
-            say("pad olusmadi: " + label);
+            say("pad did not appear: " + label);
         }
     }
 }
@@ -467,7 +475,7 @@ void Builder::checkNamedPads() {
         if (identities_.count(l.srcElement + "\t" + l.srcPad)) continue;
         if (std::find(missing_.begin(), missing_.end(), label) == missing_.end()) {
             missing_.push_back(label);
-            say("pad yok: " + label);
+            say("pad does not exist: " + label);
         }
     }
 }
@@ -477,7 +485,7 @@ bool Builder::endsHaveCaps() const {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     for (const PadInfo& p : pads_) {
         if (p.end < 0 || p.unknownData) continue;
-        GstPad* sink = gst_element_get_static_pad(ends_[p.end].fakesink, "sink");
+        GstPad* sink = gst_element_get_static_pad(ends_[p.end].fakesink, kFakesinkSinkPad);
         GstCaps* caps = gst_pad_get_current_caps(sink);
         bool has = caps != nullptr;
         if (caps) gst_caps_unref(caps);
@@ -492,7 +500,7 @@ bool Builder::markUnknownData(GstObject* src) {
     for (PadInfo& p : pads_) {
         if (p.end < 0 || GST_OBJECT(ends_[p.end].typefind) != src) continue;
         p.unknownData = true;
-        say("bilinmeyen veri: " + p.element + "." + p.identity);
+        say("unknown data: " + p.element + "." + p.identity);
         return true;
     }
     return false;
@@ -515,7 +523,7 @@ std::vector<PadReport> Builder::report() const {
             r.temporaryEnd = info.end >= 0;
             r.unknownData = info.unknownData;
             GstPad* readFrom = info.pad;  // a free pad has no caps of its own, its end does
-            if (info.end >= 0) readFrom = gst_element_get_static_pad(ends_[info.end].fakesink, "sink");
+            if (info.end >= 0) readFrom = gst_element_get_static_pad(ends_[info.end].fakesink, kFakesinkSinkPad);
             GstCaps* caps = gst_pad_get_current_caps(readFrom);
             r.caps = capsText(caps);
             if (caps) gst_caps_unref(caps);
@@ -627,13 +635,18 @@ UpdateResult update(const Plan& plan, const UpdateOptions& options, const LogFn&
             GstBus* bus = gst_element_get_bus(pipeline);
             auto say = [&](const std::string& line) { if (log) log(line); };
             say("PLAYING");
-            if (gst_element_set_state(pipeline, GST_STATE_PLAYING) == GST_STATE_CHANGE_FAILURE) say("PLAYING durum degisimi basarisiz (hata mesaji bekleniyor)");
+            if (gst_element_set_state(pipeline, GST_STATE_PLAYING) == GST_STATE_CHANGE_FAILURE) say("PLAYING was refused, waiting for the bus message");
             bool settled = false;
             double unknownSince = 0;  // when the last typefind error came
             while (!settled) {
                 if (nowMs() - begin > options.timeoutMs) {
                     result.status = "timeout";
-                    result.message = "zaman asimi: " + std::to_string(options.timeoutMs) + " ms icinde ilk buffer'a ulasilamadi";
+                    result.message = "timed out: no buffer arrived within " + std::to_string(options.timeoutMs) + " ms";
+                    break;
+                }
+                if (options.shouldStop && options.shouldStop()) {
+                    result.status = "error";
+                    result.message = "stopped before the pipeline settled, because the tool was asked to stop";
                     break;
                 }
                 if (builder.failed()) {
@@ -650,7 +663,7 @@ UpdateResult update(const Plan& plan, const UpdateOptions& options, const LogFn&
                 // A dead end (unknown data) never prerolls, so ASYNC_DONE cannot come. After a short grace
                 // time the others are taken as done, but only when every other end has really got its caps.
                 if (unknownSince > 0 && nowMs() - unknownSince > kUnknownGraceMs && builder.endsHaveCaps()) {
-                    say("ASYNC_DONE gelmez: bilinmeyen veri ucu var, diger uclar hazir");
+                    say("no ASYNC_DONE expected: an end sees unknown data, the other ends are ready");
                     break;
                 }
                 GstMessage* msg = gst_bus_timed_pop_filtered(
@@ -672,7 +685,7 @@ UpdateResult update(const Plan& plan, const UpdateOptions& options, const LogFn&
                     GError* error = nullptr;
                     gchar* debug = nullptr;
                     gst_message_parse_warning(msg, &error, &debug);
-                    say(std::string("bus: UYARI ") + GST_OBJECT_NAME(GST_MESSAGE_SRC(msg)) + ": " + errorText(error, debug));
+                    say(std::string("bus: WARNING ") + GST_OBJECT_NAME(GST_MESSAGE_SRC(msg)) + ": " + errorText(error, debug));
                     g_clear_error(&error);
                     g_free(debug);
                     break;
@@ -682,7 +695,7 @@ UpdateResult update(const Plan& plan, const UpdateOptions& options, const LogFn&
                     gchar* debug = nullptr;
                     gst_message_parse_error(msg, &error, &debug);
                     std::string text = errorText(error, debug);
-                    say(std::string("bus: HATA ") + GST_OBJECT_NAME(GST_MESSAGE_SRC(msg)) + ": " + text);
+                    say(std::string("bus: ERROR ") + GST_OBJECT_NAME(GST_MESSAGE_SRC(msg)) + ": " + text);
                     if (builder.markUnknownData(GST_MESSAGE_SRC(msg))) {
                         unknownSince = nowMs();
                     } else {
@@ -708,9 +721,9 @@ UpdateResult update(const Plan& plan, const UpdateOptions& options, const LogFn&
         }
         result.missing = builder.missing();
         result.refused = builder.refused();
-        if (result.status == "pad-missing") result.message = "Plan'daki pad olusmadi: " + result.missing.front();
+        if (result.status == "pad-missing") result.message = "the plan needs pad " + result.missing.front() + ", but the element never created it";
         // A refused link often leaves a sink without input, and a sink without input never prerolls.
-        if (result.status == "timeout" && !result.refused.empty()) result.message += "; reddedilen baglanti: " + result.refused.front();
+        if (result.status == "timeout" && !result.refused.empty()) result.message += "; refused link: " + result.refused.front();
         result.pads = builder.report();  // before NULL: pads and caps are gone after it
         gst_element_set_state(pipeline, GST_STATE_NULL);
     }
@@ -742,7 +755,7 @@ RunResult run(const Plan& plan, const std::map<std::string, std::string>& params
             result.message = f.message;
         } else if (!builder.freePads().empty()) {
             result.status = "refused";
-            result.message = "bos src pad var, plan tamamlanmamis: " + builder.freePads().front();
+            result.message = "the plan is not complete, src pad " + builder.freePads().front() + " has no link";
         } else {
             GstBus* bus = gst_element_get_bus(pipeline);
             say("PLAYING");
@@ -759,24 +772,30 @@ RunResult run(const Plan& plan, const std::map<std::string, std::string>& params
                 }
                 if (!builder.missing().empty()) {
                     result.status = "error";
-                    result.message = "Plan'daki pad olusmadi: " + builder.missing().front();
+                    result.message = "the plan needs pad " + builder.missing().front() + ", but the element never created it";
                     break;
                 }
                 if (!builder.freePads().empty()) {  // a Sometimes pad showed up that the Plan does not link
                     result.status = "refused";
-                    result.message = "calisirken bos src pad olustu: " + builder.freePads().front();
+                    result.message = "a src pad appeared while running and the plan does not link it: " + builder.freePads().front();
                     break;
                 }
                 if (!stopping) {
                     if (options.shouldStop && options.shouldStop()) stopReason = "interrupted";
                     else if (options.timeoutMs > 0 && nowMs() - begin > options.timeoutMs) stopReason = "timeout";
+                    // Still waiting for the first buffer: there is nothing to finish, and EOS into a stalled pipeline can block.
+                    if (!stopReason.empty() && gst_element_get_state(pipeline, nullptr, nullptr, 0) == GST_STATE_CHANGE_ASYNC) {
+                        say("stopping before the pipeline started (" + stopReason + ")");
+                        result.status = stopReason;
+                        break;
+                    }
                     if (!stopReason.empty()) {
-                        say("EOS gonderiliyor (" + stopReason + ")");
+                        say("sending EOS (" + stopReason + ")");
                         stopping = true;
                         stopSince = nowMs();
                         gst_element_send_event(pipeline, gst_event_new_eos());
                     }
-                } else if (nowMs() - stopSince > 3000) {  // the EOS never came back
+                } else if (nowMs() - stopSince > kEosWaitMs) {  // the EOS never came back
                     result.status = stopReason;
                     break;
                 }
@@ -794,11 +813,11 @@ RunResult run(const Plan& plan, const std::map<std::string, std::string>& params
                     if (isError) gst_message_parse_error(msg, &error, &debug);
                     else gst_message_parse_warning(msg, &error, &debug);
                     std::string text = planElementOf(GST_MESSAGE_SRC(msg), GST_BIN(pipeline)) + ": " + errorText(error, debug);
-                    say(std::string("bus: ") + (isError ? "HATA " : "UYARI ") + text);
+                    say(std::string("bus: ") + (isError ? "ERROR " : "WARNING ") + text);
                     if (isError) {
                         result.status = "error";
                         // A pad that never came usually ends in a not-linked error; the missing pad is the cause.
-                        result.message = builder.missing().empty() ? text : "Plan'daki pad olusmadi: " + builder.missing().front();
+                        result.message = builder.missing().empty() ? text : "the plan needs pad " + builder.missing().front() + ", but the element never created it";
                         done = true;
                     }
                     g_clear_error(&error);
@@ -811,10 +830,10 @@ RunResult run(const Plan& plan, const std::map<std::string, std::string>& params
                 builder.checkMissing();  // it may have ended before the loop looked
                 if (!builder.missing().empty()) {
                     result.status = "error";
-                    result.message = "Plan'daki pad olusmadi: " + builder.missing().front();
+                    result.message = "the plan needs pad " + builder.missing().front() + ", but the element never created it";
                 } else if (!builder.freePads().empty()) {
                     result.status = "refused";
-                    result.message = "calisirken bos src pad olustu: " + builder.freePads().front();
+                    result.message = "a src pad appeared while running and the plan does not link it: " + builder.freePads().front();
                 }
             }
         }

@@ -1,7 +1,7 @@
-// capsfieldeditor.h – one caps field in the CapsDialog: "Otomatik" until the user pins a value (SPEC 8, step 4).
-//   list  -> a combo box with Otomatik first
-//   range -> a number box, active when "Sabitle" is ticked
-//   fixed -> the value as a label with "Sabitle"
+// capsfieldeditor.h – one caps field in the caps page: "Auto" until the user pins a value.
+//   list  -> a combo box with Auto first
+//   range -> a number box, active when "Pin" is ticked
+//   fixed -> the value as a label with "Pin"
 #pragma once
 
 #include <QWidget>
@@ -19,7 +19,7 @@ public:
     CapsFieldEditor(const FieldInfo& field, QWidget* parent = nullptr);
 
     const FieldInfo& field() const { return field_; }
-    std::optional<QString> pinned() const;  // none = Otomatik
+    std::optional<QString> pinned() const;  // none = Auto
     void pin(const QString& value);
 
 private:

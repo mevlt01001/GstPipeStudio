@@ -1,4 +1,5 @@
 """gps-inspect: JSON schema of SPEC 7, exit codes, stdout holds one line only."""
+import subprocess
 import sys
 
 from clitest import *
@@ -54,10 +55,31 @@ def main():
         check(by["videotestsrc"]["isSource"] and not by["videotestsrc"]["nvidia"], "videotestsrc flags")
         check(by["fakesink"]["isSink"], "fakesink isSink")
         check(by["tee"]["hasRequestSrc"], "tee hasRequestSrc")
-        check(by["nvvideoconvert"]["nvidia"], "nvvideoconvert nvidia badge")
-        check(sum(e["nvidia"] for e in els) >= 20, "nvidia badge count")
+        if "nvvideoconvert" in by:  # a plain Ubuntu has no DeepStream elements
+            check(by["nvvideoconvert"]["nvidia"], "nvvideoconvert nvidia badge")
+            check(sum(e["nvidia"] for e in els) >= 20, "nvidia badge count")
+        else:
+            check(sum(e["nvidia"] for e in els) == 0, "no nvidia badge without DeepStream")
         names = [e["factory"] for e in els]
         check_eq(names, sorted(names), "list sorted by name")
+
+        # ---- version: the GUI's first question (UI_RULES 4); the counts must be the ones of list
+        code, v, err = t.json("gps-inspect", "version")
+        check_eq(code, 0, "version exit")
+        check_eq(list(v.keys()), ["gstreamer", "nvidia", "plugins"], "version keys")
+        has_types(v["gstreamer"], {"version": is_str, "major": is_int, "minor": is_int, "micro": is_int}, "version.gstreamer")
+        has_types(v["nvidia"], {"present": is_bool, "elements": is_int}, "version.nvidia")
+        has_types(v["plugins"], {"count": is_int, "elements": is_int}, "version.plugins")
+        g = v["gstreamer"]
+        check_eq(g["version"], f"{g['major']}.{g['minor']}.{g['micro']}", "version text matches the numbers")
+        check(g["major"] == 1 and g["minor"] >= 16, f"GStreamer {g['version']} is 1.16 or newer")
+        check_eq(v["plugins"]["elements"], len(els), "version plugins.elements equals list")
+        check_eq(v["nvidia"]["elements"], sum(e["nvidia"] for e in els), "version nvidia.elements equals list")
+        check_eq(v["nvidia"]["present"], v["nvidia"]["elements"] > 0, "version nvidia.present")
+        check(v["plugins"]["count"] > 20, f"version plugins.count {v['plugins']['count']}")
+        gst = subprocess.run(["gst-inspect-1.0", "--version"], capture_output=True, text=True)
+        if gst.returncode == 0:
+            check(f"GStreamer {g['version']}" in gst.stdout, f"version agrees with gst-inspect-1.0: {gst.stdout.splitlines()[:2]}")
 
         # ---- element
         code, d, err = t.json("gps-inspect", "element", "compositor")
@@ -131,11 +153,11 @@ def main():
         check_eq(d["ok"], False, "bad caps ok flag")
 
         # ---- usage errors: exit 2, stderr has the text, stdout still one JSON line
-        for args in ([], ["bogus"], ["element"], ["caps"], ["list", "extra"], ["compatible", "--caps"]):
+        for args in ([], ["bogus"], ["element"], ["caps"], ["list", "extra"], ["compatible", "--caps"], ["version", "extra"]):
             code, d, err = t.json("gps-inspect", *args)
             check_eq(code, 2, f"usage exit for {args}")
             check(is_str(d.get("error")) if d else False, f"usage JSON for {args}")
-            check("kullanim" in err, f"usage text on stderr for {args}")
+            check(is_str(d.get("error")) and d["error"] in err, f"usage text on stderr for {args}")
 
         # ---- logs go to stderr, never into stdout
         code, d, err = t.json("gps-inspect", "element", "queue", env={"GST_DEBUG": "4"})

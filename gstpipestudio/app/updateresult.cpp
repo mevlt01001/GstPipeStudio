@@ -14,13 +14,14 @@ QStringList strings(const QJsonValue& v) {
 }  // namespace
 
 QString UpdateResult::statusText() const {
-    if (status.isEmpty()) return "Güncelleme yapılmadı";
-    if (status == "ok") return complete ? "Tamam, pipeline tamamlandı" : "Tamam, pipeline henüz tamamlanmadı";
-    if (status == "error") return "Hata";
-    if (status == "timeout") return "Zaman aşımı";
-    if (status == "pad-missing") return "Pad oluşmadı";
-    if (status == "crashed") return "Yardımcı çöktü";
-    if (status == "hung") return "Yardımcı takıldı";
+    if (status.isEmpty()) return "Not validated yet";
+    if (status == "ok") return complete ? "Valid, pipeline complete" : "Valid, pipeline not complete yet";
+    if (status == "error") return "Problem";
+    if (status == "timeout") return "Timed out";
+    if (status == "pad-missing") return "Pad did not appear";
+    if (status == "crashed") return "Validator stopped unexpectedly";
+    if (status == "stopped") return "Validator gave no answer";
+    if (status == "hung") return "Validator did not answer";
     return status;
 }
 

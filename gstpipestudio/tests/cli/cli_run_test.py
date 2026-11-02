@@ -48,7 +48,7 @@ def main():
         # ---- bad parameter value: a failure with the element and property named, exit 1
         code, d, err = t.json("gps-run", plan, "frames=abc")
         check_eq((code, d["status"]), (1, "error"), "bad parameter value")
-        check(d["message"].startswith("src.num-buffers: 'abc' gecersiz ("), f"message {d['message']}")
+        check(d["message"].startswith("src.num-buffers: 'abc' is not valid, "), f"message {d['message']}")
         code, d, err = t.json("gps-run", plan, "frames=")
         check_eq((code, d["status"]), (1, "error"), "empty parameter value")
 

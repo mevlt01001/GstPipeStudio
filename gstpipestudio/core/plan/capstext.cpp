@@ -11,7 +11,8 @@ std::string capsString(const std::string& value) {
 
     std::string out = "\"";
     for (char c : value) {
-        if (c == '"' || c == '\\') out += '\\';
+        // GStreamer 1.16 cannot read a space inside quotes unless it has a backslash; newer versions accept both.
+        if (c == '"' || c == '\\' || c == ' ') out += '\\';
         out += c;
     }
     return out + "\"";

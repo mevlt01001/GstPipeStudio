@@ -1,6 +1,7 @@
 // canvasview.cpp
 #include "canvasview.h"
 
+#include <QKeyEvent>
 #include <QPainter>
 #include <QWheelEvent>
 #include <cmath>
@@ -38,6 +39,21 @@ void CanvasView::fitAll() {
     fitInView(items.adjusted(-40, -40, 40, 40), Qt::KeepAspectRatio);
     if (zoom() > 1.0) resetTransform();
     centerOn(items.center());
+}
+
+void CanvasView::setDimmed(bool dimmed) {
+    if (dimmed_ == dimmed) return;
+    dimmed_ = dimmed;
+    viewport()->update();
+}
+
+void CanvasView::drawForeground(QPainter* p, const QRectF& rect) {
+    if (dimmed_) p->fillRect(rect, QColor(0, 0, 0, 70));
+}
+
+void CanvasView::keyPressEvent(QKeyEvent* event) {
+    if (event->key() == Qt::Key_Delete) emit deletePressed();
+    else QGraphicsView::keyPressEvent(event);
 }
 
 void CanvasView::wheelEvent(QWheelEvent* event) {
