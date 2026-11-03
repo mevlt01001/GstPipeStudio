@@ -1,4 +1,4 @@
-name: GStreamer test
+name: Build and Test
 
 # Builds and tests GstPipeStudio on Ubuntu 20.04, 22.04 and 24.04, on x86_64 and on aarch64 (also called arm64), from a plain
 # Ubuntu with nothing installed. The steps of every job, in this order; a step that fails stops the job:
