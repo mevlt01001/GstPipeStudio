@@ -1,0 +1,58 @@
+name: GStreamer test
+
+# Runs scripts/check_gst.sh on Ubuntu 20.04, 22.04 and 24.04 (x86-64): the script installs GStreamer when it is missing, and
+# the test passes when the installed version is 1.16 or newer. It runs when the script or its test change, and by hand.
+#
+# Three jobs start at the same time, each on its own fresh Ubuntu 24.04 machine of GitHub:
+#   24.04  the test runs on the machine itself
+#   22.04  the test runs inside a plain ubuntu:22.04 container on that machine
+#   20.04  the test runs inside a plain ubuntu:20.04 container (GitHub has no 20.04 machine any more)
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'gstpipestudio/scripts/check_gst.sh'
+      - 'gstpipestudio/tests/gst/**'
+      - '.github/workflows/gst-test.yaml'
+  pull_request:
+    paths:
+      - 'gstpipestudio/scripts/check_gst.sh'
+      - 'gstpipestudio/tests/gst/**'
+      - '.github/workflows/gst-test.yaml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gstreamer:
+    name: GStreamer on Ubuntu ${{ matrix.ubuntu }}
+    runs-on: ubuntu-24.04
+    container: ${{ matrix.container }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ubuntu: '20.04'
+            container: ubuntu:20.04
+          - ubuntu: '22.04'
+            container: ubuntu:22.04
+          - ubuntu: '24.04'
+    steps:
+      # In a container we are root and there is no sudo; on the machine we are a normal user with sudo.
+      - name: Install Bats and git
+        run: |
+          SUDO=sudo
+          [ "$(id -u)" = 0 ] && SUDO=
+          $SUDO apt-get update
+          $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends bats git ca-certificates
+
+      - uses: actions/checkout@v4
+
+      # Only to read in the log: if GStreamer is already there, the test does not exercise the installation.
+      - name: Is GStreamer already installed?
+        run: command -v gst-inspect-1.0 && gst-inspect-1.0 --version || echo "GStreamer is not installed yet"
+
+      - name: Run the test
+        run: bats gstpipestudio/tests/gst/gst.bats
