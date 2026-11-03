@@ -28,7 +28,8 @@ if [ ! -f "$QT_DONE" ]; then
     curl -fL "https://download.qt.io/archive/qt/6.8/$QT_VERSION/submodules/qtbase-everywhere-src-$QT_VERSION.tar.xz" \
         | tar -xJ -C "$SRC_DIR"
     cd "$SRC_DIR/build"
-    "../qtbase-everywhere-src-$QT_VERSION/configure" -prefix "$QT_PREFIX" -release -nomake examples -nomake tests
+    # -no-sbom: the software bill of materials of Qt needs CMake 3.19, and Ubuntu 20.04 has 3.16
+    "../qtbase-everywhere-src-$QT_VERSION/configure" -prefix "$QT_PREFIX" -release -nomake examples -nomake tests -no-sbom
     cmake --build . --parallel "$(nproc)"
     cmake --install .
     touch "$QT_DONE"
