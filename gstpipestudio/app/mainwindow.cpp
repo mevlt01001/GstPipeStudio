@@ -105,7 +105,7 @@ void MainWindow::buildActions() {
         if (controller_->filePath().isEmpty()) saveAs();
         else saveFile(QString());
     });
-    auto* saveAs = make("actionSaveAs", "Save &as…", {QKeySequence::SaveAs}, [this] { this->saveAs(); });
+    auto* saveAs = make("actionSaveAs", "Save &as…", {QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_S)}, [this] { this->saveAs(); });
     auto* update = make("actionUpdate", "&Validate", {QKeySequence(Qt::CTRL | Qt::Key_R), QKeySequence(Qt::Key_F5)}, [this] { controller_->refresh(); });
     auto* run = make("actionRun", "&Run", {QKeySequence(Qt::CTRL | Qt::Key_Return)}, [this] { toggleRun(); });
     auto* addSource = make("actionAddSource", "Add &source…", {QKeySequence(Qt::CTRL | Qt::Key_E)}, [this] { flows_->chooseSource(); });

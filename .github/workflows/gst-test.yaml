@@ -14,10 +14,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'gstpipestudio/core/**'
-      - 'gstpipestudio/scripts/**'
-      - 'gstpipestudio/tests/**'
-      - '.github/workflows/**'
+      - gstpipestudio/**
   pull_request:
   workflow_dispatch:
 
@@ -29,7 +26,7 @@ jobs:
     name: GstPipeStudio Setup and Tests on Ubuntu ${{ matrix.ubuntu }} (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
     container: ${{ matrix.container }}
-    timeout-minutes: 20
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
@@ -58,3 +55,14 @@ jobs:
         run: gstpipestudio/scripts/check_gst.sh
       - name: Qt Setup
         run: gstpipestudio/scripts/check_qt.sh
+
+      - name: Build Tools Setup
+        run: gstpipestudio/scripts/check_build_tools.sh
+
+      - name: Build
+        run: |
+          cmake -S gstpipestudio -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$(echo "$HOME"/Qt/6.8.3/gcc_*)"
+          cmake --build build
+
+      - name: Test
+        run: cd build && ctest --output-on-failure
