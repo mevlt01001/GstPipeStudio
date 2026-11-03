@@ -56,3 +56,5 @@ jobs:
 
       - name: GStremer Setup
         run: gstpipestudio/scripts/check_gst.sh
+      - name: Qt Setup
+        run: gstpipestudio/scripts/check_qt.sh
