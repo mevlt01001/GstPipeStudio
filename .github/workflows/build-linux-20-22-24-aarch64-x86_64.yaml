@@ -3,7 +3,7 @@ name: GStreamer test
 # Builds and tests GstPipeStudio on Ubuntu 20.04, 22.04 and 24.04, on x86_64 and on aarch64 (also called arm64), from a plain
 # Ubuntu with nothing installed. The steps of every job, in this order; a step that fails stops the job:
 #   GStreamer Setup    scripts/check_gst.sh          GStreamer 1.16 or newer (installed with apt when missing)
-#   Qt Setup           scripts/check_qt.sh           Qt 6.8.3, built from its source into ~/Qt/6.8.3
+#   Qt Cache, Setup    scripts/check_qt.sh           Qt 6.8.3, built from its source into ~/Qt/6.8.3 (kept in the cache)
 #   Build Tools Setup  scripts/check_build_tools.sh  compiler, CMake, Ninja
 #   Build, Test        CMake and ctest
 # It runs when anything in gstpipestudio/ changes, on pull requests, and by hand.
@@ -57,6 +57,12 @@ jobs:
 
       - name: GStreamer Setup
         run: gstpipestudio/scripts/check_gst.sh
+
+      - name: Qt Cache
+        uses: actions/cache@v4
+        with:
+          path: ~/Qt/6.8.3
+          key: qt-6.8.3-ubuntu${{ matrix.ubuntu }}-${{ matrix.arch }}
 
       - name: Qt Setup
         run: gstpipestudio/scripts/check_qt.sh

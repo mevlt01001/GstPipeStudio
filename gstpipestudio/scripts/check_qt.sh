@@ -12,16 +12,21 @@ QT_DONE="$QT_PREFIX/.built"   # written last, only when the build and the instal
 SUDO=sudo
 [ "$(id -u)" = 0 ] && SUDO=
 
+# system libraries Qt needs to run and to be found by CMake; needed also when Qt comes from a cache, so outside the build
+$SUDO apt-get update
+$SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    ca-certificates libgl1-mesa-dev libegl1 libxkbcommon0 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 \
+    libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xkb1 libxcb-xinerama0 libfontconfig1 \
+    libdbus-1-3 fonts-dejavu-core
+
 if [ ! -f "$QT_DONE" ]; then
     # only qtbase is built: it holds Core, Gui, Widgets and Test; the -dev packages are what the window (xcb) plugin needs
-    $SUDO apt-get update
     $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y \
-        build-essential cmake ninja-build perl curl ca-certificates libgl1-mesa-dev libfontconfig1-dev libfreetype6-dev \
-        libx11-dev libx11-xcb-dev libxext-dev libxfixes-dev libxi-dev libxrender-dev libxkbcommon-dev \
-        libxkbcommon-x11-dev libxcb1-dev libxcb-cursor-dev libxcb-glx0-dev libxcb-icccm4-dev libxcb-image0-dev \
-        libxcb-keysyms1-dev libxcb-randr0-dev libxcb-render-util0-dev libxcb-shape0-dev libxcb-shm0-dev \
-        libxcb-sync-dev libxcb-util-dev libxcb-xfixes0-dev libxcb-xkb-dev libxcb-xinerama0 libegl1 libdbus-1-3 \
-        fonts-dejavu-core
+        build-essential cmake ninja-build perl curl libfontconfig1-dev libfreetype6-dev libx11-dev libx11-xcb-dev \
+        libxext-dev libxfixes-dev libxi-dev libxrender-dev libxkbcommon-dev libxkbcommon-x11-dev libxcb1-dev \
+        libxcb-cursor-dev libxcb-glx0-dev libxcb-icccm4-dev libxcb-image0-dev libxcb-keysyms1-dev libxcb-randr0-dev \
+        libxcb-render-util0-dev libxcb-shape0-dev libxcb-shm0-dev libxcb-sync-dev libxcb-util-dev libxcb-xfixes0-dev \
+        libxcb-xkb-dev
     SRC_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/gstpipestudio/qt-src"
     rm -rf "$SRC_DIR" "$QT_PREFIX"   # an unfinished earlier build and install
     mkdir -p "$SRC_DIR/build"
