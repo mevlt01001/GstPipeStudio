@@ -1,12 +1,15 @@
 name: GStreamer test
 
-# Runs scripts/check_gst.sh on Ubuntu 20.04, 22.04 and 24.04 (x86-64): the script installs GStreamer when it is missing, and
-# the test passes when the installed version is 1.16 or newer. It runs when the script or its test change, and by hand.
+# Runs scripts/check_gst.sh on Ubuntu 20.04, 22.04 and 24.04, on x86_64 and on aarch64 (also called arm64): the script installs
+# GStreamer when it is missing, and the test passes when the installed version is 1.16 or newer. It runs when the script or its
+# test change, and by hand.
 #
-# Three jobs start at the same time, each on its own fresh Ubuntu 24.04 machine of GitHub:
+# Six jobs start at the same time (3 Ubuntu versions x 2 architectures), each on its own fresh Ubuntu 24.04 machine of GitHub.
+# Per architecture:
 #   24.04  the test runs on the machine itself
 #   22.04  the test runs inside a plain ubuntu:22.04 container on that machine
 #   20.04  the test runs inside a plain ubuntu:20.04 container (GitHub has no 20.04 machine any more)
+# The ARM machines of GitHub are free only for public repositories.
 on:
   push:
     branches: [main]
@@ -25,22 +28,26 @@ permissions:
   contents: read
 
 jobs:
-  gstreamer:
-    name: GStreamer on Ubuntu ${{ matrix.ubuntu }}
-    runs-on: ubuntu-24.04
+  gstreamer-test:
+    name: GStreamer on Ubuntu ${{ matrix.ubuntu }} (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
     container: ${{ matrix.container }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
+        arch: [x86_64, aarch64]
+        ubuntu: ['20.04', '22.04', '24.04']
         include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
           - ubuntu: '20.04'
             container: ubuntu:20.04
           - ubuntu: '22.04'
             container: ubuntu:22.04
-          - ubuntu: '24.04'
     steps:
-      # In a container we are root and there is no sudo; on the machine we are a normal user with sudo.
       - name: Install Bats and git
         run: |
           SUDO=sudo
