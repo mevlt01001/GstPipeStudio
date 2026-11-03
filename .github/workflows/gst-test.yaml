@@ -1,14 +1,18 @@
 name: GStreamer test
 
-# Runs scripts/check_gst.sh on Ubuntu 20.04, 22.04 and 24.04, on x86_64 and on aarch64 (also called arm64): the script installs
-# GStreamer when it is missing, and the test passes when the installed version is 1.16 or newer. It runs when the script or its
-# test change, and by hand.
+# Builds and tests GstPipeStudio on Ubuntu 20.04, 22.04 and 24.04, on x86_64 and on aarch64 (also called arm64), from a plain
+# Ubuntu with nothing installed. The steps of every job, in this order; a step that fails stops the job:
+#   GStreamer Setup    scripts/check_gst.sh          GStreamer 1.16 or newer (installed with apt when missing)
+#   Qt Setup           scripts/check_qt.sh           Qt 6.8.3, built from its source into ~/Qt/6.8.3
+#   Build Tools Setup  scripts/check_build_tools.sh  compiler, CMake, Ninja
+#   Build, Test        CMake and ctest
+# It runs when anything in gstpipestudio/ changes, on pull requests, and by hand.
 #
 # Six jobs start at the same time (3 Ubuntu versions x 2 architectures), each on its own fresh Ubuntu 24.04 machine of GitHub.
 # Per architecture:
-#   24.04  the test runs on the machine itself
-#   22.04  the test runs inside a plain ubuntu:22.04 container on that machine
-#   20.04  the test runs inside a plain ubuntu:20.04 container (GitHub has no 20.04 machine any more)
+#   24.04  the steps run on the machine itself
+#   22.04  the steps run inside a plain ubuntu:22.04 container on that machine
+#   20.04  the steps run inside a plain ubuntu:20.04 container (GitHub has no 20.04 machine any more)
 # The ARM machines of GitHub are free only for public repositories.
 on:
   push:
@@ -26,7 +30,7 @@ jobs:
     name: GstPipeStudio Setup and Tests on Ubuntu ${{ matrix.ubuntu }} (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
     container: ${{ matrix.container }}
-    timeout-minutes: 40
+    timeout-minutes: 120   # Qt is built from its source in every job; the first run shows how long that takes
     strategy:
       fail-fast: false
       matrix:
@@ -51,8 +55,9 @@ jobs:
 
       - uses: actions/checkout@v4
 
-      - name: GStremer Setup
+      - name: GStreamer Setup
         run: gstpipestudio/scripts/check_gst.sh
+
       - name: Qt Setup
         run: gstpipestudio/scripts/check_qt.sh
 
@@ -61,7 +66,7 @@ jobs:
 
       - name: Build
         run: |
-          cmake -S gstpipestudio -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$(echo "$HOME"/Qt/6.8.3/gcc_*)"
+          cmake -S gstpipestudio -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$HOME/Qt/6.8.3"
           cmake --build build
 
       - name: Test
