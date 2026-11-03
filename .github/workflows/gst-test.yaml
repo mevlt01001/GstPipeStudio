@@ -14,22 +14,19 @@ on:
   push:
     branches: [main]
     paths:
-      - 'gstpipestudio/scripts/check_gst.sh'
-      - 'gstpipestudio/tests/gst/**'
-      - '.github/workflows/gst-test.yaml'
+      - 'gstpipestudio/core/**'
+      - 'gstpipestudio/scripts/**'
+      - 'gstpipestudio/tests/**'
+      - '.github/workflows/**'
   pull_request:
-    paths:
-      - 'gstpipestudio/scripts/check_gst.sh'
-      - 'gstpipestudio/tests/gst/**'
-      - '.github/workflows/gst-test.yaml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  gstreamer-test:
-    name: GStreamer on Ubuntu ${{ matrix.ubuntu }} (${{ matrix.arch }})
+  Setup:
+    name: GstPipeStudio Setup and Tests on Ubuntu ${{ matrix.ubuntu }} (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
     container: ${{ matrix.container }}
     timeout-minutes: 20
@@ -48,18 +45,14 @@ jobs:
           - ubuntu: '22.04'
             container: ubuntu:22.04
     steps:
-      - name: Install Bats and git
+      - name: Install Base Dependencies
         run: |
           SUDO=sudo
           [ "$(id -u)" = 0 ] && SUDO=
           $SUDO apt-get update
-          $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends bats git ca-certificates
+          $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git ca-certificates
 
       - uses: actions/checkout@v4
 
-      # Only to read in the log: if GStreamer is already there, the test does not exercise the installation.
-      - name: Is GStreamer already installed?
-        run: command -v gst-inspect-1.0 && gst-inspect-1.0 --version || echo "GStreamer is not installed yet"
-
-      - name: Run the test
-        run: bats gstpipestudio/tests/gst/gst.bats
+      - name: GStremer Setup
+        run: gstpipestudio/scripts/check_gst.sh
