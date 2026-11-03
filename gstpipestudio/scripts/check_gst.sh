@@ -24,4 +24,3 @@ version="$(gst-inspect-1.0 --version | head -n1 | awk '{print $NF}')"
 
 # exit code of the script: 0 = 1.16 or newer, 1 = older
 dpkg --compare-versions "$version" ge "$MIN_VERSION"
-1
