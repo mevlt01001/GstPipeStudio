@@ -15,10 +15,12 @@ WORK="$(mktemp -d)"
 mkdir "$WORK/debian"
 touch "$WORK/debian/control"
 
-# Every program and every library or plugin of the package; the Qt that we carry is given with -l, so it is not asked for.
+# Every program and every library or plugin of the package. The Qt libraries that we carry belong to no Ubuntu package, so
+# dpkg-shlibdeps would stop at them ("no dependency information found"): --ignore-missing-info lets it go on, and it
+# adds only what the system libraries need.
 FILES=("$PRIVATE"/bin/gstpipestudio "$PRIVATE"/bin/gps-inspect "$PRIVATE"/bin/gps-update "$PRIVATE"/bin/gps-run)
 while IFS= read -r file; do FILES+=("$file"); done < <(find "$STAGE"/usr/lib -type f -name '*.so*')
-DEPENDS="$(cd "$WORK" && dpkg-shlibdeps -O -l"$PRIVATE/lib" "${FILES[@]}" | sed 's/^shlibs:Depends=//')"
+DEPENDS="$(cd "$WORK" && dpkg-shlibdeps -O --ignore-missing-info -l"$PRIVATE/lib" "${FILES[@]}" | sed 's/^shlibs:Depends=//')"
 echo "dependencies on system libraries: $DEPENDS"
 
 # GStreamer is not carried: apt installs it with the package (the programs run gst-inspect-1.0 and the plugin lives in its folder)
