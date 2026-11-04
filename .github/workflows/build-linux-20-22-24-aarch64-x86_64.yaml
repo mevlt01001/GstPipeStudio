@@ -6,6 +6,7 @@ name: Build and Test
 #   Qt Cache, Setup    scripts/check_qt.sh           Qt 6.8.3, built from its source into ~/Qt/6.8.3 (kept in the cache)
 #   Build Tools Setup  scripts/check_build_tools.sh  compiler, CMake, Ninja
 #   Build, Test        CMake and ctest
+#   Install Check      cmake --install into a folder, and look at what a package would hold: the files, the Qt it loads, a start
 # It runs when anything in gstpipestudio/ changes, on pull requests, and by hand.
 #
 # Six jobs start at the same time (3 Ubuntu versions x 2 architectures), each on its own fresh Ubuntu 24.04 machine of GitHub.
@@ -72,8 +73,46 @@ jobs:
 
       - name: Build
         run: |
-          cmake -S gstpipestudio -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$HOME/Qt/6.8.3"
+          cmake \
+          -S gstpipestudio \
+          -B build \
+          -G Ninja \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_PREFIX_PATH="$HOME/Qt/6.8.3" \
+          -DCMAKE_INSTALL_PREFIX=/usr \
+          -DGPS_BUNDLE_QT=ON
           cmake --build build
 
       - name: Test
         run: cd build && ctest --output-on-failure
+
+      - name: Install Check
+        shell: bash
+        run: |
+          DESTDIR=/tmp/stage cmake --install build
+          P=/tmp/stage/usr/lib/gstpipestudio
+
+          # the files of a package
+          for f in bin/gstpipestudio bin/gps-inspect bin/gps-update bin/gps-run bin/qt.conf lib/libQt6Core.so.6 \
+                   lib/libQt6Widgets.so.6 plugins/platforms/libqxcb.so plugins/platforms/libqoffscreen.so; do
+              test -e "$P/$f" || { echo "missing: $f"; exit 1; }
+          done
+          for f in gstpipestudio gps-inspect gps-update gps-run; do test -x "/tmp/stage/usr/bin/$f"; done
+          ls /tmp/stage/usr/lib/*/gstreamer-1.0/libgstgpsconf.so /tmp/stage/usr/share/applications/gstpipestudio.desktop \
+             /tmp/stage/usr/share/doc/gstpipestudio/copyright
+          du -sh /tmp/stage
+
+          # the program finds every library, and the Qt it loads is the one of the package
+          ldd "$P/bin/gstpipestudio" | tee /tmp/ldd.txt
+          ! grep "not found" /tmp/ldd.txt
+          grep -q "libQt6Core.so.6 => $P/lib/" /tmp/ldd.txt
+
+          # the programs and the plugin work through the links of bin/ and the plugin folder
+          /tmp/stage/usr/bin/gps-inspect version
+          gst-inspect-1.0 /tmp/stage/usr/lib/*/gstreamer-1.0/libgstgpsconf.so > /dev/null
+
+          # the GUI starts and takes its platform plugin from the package (timeout 124 = still running after 5 seconds)
+          rc=0
+          QT_QPA_PLATFORM=offscreen QT_DEBUG_PLUGINS=1 timeout 5 /tmp/stage/usr/bin/gstpipestudio > /tmp/gui.txt 2>&1 || rc=$?
+          test "$rc" = 124 || { cat /tmp/gui.txt; exit 1; }
+          grep -q "$P/plugins/platforms" /tmp/gui.txt

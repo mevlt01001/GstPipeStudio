@@ -12,3 +12,19 @@ target_link_libraries(gps_app PUBLIC Qt6::Widgets gps_plan)
 
 add_executable(gstpipestudio main.cpp)
 target_link_libraries(gstpipestudio PRIVATE gps_app)
+install(TARGETS gstpipestudio RUNTIME DESTINATION ${GPS_PRIVATE_DIR}/bin)
+
+# The .deb carries its own Qt: the libraries and the plugins (xcb for a window, offscreen for tests) of the Qt it was built with,
+# found through the RPATH and a qt.conf next to the program. Off for a plain install on a machine that has Qt.
+option(GPS_BUNDLE_QT "Install the Qt libraries and plugins next to the app (for the .deb)" OFF)
+if(GPS_BUNDLE_QT)
+    get_filename_component(GPS_QT_PREFIX "${Qt6_DIR}/../../.." ABSOLUTE)   # Qt6_DIR is <prefix>/lib/cmake/Qt6
+    install(DIRECTORY ${GPS_QT_PREFIX}/lib/ DESTINATION ${GPS_PRIVATE_DIR}/lib FILES_MATCHING PATTERN "libQt6*.so.*"
+            PATTERN cmake EXCLUDE PATTERN pkgconfig EXCLUDE PATTERN metatypes EXCLUDE)   # the files and links of the libraries only
+    install(DIRECTORY ${GPS_QT_PREFIX}/plugins/ DESTINATION ${GPS_PRIVATE_DIR}/plugins)
+    file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/qt.conf "[Paths]\nPrefix = ..\nPlugins = plugins\nLibraries = lib\n")
+    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/qt.conf DESTINATION ${GPS_PRIVATE_DIR}/bin)
+    # RPATH, not RUNPATH: it also serves the libraries that Qt loads by itself (the plugins, and what they need)
+    set_target_properties(gstpipestudio PROPERTIES INSTALL_RPATH "$ORIGIN/../lib")
+    target_link_options(gstpipestudio PRIVATE LINKER:--disable-new-dtags)
+endif()
