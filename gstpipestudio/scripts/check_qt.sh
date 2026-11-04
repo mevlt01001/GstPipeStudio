@@ -34,7 +34,9 @@ if [ ! -f "$QT_DONE" ]; then
         | tar -xJ -C "$SRC_DIR"
     cd "$SRC_DIR/build"
     # -no-sbom: the software bill of materials of Qt needs CMake 3.19, and Ubuntu 20.04 has 3.16
-    "../qtbase-everywhere-src-$QT_VERSION/configure" -prefix "$QT_PREFIX" -release -nomake examples -nomake tests -no-sbom
+    # -no-icu: otherwise Qt links the ICU of the machine when it finds one, and then Qt differs from system to system (and the
+    #          package would need libicu66, libicu70 or libicu74); we show only technical names, no language rules are needed
+    "../qtbase-everywhere-src-$QT_VERSION/configure" -prefix "$QT_PREFIX" -release -nomake examples -nomake tests -no-sbom -no-icu
     cmake --build . --parallel "$(nproc)"
     cmake --install .
     touch "$QT_DONE"

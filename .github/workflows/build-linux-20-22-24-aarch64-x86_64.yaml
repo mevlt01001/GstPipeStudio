@@ -10,10 +10,8 @@ name: Build and Test
 # It runs when anything in gstpipestudio/ changes, on pull requests, and by hand.
 #
 # Six jobs start at the same time (3 Ubuntu versions x 2 architectures), each on its own fresh Ubuntu 24.04 machine of GitHub.
-# Per architecture:
-#   24.04  the steps run on the machine itself
-#   22.04  the steps run inside a plain ubuntu:22.04 container on that machine
-#   20.04  the steps run inside a plain ubuntu:20.04 container (GitHub has no 20.04 machine any more)
+# Every job runs inside a plain ubuntu:XX.04 container on that machine (GitHub has no 20.04 machine any more, and the machine
+# itself has many packages installed that a plain Ubuntu does not: they would change what Qt is built with).
 # The ARM machines of GitHub are free only for public repositories.
 on:
   push:
@@ -46,6 +44,8 @@ jobs:
             container: ubuntu:20.04
           - ubuntu: '22.04'
             container: ubuntu:22.04
+          - ubuntu: '24.04'
+            container: ubuntu:24.04
     steps:
       - name: Install Base Dependencies
         run: |
@@ -63,7 +63,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/Qt/6.8.3
-          key: qt-6.8.3-ubuntu${{ matrix.ubuntu }}-${{ matrix.arch }}
+          key: qt-6.8.3-v2-ubuntu${{ matrix.ubuntu }}-${{ matrix.arch }}   # v2: Qt is configured with -no-icu, built in a plain container
 
       - name: Qt Setup
         run: gstpipestudio/scripts/check_qt.sh
@@ -104,8 +104,8 @@ jobs:
 
           # the program finds every library, and the Qt it loads is the one of the package
           ldd "$P/bin/gstpipestudio" | tee /tmp/ldd.txt
-          ! grep "not found" /tmp/ldd.txt
-          grep -q "libQt6Core.so.6 => $P/lib/" /tmp/ldd.txt
+          if grep "not found" /tmp/ldd.txt; then exit 1; fi   # a "! grep" would not stop the step
+          grep -q "libQt6Core.so.6 => $P/bin/../lib/" /tmp/ldd.txt   # ldd writes the RPATH as it is: $ORIGIN/../lib
 
           # the programs and the plugin work through the links of bin/ and the plugin folder
           /tmp/stage/usr/bin/gps-inspect version
