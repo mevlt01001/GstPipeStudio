@@ -43,5 +43,7 @@ set(CPACK_PACKAGE_HOMEPAGE_URL https://github.com/mevlt01001/GstPipeStudio)
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Build GStreamer and DeepStream pipelines by clicking")
 set(CPACK_PACKAGE_DESCRIPTION "GstPipeStudio builds a GStreamer or DeepStream pipeline by clicking and saves it as a .conf file.\n gps-run runs the file, and the gpsconf plugin runs it as an element inside gst-launch.")
 set(CPACK_DEBIAN_PACKAGE_SECTION video)
-set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "gstreamer1.0-plugins-good, gstreamer1.0-plugins-bad, gstreamer1.0-plugins-ugly, gstreamer1.0-libav")
+# apt installs Recommends with the package (the plugins-good set is small); the big sets are only suggested, the user adds them
+set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "gstreamer1.0-plugins-good")
+set(CPACK_DEBIAN_PACKAGE_SUGGESTS "gstreamer1.0-plugins-bad, gstreamer1.0-plugins-ugly, gstreamer1.0-libav")
 include(CPack)
