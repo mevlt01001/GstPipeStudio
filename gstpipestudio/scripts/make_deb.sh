@@ -24,7 +24,8 @@ DEPENDS="$(cd "$WORK" && dpkg-shlibdeps -O --ignore-missing-info -l"$PRIVATE/lib
 echo "dependencies on system libraries: $DEPENDS"
 
 # GStreamer is not carried: apt installs it with the package (the programs run gst-inspect-1.0 and the plugin lives in its folder)
-cpack --config build/CPackConfig.cmake -G DEB -B out \
+OUT="$PWD/out"   # a full path: the CMake of Ubuntu 20.04 (3.16) cannot make the links of bin/ inside a relative one
+cpack --config build/CPackConfig.cmake -G DEB -B "$OUT" \
     -D CPACK_DEBIAN_FILE_NAME="$NAME" \
     -D CPACK_DEBIAN_PACKAGE_DEPENDS="gstreamer1.0-tools (>= 1.16), gstreamer1.0-plugins-base (>= 1.16), fonts-dejavu-core, $DEPENDS"
 
