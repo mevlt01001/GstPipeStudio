@@ -1309,6 +1309,52 @@ private slots:
         QVERIFY(w.view()->viewport()->rect().contains(w.view()->mapFromScene(items).boundingRect().adjusted(5, 5, -5, -5)));
     }
 
+    void rightDrawerFiltersBottomCapsTabAndDynamicPipeCaps() {
+        MainWindow w(c.get());
+        w.show();
+
+        // 1. Right drawer position: drawer sits to the right of the canvas view.
+        w.findChild<QAction*>("actionAddElement")->trigger();
+        auto* picker = pageOf<PickerPage>(w);
+        QVERIFY(picker);
+        QVERIFY(waitFor([&] { return w.drawer()->width() == Drawer::kWidth; }, 2000));
+        QVERIFY(w.drawer()->geometry().left() >= w.view()->geometry().right() - 2);
+
+        // 2. Role and Pad Presence filters in PickerPage.
+        picker->setRoleFilter(PickerPage::RoleSrc);
+        auto* list = picker->findChild<QListWidget*>("pickerList");
+        for (int i = 1; i < list->count(); ++i) {
+            if (!list->item(i)->isHidden()) QVERIFY(c->traits()(list->item(i)->text().toStdString()).isSource);
+        }
+        picker->setRoleFilter(PickerPage::RoleAll);
+        picker->setPresenceFilter(PickerPage::PresenceRequest);
+        bool sawTee = false, sawCompositor = false;
+        for (int i = 1; i < list->count(); ++i) {
+            if (!list->item(i)->isHidden()) {
+                sawTee |= (list->item(i)->text() == "tee");
+                sawCompositor |= (list->item(i)->text() == "compositor");
+            }
+        }
+        QVERIFY(sawTee && sawCompositor);
+        w.drawer()->dismiss();
+
+        // 3. Dynamic Pipe Caps formatting and layout rules.
+        QString rawCaps = "video/x-raw, format=(string)NV12, width=(int)1920, height=(int)1080";
+        QCOMPARE(LinkItem::formatSingleLine(rawCaps), QString("mediatype=video/x-raw · format=NV12 · width=1920 · height=1080"));
+        QCOMPARE(LinkItem::formatMultiLine(rawCaps), QString("mediatype=video/x-raw\nformat=NV12\nwidth=1920\nheight=1080"));
+        QCOMPARE(LinkItem::decideLayout(250.0, 200.0, 1.0), LinkItem::SingleLine);
+        QCOMPARE(LinkItem::decideLayout(120.0, 200.0, 1.0), LinkItem::MultiLine);
+        QCOMPARE(LinkItem::decideLayout(650.0, 200.0, 1.0), LinkItem::AtPads);
+        QCOMPARE(LinkItem::decideLayout(150.0, 200.0, 1.8), LinkItem::AtPads);
+
+        // 4. Bottom Caps tab opens when a link is clicked.
+        QString src, convert, sink;
+        buildChain(w, &src, &convert, &sink);
+        w.openCapsTab(src, "src");
+        QCOMPARE(w.bottomTabs()->tabText(w.bottomTabs()->currentIndex()), QString("Caps"));
+        QVERIFY(w.bottomTabs()->currentWidget()->findChild<CapsPage*>());
+    }
+
 private:
     // The scene rebuilds when the event loop turns; tests that look at it right away rebuild by hand.
     void scene_rebuild(MainWindow& w) {

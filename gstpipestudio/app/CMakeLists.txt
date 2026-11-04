@@ -3,11 +3,47 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets)
 set(CMAKE_AUTOMOC ON)
 
 add_library(gps_app STATIC
-    canvasscene.cpp canvasview.cpp capsfieldeditor.cpp capsparse.cpp capspage.cpp confirmdialog.cpp controller.cpp drawer.cpp
-    elementinfo.cpp elementitem.cpp factorydelegate.cpp flows.cpp helperclient.cpp linkitem.cpp logpanel.cpp
-    mainwindow.cpp paditem.cpp pickerpage.cpp propertyeditor.cpp propertypage.cpp setuppage.cpp slowwatch.cpp spinner.cpp
-    startupcheck.cpp supportreport.cpp theme.cpp updatepanel.cpp updateresult.cpp validationindicator.cpp)
-target_include_directories(gps_app PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+    backend/include/helperclient.h backend/src/helperclient.cpp
+    backend/include/slowwatch.h backend/src/slowwatch.cpp
+    backend/include/startupcheck.h backend/src/startupcheck.cpp
+    backend/include/supportreport.h backend/src/supportreport.cpp
+    model/include/capsparse.h model/src/capsparse.cpp
+    model/include/elementedit.h
+    model/include/elementinfo.h model/src/elementinfo.cpp
+    model/include/elementview.h
+    model/include/updateresult.h model/src/updateresult.cpp
+    controller/include/controller.h controller/src/controller.cpp
+    controller/include/flows.h controller/src/flows.cpp
+    canvas/include/canvasmetrics.h
+    canvas/include/canvasscene.h canvas/src/canvasscene.cpp
+    canvas/include/canvasview.h canvas/src/canvasview.cpp
+    canvas/include/elementitem.h canvas/src/elementitem.cpp
+    canvas/include/linkitem.h canvas/src/linkitem.cpp
+    canvas/include/paditem.h canvas/src/paditem.cpp
+    ui/include/drawer.h ui/src/drawer.cpp
+    ui/include/mainwindow.h ui/src/mainwindow.cpp
+    ui/include/theme.h ui/src/theme.cpp
+    ui/pages/include/capspage.h ui/pages/src/capspage.cpp
+    ui/pages/include/pickerpage.h ui/pages/src/pickerpage.cpp
+    ui/pages/include/propertypage.h ui/pages/src/propertypage.cpp
+    ui/pages/include/setuppage.h ui/pages/src/setuppage.cpp
+    ui/widgets/include/capsfieldeditor.h ui/widgets/src/capsfieldeditor.cpp
+    ui/widgets/include/confirmdialog.h ui/widgets/src/confirmdialog.cpp
+    ui/widgets/include/factorydelegate.h ui/widgets/src/factorydelegate.cpp
+    ui/widgets/include/logpanel.h ui/widgets/src/logpanel.cpp
+    ui/widgets/include/propertyeditor.h ui/widgets/src/propertyeditor.cpp
+    ui/widgets/include/spinner.h ui/widgets/src/spinner.cpp
+    ui/widgets/include/updatepanel.h ui/widgets/src/updatepanel.cpp
+    ui/widgets/include/validationindicator.h ui/widgets/src/validationindicator.cpp)
+target_include_directories(gps_app PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/backend/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/model/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/controller/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/canvas/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/ui/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/ui/pages/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/ui/widgets/include)
 target_link_libraries(gps_app PUBLIC Qt6::Widgets gps_plan)
 
 add_executable(gstpipestudio main.cpp)

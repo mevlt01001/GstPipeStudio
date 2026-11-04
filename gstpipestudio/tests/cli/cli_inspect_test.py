@@ -50,7 +50,11 @@ def main():
         check(len(els) > 200, f"list: {len(els)} elements")
         for e in els[:5] + els[-5:]:
             has_types(e, {"factory": is_str, "klass": is_str, "longName": is_str, "rank": is_int, "plugin": is_str,
-                          "isSource": is_bool, "isSink": is_bool, "hasRequestSrc": is_bool, "nvidia": is_bool}, "list entry")
+                          "isSource": is_bool, "isSink": is_bool,
+                          "hasAlwaysSrc": is_bool, "hasAlwaysSink": is_bool,
+                          "hasSometimesSrc": is_bool, "hasSometimesSink": is_bool,
+                          "hasRequestSrc": is_bool, "hasRequestSink": is_bool,
+                          "nvidia": is_bool}, "list entry")
         by = {e["factory"]: e for e in els}
         check(by["videotestsrc"]["isSource"] and not by["videotestsrc"]["nvidia"], "videotestsrc flags")
         check(by["fakesink"]["isSink"], "fakesink isSink")

@@ -196,6 +196,14 @@ private slots:
         w.drawer()->dismiss();
         QTest::qWait(300);
 
+        // Add any element with Role & Pad Presence filters in the right drawer + Bottom Caps tab open.
+        w.flows()->chooseElement();
+        QVERIFY(w.drawer()->page<PickerPage>());
+        w.openCapsTab("videoconvert_4", "src");
+        saveWithDrawer(w, "ux_13b_right_drawer_filters_and_bottom_caps");
+        w.drawer()->dismiss();
+        QTest::qWait(300);
+
         ConfirmDialog confirm("Remove elements", "These 3 elements will be removed, with 3 links",
                               {"nvvideoconvert_5   (nvvideoconvert)", "textoverlay_6   (textoverlay)", "fakesink_7   (fakesink)"}, "Remove 3 elements");
         confirm.show();

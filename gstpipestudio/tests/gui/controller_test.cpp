@@ -615,6 +615,59 @@ private slots:
         // From the compositor's own src a link back to the compositor would cycle.
         for (const ExistingTarget& t : c->existingTargets(mix, "src")) QVERIFY(t.element != mix);
     }
+
+    void freeFormUntrackedSpliceAutoHealAndOuroboros() {
+        need(*c, "videotestsrc");
+        need(*c, "videoconvert");
+        need(*c, "fakesink");
+
+        // 1. Add a FILTER and a SINK without a source: they stay untracked with an ℹ info note!
+        QVERIFY(c->addElement("videoconvert", {}));
+        QVERIFY(settle(*c));
+        QString conv = text(c->plan().elements.back().name);
+        QVERIFY(!c->view(conv).isTracked);
+        QVERIFY(c->view(conv).isInfo);
+        QVERIFY(c->view(conv).note.contains("ℹ"));
+
+        QVERIFY(c->addElement("fakesink", {}));
+        QVERIFY(settle(*c));
+        QString snk = text(c->plan().elements.back().name);
+        QVERIFY(!c->view(snk).isTracked);
+
+        // 2. Ouroboros self-loop check emits ironic notice.
+        QSignalSpy notices(c.get(), &Controller::notice);
+        QVERIFY(!c->linkExisting(conv, "src", conv, "sink"));
+        QCOMPARE(notices.count(), 1);
+        QVERIFY(notices[0][0].toString().startsWith("Ouroboros!"));
+
+        // 3. Add a source and link it directly to fakesink: both become tracked.
+        QString src = addSource(*c, "videotestsrc");
+        QVERIFY(c->linkExisting(src, "src", snk, "sink"));
+        QVERIFY(settle(*c));
+        QVERIFY(c->view(src).isTracked);
+        QVERIFY(c->view(snk).isTracked);
+        QVERIFY(!c->view(conv).isTracked);
+
+        // 4. Splice videoconvert onto the link src -> snk: adapts into src -> conv -> snk!
+        QVERIFY(c->spliceElement(conv, src, "src"));
+        QVERIFY(settle(*c));
+        QVERIFY(c->view(conv).isTracked);
+        QCOMPARE(c->plan().links.size(), size_t(2));
+
+        // 5. Delete videoconvert with Auto-Heal: heals back to src -> snk!
+        QVERIFY(c->deleteElement(conv, true));
+        QVERIFY(settle(*c));
+        QCOMPARE(c->plan().elements.size(), size_t(2));
+        QCOMPARE(c->plan().links.size(), size_t(1));
+        QCOMPARE(text(c->plan().links[0].srcElement), src);
+        QCOMPARE(text(c->plan().links[0].sinkElement), snk);
+
+        // 6. Disconnect link without pruning downstream elements.
+        QVERIFY(c->disconnectLink(src, "src"));
+        QVERIFY(settle(*c));
+        QCOMPARE(c->plan().elements.size(), size_t(2));
+        QVERIFY(!c->view(snk).isTracked);
+    }
 };
 
 QTEST_MAIN(ControllerTest)

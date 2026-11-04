@@ -338,11 +338,11 @@ private slots:
         qint64 pid = readPid(pidFile);
         QVERIFY(pidAlive(pid));
 
-        now = 59999;
+        now = SlowWatch::kFirstLimitMs - 1;
         c->slowWatch()->check();
         QCOMPARE(ind->mode(), ValidationIndicator::Validating);
-        QCOMPARE(ind->findChild<QLabel*>("indicatorElapsed")->text(), QString("59 s"));
-        now = 60000;
+        QCOMPARE(ind->findChild<QLabel*>("indicatorElapsed")->text(), QString("%1 s").arg((SlowWatch::kFirstLimitMs - 1) / 1000));
+        now = SlowWatch::kFirstLimitMs;
         c->slowWatch()->check();
         QCOMPARE(ind->mode(), ValidationIndicator::Slow);
         QCOMPARE(ind->findChild<QLabel*>("indicatorText")->text(), QString("Validation is taking longer than expected"));
@@ -352,10 +352,10 @@ private slots:
         // Wait: asked again 15 s later, not before.
         QTest::mouseClick(ind->findChild<QPushButton*>("waitButton"), Qt::LeftButton);
         QCOMPARE(ind->mode(), ValidationIndicator::Validating);
-        now = 74999;
+        now = SlowWatch::kFirstLimitMs + SlowWatch::kExtraMs - 1;
         c->slowWatch()->check();
         QCOMPARE(ind->mode(), ValidationIndicator::Validating);
-        now = 75000;
+        now = SlowWatch::kFirstLimitMs + SlowWatch::kExtraMs;
         c->slowWatch()->check();
         QCOMPARE(ind->mode(), ValidationIndicator::Slow);
 

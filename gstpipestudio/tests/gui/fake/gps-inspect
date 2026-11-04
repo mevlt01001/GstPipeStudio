@@ -25,7 +25,12 @@ def list_all():
         directions = [t["direction"] for t in e["templates"]]
         rows.append({"factory": factory, "klass": e["klass"], "longName": e["longName"], "rank": e["rank"],
                      "plugin": e["plugin"], "isSource": is_source(factory), "isSink": "src" not in directions,
+                     "hasAlwaysSrc": any(t["direction"] == "src" and t["presence"] == "always" for t in e["templates"]),
+                     "hasAlwaysSink": any(t["direction"] == "sink" and t["presence"] == "always" for t in e["templates"]),
+                     "hasSometimesSrc": any(t["direction"] == "src" and t["presence"] == "sometimes" for t in e["templates"]),
+                     "hasSometimesSink": any(t["direction"] == "sink" and t["presence"] == "sometimes" for t in e["templates"]),
                      "hasRequestSrc": any(t["direction"] == "src" and t["presence"] == "request" for t in e["templates"]),
+                     "hasRequestSink": any(t["direction"] == "sink" and t["presence"] == "request" for t in e["templates"]),
                      "nvidia": is_nvidia(factory)})
     return {"elements": rows}
 

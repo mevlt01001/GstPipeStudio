@@ -4,6 +4,7 @@
 
 #include "capstext.h"
 #include "check.h"
+#include "pipeline.h"
 #include "plan.h"
 
 using namespace gps;
@@ -384,6 +385,88 @@ static void capsText() {
     CHECK_EQ(s.toText(), std::string("application/x-test, note=(string)\"a\\ b\""));
 }
 
+static void freeFormAndOopPipeline() {
+    // 1. Free-form Plan additions, tracked elements, disconnect without pruning, auto-heal delete, splice, Ouroboros.
+    Plan p;
+    std::string flt = p.addElement("videoconvert", {}, 100, 100);
+    std::string snk = p.addElement("fakesink", {}, 300, 100);
+    CHECK(p.linkExisting(flt, "src", snk, "sink"));
+    // Neither flt nor snk is fed by a source -> trackedElements is empty!
+    CHECK(p.trackedElements(T).empty());
+    CHECK(!p.isElementTracked(flt, T));
+    CHECK(!p.isElementTracked(snk, T));
+
+    // Once a source is connected to flt, the whole connected chain becomes tracked!
+    std::string src = p.addElement("src_cam", {}, 0, 100);
+    CHECK(p.linkExisting(src, "src", flt, "sink"));
+    CHECK_EQ(p.trackedElements(T), Names({flt, snk, src}));
+
+    // Disconnect link without pruning downstream elements.
+    CHECK(p.disconnectLink(src, "src"));
+    CHECK_EQ(p.elements.size(), size_t(3));  // flt and snk stay on the canvas!
+    CHECK_EQ(p.trackedElements(T), Names({src}));
+    CHECK(p.disconnectLink(flt, "src"));     // free snk's sink pad too
+
+    // Reconnect src -> snk and test Splice (Drop flt onto link src -> snk).
+    CHECK(p.linkExisting(src, "src", snk, "sink"));
+    CHECK(p.spliceElement(flt, src, "src", {"sink"}, {"src"}));
+    CHECK_EQ(p.links.size(), size_t(2));
+    CHECK_EQ(p.links[0].srcElement, src);
+    CHECK_EQ(p.links[0].sinkElement, flt);
+    CHECK_EQ(p.links[1].srcElement, flt);
+    CHECK_EQ(p.links[1].sinkElement, snk);
+
+    // Delete middle element with Auto-Heal: src -> flt -> snk becomes src -> snk!
+    CHECK(p.deleteElement(flt, true, 1));
+    CHECK_EQ(p.elements.size(), size_t(2));
+    CHECK_EQ(p.links.size(), size_t(1));
+    CHECK_EQ(p.links[0].srcElement, src);
+    CHECK_EQ(p.links[0].sinkElement, snk);
+
+    // Ouroboros message check.
+    CHECK(Plan::ouroborosMessage("a", "a").find("Ouroboros!") == 0);
+
+    // 2. OOP Pipeline -> Element -> Pad -> Caps model + Pipeline.run() trigger.
+    Pipeline pipe("oop_demo");
+    int runs = 0;
+    pipe.setEngineRunner([&](Pipeline*) { ++runs; });
+
+    Element* cam = pipe.addElement("videotestsrc", Element::Role::Src);
+    cam->addPad("src", "src", Pad::Direction::Src, Pad::Presence::Always, "video/x-raw");
+    Element* conv = pipe.addElement("videoconvert", Element::Role::Filter);
+    conv->addPad("sink", "sink", Pad::Direction::Sink, Pad::Presence::Always, "video/x-raw");
+    conv->addPad("src", "src", Pad::Direction::Src, Pad::Presence::Always, "video/x-raw");
+    Element* out = pipe.addElement("autovideosink", Element::Role::Sink);
+    out->addPad("sink", "sink", Pad::Direction::Sink, Pad::Presence::Always, "video/x-raw");
+
+    CHECK(cam->isTracked());
+    CHECK(!conv->isTracked());
+    CHECK(!out->isTracked());
+
+    std::string err;
+    // Self-loop is rejected with Ouroboros!
+    CHECK(!pipe.connect(conv->srcPads()[0], conv->sinkPads()[0], &err));
+    CHECK(err.find("Ouroboros!") == 0);
+
+    CHECK(pipe.connect(cam->srcPads()[0], conv->sinkPads()[0], &err));
+    CHECK(conv->isTracked());
+    CHECK(!out->isTracked());
+    CHECK(pipe.connect(conv->srcPads()[0], out->sinkPads()[0], &err));
+    CHECK(out->isTracked());
+    CHECK_EQ(runs, 2);
+
+    // Setting caps triggers Pipeline.run() and associates caps with both linked pads.
+    CHECK(pipe.setCaps(cam->srcPads()[0], "video/x-raw, width=(int)1920, height=(int)1080"));
+    CHECK_EQ(cam->srcPads()[0]->caps().userFilter, std::string("video/x-raw, width=(int)1920, height=(int)1080"));
+    CHECK_EQ(conv->sinkPads()[0]->caps().userFilter, std::string("video/x-raw, width=(int)1920, height=(int)1080"));
+    CHECK_EQ(runs, 3);
+
+    // Auto-heal when removing conv from Pipeline.
+    CHECK(pipe.removeElement(conv->name(), true));
+    CHECK_EQ(cam->srcPads()[0]->linkedPad(), out->sinkPads()[0]);
+    CHECK(out->isTracked());
+}
+
 int main() {
     identities();
     defaults();
@@ -397,5 +480,6 @@ int main() {
     confRoundTrip();
     confErrors();
     capsText();
+    freeFormAndOopPipeline();
     return finish("plan_test");
 }

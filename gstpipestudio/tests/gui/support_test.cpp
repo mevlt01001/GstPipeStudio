@@ -133,7 +133,7 @@ private slots:
         QSignalSpy slow(&watch, &SlowWatch::slow);
         watch.start();
         QCOMPARE(watch.elapsedMs(), qint64(0));
-        now += 59999;
+        now += SlowWatch::kFirstLimitMs - 1;
         watch.check();
         QCOMPARE(slow.count(), 0);
         QVERIFY(!watch.asking());
@@ -145,29 +145,29 @@ private slots:
         watch.check();
         QCOMPARE(slow.count(), 1);  // asks once, not on every check
 
-        watch.extend();  // Wait: the next question is at 75 s
+        watch.extend();  // Wait: the next question is kExtraMs later
         QVERIFY(!watch.asking());
-        now = 1000 + 74999;
+        now = 1000 + SlowWatch::kFirstLimitMs + SlowWatch::kExtraMs - 1;
         watch.check();
         QCOMPARE(slow.count(), 1);
-        now = 1000 + 75000;
+        now = 1000 + SlowWatch::kFirstLimitMs + SlowWatch::kExtraMs;
         watch.check();
         QCOMPARE(slow.count(), 2);
         watch.extend();
-        now = 1000 + 89999;
+        now = 1000 + SlowWatch::kFirstLimitMs + 2 * SlowWatch::kExtraMs - 1;
         watch.check();
         QCOMPARE(slow.count(), 2);
-        now = 1000 + 90000;
+        now = 1000 + SlowWatch::kFirstLimitMs + 2 * SlowWatch::kExtraMs;
         watch.check();
         QCOMPARE(slow.count(), 3);
 
-        // A new validation starts from 60 s again; a stopped watch asks nothing.
+        // A new validation starts from kFirstLimitMs again; a stopped watch asks nothing.
         watch.stop();
         now += 500000;
         watch.check();
         QCOMPARE(slow.count(), 3);
         watch.start();
-        now += 60000;
+        now += SlowWatch::kFirstLimitMs;
         watch.check();
         QCOMPARE(slow.count(), 4);
     }
@@ -179,7 +179,7 @@ private slots:
         QSignalSpy slow(&watch, &SlowWatch::slow);
         watch.start();
         watch.extend();  // nobody asked: no extra time is given
-        now = 60000;
+        now = SlowWatch::kFirstLimitMs;
         watch.check();
         QCOMPARE(slow.count(), 1);
     }
