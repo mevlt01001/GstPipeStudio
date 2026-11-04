@@ -7,7 +7,9 @@ name: Build and Test
 #   Build Tools Setup  scripts/check_build_tools.sh  compiler, CMake, Ninja
 #   Build, Test        CMake and ctest
 #   Install Check      cmake --install into a folder, and look at what a package would hold: the files, the Qt it loads, a start
-# It runs when anything in gstpipestudio/ changes, on pull requests, and by hand.
+#   Package            scripts/make_deb.sh           GstPipeStudio-<ubuntu>-<arch>.deb, kept as an artifact of the run
+# Then a second job per leg, Install Test, installs that .deb on a plain Ubuntu (nothing of the build is there) and starts it.
+# It runs when anything in gstpipestudio/ changes, on pull requests, by hand, and from release.yaml (which gives it the version).
 #
 # Six jobs start at the same time (3 Ubuntu versions x 2 architectures), each on its own fresh Ubuntu 24.04 machine of GitHub.
 # Every job runs inside a plain ubuntu:XX.04 container on that machine (GitHub has no 20.04 machine any more, and the machine
@@ -20,6 +22,12 @@ on:
       - gstpipestudio/**
   pull_request:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      version:
+        description: "Version of the programs and of the package (empty = the one in CMakeLists.txt)"
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -72,6 +80,8 @@ jobs:
         run: gstpipestudio/scripts/check_build_tools.sh
 
       - name: Build
+        env:
+          GPS_VERSION: ${{ inputs.version }}
         run: |
           cmake \
           -S gstpipestudio \
@@ -80,7 +90,8 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_PREFIX_PATH="$HOME/Qt/6.8.3" \
           -DCMAKE_INSTALL_PREFIX=/usr \
-          -DGPS_BUNDLE_QT=ON
+          -DGPS_BUNDLE_QT=ON \
+          ${GPS_VERSION:+-DGPS_VERSION=$GPS_VERSION}
           cmake --build build
 
       - name: Test
@@ -116,3 +127,67 @@ jobs:
           QT_QPA_PLATFORM=offscreen QT_DEBUG_PLUGINS=1 timeout 5 /tmp/stage/usr/bin/gstpipestudio > /tmp/gui.txt 2>&1 || rc=$?
           test "$rc" = 124 || { cat /tmp/gui.txt; exit 1; }
           grep -q "$P/plugins/platforms" /tmp/gui.txt
+
+      - name: Package
+        shell: bash
+        run: gstpipestudio/scripts/make_deb.sh ${{ matrix.ubuntu }} ${{ matrix.arch }}
+
+      - name: Upload Package
+        uses: actions/upload-artifact@v7
+        with:
+          name: deb-${{ matrix.ubuntu }}-${{ matrix.arch }}
+          path: out/*.deb
+          retention-days: 14
+
+  # The .deb on a plain Ubuntu: nothing of the build is there (no Qt, no compiler, no GStreamer tools), so apt has to bring
+  # what the package needs, as it will for a user.
+  InstallTest:
+    name: Install the package on a plain Ubuntu ${{ matrix.ubuntu }} (${{ matrix.arch }})
+    needs: Setup
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86_64, aarch64]
+        ubuntu: ['20.04', '22.04', '24.04']
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+          - ubuntu: '20.04'
+            container: ubuntu:20.04
+          - ubuntu: '22.04'
+            container: ubuntu:22.04
+          - ubuntu: '24.04'
+            container: ubuntu:24.04
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: deb-${{ matrix.ubuntu }}-${{ matrix.arch }}
+          path: deb
+
+      - name: Install
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y ./deb/GstPipeStudio-${{ matrix.ubuntu }}-${{ matrix.arch }}.deb
+
+      - name: Check
+        shell: bash
+        run: |
+          dpkg -s gstpipestudio | grep -E "^(Package|Version|Depends):"
+          command -v gstpipestudio gps-inspect gps-update gps-run
+          gps-inspect version
+          gst-inspect-1.0 gpsconf > /dev/null
+
+          # every library is found, and the Qt is the one that the package carries
+          ldd /usr/lib/gstpipestudio/bin/gstpipestudio | tee /tmp/ldd.txt
+          if grep "not found" /tmp/ldd.txt; then exit 1; fi
+          grep -q "libQt6Core.so.6 => /usr/lib/gstpipestudio/bin/../lib/" /tmp/ldd.txt
+
+          # the GUI starts (timeout 124 = still running after 5 seconds)
+          rc=0
+          QT_QPA_PLATFORM=offscreen timeout 5 gstpipestudio > /tmp/gui.txt 2>&1 || rc=$?
+          test "$rc" = 124 || { cat /tmp/gui.txt; exit 1; }

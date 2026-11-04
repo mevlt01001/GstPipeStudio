@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
-project(gstpipestudio VERSION 0.1.0 LANGUAGES CXX)
+# The version is not typed in here by hand: a release passes its own (-DGPS_VERSION=..., see .github/workflows/release.yaml).
+set(GPS_VERSION 0.1.0 CACHE STRING "Version of the programs and of the package")
+project(gstpipestudio VERSION ${GPS_VERSION} LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -30,3 +32,16 @@ foreach(dir ${GPS_DIRS})
         add_subdirectory(${dir})
     endif()
 endforeach()
+
+# The .deb: cpack -G DEB (scripts/make_deb.sh runs it). That script also passes the file name and the dependencies on system
+# libraries, which dpkg-shlibdeps finds out from the files that were built. Qt is inside the package (GPS_BUNDLE_QT), GStreamer is not.
+set(CPACK_GENERATOR DEB)
+set(CPACK_PACKAGE_NAME gstpipestudio)
+set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
+set(CPACK_PACKAGE_CONTACT "mevlt01001 <mevlutbasaran01@gmail.com>")
+set(CPACK_PACKAGE_HOMEPAGE_URL https://github.com/mevlt01001/GstPipeStudio)
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Build GStreamer and DeepStream pipelines by clicking")
+set(CPACK_PACKAGE_DESCRIPTION "GstPipeStudio builds a GStreamer or DeepStream pipeline by clicking and saves it as a .conf file.\n gps-run runs the file, and the gpsconf plugin runs it as an element inside gst-launch.")
+set(CPACK_DEBIAN_PACKAGE_SECTION video)
+set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "gstreamer1.0-plugins-good, gstreamer1.0-plugins-bad, gstreamer1.0-plugins-ugly, gstreamer1.0-libav")
+include(CPack)
