@@ -24,6 +24,10 @@ struct PadView {
 
 struct ElementView {
     QString name, factory;
+    QString displayTitle;       // shown as header title when non-empty (e.g. Custom Element name)
+    QString groupId;            // "<CustomTitle>#<id>" when part of a custom element/group
+    bool isCustomGroup = false; // true when this item is a collapsed multi-element Custom Element
+    QStringList groupMembers;   // member element names when part of a group
     bool isSource = false;
     bool isSink = false;
     bool isTracked = true;
@@ -37,6 +41,16 @@ struct ElementView {
     double height() const {
         return metrics::boxHeight(qMax(sinks.size(), srcs.size()), propLines.size(), !note.isEmpty());
     }
+};
+
+struct CustomElementInfo {
+    QString name;         // custom element name, e.g. "MyDecoder"
+    QString description;  // summary, e.g. "videoconvert → videoscale"
+    bool isSource = false;
+    bool isSink = false;
+    bool hasFreeSink = false;
+    bool hasFreeSrc = false;
+    int elementCount = 0;
 };
 
 struct LinkView {

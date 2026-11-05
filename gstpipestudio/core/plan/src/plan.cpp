@@ -284,26 +284,36 @@ bool Plan::disconnectLink(const std::string& srcElement, const std::string& srcP
     return true;
 }
 
-bool Plan::deleteElement(const std::string& name, bool autoHeal, int totalSrcPads) {
-    if (!find(name)) return false;
-    std::vector<int> in = linksInto(name);
-    std::vector<int> out = linksFromElement(name);
+bool Plan::deleteElements(const std::vector<std::string>& names, bool autoHeal, int exitTotalSrcPads) {
+    std::set<std::string> group;
+    for (const std::string& n : names) {
+        if (find(n)) group.insert(n);
+    }
+    if (group.empty()) return false;
 
-    // Auto-heal only when there is unambiguously 1 incoming link and 1 outgoing link (and not a multi-src element).
-    bool canHeal = autoHeal && in.size() == 1 && out.size() == 1 && totalSrcPads <= 1;
+    std::vector<PlanLink> inLinks, outLinks;
+    for (const PlanLink& l : links) {
+        bool srcIn = group.count(l.srcElement) > 0;
+        bool snkIn = group.count(l.sinkElement) > 0;
+        if (!srcIn && snkIn) inLinks.push_back(l);
+        else if (srcIn && !snkIn) outLinks.push_back(l);
+    }
+
+    // Auto-heal when the removed subgraph has unambiguously 1 external incoming link and 1 external outgoing link.
+    bool canHeal = autoHeal && inLinks.size() == 1 && outLinks.size() == 1 && exitTotalSrcPads <= 1;
     PlanLink healed;
     if (canHeal) {
-        const PlanLink& inLink = links[in[0]];
-        const PlanLink& outLink = links[out[0]];
-        healed = inLink;
-        healed.sinkElement = outLink.sinkElement;
-        healed.sinkPad = outLink.sinkPad;
-        healed.sinkPadProps = outLink.sinkPadProps;
-        if (healed.caps.empty()) healed.caps = outLink.caps;
+        healed = inLinks[0];
+        healed.sinkElement = outLinks[0].sinkElement;
+        healed.sinkPad = outLinks[0].sinkPad;
+        healed.sinkPadProps = outLinks[0].sinkPadProps;
+        if (healed.caps.empty()) healed.caps = outLinks[0].caps;
     }
 
     Removal removed;
-    dropElement(name, &removed);
+    for (const std::string& n : names) {
+        if (find(n)) dropElement(n, &removed);
+    }
 
     if (canHeal && !wouldCycle(healed.srcElement, healed.sinkElement)) {
         if (isTemplateName(healed.sinkPad) || !sinkPadTaken(healed.sinkElement, healed.sinkPad)) {
@@ -313,28 +323,44 @@ bool Plan::deleteElement(const std::string& name, bool autoHeal, int totalSrcPad
     return true;
 }
 
+bool Plan::deleteElement(const std::string& name, bool autoHeal, int totalSrcPads) {
+    return deleteElements({name}, autoHeal, totalSrcPads);
+}
+
 bool Plan::spliceElement(const std::string& elementName, const std::string& linkSrcElement, const std::string& linkSrcPad,
                          const std::vector<std::string>& freeSinkPads, const std::vector<std::string>& freeSrcPads) {
     if (!find(elementName)) return false;
+    std::vector<std::pair<std::string, std::string>> sinks, srcs;
+    for (const std::string& p : freeSinkPads) sinks.emplace_back(elementName, p);
+    for (const std::string& p : freeSrcPads) srcs.emplace_back(elementName, p);
+    return spliceChain(linkSrcElement, linkSrcPad, sinks, srcs);
+}
+
+bool Plan::spliceChain(const std::string& linkSrcElement, const std::string& linkSrcPad,
+                       const std::vector<std::pair<std::string, std::string>>& freeSinkPads,
+                       const std::vector<std::pair<std::string, std::string>>& freeSrcPads) {
     int idx = linkFrom(linkSrcElement, linkSrcPad);
     if (idx < 0) return false;
     PlanLink original = links[idx];
-    if (original.srcElement == elementName || original.sinkElement == elementName) return false;
 
     // Ambiguous pad counts are not auto-spliced.
     if (freeSinkPads.size() > 1 || freeSrcPads.size() > 1) return false;
     if (freeSinkPads.empty() && freeSrcPads.empty()) return false;
 
     if (freeSinkPads.size() == 1 && freeSrcPads.size() == 1) {
-        if (wouldCycle(original.srcElement, elementName) || wouldCycle(elementName, original.sinkElement)) return false;
+        const auto& [entryElem, entryPad] = freeSinkPads[0];
+        const auto& [exitElem, exitPad] = freeSrcPads[0];
+        if (!find(entryElem) || !find(exitElem)) return false;
+        if (original.srcElement == entryElem || original.sinkElement == exitElem) return false;
+        if (wouldCycle(original.srcElement, entryElem) || wouldCycle(exitElem, original.sinkElement)) return false;
         PlanLink in = original;
-        in.sinkElement = elementName;
-        in.sinkPad = freeSinkPads[0];
+        in.sinkElement = entryElem;
+        in.sinkPad = entryPad;
         in.sinkPadProps.clear();
 
         PlanLink out;
-        out.srcElement = elementName;
-        out.srcPad = freeSrcPads[0];
+        out.srcElement = exitElem;
+        out.srcPad = exitPad;
         out.sinkElement = original.sinkElement;
         out.sinkPad = original.sinkPad;
         out.sinkPadProps = original.sinkPadProps;
@@ -344,16 +370,20 @@ bool Plan::spliceElement(const std::string& elementName, const std::string& link
         return true;
     }
     if (freeSinkPads.size() == 1 && freeSrcPads.empty()) {
-        if (wouldCycle(original.srcElement, elementName)) return false;
-        links[idx].sinkElement = elementName;
-        links[idx].sinkPad = freeSinkPads[0];
+        const auto& [entryElem, entryPad] = freeSinkPads[0];
+        if (!find(entryElem) || original.srcElement == entryElem) return false;
+        if (wouldCycle(original.srcElement, entryElem)) return false;
+        links[idx].sinkElement = entryElem;
+        links[idx].sinkPad = entryPad;
         links[idx].sinkPadProps.clear();
         return true;
     }
     if (freeSinkPads.empty() && freeSrcPads.size() == 1) {
-        if (wouldCycle(elementName, original.sinkElement)) return false;
-        links[idx].srcElement = elementName;
-        links[idx].srcPad = freeSrcPads[0];
+        const auto& [exitElem, exitPad] = freeSrcPads[0];
+        if (!find(exitElem) || original.sinkElement == exitElem) return false;
+        if (wouldCycle(exitElem, original.sinkElement)) return false;
+        links[idx].srcElement = exitElem;
+        links[idx].srcPad = exitPad;
         return true;
     }
     return false;
@@ -386,16 +416,9 @@ Removal Plan::prune(const TraitsFn& traits) {
     }
 }
 
-Removal Plan::cut(const std::string& srcElement, const std::string& srcPad, const TraitsFn& traits) {
+Removal Plan::cut(const std::string& srcElement, const std::string& srcPad, const TraitsFn&) {
     Removal removed;
-    int i = linkFrom(srcElement, srcPad);
-    if (i < 0) return removed;
-
-    links.erase(links.begin() + i);
-    removed.links = 1;
-    Removal pruned = prune(traits);
-    removed.elements = pruned.elements;
-    removed.links += pruned.links;
+    if (disconnectLink(srcElement, srcPad)) removed.links = 1;
     return removed;
 }
 
@@ -405,36 +428,39 @@ Removal Plan::previewCut(const std::string& srcElement, const std::string& srcPa
 }
 
 Addition Plan::replace(const std::string& srcElement, const std::string& srcPad, const std::string& factory,
-                       const std::string& sinkPad, const Props& props, const TraitsFn& traits) {
+                       const std::string& sinkPad, const Props& props, const TraitsFn&) {
     Addition result;
-    // The new element takes the place of the one it replaces.
-    double x = 0, y = 0;
     int old = linkFrom(srcElement, srcPad);
-    if (old >= 0) {
-        if (const PlanElement* replaced = find(links[old].sinkElement)) {
-            x = replaced->x;
-            y = replaced->y;
-        }
+    if (old < 0) return result;
+    std::string targetName = links[old].sinkElement;
+    double x = 0, y = 0;
+    if (const PlanElement* replaced = find(targetName)) {
+        x = replaced->x;
+        y = replaced->y;
+        dropElement(targetName, &result.removed);
+    } else {
+        disconnectLink(srcElement, srcPad);
+        result.removed.links = 1;
     }
-    result.removed = cut(srcElement, srcPad, traits);
-    if (result.removed.links == 0) return result;  // the pad was free, there was nothing to replace
     result.element = addAfter(srcElement, srcPad, factory, sinkPad, props, x, y);
     return result;
 }
 
-Removal Plan::previewReplace(const std::string& srcElement, const std::string& srcPad, const TraitsFn& traits) const {
-    return previewCut(srcElement, srcPad, traits);
+Removal Plan::previewReplace(const std::string& srcElement, const std::string& srcPad, const TraitsFn&) const {
+    Removal removed;
+    int old = linkFrom(srcElement, srcPad);
+    if (old >= 0) {
+        Plan copy = *this;
+        copy.dropElement(links[old].sinkElement, &removed);
+    }
+    return removed;
 }
 
 Removal Plan::deleteSource(const std::string& name, const TraitsFn& traits) {
     Removal removed;
     const PlanElement* e = find(name);
-    if (!e || !traits(e->factory).isSource) return removed;
-
+    if (!e || (traits && !traits(e->factory).isSource)) return removed;
     dropElement(name, &removed);
-    Removal pruned = prune(traits);
-    removed.elements.insert(removed.elements.end(), pruned.elements.begin(), pruned.elements.end());
-    removed.links += pruned.links;
     return removed;
 }
 

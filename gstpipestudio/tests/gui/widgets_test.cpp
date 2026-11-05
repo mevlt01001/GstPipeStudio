@@ -53,11 +53,16 @@ T* shown(QWidget* parent) {
     return found;
 }
 
-// The page of the drawer on top, once it is there.
+// The active page: PickerPage in the right drawer, PropertyPage/CapsPage in the bottom dock tabs.
 template <class T>
 T* pageOf(MainWindow& w, int ms = 8000) {
     T* found = nullptr;
-    (void)QTest::qWaitFor([&] { return (found = w.drawer()->page<T>()) != nullptr; }, ms);
+    (void)QTest::qWaitFor([&] {
+        if constexpr (std::is_same_v<T, PropertyPage>) found = w.flows()->propertyPage();
+        else if constexpr (std::is_same_v<T, CapsPage>) found = w.flows()->capsPage();
+        else found = w.drawer()->page<T>();
+        return found != nullptr;
+    }, ms);
     return found;
 }
 
@@ -711,17 +716,17 @@ private slots:
         for (int i = 0; i < 80; ++i) view->zoomBy(0.5);
         QCOMPARE(view->zoom(), 0.2);
 
-        // Pan: drag on the empty background.
+        // Pan: middle-button drag on the empty background pans; left-button drag rubber-band selects.
         view->resetTransform();
         view->zoomBy(2.0);
         view->centerOn(w.scene()->element(src));
         int before = view->horizontalScrollBar()->value();
         QPoint empty(view->viewport()->width() - 40, view->viewport()->height() - 40);
-        QTest::mousePress(view->viewport(), Qt::LeftButton, Qt::NoModifier, empty);
+        QTest::mousePress(view->viewport(), Qt::MiddleButton, Qt::NoModifier, empty);
         QMouseEvent move(QEvent::MouseMove, QPointF(empty - QPoint(80, 0)), view->viewport()->mapToGlobal(QPointF(empty - QPoint(80, 0))),
-                         Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+                         Qt::NoButton, Qt::MiddleButton, Qt::NoModifier);
         QApplication::sendEvent(view->viewport(), &move);
-        QTest::mouseRelease(view->viewport(), Qt::LeftButton, Qt::NoModifier, empty - QPoint(80, 0));
+        QTest::mouseRelease(view->viewport(), Qt::MiddleButton, Qt::NoModifier, empty - QPoint(80, 0));
         QVERIFY(view->horizontalScrollBar()->value() != before);
 
         view->fitAll();
@@ -860,27 +865,24 @@ private slots:
         QVERIFY(c->plan().empty());
         QVERIFY(!c->dirty());
 
-        // Picker -> properties -> Back -> properties -> Add element.
+        // Picker (in right drawer) -> properties (in bottom Properties tab) -> Add element.
         w.findChild<QAction*>("actionAddSource")->trigger();
         picker = pageOf<PickerPage>(w);
         QTest::keyClicks(picker->findChild<QLineEdit*>("searchBox"), "audiot");
         QTest::keyClick(picker->findChild<QLineEdit*>("searchBox"), Qt::Key_Return);
         auto* props = pageOf<PropertyPage>(w);
         QVERIFY(props);
-        QCOMPARE(w.drawer()->title(), QString("Add source · audiotestsrc"));
-        QCOMPARE(w.drawer()->depth(), 2);
+        QVERIFY(!w.drawer()->isOpen());  // the right drawer is exclusively for picking elements
+        QCOMPARE(w.bottomTabs()->currentWidget(), w.propertiesTab());
+        QCOMPARE(w.flows()->propertiesTitle(), QString("Add source · audiotestsrc"));
         QCOMPARE(props->primary()->text(), QString("Add element"));
-        w.drawer()->goBack();
-        QVERIFY(pageOf<PickerPage>(w));
-        QTest::keyClick(w.drawer()->page<PickerPage>()->findChild<QLineEdit*>("searchBox"), Qt::Key_Return);
-        props = pageOf<PropertyPage>(w);
-        QVERIFY(props);
         in<QSpinBox>(*props, "editor_num-buffers")->setValue(25);
         press(props, "saveButton");
         QVERIFY(waitFor([&] { return c->plan().elements.size() == 1 && !c->busy(); }, 8000));
         QCOMPARE(c->plan().elements[0].factory, std::string("audiotestsrc"));
         QCOMPARE(c->plan().elements[0].props.at("num-buffers"), std::string("25"));
-        QVERIFY(!w.drawer()->isOpen());  // a source has no caps step: the drawer closes
+        QVERIFY(!w.drawer()->isOpen());
+        QVERIFY(!w.flows()->propertyPage());
         QVERIFY(waitFor([&] { return w.scene()->element("audiotestsrc_0") != nullptr; }));
     }
 
@@ -925,19 +927,21 @@ private slots:
         QVERIFY(!w.drawer()->isOpen());
         QCOMPARE(text(c->plan().toConf()), before);
 
-        // 2. Properties page: Cancel.
+        // 2. Properties page (in bottom Properties tab): Cancel.
         clickFreePad(src);
         picker = pageOf<PickerPage>(w);
         QTest::keyClicks(picker->findChild<QLineEdit*>("searchBox"), "videoconvert");
         press(picker, "saveButton");
         auto* props = pageOf<PropertyPage>(w);
         QVERIFY(props);
-        QVERIFY(w.drawer()->title().contains("videoconvert"));
-        press(props, "cancelButton");
         QVERIFY(!w.drawer()->isOpen());
+        QCOMPARE(w.bottomTabs()->currentWidget(), w.propertiesTab());
+        QVERIFY(w.flows()->propertiesTitle().contains("videoconvert"));
+        press(props, "cancelButton");
+        QVERIFY(!w.flows()->propertyPage());
         QCOMPARE(text(c->plan().toConf()), before);
 
-        // 3. Add element, then the caps page: Cancel leaves the element with Auto caps.
+        // 3. Add element, then the caps page (in bottom Caps tab): Cancel leaves the element with Auto caps.
         clickFreePad(src);
         picker = pageOf<PickerPage>(w);
         QTest::keyClicks(picker->findChild<QLineEdit*>("searchBox"), "videoconvert");
@@ -948,10 +952,11 @@ private slots:
         QVERIFY(caps);
         QVERIFY(!c->busy());
         QCOMPARE(c->plan().elements.size(), size_t(2));
-        QVERIFY(w.drawer()->isOpen());
+        QVERIFY(!w.drawer()->isOpen());
+        QCOMPARE(w.bottomTabs()->currentWidget(), w.capsTab());
         QCOMPARE(caps->findChild<QComboBox*>("mediaCombo")->itemText(1), QString("video/x-raw"));
         press(caps, "cancelButton");
-        QVERIFY(!w.drawer()->isOpen());
+        QVERIFY(!w.flows()->capsPage());
         QCOMPARE(c->plan().elements.size(), size_t(2));
         QVERIFY(c->plan().links[0].caps.empty());
         QString convert = text(c->plan().elements[1].name);
@@ -965,7 +970,7 @@ private slots:
         caps = pageOf<CapsPage>(w);
         QVERIFY(caps);
         press(caps, "skipButton");
-        QVERIFY(!w.drawer()->isOpen());
+        QVERIFY(!w.flows()->capsPage());
         QVERIFY(c->plan().links[1].caps.empty());
         QString queue = text(c->plan().elements[2].name);
 
@@ -982,7 +987,7 @@ private slots:
         caps->findChild<QWidget*>("field_format")->findChild<QComboBox*>()->setCurrentIndex(2);  // NV12
         press(caps, "saveButton");
         QVERIFY(waitFor([&] { return !c->busy() && c->plan().links[2].caps == "video/x-raw, format=(string)NV12"; }, 8000));
-        QVERIFY(!w.drawer()->isOpen());
+        QVERIFY(!w.flows()->capsPage());
         QVERIFY(c->result().isComplete());
         QVERIFY(c->canRun());
     }
@@ -1070,7 +1075,7 @@ private slots:
         menu = visibleChild<QMenu>(&w);
         texts.clear();
         for (QAction* a : menu->actions()) texts << a->text();
-        QCOMPARE(texts, QStringList({"Edit properties…"}));  // no delete on a plain element, no queue removal
+        QCOMPARE(texts, QStringList({"Edit properties…", "Delete element"}));
         menu->close();
     }
 
@@ -1096,27 +1101,14 @@ private slots:
         w.show();
         QString src, convert, sink;
         buildChain(w, &src, &convert, &sink);
-        QString before = text(c->plan().toConf());
 
+        // Free-canvas rule: cutting a link only disconnects the link, leaving downstream elements on the canvas.
         w.flows()->showLinkMenu(src, "src", QPoint(200, 200));
         choose(&w, "actionCut");
-        auto* confirm = shown<ConfirmDialog>(&w);
-        QVERIFY(confirm);
-        QCOMPARE(confirm->findChild<QPushButton*>("saveButton")->text(), QString("Remove 2 elements"));
-        auto* list = confirm->findChild<QListWidget*>("removalList");
-        QCOMPARE(list->count(), 2);
-        QVERIFY(list->item(0)->text().startsWith(convert));
-        QVERIFY(list->item(0)->text().contains("videoconvert"));
-        QVERIFY(list->item(1)->text().startsWith(sink));
-        press(confirm, "cancelButton");
-        QTest::qWait(50);
-        QCOMPARE(text(c->plan().toConf()), before);
-
-        w.flows()->showLinkMenu(src, "src", QPoint(200, 200));
-        choose(&w, "actionCut");
-        confirm = shown<ConfirmDialog>(&w);
-        press(confirm, "saveButton");
-        QVERIFY(waitFor([&] { return c->plan().elements.size() == 1 && !c->busy(); }, 8000));
+        QVERIFY(waitFor([&] { return c->plan().links.size() == 1 && !c->busy(); }, 8000));
+        QCOMPARE(c->plan().elements.size(), size_t(3));
+        QVERIFY(c->plan().find(convert.toStdString()));
+        QVERIFY(c->plan().find(sink.toStdString()));
     }
 
     void replaceAsksFirstAndKeepsTheLinkPad() {
@@ -1138,27 +1130,12 @@ private slots:
         QVERIFY(props);
         QCOMPARE(props->primary()->text(), QString("Replace"));
         press(props, "saveButton");
-        auto* confirm = shown<ConfirmDialog>(&w);  // after Replace, before anything changes
-        QVERIFY(confirm);
+        QVERIFY(waitFor([&] { return !c->plan().find(convert.toStdString()) && !c->busy(); }, 8000));
+        // Only convert was replaced; sink stays on the free canvas!
         QCOMPARE(c->plan().elements.size(), size_t(3));
-        QCOMPARE(confirm->findChild<QListWidget*>("removalList")->count(), 2);
-        press(confirm, "cancelButton");
-        QTest::qWait(50);
-        QCOMPARE(c->plan().elements.size(), size_t(3));
-        QVERIFY(c->plan().find(convert.toStdString()));
-        QVERIFY(w.drawer()->isOpen());  // still on the properties page
-
-        // Again, and this time confirmed: the old elements go, the new one sits behind the same pad.
-        w.flows()->replaceBehind(src, "src");
-        picker = pageOf<PickerPage>(w);
-        QTest::keyClicks(picker->findChild<QLineEdit*>("searchBox"), "queue");
-        press(picker, "saveButton");
-        press(pageOf<PropertyPage>(w), "saveButton");
-        press(shown<ConfirmDialog>(&w), "saveButton");
-        QVERIFY(waitFor([&] { return c->plan().elements.size() == 2 && !c->busy(); }, 8000));
-        QVERIFY(!c->plan().find(convert.toStdString()));
+        QVERIFY(c->plan().find(sink.toStdString()));
         QCOMPARE(c->plan().links[0].srcElement, src.toStdString());
-        QCOMPARE(text(c->plan().elements[1].factory), QString("queue"));
+        QCOMPARE(text(c->plan().elements.back().factory), QString("queue"));
         QVERIFY(pageOf<CapsPage>(w));  // the update succeeded, so the link's caps are offered
     }
 
@@ -1169,13 +1146,11 @@ private slots:
         buildChain(w, &src, &convert, &sink);
         w.flows()->showElementMenu(src, QPoint(200, 200));
         choose(&w, "actionDelete");
-        auto* confirm = shown<ConfirmDialog>(&w);
-        QVERIFY(confirm);
-        QCOMPARE(confirm->findChild<QListWidget*>("removalList")->count(), 3);  // source + everything behind it
-        QCOMPARE(confirm->findChild<QPushButton*>("saveButton")->text(), QString("Delete 3 elements"));
-        press(confirm, "saveButton");
-        QVERIFY(waitFor([&] { return c->plan().empty(); }, 8000));
-        QVERIFY(!c->canSave());
+        // Free-canvas rule: deleting a source only removes the source element; downstream elements remain on canvas.
+        QVERIFY(waitFor([&] { return c->plan().elements.size() == 2 && !c->busy(); }, 8000));
+        QVERIFY(!c->plan().find(src.toStdString()));
+        QVERIFY(c->plan().find(convert.toStdString()));
+        QVERIFY(c->plan().find(sink.toStdString()));
     }
 
     void deleteKeyOnTheCanvasDeletesTheSelectedSourceAfterAsking() {
@@ -1183,17 +1158,20 @@ private slots:
         w.show();
         QString src, convert, sink;
         buildChain(w, &src, &convert, &sink);
-        w.scene()->element(convert)->setSelected(true);  // not a source: nothing to delete
+
+        // Deleting a non-source element removes it with auto-heal!
+        w.scene()->clearSelection();
+        w.scene()->element(convert)->setSelected(true);
         QTest::keyClick(w.view(), Qt::Key_Delete);
-        QTest::qWait(50);
-        QVERIFY(!shown<ConfirmDialog>(&w));
+        QVERIFY(waitFor([&] { return c->plan().elements.size() == 2 && !c->busy(); }, 8000));
+        QCOMPARE(c->plan().links.size(), size_t(1));
+
+        // Deleting a source element removes only the source, leaving sink on the canvas!
         w.scene()->clearSelection();
         w.scene()->element(src)->setSelected(true);
         QTest::keyClick(w.view(), Qt::Key_Delete);
-        auto* confirm = shown<ConfirmDialog>(&w);
-        QVERIFY(confirm);
-        press(confirm, "cancelButton");
-        QCOMPARE(c->plan().elements.size(), size_t(3));
+        QVERIFY(waitFor([&] { return c->plan().elements.size() == 1 && !c->busy(); }, 8000));
+        QVERIFY(c->plan().find(sink.toStdString()));
     }
 
     void editPropertiesByDoubleClickAndExpose() {
@@ -1206,8 +1184,9 @@ private slots:
         doubleClick(w.view()->viewport(), viewPoint(w.view(), body));
         auto* page = pageOf<PropertyPage>(w);
         QVERIFY(page);
-        QCOMPARE(w.drawer()->title(), "Edit properties · " + src);
-        QCOMPARE(w.drawer()->depth(), 1);
+        QVERIFY(!w.drawer()->isOpen());
+        QCOMPARE(w.bottomTabs()->currentWidget(), w.propertiesTab());
+        QCOMPARE(w.flows()->propertiesTitle(), "Edit properties · " + src);
         QCOMPARE(page->primary()->text(), QString("Save"));
         in<QComboBox>(*page, "editor_pattern")->setCurrentIndex(1);
         page->findChild<QCheckBox*>("expose_num-buffers")->click();
@@ -1216,7 +1195,7 @@ private slots:
         QCOMPARE(c->plan().find(src.toStdString())->props.at("pattern"), std::string("snow"));
         QCOMPARE(c->plan().exposed[0].property, std::string("num-buffers"));
         QCOMPARE(c->plan().exposed[0].name, std::string("num-buffers"));
-        QVERIFY(!w.drawer()->isOpen());
+        QVERIFY(!w.flows()->propertyPage());
     }
 
     void editCapsFromTheMenu() {
@@ -1228,7 +1207,9 @@ private slots:
         choose(&w, "actionEditCaps");
         auto* caps = pageOf<CapsPage>(w);
         QVERIFY(caps);
-        QVERIFY(w.drawer()->title().startsWith("Edit caps"));
+        QVERIFY(!w.drawer()->isOpen());
+        QCOMPARE(w.bottomTabs()->currentWidget(), w.capsTab());
+        QVERIFY(w.flows()->capsTitle().startsWith("Edit caps"));
         QVERIFY(!caps->findChild<QPushButton*>("skipButton"));  // Skip belongs to the step after an add
         caps->findChild<QComboBox*>("mediaCombo")->setCurrentIndex(1);
         auto* width = caps->findChild<QWidget*>("field_width");
@@ -1353,6 +1334,25 @@ private slots:
         w.openCapsTab(src, "src");
         QCOMPARE(w.bottomTabs()->tabText(w.bottomTabs()->currentIndex()), QString("Caps"));
         QVERIFY(w.bottomTabs()->currentWidget()->findChild<CapsPage*>());
+
+        // 5. Rubber-band marquee selection mode on CanvasView & collapsed Custom Element rendering on CanvasScene.
+        QCOMPARE(w.view()->dragMode(), QGraphicsView::RubberBandDrag);
+        QTemporaryDir customDir;
+        qputenv("GPS_CUSTOM_ELEMENTS_DIR", customDir.path().toUtf8());
+        QVERIFY(c->saveCustomElement("ConvSinkPreset", {convert, sink}));
+        scene_rebuild(w);
+        // Both convert and sink map to the same collapsed ElementItem on the scene, and only 1 external link is drawn!
+        QVERIFY(w.scene()->element(convert) != nullptr);
+        QCOMPARE(w.scene()->element(convert), w.scene()->element(sink));
+        QVERIFY(w.scene()->element(convert)->view().isCustomGroup);
+        QCOMPARE(w.scene()->links().size(), 1);
+
+        // Expanding the custom element shows individual ElementItems and all 2 links.
+        QString grp = c->elementGroup(convert);
+        c->setGroupExpanded(grp, true);
+        scene_rebuild(w);
+        QVERIFY(w.scene()->element(convert) != w.scene()->element(sink));
+        QCOMPARE(w.scene()->links().size(), 2);
     }
 
 private:

@@ -98,6 +98,7 @@ std::string Plan::toConf() const {
     for (const PlanElement& e : elements) {
         out << "\n[element:" << e.name << "]\n";
         put(out, "factory", e.factory);
+        if (!e.group.empty()) put(out, "group", e.group);
         out << "x=" << number(e.x) << "\ny=" << number(e.y) << "\n";
         for (const auto& r : e.requestSrc) out << "request." << r.first << "=" << r.second << "\n";
         for (const auto& r : e.requestSink) out << "requestsink." << r.first << "=" << r.second << "\n";
@@ -172,6 +173,7 @@ bool Plan::fromConf(const std::string& text, Plan* out, std::string* error) {
             for (const auto& kv : s.keys) {
                 if (kv.first == "x") parseNumber(kv.second, &e.x);
                 else if (kv.first == "y") parseNumber(kv.second, &e.y);
+                else if (kv.first == "group") e.group = kv.second;
                 else if (kv.first.rfind("prop.", 0) == 0) e.props[kv.first.substr(5)] = kv.second;
                 else if (kv.first.rfind("request.", 0) == 0) e.requestSrc[kv.first.substr(8)] = std::max(0, std::atoi(kv.second.c_str()));
                 else if (kv.first.rfind("requestsink.", 0) == 0) e.requestSink[kv.first.substr(12)] = std::max(0, std::atoi(kv.second.c_str()));

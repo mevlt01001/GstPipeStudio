@@ -4,6 +4,10 @@
 
 #include <QGraphicsScene>
 #include <QHash>
+#include <QPair>
+#include <QPointF>
+#include <QSet>
+#include <QStringList>
 
 class Controller;
 class ElementItem;
@@ -19,6 +23,8 @@ public:
     ElementItem* element(const QString& name) const { return elements_.value(name); }
     PadItem* pad(const QString& element, const QString& identity, bool isSrc) const;
     const QList<LinkItem*>& links() const { return links_; }
+    QStringList selectedElementNames() const;
+    void setSelectedElements(const QStringList& names);
 
     // Locked while an update runs (UI_RULES 3.1): clicks, menus and dragging do nothing. Pan and zoom belong to the view.
     void setLocked(bool locked);
@@ -28,6 +34,8 @@ public:
 
     // Called by the items.
     void padClicked(const PadView& pad, Qt::MouseButton button, const QPoint& screenPos);
+    void padDragMoved(const PadView& from, const QPointF& scenePos);
+    void padDragEnded();
     void padDroppedOnPad(const PadView& from, const PadView& to);
     void elementContext(const QString& element, const QPoint& screenPos);
     void elementDoubleClicked(const QString& element);
@@ -45,10 +53,15 @@ signals:
     void linkClickedSignal(const QString& srcElement, const QString& srcIdentity);
     void linkMenuRequested(const QString& srcElement, const QString& srcIdentity, const QPoint& screenPos);
     void elementMenuRequested(const QString& element, const QPoint& screenPos);
+    void canvasContextMenuRequested(const QPoint& screenPos, const QPointF& scenePos);
     void elementActivated(const QString& element);
     void elementMoved(const QString& element, double x, double y);
+    void elementsMoved(const QList<QPair<QString, QPointF>>& positions);
     void elementSpliced(const QString& element, const QString& linkSrcElement, const QString& linkSrcPad);
     void rebuilt();
+
+protected:
+    void contextMenuEvent(QGraphicsSceneContextMenuEvent* event) override;
 
 private:
     static QString key(const QString& element, const QString& identity, bool isSrc);
@@ -57,6 +70,9 @@ private:
     QHash<QString, ElementItem*> elements_;
     QHash<QString, PadItem*> pads_;
     QList<LinkItem*> links_;
+    QSet<QString> selectedElements_;
+    bool hasExplicitSelection_ = false;
+    class QGraphicsPathItem* dragWire_ = nullptr;
     bool pending_ = false;
     bool locked_ = false;
     bool stale_ = false;

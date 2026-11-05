@@ -17,6 +17,7 @@ class QSpinBox;
 struct PropertyPageInput {
     ElementInfo info;
     QString acceptText = "Add element";       // "Add element", "Replace", "Save"
+    bool canDelete = false;                   // shows a Delete button on the page
     gps::Props props;                         // the element's changed properties so far
     std::map<std::string, int> requestSrc;    // Request src pad counts to start from
     std::map<std::string, int> requestSink;   // Request sink pad counts to start from
@@ -37,6 +38,7 @@ public:
 
 signals:
     void confirmed();  // the accept button or Enter
+    void deleteRequested();
 
 private:
     void filter(const QString& text);

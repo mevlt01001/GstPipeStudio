@@ -85,7 +85,11 @@ class IntegrationTest : public QObject {
     // A drawer page is found by asking the drawer; menus and the confirmation by looking for a visible child.
     template <class T>
     T* visibleChild() {
-        if constexpr (std::is_base_of_v<DrawerPage, T>) {
+        if constexpr (std::is_same_v<T, PropertyPage>) {
+            return w->flows()->propertyPage();
+        } else if constexpr (std::is_same_v<T, CapsPage>) {
+            return w->flows()->capsPage();
+        } else if constexpr (std::is_base_of_v<DrawerPage, T>) {
             return w->drawer()->page<T>();
         } else {
             for (T* d : w->findChildren<T*>()) {
@@ -542,7 +546,7 @@ private slots:
         pickRow(picker, "jpegdec", "compatible");
         auto* props = shown<PropertyPage>();
         QVERIFY(props);
-        QVERIFY(w->drawer()->title().contains("jpegdec"));
+        QVERIFY(w->flows()->propertiesTitle().contains("jpegdec"));
         timed("Add element: jpegdec (behind a Sometimes pad)", [&] { press(props, "saveButton"); });
         idle();
         QVERIFY2(c->result().ok(), qPrintable(c->result().message));
@@ -552,7 +556,7 @@ private slots:
         auto* caps = capsPage();
         QVERIFY(caps);
         QCOMPARE(caps->findChild<QComboBox*>("mediaCombo")->itemText(1), QString("image/jpeg"));
-        QVERIFY(shotOf(w->drawer(), "03_caps_fixed_fields"));
+        QVERIFY(shotOf(w->bottomTabs(), "03_caps_fixed_fields"));
         timed("Apply caps (Auto)", [&] { press(caps, "saveButton"); });
         idle();
         QString dec = text(c->plan().elements.back().name);
@@ -679,8 +683,8 @@ private slots:
         // The real allowedStructures of videotestsrc.src drive the dialog
         QStringList seenFormats;
         QString mix = addBehind(a, "src", "compositor", {}, [&](CapsPage* d) {
-            QVERIFY(shotOf(w->drawer(), "07_caps_page_real_fields"));
-            QVERIFY(w->drawer()->title().startsWith("Caps ·"));
+            QVERIFY(shotOf(w->bottomTabs(), "07_caps_page_real_fields"));
+            QVERIFY(w->flows()->capsTitle().startsWith("Caps ·"));
             auto* media = d->findChild<QComboBox*>("mediaCombo");
             QVERIFY2(media->findText("video/x-raw") >= 0, qPrintable(media->itemText(media->count() - 1)));
             selectMedia(d, "video/x-raw");
@@ -731,7 +735,7 @@ private slots:
         pinField(caps, "width", "320");
         pinField(caps, "height", "240");
         caps->findChild<QWidget*>("padEditor_xpos")->findChild<QSpinBox*>()->setValue(160);
-        QVERIFY(shotOf(w->drawer(), "09_caps_page_pad_settings"));
+        QVERIFY(shotOf(w->bottomTabs(), "09_caps_page_pad_settings"));
         timed("Link to a Request pad: apply caps + xpos", [&] { press(caps, "saveButton"); });
         idle();
         QVERIFY2(c->result().ok(), qPrintable(c->result().status + ": " + c->result().message));
@@ -776,7 +780,7 @@ private slots:
     }
 
     // =================================================================================================================
-    // 5. cut / replace / delete source with the confirmation lists
+    // 5. cut / replace / delete source (Free-Canvas: no cascade deletion!)
     // =================================================================================================================
 
     void cutAndReplaceAskWithTheRealLists() {
@@ -786,40 +790,22 @@ private slots:
         QString d = addBehind(cc, "src", "fakesink");
         QVERIFY(!d.isEmpty());
         QVERIFY2(c->result().isComplete(), qPrintable(c->result().message));
-        QString original = text(c->plan().toConf());
 
-        // Cut link on a.src: b, c, d all lose their input
-        linkMenu(a, "src", "actionCut");
-        auto* confirm = shown<ConfirmDialog>();
-        QVERIFY(confirm);
-        auto* items = confirm->findChild<QListWidget*>("removalList");
-        QCOMPARE(items->count(), 3);
-        QVERIFY(items->item(0)->text().startsWith(b) && items->item(0)->text().contains("videoconvert"));
-        QVERIFY(items->item(2)->text().startsWith(d) && items->item(2)->text().contains("fakesink"));
-        QVERIFY(shotOf(confirm, "11_confirm_3_elements"));
-        press(confirm, "cancelButton");
-        QTest::qWait(100);
-        QCOMPARE(text(c->plan().toConf()), original);  // nothing changed
-
-        // On b.src only c and d go
-        linkMenu(b, "src", "actionCut");
-        confirm = shown<ConfirmDialog>();
-        QVERIFY(confirm);
-        QCOMPARE(confirm->findChild<QListWidget*>("removalList")->count(), 2);
-        timed("Cut link (confirmed)", [&] { press(confirm, "saveButton"); });
+        // Cut link on b.src: only the link b -> cc is removed; cc and d remain on the free canvas as untracked!
+        timed("Cut link (no cascade delete)", [&] { linkMenu(b, "src", "actionCut"); });
         idle();
-        QCOMPARE(c->plan().elements.size(), size_t(2));
+        QCOMPARE(c->plan().elements.size(), size_t(4));
+        QCOMPARE(c->plan().links.size(), size_t(2));  // a -> b and cc -> d remain
         QVERIFY2(c->result().ok(), qPrintable(c->result().message));
-        QCOMPARE(w->scene()->pad(b, "src", true)->view().state, PadView::Free);  // the pad is free again
+        QCOMPARE(w->scene()->pad(b, "src", true)->view().state, PadView::Free);
         QVERIFY(!c->result().isComplete());
         QVERIFY(!c->canRun());
         QVERIFY(c->canSave());
+        QVERIFY(shot("11_confirm_3_elements"));
 
-        // Replace element: rebuild a chain behind b, then replace what is behind b.src
-        QString c2 = addBehind(b, "src", "videoscale");
-        QString d2 = addBehind(c2, "src", "fakesink");
-        QVERIFY(!d2.isEmpty());
-        QString planBefore = text(c->plan().toConf());
+        // Re-link b.src -> cc.sink, then replace cc (behind b.src) with videoflip: only cc is replaced, d stays on canvas!
+        linkTo(b, "src", cc + " · sink");
+        QVERIFY2(c->result().isComplete(), qPrintable(c->result().message));
         linkMenu(b, "src", "actionReplace");
         auto* picker = shown<PickerPage>();
         QVERIFY(picker);
@@ -827,31 +813,17 @@ private slots:
         pickRow(picker, "videoflip");
         auto* props = shown<PropertyPage>();
         QVERIFY(props);
-        QVERIFY(w->drawer()->title().startsWith("Replace after"));
+        QVERIFY(w->flows()->propertiesTitle().startsWith("Replace after"));
         setChoice(props, "method", "vertical-flip");
-        press(props, "saveButton");
-        confirm = shown<ConfirmDialog>();
-        QVERIFY(confirm);
-        QCOMPARE(confirm->findChild<QListWidget*>("removalList")->count(), 2);  // the old videoscale and its fakesink
-        // first Cancel: nothing changes
-        press(confirm, "cancelButton");
-        QTest::qWait(100);
-        QCOMPARE(text(c->plan().toConf()), planBefore);
-
-        linkMenu(b, "src", "actionReplace");
-        picker = shown<PickerPage>();
-        pickRow(picker, "videoflip");
-        props = shown<PropertyPage>();
-        QVERIFY(props);
-        setChoice(props, "method", "vertical-flip");
-        press(props, "saveButton");
-        confirm = shown<ConfirmDialog>();
-        QVERIFY(confirm);
-        timed("Replace element (confirmed)", [&] { press(confirm, "saveButton"); });
+        timed("Replace element (in place)", [&] { press(props, "saveButton"); });
         idle();
+        if (auto* caps = capsPage()) {
+            timed("Apply caps after replace", [&] { press(caps, "saveButton"); });
+            idle();
+        }
         QVERIFY2(c->result().ok(), qPrintable(c->result().message));
-        QVERIFY(c->plan().find(c2.toStdString()) == nullptr);
-        QVERIFY(c->plan().find(d2.toStdString()) == nullptr);
+        QVERIFY(c->plan().find(cc.toStdString()) == nullptr);
+        QVERIFY(c->plan().find(d.toStdString()) != nullptr);  // d was NOT cascade-deleted!
         const gps::PlanElement* flip = c->plan().find(c->plan().elements.back().name);
         QCOMPARE(text(flip->factory), QString("videoflip"));
         QCOMPARE(flip->props.at("method"), std::string("vertical-flip"));
@@ -870,35 +842,20 @@ private slots:
         QVERIFY2(c->result().isComplete(), qPrintable(c->result().status + ": " + c->result().message));
         QCOMPARE(c->view(mix).sinks.size(), 2);
 
-        // Delete source a: a and its converter go; the compositor still has bb's input
+        // Delete source a: ONLY source a is deleted; convA stays on the free canvas as untracked!
         rightClickElement(a);
-        STEP(choose("actionDelete"));
-        auto* confirm = shown<ConfirmDialog>();
-        QVERIFY(confirm);
-        auto* items = confirm->findChild<QListWidget*>("removalList");
-        QCOMPARE(items->count(), 2);
-        QVERIFY(items->item(0)->text().startsWith(a));
-        QVERIFY(items->item(1)->text().startsWith(convA));
-        QVERIFY(shotOf(confirm, "13_delete_source_chain"));
-        timed("Delete source (confirmed): chain", [&] { press(confirm, "saveButton"); });
+        timed("Delete source (no cascade delete)", [&] { choose("actionDelete"); });
+        idle();
+        QVERIFY(!c->plan().find(a.toStdString()));
+        QVERIFY(c->plan().find(convA.toStdString()));  // convA stays on the free canvas!
+        QCOMPARE(c->plan().elements.size(), size_t(4));  // convA (untracked), bb, mix, sink
+        // Cut convA -> mix so mix has only bb's tracked input and is complete
+        timed("Cut untracked convA -> mix link", [&] { linkMenu(convA, "src", "actionCut"); });
         idle();
         QVERIFY2(c->result().isComplete(), qPrintable(c->result().status + ": " + c->result().message));
-        QCOMPARE(c->plan().elements.size(), size_t(3));  // bb, mix, sink
-        QCOMPARE(c->view(mix).sinks.size(), 1);          // the Request pad was renumbered, not left empty
+        QCOMPARE(c->view(mix).sinks.size(), 1);
         QCOMPARE(c->view(mix).sinks[0].state, PadView::Linked);
-
-        // Delete the last source: everything goes, the canvas is empty
-        rightClickElement(bb);
-        STEP(choose("actionDelete"));
-        confirm = shown<ConfirmDialog>();
-        QVERIFY(confirm);
-        QCOMPARE(confirm->findChild<QListWidget*>("removalList")->count(), 3);
-        press(confirm, "saveButton");
-        QVERIFY(waitFor([&] { return c->plan().empty() && !c->busy(); }, 15000));
-        idle();
-        QCOMPARE(w->scene()->items().size(), 0);
-        QVERIFY(w->findChild<QLabel*>("stateLabel")->text().contains("Empty canvas"));
-        QVERIFY(!w->findChild<QAction*>("actionSave")->isEnabled());
+        QVERIFY(shot("13_delete_source_chain"));
     }
 
     // =================================================================================================================

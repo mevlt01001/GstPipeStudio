@@ -2,7 +2,9 @@
 #include "canvasview.h"
 
 #include <QKeyEvent>
+#include <QMouseEvent>
 #include <QPainter>
+#include <QScrollBar>
 #include <QWheelEvent>
 #include <cmath>
 
@@ -16,10 +18,11 @@ constexpr int kGrid = 20;
 
 CanvasView::CanvasView(QGraphicsScene* scene, QWidget* parent) : QGraphicsView(scene, parent) {
     setRenderHint(QPainter::Antialiasing);
-    setDragMode(QGraphicsView::ScrollHandDrag);
+    setDragMode(QGraphicsView::RubberBandDrag);
+    setRubberBandSelectionMode(Qt::IntersectsItemShape);
     setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
     setViewportUpdateMode(QGraphicsView::FullViewportUpdate);
-    setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);  // dragging the background pans
+    setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);  // middle-drag or Space+drag pans; left-drag rubber-band selects
     setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     setObjectName("canvas");
 }
@@ -52,8 +55,57 @@ void CanvasView::drawForeground(QPainter* p, const QRectF& rect) {
 }
 
 void CanvasView::keyPressEvent(QKeyEvent* event) {
-    if (event->key() == Qt::Key_Delete) emit deletePressed();
-    else QGraphicsView::keyPressEvent(event);
+    if (event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace) {
+        emit deletePressed();
+    } else if (event->key() == Qt::Key_Space && !event->isAutoRepeat()) {
+        spacePressed_ = true;
+        viewport()->setCursor(Qt::OpenHandCursor);
+    } else {
+        QGraphicsView::keyPressEvent(event);
+    }
+}
+
+void CanvasView::keyReleaseEvent(QKeyEvent* event) {
+    if (event->key() == Qt::Key_Space && !event->isAutoRepeat()) {
+        spacePressed_ = false;
+        if (!panning_) viewport()->unsetCursor();
+    } else {
+        QGraphicsView::keyReleaseEvent(event);
+    }
+}
+
+void CanvasView::mousePressEvent(QMouseEvent* event) {
+    if (event->button() == Qt::MiddleButton || (event->button() == Qt::LeftButton && spacePressed_)) {
+        panning_ = true;
+        lastPanPos_ = event->pos();
+        viewport()->setCursor(Qt::ClosedHandCursor);
+        event->accept();
+        return;
+    }
+    QGraphicsView::mousePressEvent(event);
+}
+
+void CanvasView::mouseMoveEvent(QMouseEvent* event) {
+    if (panning_) {
+        QPoint delta = event->pos() - lastPanPos_;
+        lastPanPos_ = event->pos();
+        horizontalScrollBar()->setValue(horizontalScrollBar()->value() - delta.x());
+        verticalScrollBar()->setValue(verticalScrollBar()->value() - delta.y());
+        event->accept();
+        return;
+    }
+    QGraphicsView::mouseMoveEvent(event);
+}
+
+void CanvasView::mouseReleaseEvent(QMouseEvent* event) {
+    if (panning_ && (event->button() == Qt::MiddleButton || event->button() == Qt::LeftButton)) {
+        panning_ = false;
+        if (spacePressed_) viewport()->setCursor(Qt::OpenHandCursor);
+        else viewport()->unsetCursor();
+        event->accept();
+        return;
+    }
+    QGraphicsView::mouseReleaseEvent(event);
 }
 
 void CanvasView::wheelEvent(QWheelEvent* event) {

@@ -1,6 +1,5 @@
-// flows.h – the sequences of SPEC 8 as drawer pages: picker -> properties (with the sink pad) -> confirmation ->
-// validation -> caps. Cancel on any page leaves the Plan exactly as it was; the Controller is only called when the
-// last page before the edit says Add / Replace / Save. The delete confirmation is the one modal dialog.
+// flows.h – UI flows: the right drawer is exclusively for picking elements (PickerPage), while element Properties
+// (PropertyPage) and link Caps / Pad settings (CapsPage) live in the bottom dock tabs.
 #pragma once
 
 #include <QObject>
@@ -9,8 +8,11 @@
 
 #include "controller.h"
 
+class CapsPage;
 class Drawer;
+class PropertyPage;
 class QDialog;
+class QTabWidget;
 class QWidget;
 
 class Flows : public QObject {
@@ -18,10 +20,21 @@ class Flows : public QObject {
 public:
     Flows(Controller* controller, Drawer* drawer, QWidget* window);
 
-    // Add source / any element
+    void setBottomPanels(QTabWidget* tabs, QWidget* propsTab, QWidget* capsTab, QWidget* defaultTab);
+    void setBusy(bool busy);
+
+    PropertyPage* propertyPage() const;
+    CapsPage* capsPage() const;
+    QString propertiesTitle() const { return propsTitle_; }
+    QString capsTitle() const { return capsTitle_; }
+
+    void closeProperties();
+    void closeCaps();
+
+    // Add source / any element (opens PickerPage in the right drawer)
     void chooseSource();
     void chooseElement();
-    // Left click on a free src pad
+    // Left click on a free src pad (opens PickerPage in the right drawer)
     void fromFreePad(const QString& element, const QString& identity);
     // Right click on a linked pad or a link
     void showLinkMenu(const QString& element, const QString& identity, const QPoint& at);
@@ -39,10 +52,12 @@ public:
 private:
     enum class Mode { Add, Replace };
 
+    void presentProperties(PropertyPage* page, const QString& title);
+    void presentCaps(CapsPage* page, const QString& title, const QString& subtitle);
     void confirmRemoval(const gps::Removal& removal, const QString& verb, std::function<void()> accepted);
     void sourceProperties(const QString& factory);
     void newElement(Mode mode, const QString& element, const QString& identity, const QString& factory);
-    // Runs an edit; when the validation succeeds the drawer moves on to the caps page of the link from (element, identity).
+    // Runs an edit; when the validation succeeds the bottom Caps tab opens for the link from (element, identity).
     void editThenCaps(const QString& element, const QString& identity, std::function<bool()> edit);
     void openCaps(const QString& element, const QString& identity, bool afterEdit);
     void abandonPending();
@@ -50,5 +65,11 @@ private:
     Controller* controller_;
     Drawer* drawer_;
     QWidget* window_;
-    QMetaObject::Connection pending_;  // waits for the validation that decides whether the caps page opens
+    QTabWidget* tabs_ = nullptr;
+    QWidget* propsTab_ = nullptr;
+    QWidget* capsTab_ = nullptr;
+    QWidget* defaultTab_ = nullptr;
+    QString propsTitle_;
+    QString capsTitle_;
+    QMetaObject::Connection pending_;  // waits for the validation that decides whether the caps tab opens
 };

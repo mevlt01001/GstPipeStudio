@@ -1,0 +1,60 @@
+name: PR Fast Check
+
+# Quick validation for Pull Requests: tests on a single target (Ubuntu 22.04 x86_64)
+# in ~2 minutes rather than running all 6 matrix targets and slow ARM emulation.
+on:
+  pull_request:
+    paths:
+      - gstpipestudio/**
+      - .github/workflows/pr-check.yaml
+
+permissions:
+  contents: read
+
+jobs:
+  Check:
+    name: Fast Check on Ubuntu 22.04 (x86_64)
+    runs-on: ubuntu-24.04
+    container: ubuntu:22.04
+    timeout-minutes: 30
+    steps:
+      - name: Install Base Dependencies
+        run: |
+          apt-get update
+          env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git ca-certificates
+
+      - uses: actions/checkout@v4
+
+      - name: GStreamer Setup
+        run: gstpipestudio/scripts/check_gst.sh
+
+      - name: Qt Cache
+        uses: actions/cache@v4
+        with:
+          path: ~/Qt/6.8.3
+          key: qt-6.8.3-v2-ubuntu22.04-x86_64
+
+      - name: Qt Setup
+        run: gstpipestudio/scripts/check_qt.sh
+
+      - name: Build Tools Setup
+        run: gstpipestudio/scripts/check_build_tools.sh
+
+      - name: Build
+        run: |
+          cmake \
+          -S gstpipestudio \
+          -B build \
+          -G Ninja \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_PREFIX_PATH="$HOME/Qt/6.8.3" \
+          -DCMAKE_INSTALL_PREFIX=/usr \
+          -DGPS_BUNDLE_QT=ON
+          cmake --build build
+
+      - name: Test
+        run: cd build && ctest --output-on-failure
+
+      - name: Package Check
+        run: gstpipestudio/scripts/make_deb.sh 22.04 x86_64
+

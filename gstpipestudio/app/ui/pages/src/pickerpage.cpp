@@ -22,6 +22,7 @@ constexpr int kIsSinkRole = Qt::UserRole + 23;
 constexpr int kHasAlwaysRole = Qt::UserRole + 24;
 constexpr int kHasSometimesRole = Qt::UserRole + 25;
 constexpr int kHasRequestRole = Qt::UserRole + 26;
+constexpr int kCustomRole = Qt::UserRole + 27;    // name of a saved custom element
 }  // namespace
 
 PickerPage::PickerPage(const PickerData& data, QWidget* parent) : DrawerPage(parent), data_(data) {
@@ -42,7 +43,7 @@ PickerPage::PickerPage(const PickerData& data, QWidget* parent) : DrawerPage(par
         auto makeChipGroup = [this](const QString& prefix, const QList<QPair<QString, int>>& items, auto onSelect) {
             auto* row = new QHBoxLayout;
             row->setContentsMargins(0, 0, 0, 0);
-            row->setSpacing(4);
+            row->setSpacing(6);
             auto* group = new QButtonGroup(this);
             group->setExclusive(true);
             for (const auto& [label, id] : items) {
@@ -50,6 +51,11 @@ PickerPage::PickerPage(const PickerData& data, QWidget* parent) : DrawerPage(par
                 btn->setObjectName(prefix + "_" + label.toLower());
                 btn->setText(label);
                 btn->setCheckable(true);
+                btn->setCursor(Qt::PointingHandCursor);
+                btn->setStyleSheet(
+                    "QToolButton { background: #2d2d2d; border: 1px solid #444444; border-radius: 4px; padding: 4px 10px; color: #b8b8b8; }"
+                    "QToolButton:hover { border-color: #76b900; color: #e8e8e8; }"
+                    "QToolButton:checked { background: #76b900; color: #111111; border-color: #76b900; font-weight: bold; }");
                 if (id == 0) btn->setChecked(true);
                 group->addButton(btn, id);
                 row->addWidget(btn);
@@ -85,6 +91,20 @@ PickerPage::PickerPage(const PickerData& data, QWidget* parent) : DrawerPage(par
             item->setData(HintRole, t.request ? "Request a pad" : "");
             item->setData(SearchRole, (t.element + " " + t.factory + " " + t.sinkPad + (t.request ? " request a pad" : "")).toLower());
             item->setData(kExistingRole, i);
+        }
+    }
+
+    if (!data.custom.isEmpty()) {
+        addHeader("Custom elements");
+        for (const CustomElementInfo& c : data.custom) {
+            auto* item = new QListWidgetItem(c.name, list_);
+            item->setData(LongNameRole, c.description);
+            item->setData(HintRole, QString("custom · %1").arg(c.elementCount));
+            item->setData(SearchRole, (c.name + " " + c.description + " custom").toLower());
+            item->setData(kCustomRole, c.name);
+            item->setData(kIsSourceRole, c.isSource);
+            item->setData(kIsSinkRole, c.isSink);
+            item->setData(kHasAlwaysRole, true);
         }
     }
 
@@ -181,14 +201,14 @@ void PickerPage::filter(const QString& text) {
             continue;
         }
         bool match = needle.isEmpty() || item->data(SearchRole).toString().contains(needle);
-        if (match && item->data(kFactoryRole).isValid()) {
+        if (match && (item->data(kFactoryRole).isValid() || item->data(kCustomRole).isValid())) {
             bool isSrc = item->data(kIsSourceRole).toBool();
             bool isSnk = item->data(kIsSinkRole).toBool();
             if (roleFilter_ == RoleSrc && !isSrc) match = false;
             else if (roleFilter_ == RoleFilterElem && (isSrc || isSnk)) match = false;
             else if (roleFilter_ == RoleSink && !isSnk) match = false;
 
-            if (match && presenceFilter_ != PresenceAll) {
+            if (match && presenceFilter_ != PresenceAll && item->data(kFactoryRole).isValid()) {
                 if (presenceFilter_ == PresenceAlways && !item->data(kHasAlwaysRole).toBool()) match = false;
                 else if (presenceFilter_ == PresenceSometimes && !item->data(kHasSometimesRole).toBool()) match = false;
                 else if (presenceFilter_ == PresenceRequest && !item->data(kHasRequestRole).toBool()) match = false;
@@ -211,6 +231,9 @@ PickerChoice PickerPage::choice() const {
     if (item->data(kExistingRole).isValid()) {
         c.kind = PickerChoice::Existing;
         c.existing = data_.existing[item->data(kExistingRole).toInt()];
+    } else if (item->data(kCustomRole).isValid()) {
+        c.kind = PickerChoice::CustomElement;
+        c.factory = item->data(kCustomRole).toString();
     } else {
         c.kind = PickerChoice::NewElement;
         c.factory = item->data(kFactoryRole).toString();

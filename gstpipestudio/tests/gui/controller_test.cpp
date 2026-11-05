@@ -296,12 +296,14 @@ private slots:
         Chain ch = makeChain();
         QString before = text(c->plan().toConf());
         gps::Removal preview = c->previewCut(ch.src, "src");
-        QCOMPARE(preview.elements, (std::vector<std::string>{ch.convert.toStdString(), ch.sink.toStdString()}));
-        QCOMPARE(preview.links, 2);
+        QVERIFY(preview.elements.empty());
+        QCOMPARE(preview.links, 1);
         QCOMPARE(text(c->plan().toConf()), before);  // a preview changes nothing
         QVERIFY(c->cut(ch.src, "src"));
         QVERIFY(settle(*c));
-        QCOMPARE(c->plan().elements.size(), size_t(1));
+        // Free-canvas rule: cutting a link only removes the link; downstream elements remain on the canvas as untracked!
+        QCOMPARE(c->plan().elements.size(), size_t(3));
+        QCOMPARE(c->plan().links.size(), size_t(1));
         QCOMPARE(c->view(ch.src).srcs[0].state, PadView::Free);
         QVERIFY(c->result().ok());
         QVERIFY(!c->cut(ch.src, "src"));  // a free pad has nothing to cut
@@ -309,15 +311,16 @@ private slots:
 
     void replaceCutsAndAddsBehindTheSamePad() {
         Chain ch = makeChain();
-        QVERIFY(c->previewReplace(ch.src, "src").elements.size() == 2);
+        QCOMPARE(c->previewReplace(ch.src, "src").elements, std::vector<std::string>{ch.convert.toStdString()});
         need(*c, "queue");
         QVERIFY(c->replace(ch.src, "src", "queue", "sink", {}));
         QVERIFY(settle(*c));
-        QCOMPARE(c->plan().elements.size(), size_t(2));
+        QCOMPARE(c->plan().elements.size(), size_t(3));  // src, sink (untracked), and new queue
         QCOMPARE(text(c->plan().elements.back().factory), QString("queue"));
         QCOMPARE(c->plan().links.size(), size_t(1));
         QCOMPARE(c->plan().links[0].srcElement, ch.src.toStdString());
         QVERIFY(!c->plan().find(ch.convert.toStdString()));
+        QVERIFY(c->plan().find(ch.sink.toStdString()));
         QVERIFY(c->result().ok());
         QVERIFY(!c->result().isComplete());  // the queue's output is free now
     }
@@ -332,19 +335,19 @@ private slots:
         QString out = addAfter(*c, mix, "src", "fakesink");
         QVERIFY(c->result().isComplete());
 
-        // The compositor survives while one input is left.
+        // Deleting a source only deletes that source; the compositor and sink remain on the free canvas.
         QCOMPARE(c->previewDeleteSource(one).elements, std::vector<std::string>{one.toStdString()});
         QVERIFY(c->deleteSource(one));
         QVERIFY(settle(*c));
         QCOMPARE(c->plan().elements.size(), size_t(3));
         QCOMPARE(c->view(mix).sinks.size(), 1);
-        // The last source takes everything with it.
-        QCOMPARE(c->previewDeleteSource(two).elements.size(), size_t(3));
+        // Deleting the second source removes only that source; mix and out stay on the free canvas as untracked.
+        QCOMPARE(c->previewDeleteSource(two).elements, std::vector<std::string>{two.toStdString()});
         QVERIFY(c->deleteSource(two));
-        QVERIFY(c->plan().empty());
-        QVERIFY(!c->result().valid());
-        QVERIFY(!c->canSave());
-        QVERIFY(!c->deleteSource(mix));  // only sources are deleted
+        QVERIFY(settle(*c));
+        QCOMPARE(c->plan().elements.size(), size_t(2));
+        QVERIFY(c->plan().find(mix.toStdString()));
+        QVERIFY(c->plan().find(out.toStdString()));
     }
 
     void aFailedUpdateKeepsTheChange() {
@@ -621,16 +624,16 @@ private slots:
         need(*c, "videoconvert");
         need(*c, "fakesink");
 
-        // 1. Add a FILTER and a SINK without a source: they stay untracked with an ℹ info note!
+        // 1. Add a FILTER and a SINK without a source: they stay untracked with an ℹ info note, and DO NOT trigger gps-update!
         QVERIFY(c->addElement("videoconvert", {}));
-        QVERIFY(settle(*c));
+        QVERIFY(!c->updating());
         QString conv = text(c->plan().elements.back().name);
         QVERIFY(!c->view(conv).isTracked);
         QVERIFY(c->view(conv).isInfo);
         QVERIFY(c->view(conv).note.contains("ℹ"));
 
         QVERIFY(c->addElement("fakesink", {}));
-        QVERIFY(settle(*c));
+        QVERIFY(!c->updating());
         QString snk = text(c->plan().elements.back().name);
         QVERIFY(!c->view(snk).isTracked);
 
@@ -662,11 +665,117 @@ private slots:
         QCOMPARE(text(c->plan().links[0].srcElement), src);
         QCOMPARE(text(c->plan().links[0].sinkElement), snk);
 
-        // 6. Disconnect link without pruning downstream elements.
+        // 6. Undo / Redo restores videoconvert and its links!
+        QVERIFY(c->canUndo());
+        QVERIFY(c->undo());
+        QVERIFY(settle(*c));
+        QCOMPARE(c->plan().elements.size(), size_t(3));
+        QCOMPARE(c->plan().links.size(), size_t(2));
+        QVERIFY(c->canRedo());
+        QVERIFY(c->redo());
+        QVERIFY(settle(*c));
+        QCOMPARE(c->plan().elements.size(), size_t(2));
+        QCOMPARE(c->plan().links.size(), size_t(1));
+
+        // 7. Disconnect link without pruning downstream elements.
         QVERIFY(c->disconnectLink(src, "src"));
         QVERIFY(settle(*c));
         QCOMPARE(c->plan().elements.size(), size_t(2));
         QVERIFY(!c->view(snk).isTracked);
+    }
+
+    void multiSelectionOperationsAndCustomElements() {
+        QTemporaryDir customDir;
+        qputenv("GPS_CUSTOM_ELEMENTS_DIR", customDir.path().toUtf8());
+
+        need(*c, "videotestsrc");
+        need(*c, "videoconvert");
+        need(*c, "queue");
+        need(*c, "fakesink");
+
+        // 1. Add 2 unconnected filter elements and auto-connect them via connectSelectedElements.
+        QVERIFY(c->addElement("videoconvert", {}, 100, 100));
+        QString conv = text(c->plan().elements.back().name);
+        QVERIFY(c->addElement("queue", {}, 360, 100));
+        QString scale = text(c->plan().elements.back().name);
+        QVERIFY(c->connectSelectedElements({conv, scale}));
+        QCOMPARE(c->plan().links.size(), size_t(1));
+        QCOMPARE(text(c->plan().links[0].srcElement), conv);
+        QCOMPARE(text(c->plan().links[0].sinkElement), scale);
+
+        // 2. Duplicate the connected pair: duplicates both elements AND the internal link between them!
+        QStringList duped = c->duplicateElements({conv, scale});
+        QCOMPARE(duped.size(), 2);
+        QCOMPARE(c->plan().elements.size(), size_t(4));
+        QCOMPARE(c->plan().links.size(), size_t(2));
+
+        // 3. Batch delete the duplicated pair in one operation.
+        QVERIFY(c->deleteSelection(duped));
+        QCOMPARE(c->plan().elements.size(), size_t(2));
+        QCOMPARE(c->plan().links.size(), size_t(1));
+
+        // 4. Save the connected pair (conv -> scale) as a reusable Custom Element ("ScaleConvert").
+        QVERIFY(c->saveCustomElement("ScaleConvert", {conv, scale}));
+        QCOMPARE(c->customElements().size(), 1);
+        QCOMPARE(c->customElements().first().name, QString("ScaleConvert"));
+        QCOMPARE(c->customElements().first().elementCount, 2);
+        QVERIFY(c->customElements().first().hasFreeSink);
+        QVERIFY(c->customElements().first().hasFreeSrc);
+
+        // The pair on canvas is now grouped as a collapsed Custom Element with 1 external sink and 1 external src!
+        QString grp = c->elementGroup(conv);
+        QVERIFY(!grp.isEmpty());
+        QVERIFY(!c->isGroupExpanded(grp));
+        ElementView gv = c->groupView(grp);
+        QVERIFY(gv.isCustomGroup);
+        QCOMPARE(gv.displayTitle, QString("ScaleConvert"));
+        QCOMPARE(gv.sinks.size(), 1);
+        QCOMPARE(gv.srcs.size(), 1);
+        QCOMPARE(gv.sinks.first().element, conv);
+        QCOMPARE(gv.srcs.first().element, scale);
+
+        // 5. Add a connected pipeline src -> snk, then splice the entire 2-element Custom Element onto that wire!
+        QString src = addSource(*c, "videotestsrc");
+        QVERIFY(c->addElement("fakesink", {}, 700, 100));
+        QString snk = text(c->plan().elements.back().name);
+        QVERIFY(c->linkExisting(src, "src", snk, "sink"));
+        QVERIFY(settle(*c));
+
+        QVERIFY(c->spliceElement(conv, src, "src"));
+        QVERIFY(settle(*c));
+        // Now the pipeline is src -> conv -> scale -> snk (3 links)!
+        QCOMPARE(c->plan().links.size(), size_t(3));
+        QVERIFY(c->result().isComplete());
+
+        // 6. Delete the collapsed Custom Element: auto-heals across both inner elements back to src -> snk!
+        QVERIFY(c->deleteElement(conv, true));
+        QVERIFY(settle(*c));
+        QCOMPARE(c->plan().elements.size(), size_t(2));
+        QCOMPARE(c->plan().links.size(), size_t(1));
+        QCOMPARE(text(c->plan().links[0].srcElement), src);
+        QCOMPARE(text(c->plan().links[0].sinkElement), snk);
+
+        // 7. Re-insert the saved Custom Element from catalog via addCustomElement.
+        QStringList inserted = c->addCustomElement("ScaleConvert", 250, 250);
+        QCOMPARE(inserted.size(), 2);
+        QCOMPARE(c->plan().elements.size(), size_t(4));
+        QCOMPARE(c->plan().links.size(), size_t(2));
+
+        // 8. Ungroup the inserted pair, disconnect them, then splice the multi-selection directly onto src -> snk!
+        QString insGrp = c->elementGroup(inserted.first());
+        QVERIFY(c->ungroupElements(insGrp));
+        QVERIFY(c->disconnectBetweenElements(inserted));
+        QCOMPARE(c->plan().links.size(), size_t(1));  // only src -> snk
+        QVERIFY(c->spliceElements(inserted, src, "src"));
+        QVERIFY(settle(*c));
+        // Both elements were auto-linked left-to-right and spliced into src -> snk!
+        QCOMPARE(c->plan().links.size(), size_t(3));
+        QVERIFY(c->result().isComplete());
+        // Deleting the multi-selection auto-heals back to src -> snk!
+        QVERIFY(c->deleteSelection(inserted, {}, true));
+        QVERIFY(settle(*c));
+        QCOMPARE(c->plan().elements.size(), size_t(2));
+        QCOMPARE(c->plan().links.size(), size_t(1));
     }
 };
 

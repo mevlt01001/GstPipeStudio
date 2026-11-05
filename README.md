@@ -26,6 +26,39 @@ You draw a media pipeline instead of writing it. Everything starts at an output 
 | `gps-run` | Runs a finished `.conf`. |
 | `libgstgpsconf` | A GStreamer plugin: every `.conf` in `GPS_PIPELINE_PATH` becomes an element without pads. |
 
+## Architecture
+
+```mermaid
+graph TD
+    subgraph Core ["gstpipestudio::core (Pure C++17 / GStreamer)"]
+        Engine["gps::Engine"]
+        Plan["gps::PipelinePlan"]
+        Inspector["gps::GstInspector"]
+    end
+
+    subgraph AppModel ["App :: Model"]
+        CanvasModel["CanvasModel"]
+        ElementNode["Element / Pad / Link"]
+    end
+
+    subgraph AppController ["App :: Controller"]
+        Ctrl["Controller"]
+    end
+
+    subgraph AppUI ["App :: UI & Canvas (Qt6)"]
+        CanvasScene["CanvasScene & CanvasView"]
+        MainWindow["MainWindow & Drawer"]
+    end
+
+    AppUI -->|User Actions| AppController
+    AppController -->|Updates| AppModel
+    AppController -->|Executes / Validates| Core
+    Core -->|Status Events| AppController
+    AppModel -->|Signals| AppUI
+```
+
+Detailed class diagrams, relationship overviews, and the interactive diagram viewer are available in [gstpipestudio/docs/uml](gstpipestudio/docs/uml/README.md).
+
 ## Requirements
 
 - Ubuntu 20.04, 22.04 or 24.04 (x86-64; ARM is planned).

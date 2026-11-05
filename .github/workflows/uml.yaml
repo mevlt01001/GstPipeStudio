@@ -12,20 +12,39 @@ on:
 jobs:
   uml:
     runs-on: ubuntu-22.04
+    container: ubuntu:22.04
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v4
-      - name: Setup Dependencies
+      - name: Install Base Dependencies
         run: |
-          ./gstpipestudio/scripts/check_gst.sh
-          ./gstpipestudio/scripts/check_qt.sh
-          ./gstpipestudio/scripts/check_build_tools.sh
+          apt-get update
+          env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            git ca-certificates software-properties-common curl build-essential cmake ninja-build \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev qt6-base-dev
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+
       - name: Generate UML
         run: |
-          export CMAKE_PREFIX_PATH="$HOME/Qt/6.8.3"
           ./gstpipestudio/scripts/generate_uml.sh "$RUNNER_TEMP/build"
+
+      - name: Commit and Push UML Diagrams
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add gstpipestudio/docs/uml/
+          if ! git diff --staged --quiet; then
+            git commit -m "docs(uml): update UML diagrams [skip ci]"
+            git push
+          fi
+
       - name: Upload UML Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: uml-diagrams
-          path: docs/uml/
+          path: gstpipestudio/docs/uml/
 

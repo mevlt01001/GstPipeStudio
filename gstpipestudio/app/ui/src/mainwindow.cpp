@@ -26,6 +26,7 @@
 #include "flows.h"
 #include "linkitem.h"
 #include "logpanel.h"
+#include "propertypage.h"
 #include "setuppage.h"
 #include "theme.h"
 #include "updatepanel.h"
@@ -33,6 +34,7 @@
 
 #include <QClipboard>
 #include <QGuiApplication>
+#include <QInputDialog>
 #include <QVBoxLayout>
 #include <set>
 
@@ -65,12 +67,20 @@ MainWindow::MainWindow(Controller* controller, QWidget* parent) : QMainWindow(pa
 
     // The canvas reports clicks; the work happens after the item's event handler has returned.
     connect(scene_, &CanvasScene::freeSrcPadClicked, flows_, [this](const QString& e, const QString& id, const QPoint&) { flows_->fromFreePad(e, id); }, Qt::QueuedConnection);
-    connect(scene_, &CanvasScene::linkClickedSignal, this, &MainWindow::openCapsTab, Qt::QueuedConnection);
+    connect(scene_, &CanvasScene::linkClickedSignal, flows_, &Flows::editCaps, Qt::QueuedConnection);
     connect(scene_, &CanvasScene::linkMenuRequested, flows_, &Flows::showLinkMenu, Qt::QueuedConnection);
-    connect(scene_, &CanvasScene::elementMenuRequested, flows_, &Flows::showElementMenu, Qt::QueuedConnection);
+    connect(scene_, &CanvasScene::elementMenuRequested, this, &MainWindow::onElementMenuRequested, Qt::QueuedConnection);
+    connect(scene_, &CanvasScene::canvasContextMenuRequested, this, [this](const QPoint& screenPos, const QPointF&) { showCanvasMenu(screenPos); }, Qt::QueuedConnection);
     connect(scene_, &CanvasScene::elementActivated, flows_, &Flows::editProperties, Qt::QueuedConnection);
-    connect(scene_, &CanvasScene::elementMoved, controller_, &Controller::setPosition, Qt::QueuedConnection);
-    connect(scene_, &CanvasScene::elementSpliced, controller_, &Controller::spliceElement, Qt::QueuedConnection);
+    connect(scene_, &CanvasScene::elementsMoved, controller_, &Controller::setPositions, Qt::QueuedConnection);
+    connect(scene_, &CanvasScene::elementSpliced, this, [this](const QString& element, const QString& linkSrc, const QString& linkPad) {
+        QStringList sel = scene_->selectedElementNames();
+        if (sel.contains(element) && sel.size() > 1) {
+            controller_->spliceElements(sel, linkSrc, linkPad);
+        } else {
+            controller_->spliceElement(element, linkSrc, linkPad);
+        }
+    }, Qt::QueuedConnection);
     connect(scene_, &CanvasScene::rebuilt, this, &MainWindow::onRebuilt);
     connect(view_, &CanvasView::deletePressed, this, &MainWindow::deleteSelected);
     connect(setup_, &SetupPage::retry, controller_, &Controller::checkEnvironment);
@@ -121,12 +131,26 @@ void MainWindow::buildActions() {
     addSource->setIconText("Add source");
     auto* addElement = make("actionAddElement", "Add &element…", {QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_E)}, [this] { flows_->chooseElement(); });
     addElement->setIconText("Add element");
+    auto* undoAct = make("actionUndo", "&Undo", {QKeySequence::Undo}, [this] { controller_->undo(); });
+    undoAct->setIconText("Undo");
+    auto* redoAct = make("actionRedo", "&Redo", {QKeySequence::Redo, QKeySequence(Qt::CTRL | Qt::Key_Y)}, [this] { controller_->redo(); });
+    redoAct->setIconText("Redo");
+    auto* dupAct = make("actionDuplicate", "&Duplicate", {QKeySequence(Qt::CTRL | Qt::Key_D)}, [this] { duplicateSelected(); });
+    auto* selAllAct = make("actionSelectAll", "Select &All", {QKeySequence::SelectAll}, [this] { selectAll(); });
+    auto* delAct = make("actionDelete", "De&lete", {QKeySequence::Delete, QKeySequence(Qt::Key_Backspace)}, [this] { deleteSelected(); });
     auto* copyAct = make("actionCopy", "&Copy", {QKeySequence::Copy}, [this] { copySelected(); });
     auto* cutAct = make("actionCut", "Cu&t", {QKeySequence::Cut}, [this] { cutSelected(); });
     auto* pasteAct = make("actionPaste", "&Paste", {QKeySequence::Paste}, [this] { pasteClipboard(); });
-    auto* find = make("actionFind", "&Find element", {QKeySequence::Find}, [this] { drawer_->focusSearch(); });
+    auto* connectSelAct = make("actionConnectSelected", "Connect &selected", {QKeySequence(Qt::CTRL | Qt::Key_L)}, [this] { connectSelected(); });
+    auto* saveCustomAct = make("actionSaveCustomElement", "Save as &custom element…", {QKeySequence(Qt::CTRL | Qt::Key_G)}, [this] { saveSelectedAsCustomElement(); });
+    saveCustomAct->setIconText("Save custom");
+    auto* find = make("actionFind", "&Find element", {QKeySequence::Find}, [this] {
+        if (drawer_->isOpen()) drawer_->focusSearch();
+        else if (flows_->propertyPage()) flows_->propertyPage()->focusFirst();
+    });
     auto* showLog = make("actionShowLog", "&Log", {}, [this] { tabs_->setCurrentWidget(log_); });
     auto* showValidation = make("actionShowValidation", "&Validation", {}, [this] { tabs_->setCurrentWidget(updates_); });
+    auto* showProps = make("actionShowProperties", "&Properties", {}, [this] { tabs_->setCurrentWidget(propsTab_); });
     auto* showCaps = make("actionShowCaps", "&Caps", {}, [this] { tabs_->setCurrentWidget(capsTab_); });
     auto* fit = make("actionFit", "Zoom to &fit", {QKeySequence(Qt::CTRL | Qt::Key_0)}, [this] { view_->fitAll(); });
     auto* zoomIn = make("actionZoomIn", "Zoom &in", {QKeySequence::ZoomIn}, [this] { view_->zoomBy(1.25); });
@@ -146,9 +170,13 @@ void MainWindow::buildActions() {
     QMenu* pipeline = menuBar()->addMenu("&Pipeline");
     pipeline->addActions({addSource, addElement, update, run});
     pipeline->addSeparator();
-    pipeline->addActions({copyAct, cutAct, pasteAct});
+    pipeline->addActions({undoAct, redoAct});
+    pipeline->addSeparator();
+    pipeline->addActions({copyAct, cutAct, pasteAct, dupAct, selAllAct, delAct});
+    pipeline->addSeparator();
+    pipeline->addActions({connectSelAct, saveCustomAct});
     QMenu* viewMenu = menuBar()->addMenu("&View");
-    viewMenu->addActions({showLog, showValidation, showCaps, find});
+    viewMenu->addActions({showLog, showValidation, showProps, showCaps, find});
     viewMenu->addSeparator();
     viewMenu->addActions({fit, zoomIn, zoomOut});
     QMenu* help = menuBar()->addMenu("&Help");
@@ -160,38 +188,47 @@ void MainWindow::buildActions() {
     bar->setToolButtonStyle(Qt::ToolButtonTextOnly);
     bar->addActions({newPlan, open, save, saveAs});
     bar->addSeparator();
+    bar->addActions({undoAct, redoAct});
+    bar->addSeparator();
     bar->addActions({update, run});
     bar->addSeparator();
     bar->addAction(addSource);
     bar->addAction(addElement);
+    bar->addAction(saveCustomAct);
     bar->widgetForAction(run)->setObjectName("primaryAction");
 }
 
 void MainWindow::buildPanels() {
     log_ = new LogPanel(this);
     updates_ = new UpdatePanel(controller_, this);
+    propsTab_ = new QWidget(this);
+    propsTab_->setObjectName("propsTab");
+    new QVBoxLayout(propsTab_);
     capsTab_ = new QWidget(this);
     capsTab_->setObjectName("capsTab");
-    auto* capsLayout = new QVBoxLayout(capsTab_);
-    auto* capsHint = new QLabel("Click a link on the canvas to inspect or edit its Caps.", capsTab_);
-    capsHint->setObjectName("muted");
-    capsLayout->addWidget(capsHint);
-    capsLayout->addStretch(1);
+    new QVBoxLayout(capsTab_);
 
     tabs_ = new QTabWidget(this);
     tabs_->setObjectName("bottomTabs");
     tabs_->addTab(log_, "Log");
     tabs_->addTab(updates_, "Validation");
+    tabs_->addTab(propsTab_, "Properties");
     tabs_->addTab(capsTab_, "Caps");
     tabs_->setCurrentWidget(updates_);
+    flows_->setBottomPanels(tabs_, propsTab_, capsTab_, updates_);
     auto* bottom = new QDockWidget("Panels", this);
     bottom->setObjectName("bottomDock");
     bottom->setFeatures(QDockWidget::NoDockWidgetFeatures);
     bottom->setTitleBarWidget(new QWidget(bottom));  // the tabs are the title
     bottom->setWidget(tabs_);
-    bottom->setMinimumHeight(170);
+    bottom->setMinimumHeight(180);
     addDockWidget(Qt::BottomDockWidgetArea, bottom);
-    resizeDocks({bottom}, {200}, Qt::Vertical);
+    resizeDocks({bottom}, {240}, Qt::Vertical);
+    // Properties and Caps are forms: the panel grows so their fields stay usable (never shrinks what the user chose).
+    connect(tabs_, &QTabWidget::currentChanged, this, [this, bottom] {
+        QWidget* cur = tabs_->currentWidget();
+        if ((cur == propsTab_ || cur == capsTab_) && bottom->height() < 400) resizeDocks({bottom}, {400}, Qt::Vertical);
+    });
 
     state_ = new QLabel(this);
     state_->setObjectName("stateLabel");
@@ -224,6 +261,9 @@ void MainWindow::refreshState() {
     act("actionNew")->setEnabled(!busy && !blocked);
     act("actionOpen")->setEnabled(!busy && !blocked);
     act("actionAddSource")->setEnabled(!busy && !blocked);
+    act("actionAddElement")->setEnabled(!busy && !blocked);
+    act("actionUndo")->setEnabled(controller_->canUndo());
+    act("actionRedo")->setEnabled(controller_->canRedo());
     act("actionSave")->setEnabled(controller_->canSave());
     act("actionSaveAs")->setEnabled(controller_->canSave());
     act("actionUpdate")->setEnabled(!busy && hasPlan);
@@ -263,6 +303,7 @@ void MainWindow::refreshState() {
     scene_->setStale(controller_->notValidated());
     view_->setDimmed(controller_->updating());
     drawer_->setBusy(busy);
+    flows_->setBusy(busy);
 
     QString name = controller_->filePath().isEmpty() ? "untitled" : QFileInfo(controller_->filePath()).fileName();
     setWindowTitle("GstPipeStudio – " + name + (controller_->dirty() ? " *" : ""));
@@ -274,6 +315,8 @@ void MainWindow::onEnvironment() {
         setup_->show(env);
         centre_->setCurrentWidget(setup_);
         drawer_->dismiss();
+        flows_->closeProperties();
+        flows_->closeCaps();
     } else {
         centre_->setCurrentIndex(0);
     }
@@ -323,79 +366,206 @@ void MainWindow::toggleRun() {
     else controller_->run();
 }
 
-void MainWindow::openCapsTab(const QString& srcElement, const QString& srcIdentity) {
-    if (controller_->busy()) return;
-    int link = controller_->plan().linkFrom(srcElement.toStdString(), srcIdentity.toStdString());
-    if (link < 0) return;
-
-    QLayout* layout = capsTab_->layout();
-    while (QLayoutItem* item = layout->takeAt(0)) {
-        if (QWidget* w = item->widget()) w->deleteLater();
-        delete item;
-    }
-
-    CapsPageInput in;
-    const gps::PlanLink& l = controller_->plan().links[link];
-    in.allowed = controller_->padStructures(srcElement, srcIdentity);
-    in.current = QString::fromStdString(l.caps);
-    in.skippable = false;
-    if (const PadTemplateInfo* sink = controller_->linkSinkTemplate(link)) {
-        for (const PropertyInfo& p : sink->padProperties) {
-            if (PropertyEditor::editable(p)) in.padProperties << p;
-        }
-    }
-    in.padProps = l.sinkPadProps;
-
-    auto* page = new CapsPage(in, capsTab_);
-    connect(page, &CapsPage::applied, this, [this, page, srcElement, srcIdentity] {
-        controller_->setCaps(srcElement, srcIdentity, page->caps(), page->padProps());
-    });
-    layout->addWidget(page);
-    tabs_->setCurrentWidget(capsTab_);
+void MainWindow::openPropertiesTab(const QString& element) {
+    flows_->editProperties(element);
 }
 
-// Delete on the canvas: the selected source goes, after the usual confirmation, or selected links/elements are disconnected/deleted.
-void MainWindow::deleteSelected() {
-    for (QGraphicsItem* item : scene_->selectedItems()) {
-        if (auto* element = dynamic_cast<ElementItem*>(item)) {
-            if (element->view().isSource) {
-                flows_->deleteSource(element->view().name);
-                return;
-            }
+void MainWindow::resetPropertiesTab() {
+    flows_->closeProperties();
+}
+
+void MainWindow::resetCapsTab() {
+    flows_->closeCaps();
+}
+
+void MainWindow::openCapsTab(const QString& srcElement, const QString& srcIdentity) {
+    flows_->editCaps(srcElement, srcIdentity);
+}
+
+void MainWindow::showCanvasMenu(const QPoint& screenPos) {
+    if (controller_->busy() || controller_->environmentBlocked()) return;
+    auto* menu = new QMenu(this);
+    menu->setObjectName("canvasMenu");
+    menu->setAttribute(Qt::WA_DeleteOnClose);
+    menu->addAction("Add element…", this, [this] { flows_->chooseElement(); })->setObjectName("actionCanvasAddElement");
+    menu->addAction("Add source…", this, [this] { flows_->chooseSource(); })->setObjectName("actionCanvasAddSource");
+    if (!controller_->customElements().isEmpty()) {
+        QMenu* customSub = menu->addMenu("Add custom element");
+        for (const CustomElementInfo& c : controller_->customElements()) {
+            customSub->addAction(c.name + "  (" + c.description + ")", this, [this, name = c.name] {
+                QStringList created = controller_->addCustomElement(name);
+                if (!created.isEmpty()) scene_->setSelectedElements(created);
+            });
         }
     }
+    QStringList sel = scene_->selectedElementNames();
+    if (!sel.isEmpty()) {
+        menu->addSeparator();
+        menu->addAction(QString("Save selection (%1) as custom element…").arg(sel.size()), this, [this] { saveSelectedAsCustomElement(); })
+            ->setObjectName("actionCanvasSaveCustom");
+        if (sel.size() >= 2) {
+            menu->addAction("Connect selected elements", this, [this] { connectSelected(); })->setObjectName("actionCanvasConnectSelected");
+            menu->addAction("Align horizontally", this, [this, sel] { controller_->alignElementsHorizontally(sel); });
+            menu->addAction("Align vertically", this, [this, sel] { controller_->alignElementsVertically(sel); });
+        }
+        menu->addAction("Duplicate selected", this, [this] { duplicateSelected(); });
+        menu->addAction("Copy selected", this, [this] { copySelected(); });
+        menu->addAction("Cut selected", this, [this] { cutSelected(); });
+        menu->addAction("Delete selected", this, [this] { deleteSelected(); });
+    }
+    menu->addSeparator();
+    auto* u = menu->addAction("Undo", this, [this] { controller_->undo(); });
+    u->setEnabled(controller_->canUndo());
+    auto* r = menu->addAction("Redo", this, [this] { controller_->redo(); });
+    r->setEnabled(controller_->canRedo());
+    auto* p = menu->addAction("Paste", this, [this] { pasteClipboard(); });
+    p->setEnabled(QGuiApplication::clipboard() && !QGuiApplication::clipboard()->text().isEmpty());
+    menu->addSeparator();
+    menu->addAction("Select all", this, [this] { selectAll(); });
+    menu->addAction("Zoom to fit", this, [this] { view_->fitAll(); });
+    auto* v = menu->addAction("Validate", this, [this] { controller_->refresh(); });
+    v->setEnabled(!controller_->plan().empty());
+    menu->popup(screenPos);
+}
+
+void MainWindow::onElementMenuRequested(const QString& element, const QPoint& screenPos) {
+    if (controller_->busy()) return;
+    QStringList sel = scene_->selectedElementNames();
+    QString grp = controller_->elementGroup(element);
+    if (sel.size() > 1 || !grp.isEmpty()) {
+        showSelectionMenu(element, screenPos);
+    } else {
+        flows_->showElementMenu(element, screenPos);
+    }
+}
+
+void MainWindow::showSelectionMenu(const QString& clickedElement, const QPoint& screenPos) {
+    if (controller_->busy()) return;
+    QStringList sel = scene_->selectedElementNames();
+    if (!sel.contains(clickedElement)) sel << clickedElement;
+    sel = controller_->expandSelectionWithGroups(sel);
+
+    auto* menu = new QMenu(this);
+    menu->setObjectName("selectionMenu");
+    menu->setAttribute(Qt::WA_DeleteOnClose);
+
+    QString grp = controller_->elementGroup(clickedElement);
+    if (!grp.isEmpty()) {
+        QString title = grp.section('#', 0, 0);
+        bool expanded = controller_->isGroupExpanded(grp);
+        menu->addAction(expanded ? ("Collapse '" + title + "' to single element") : ("Expand '" + title + "' (" + QString::number(controller_->groupMembers(grp).size()) + " elements)"),
+                        this, [this, grp, expanded] { controller_->setGroupExpanded(grp, !expanded); })
+            ->setObjectName("actionToggleGroupExpand");
+        menu->addAction("Ungroup '" + title + "'", this, [this, grp] { controller_->ungroupElements(grp); })->setObjectName("actionUngroup");
+        if (expanded) {
+            menu->addAction("Edit properties of " + clickedElement + "…", this, [this, clickedElement] { flows_->editProperties(clickedElement); });
+        }
+        menu->addSeparator();
+    }
+
+    menu->addAction(QString("Save as custom element (%1)…").arg(sel.size()), this, [this] { saveSelectedAsCustomElement(); })
+        ->setObjectName("actionSaveCustomElementMenu");
+    if (grp.isEmpty() && sel.size() >= 2) {
+        menu->addAction("Combine into single group on canvas", this, [this, sel] {
+            controller_->groupSelectedElements(sel, "CustomChain");
+        })->setObjectName("actionGroupSelected");
+    }
+    if (sel.size() >= 2) {
+        menu->addSeparator();
+        menu->addAction("Connect selected elements", this, [this, sel] { controller_->connectSelectedElements(sel); })
+            ->setObjectName("actionConnectSelectedMenu");
+        menu->addAction("Disconnect links between selected", this, [this, sel] { controller_->disconnectBetweenElements(sel); })
+            ->setObjectName("actionDisconnectSelectedMenu");
+        menu->addAction("Align horizontally", this, [this, sel] { controller_->alignElementsHorizontally(sel); })
+            ->setObjectName("actionAlignHorizontally");
+        menu->addAction("Align vertically", this, [this, sel] { controller_->alignElementsVertically(sel); })
+            ->setObjectName("actionAlignVertically");
+    }
+    menu->addSeparator();
+    menu->addAction(QString("Duplicate (%1)").arg(sel.size()), this, [this] { duplicateSelected(); })->setObjectName("actionDuplicateSelection");
+    menu->addAction(QString("Copy (%1)").arg(sel.size()), this, [this] { copySelected(); })->setObjectName("actionCopySelection");
+    menu->addAction(QString("Cut (%1)").arg(sel.size()), this, [this] { cutSelected(); })->setObjectName("actionCutSelection");
+    menu->addAction(QString("Delete (%1)").arg(sel.size()), this, [this] { deleteSelected(); })->setObjectName("actionDeleteSelection");
+    menu->popup(screenPos);
+}
+
+void MainWindow::saveSelectedAsCustomElement() {
+    if (controller_->busy()) return;
+    QStringList sel = scene_->selectedElementNames();
+    if (sel.isEmpty()) {
+        statusBar()->showMessage("Select one or more elements on the canvas first to save as a custom element.", 6000);
+        return;
+    }
+    QStringList factories;
+    for (const QString& n : sel) {
+        if (const gps::PlanElement* e = controller_->plan().find(n.toStdString())) {
+            factories << QString::fromStdString(e->factory);
+        }
+    }
+    QString suggested = factories.join("_");
+    if (suggested.size() > 28) suggested = suggested.left(28);
+    bool ok = false;
+    QString name = QInputDialog::getText(this, "Save as Custom Element",
+                                         QString("Save %1 selected element(s) as a reusable Custom Element:\n(%2)").arg(sel.size()).arg(factories.join(" → ")),
+                                         QLineEdit::Normal, suggested, &ok);
+    if (!ok || name.trimmed().isEmpty()) return;
+    if (controller_->saveCustomElement(name.trimmed(), sel)) {
+        statusBar()->showMessage(QString("Saved custom element '%1' (%2 elements). Available in Add Element.").arg(name.trimmed()).arg(sel.size()), 8000);
+    }
+}
+
+void MainWindow::connectSelected() {
+    QStringList sel = scene_->selectedElementNames();
+    if (sel.size() >= 2) controller_->connectSelectedElements(sel);
+}
+
+// Delete on the canvas: a single selected source asks confirmation; multi-selection or non-source elements/links delete atomically.
+void MainWindow::deleteSelected() {
+    QStringList selectedElements = scene_->selectedElementNames();
+    QList<QPair<QString, QString>> selectedLinks;
     for (QGraphicsItem* item : scene_->selectedItems()) {
         if (auto* link = dynamic_cast<LinkItem*>(item)) {
-            controller_->disconnectLink(link->view().srcElement, link->view().srcIdentity);
+            selectedLinks.append({link->view().srcElement, link->view().srcIdentity});
+        }
+    }
+    if (selectedElements.size() == 1 && selectedLinks.isEmpty()) {
+        const QString& only = selectedElements.first();
+        if (controller_->elementGroup(only).isEmpty() && controller_->view(only).isSource) {
+            flows_->deleteSource(only);
             return;
         }
+    }
+    if (!selectedElements.isEmpty() || !selectedLinks.isEmpty()) {
+        controller_->deleteSelection(selectedElements, selectedLinks);
+    }
+}
+
+void MainWindow::duplicateSelected() {
+    QStringList names = scene_->selectedElementNames();
+    if (names.isEmpty()) return;
+    QStringList created = controller_->duplicateElements(names);
+    if (!created.isEmpty()) scene_->setSelectedElements(created);
+}
+
+void MainWindow::selectAll() {
+    for (QGraphicsItem* item : scene_->items()) {
+        if (item->flags() & QGraphicsItem::ItemIsSelectable) item->setSelected(true);
     }
 }
 
 void MainWindow::copySelected() {
-    gps::Plan sub;
-    std::set<std::string> chosen;
-    for (QGraphicsItem* item : scene_->selectedItems()) {
-        if (auto* el = dynamic_cast<ElementItem*>(item)) {
-            std::string name = el->view().name.toStdString();
-            chosen.insert(name);
-            if (const gps::PlanElement* pe = controller_->plan().find(name)) sub.elements.push_back(*pe);
-        }
-    }
+    QStringList names = scene_->selectedElementNames();
+    if (names.isEmpty()) return;
+    gps::Plan sub = controller_->copySubplan(names);
     if (sub.elements.empty()) return;
-    for (const gps::PlanLink& l : controller_->plan().links) {
-        if (chosen.count(l.srcElement) && chosen.count(l.sinkElement)) sub.links.push_back(l);
-    }
     if (QClipboard* cb = QGuiApplication::clipboard()) cb->setText(QString::fromStdString(sub.toConf()));
 }
 
 void MainWindow::cutSelected() {
+    QStringList names = scene_->selectedElementNames();
+    if (names.isEmpty()) return;
     copySelected();
-    for (QGraphicsItem* item : scene_->selectedItems()) {
-        if (auto* el = dynamic_cast<ElementItem*>(item)) {
-            controller_->deleteElement(el->view().name, true);
-        }
-    }
+    controller_->deleteSelection(names);
 }
 
 void MainWindow::pasteClipboard() {
@@ -405,13 +575,8 @@ void MainWindow::pasteClipboard() {
     gps::Plan clip;
     std::string err;
     if (!gps::Plan::fromConf(cb->text().toStdString(), &clip, &err)) return;
-    for (const gps::PlanElement& e : clip.elements) {
-        ElementEdit edit;
-        edit.props = e.props;
-        edit.requestSrc = e.requestSrc;
-        edit.requestSink = e.requestSink;
-        controller_->addElement(QString::fromStdString(e.factory), edit, e.x + 40, e.y + 40);
-    }
+    QStringList created = controller_->pasteSubplan(clip);
+    if (!created.isEmpty()) scene_->setSelectedElements(created);
 }
 
 void MainWindow::showAbout() {

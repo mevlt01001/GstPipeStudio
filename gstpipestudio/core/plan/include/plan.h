@@ -27,6 +27,7 @@ using Props = std::map<std::string, std::string>;  // property name -> text, onl
 struct PlanElement {
     std::string name;     // unique, "<factory>_<N>" with non-alphanumerics turned into '_'
     std::string factory;
+    std::string group;    // custom element / group instance id ("<CustomName>#<id>"), "" when standalone
     Props props;
     std::map<std::string, int> requestSrc;   // Request src template -> how many pads to ask for before the run
     std::map<std::string, int> requestSink;  // Request sink template -> how many sink pads requested
@@ -112,8 +113,9 @@ public:
     // ---- free-form edits (no automatic pruning of downstream elements)
     // Disconnects a single link without deleting downstream elements.
     bool disconnectLink(const std::string& srcElement, const std::string& srcPad);
-    // Deletes a single element. If autoHeal is true and the element had exactly 1 incoming link and 1 outgoing link
-    // (with unambiguous pads), those two neighbours are automatically linked together.
+    // Deletes one or more elements (subgraph). If autoHeal is true and the subgraph had unambiguously 1 external incoming link
+    // and 1 external outgoing link, those two external neighbours are automatically linked together.
+    bool deleteElements(const std::vector<std::string>& names, bool autoHeal = true, int exitTotalSrcPads = 1);
     bool deleteElement(const std::string& name, bool autoHeal = true, int totalSrcPads = 1);
     // Adapts a dragged element onto an existing link (srcElement.srcPad -> oldSink) without changing any existing links of elementName:
     // - 1 free sink & 1 free src -> E1.src -> E3.sink and E3.src -> E2.sink
@@ -121,6 +123,10 @@ public:
     // - 0 free sink & 1 free src -> E3.src -> E2.sink (E1.src becomes free)
     bool spliceElement(const std::string& elementName, const std::string& linkSrcElement, const std::string& linkSrcPad,
                        const std::vector<std::string>& freeSinkPads, const std::vector<std::string>& freeSrcPads);
+    // Adapts a multi-element custom group/chain onto an existing link using its external entry sink pad and exit src pad.
+    bool spliceChain(const std::string& linkSrcElement, const std::string& linkSrcPad,
+                     const std::vector<std::pair<std::string, std::string>>& freeSinkPads,
+                     const std::vector<std::pair<std::string, std::string>>& freeSrcPads);
 
     // ---- removals. Every edit ends with prune(), and every one has a preview that changes nothing.
     Removal cut(const std::string& srcElement, const std::string& srcPad, const TraitsFn& traits);

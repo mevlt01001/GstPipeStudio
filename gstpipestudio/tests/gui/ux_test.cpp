@@ -209,7 +209,7 @@ private slots:
         QVERIFY(settle(*c));
         verify(&w, "finished pipeline");
 
-        // every drawer page
+        // every drawer page and bottom tab page
         w.flows()->chooseSource();
         verify(w.drawer(), "add source");
         w.flows()->fromFreePad(src, "src");
@@ -217,10 +217,12 @@ private slots:
         verify(w.drawer(), "picker after a pad");
         w.flows()->editProperties(src);
         QVERIFY(pageOf(w, "propertyPage"));
-        verify(w.drawer(), "properties");
+        verify(w.propertiesTab(), "properties");
         w.flows()->editCaps(src, "src");
         QVERIFY(pageOf(w, "capsPage"));
-        verify(w.drawer(), "caps");
+        verify(w.capsTab(), "caps");
+        w.flows()->closeProperties();
+        w.flows()->closeCaps();
         w.drawer()->dismiss();
         ConfirmDialog confirm("Remove elements", "These 2 elements will be removed, with 1 link", {"a (x)"}, "Delete 2 elements");
         verify(&confirm, "confirmation");
@@ -665,7 +667,7 @@ private slots:
         QVERIFY(!w.drawer()->page());  // the pages are gone
     }
 
-    // Closing the drawer while its validation runs: no caps page opens afterwards.
+    // Closing properties while validation runs: no caps page opens afterwards.
     void closingTheDrawerDuringTheValidationDropsTheCapsStep() {
         MainWindow w(c.get());
         w.show();
@@ -679,16 +681,15 @@ private slots:
         QTest::keyClick(picker, Qt::Key_Return);
         auto* props = pageOf(w, "propertyPage");
         QVERIFY(props);
+        QVERIFY(!w.drawer()->isOpen());  // right drawer closed as soon as the element was picked
         qputenv("GPS_FAKE_SLOW_MS", "1200");
         QTest::mouseClick(props->findChild<QPushButton*>("saveButton"), Qt::LeftButton);
         QVERIFY(c->updating());
-        QVERIFY(w.drawer()->isOpen());  // waiting for the validation: the page is locked, not gone
-        QVERIFY(!w.drawer()->page()->isEnabled());
-        w.drawer()->dismiss();
+        w.flows()->closeProperties();
         QVERIFY(waitFor([&] { return !c->busy(); }, 8000));
         QTest::qWait(300);
         QVERIFY(!w.drawer()->isOpen());
-        QVERIFY(!w.drawer()->page());
+        QVERIFY(!w.flows()->capsPage());
         QCOMPARE(c->plan().elements.size(), size_t(2));  // the element stays
         qunsetenv("GPS_FAKE_SLOW_MS");
     }
@@ -701,7 +702,12 @@ private:
 
     DrawerPage* pageOf(MainWindow& w, const char* objectName) {
         DrawerPage* found = nullptr;
-        (void)QTest::qWaitFor([&] { return (found = w.drawer()->page()) && found->objectName() == objectName; }, 8000);
+        (void)QTest::qWaitFor([&] {
+            if (QString(objectName) == "propertyPage") found = w.flows()->propertyPage();
+            else if (QString(objectName) == "capsPage") found = w.flows()->capsPage();
+            else found = w.drawer()->page();
+            return found && found->objectName() == objectName;
+        }, 8000);
         return found && found->objectName() == objectName ? found : nullptr;
     }
 };

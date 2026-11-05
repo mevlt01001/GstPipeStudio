@@ -1,0 +1,1800 @@
+@startuml
+title GstPipeStudio App — Zoom-In Details (Public & Protected Members)
+package [std] as C_0009971158671206323968 {
+class "basic_string<char>" as C_0001275076681856179721
+class C_0001275076681856179721 {
+__
+}
+class "map<std::string,int>" as C_0006156734009172850642
+class C_0006156734009172850642 {
+__
+}
+class "map<std::string,std::string>" as C_0012004170049756060246
+class C_0012004170049756060246 {
+__
+}
+class "vector<std::string>" as C_0001347152004389415025
+class C_0001347152004389415025 {
+__
+}
+class "vector<int>" as C_0009228492206209329687
+class C_0009228492206209329687 {
+__
+}
+class "function<gps::FactoryTraits(std::string const& const&)>" as C_0008907935393304499989
+class C_0008907935393304499989 {
+__
+}
+class "vector<gps::ExposedParam>" as C_0001223623293534481516
+class C_0001223623293534481516 {
+__
+}
+class "pair<std::string,std::string>" as C_0009953426076712291422
+class C_0009953426076712291422 {
+__
+}
+class "vector<std::pair<std::string,std::string>>" as C_0015467040182755354183
+class C_0015467040182755354183 {
+__
+}
+class "vector<gps::PlanElement>" as C_0015948527389287391171
+class C_0015948527389287391171 {
+__
+}
+class "vector<gps::PlanLink>" as C_0017787860428970857447
+class C_0017787860428970857447 {
+__
+}
+class "vector<gps::CapsField>" as C_0003093103939169444057
+class C_0003093103939169444057 {
+__
+}
+class "function<qint64()>" as C_0016201832421748368533
+class C_0016201832421748368533 {
+__
+}
+class "function<void(ElementInfo const*)>" as C_0000106675201623106182
+class C_0000106675201623106182 {
+__
+}
+class "function<void(QList<QString> const&)>" as C_0004237358879711363125
+class C_0004237358879711363125 {
+__
+}
+class "pair<QString,QString>" as C_0002545201444471589314
+class C_0002545201444471589314 {
+__
+}
+class "pair<QString,QPointF>" as C_0011270599558423720070
+class C_0011270599558423720070 {
+__
+}
+class "function<void(HelperResult const&)>" as C_0006320070713169585957
+class C_0006320070713169585957 {
+__
+}
+class "function<void(bool)>" as C_0006524058372096270699
+class C_0006524058372096270699 {
+__
+}
+class "vector<gps::Plan>" as C_0018117365157425103285
+class C_0018117365157425103285 {
+__
+}
+class "map<QString,gps::Plan>" as C_0003258844757269243860
+class C_0003258844757269243860 {
+__
+}
+class "map<QString,ElementInfo>" as C_0004339314899492021131
+class C_0004339314899492021131 {
+__
+}
+class "function<void()>" as C_0013286274850898176297
+class C_0013286274850898176297 {
+__
+}
+class "function<bool()>" as C_0005541826913145604472
+class C_0005541826913145604472 {
+__
+}
+class "vector<Drawer::Entry>" as C_0012080817896115492257
+class C_0012080817896115492257 {
+__
+}
+class "optional<QString>" as C_0000285973155044203420
+class C_0000285973155044203420 {
+__
+}
+class "function<QString()>" as C_0016352831460880391547
+class C_0016352831460880391547 {
+__
+}
+class "function<void(QString const&)>" as C_0005577933538676687574
+class C_0005577933538676687574 {
+__
+}
+}
+class "QList<QString>" as C_0008375322064658753815
+class C_0008375322064658753815 {
+__
+}
+class "FieldInfo" as C_0016704062536531909690
+class C_0016704062536531909690 {
+__
++kind : QString
++name : QString
++type : QString
++values : QStringList
+}
+class "QList<FieldInfo>" as C_0008408160776673194884
+class C_0008408160776673194884 {
+__
+}
+class "StructureInfo" as C_0013922526044744629173
+class C_0013922526044744629173 {
+{static} +fromJson(const QJsonObject & json) : StructureInfo
++title() const : QString
+__
++features : QStringList
++fields : QList<FieldInfo>
++media : QString
+}
+class "EnumValue" as C_0017454559587956927426
+class C_0017454559587956927426 {
+__
++name : QString
++nick : QString
++value : QString
+}
+class "QList<EnumValue>" as C_0012210628278553350253
+class C_0012210628278553350253 {
+__
+}
+class "PropertyInfo" as C_0017231763468275670661
+class C_0017231763468275670661 {
+{static} +fromJson(const QJsonObject & json) : PropertyInfo
+__
++blurb : QString
++construct : bool
++constructOnly : bool
++defaultValue : QString
++deprecated : bool
++enumValues : QList<EnumValue>
++kind : QString
++max : QString
++min : QString
++mutablePaused : bool
++mutablePlaying : bool
++mutableReady : bool
++name : QString
++nick : QString
++readable : bool
++typeName : QString
++writable : bool
+}
+class "QList<StructureInfo>" as C_0003806610176957307951
+class C_0003806610176957307951 {
+__
+}
+class "QList<PropertyInfo>" as C_0017624030923317678952
+class C_0017624030923317678952 {
+__
+}
+class "PadTemplateInfo" as C_0010798006487996639193
+class C_0010798006487996639193 {
++isRequest() const : bool
++isSrc() const : bool
+__
++caps : QString
++direction : QString
++name : QString
++padProperties : QList<PropertyInfo>
++presence : QString
++structures : QList<StructureInfo>
+}
+class "QList<PadTemplateInfo>" as C_0011498643518036065935
+class C_0011498643518036065935 {
+__
+}
+class "ElementInfo" as C_0013453943726969206921
+class C_0013453943726969206921 {
++defaultRequestSink() const : std::map<std::string,int>
++defaultRequestSrc() const : std::map<std::string,int>
+{static} +fromJson(const QJsonObject & json) : ElementInfo
++padTemplate(const QString & name, const QString & direction) const : const PadTemplateInfo *
++sinkTemplates() const : QList<PadTemplateInfo>
++sinkTemplatesFor(const QList<StructureInfo> & allowed) const : QList<PadTemplateInfo>
++srcTemplates() const : QList<PadTemplateInfo>
+__
++author : QString
++description : QString
++factory : QString
++isSink : bool
++isSource : bool
++klass : QString
++longName : QString
++padTemplates : QList<PadTemplateInfo>
++plugin : QString
++properties : QList<PropertyInfo>
++rank : int
+}
+class "ListEntry" as C_0014706911130947084033
+class C_0014706911130947084033 {
+{static} +fromJson(const QJsonObject & json) : ListEntry
++isFilter() const : bool
+__
++factory : QString
++hasAlwaysSink : bool
++hasAlwaysSrc : bool
++hasRequestSink : bool
++hasRequestSrc : bool
++hasSometimesSink : bool
++hasSometimesSrc : bool
++isSink : bool
++isSource : bool
++klass : QString
++longName : QString
++nvidia : bool
++plugin : QString
++rank : int
+}
+package [gps] as C_0002518914159231142625 {
+class "FactoryTraits" as C_0013051742850553982975
+class C_0013051742850553982975 {
+__
++isSource : bool
+}
+class "PlanElement" as C_0007539717992276085532
+class C_0007539717992276085532 {
+__
++factory : std::string
++group : std::string
++name : std::string
++props : gps::Props
++requestSink : std::map<std::string,int>
++requestSrc : std::map<std::string,int>
++x : double
++y : double
+}
+class "PlanLink" as C_0006075855463494315183
+class C_0006075855463494315183 {
+__
++caps : std::string
++sinkElement : std::string
++sinkPad : std::string
++sinkPadProps : gps::Props
++srcElement : std::string
++srcPad : std::string
+}
+class "ExposedParam" as C_0009995579580061596989
+class C_0009995579580061596989 {
+__
++element : std::string
++name : std::string
++property : std::string
+}
+class "Removal" as C_0012887087281388355273
+class C_0012887087281388355273 {
+__
++elements : std::vector<std::string>
++links : int
+}
+class "Addition" as C_0014123026597954571416
+class C_0014123026597954571416 {
+__
++element : std::string
++removed : gps::Removal
+}
+class "Plan" as C_0000028171970329881143
+class C_0000028171970329881143 {
++addAfter(const std::string & srcElement, const std::string & srcPad, const std::string & factory, const std::string & sinkPad, const gps::Props & props = = {}, double x = 0, double y = 0) : std::string
++addElement(const std::string & factory, const gps::Props & props = = {}, double x = 0, double y = 0) : std::string
++addSource(const std::string & factory, const gps::Props & props = = {}, double x = 0, double y = 0) : std::string
++cut(const std::string & srcElement, const std::string & srcPad, const gps::TraitsFn & traits) : gps::Removal
++deleteElement(const std::string & name, bool autoHeal = true, int totalSrcPads = 1) : bool
++deleteElements(const std::vector<std::string> & names, bool autoHeal = true, int exitTotalSrcPads = 1) : bool
++deleteSource(const std::string & name, const gps::TraitsFn & traits) : gps::Removal
++disconnectLink(const std::string & srcElement, const std::string & srcPad) : bool
++empty() const : bool
++find(const std::string & name) : gps::PlanElement *
++find(const std::string & name) const : const gps::PlanElement *
+{static} +fromConf(const std::string & text, gps::Plan * out, std::string * error) : bool
++insertQueue(const std::string & srcElement, const std::string & srcPad) : std::string
++isElementTracked(const std::string & name, const gps::TraitsFn & traits) const : bool
++linkExisting(const std::string & srcElement, const std::string & srcPad, const std::string & sinkElement, const std::string & sinkPad, const std::string & caps = "", const gps::Props & sinkPadProps = = {}) : bool
++linkFrom(const std::string & srcElement, const std::string & srcPad) const : int
++linksFromElement(const std::string & srcElement) const : std::vector<int>
++linksInto(const std::string & sinkElement) const : std::vector<int>
+{static} +load(const std::string & path, gps::Plan * out, std::string * error) : bool
+{static} +ouroborosMessage(const std::string & srcElement, const std::string & sinkElement) : std::string
++previewCut(const std::string & srcElement, const std::string & srcPad, const gps::TraitsFn & traits) const : gps::Removal
++previewDeleteSource(const std::string & name, const gps::TraitsFn & traits) const : gps::Removal
++previewReplace(const std::string & srcElement, const std::string & srcPad, const gps::TraitsFn & traits) const : gps::Removal
++prune(const gps::TraitsFn & traits) : gps::Removal
++removeQueue(const std::string & queueName) : bool
++replace(const std::string & srcElement, const std::string & srcPad, const std::string & factory, const std::string & sinkPad, const gps::Props & props, const gps::TraitsFn & traits) : gps::Addition
++save(const std::string & path, std::string * error) const : bool
++setCaps(const std::string & srcElement, const std::string & srcPad, const std::string & caps) : bool
++setExposed(const std::vector<ExposedParam> & params) : void
++setProps(const std::string & element, const gps::Props & props) : bool
++setRequestSink(const std::string & element, const std::string & templateName, int count) : bool
++setRequestSrc(const std::string & element, const std::string & templateName, int count) : bool
++setSinkPadProps(const std::string & srcElement, const std::string & srcPad, const gps::Props & props) : bool
++sinkPadTaken(const std::string & sinkElement, const std::string & sinkPad) const : bool
++spliceChain(const std::string & linkSrcElement, const std::string & linkSrcPad, const std::vector<std::pair<std::string,std::string>> & freeSinkPads, const std::vector<std::pair<std::string,std::string>> & freeSrcPads) : bool
++spliceElement(const std::string & elementName, const std::string & linkSrcElement, const std::string & linkSrcPad, const std::vector<std::string> & freeSinkPads, const std::vector<std::string> & freeSrcPads) : bool
++toConf() const : std::string
++trackedElements(const gps::TraitsFn & traits) const : std::vector<std::string>
++trackedSubplan(const gps::TraitsFn & traits) const : gps::Plan
++wouldCycle(const std::string & srcElement, const std::string & sinkElement) const : bool
+__
++complete : bool
++elements : std::vector<PlanElement>
++exposed : std::vector<ExposedParam>
++links : std::vector<PlanLink>
++name : std::string
++nextId : int
+}
+class "CapsField" as C_0006508864473784456079
+class C_0006508864473784456079 {
+__
++name : std::string
++type : std::string
++value : std::string
+}
+class "CapsChoice" as C_0017766622697688448882
+class C_0017766622697688448882 {
++toText() const : std::string
+__
++features : std::vector<std::string>
++fields : std::vector<CapsField>
++media : std::string
+}
+}
+class "PadReport" as C_0005354390743968186286
+class C_0005354390743968186286 {
+__
++allowed : QString
++allowedStructures : QList<StructureInfo>
++caps : QString
++element : QString
++identity : QString
++isSrc : bool
++linked : bool
++pad : QString
++presence : QString
++templateName : QString
++temporaryEnd : bool
++unknownData : bool
+}
+class "QList<PadReport>" as C_0014440815251678094538
+class C_0014440815251678094538 {
+__
+}
+class "UpdateResult" as C_0003695217879551100703
+class C_0003695217879551100703 {
+{static} +failure(const QString & status, const QString & message, const QString & element) : UpdateResult
+{static} +fromJson(const QJsonObject & json) : UpdateResult
++isComplete() const : bool
++ok() const : bool
++pad(const QString & element, const QString & identity, bool isSrc) const : const PadReport *
++statusText() const : QString
++valid() const : bool
+__
++complete : bool
++errorElement : QString
++message : QString
++missing : QStringList
++ms : double
++pads : QList<PadReport>
++refused : QStringList
++status : QString
+}
+class "ElementEdit" as C_0009394456598674207837
+class C_0009394456598674207837 {
+__
++exposed : std::vector<std::string>
++props : gps::Props
++requestSink : std::map<std::string,int>
++requestSrc : std::map<std::string,int>
+}
+class "PadView" as C_0012472509010406550700
+class C_0012472509010406550700 {
+__
++caps : QString
++element : QString
++identity : QString
++isSrc : bool
++label : QString
++link : int
++media : QString
++state : PadView::State
++templateName : QString
++tip : QString
+}
+enum "PadView::State" as C_0011593891194939906917
+enum C_0011593891194939906917 {
+Free
+Linked
+Unknown
+Empty
+}
+class "QList<PadView>" as C_0006247082211085301559
+class C_0006247082211085301559 {
+__
+}
+class "ElementView" as C_0016384269535921001916
+class C_0016384269535921001916 {
++height() const : double
+__
++displayTitle : QString
++factory : QString
++groupId : QString
++groupMembers : QStringList
++isCustomGroup : bool
++isError : bool
++isInfo : bool
++isSink : bool
++isSource : bool
++isTracked : bool
++name : QString
++note : QString
++nvidia : bool
++propLines : QStringList
++sinks : QList<PadView>
++srcs : QList<PadView>
+}
+class "CustomElementInfo" as C_0016147898643595257757
+class C_0016147898643595257757 {
+__
++description : QString
++elementCount : int
++hasFreeSink : bool
++hasFreeSrc : bool
++isSink : bool
++isSource : bool
++name : QString
+}
+class "LinkView" as C_0015287089273536692991
+class C_0015287089273536692991 {
+__
++badge : QString
++index : int
++negotiatedCaps : QString
++sinkElement : QString
++sinkIdentity : QString
++srcElement : QString
++srcIdentity : QString
++tip : QString
+}
+class "HelperResult" as C_0002630062948833941350
+class C_0002630062948833941350 {
+__
++exitCode : int
++hasJson : bool
++json : QJsonObject
++out : QByteArray
++outcome : HelperResult::Outcome
+}
+enum "HelperResult::Outcome" as C_0003196740245377419402
+enum C_0003196740245377419402 {
+Finished
+Crashed
+TimedOut
+NotFound
+Cancelled
+}
+class "HelperClient" as C_0008648990762088764965
+class C_0008648990762088764965 {
++HelperClient(QObject * parent = nullptr) : void
+..
++cancel() : void
++finished(const HelperResult & result) : void
++interrupt() : void
++metaObject() const : const QMetaObject *
++qt_metacall(QMetaObject::Call, int, void **) : int
++qt_metacast(const char *) : void *
++start(const QString & program, const QStringList & args, int killAfterMs) : void
++stderrLine(const QString & line) : void
+{static} +tr(const char * s, const char * c = nullptr, int n = -1) : QString
+__
+{static} +kKillAfterTermMs : const int
+{static} +staticMetaObject : const QMetaObject
+}
+class "HelperClient::QPrivateSignal" as C_0015086987019751461525
+class C_0015086987019751461525 {
+__
+}
+class "SlowWatch" as C_0007273334928930425835
+class C_0007273334928930425835 {
++SlowWatch(QObject * parent = nullptr) : void
+..
++asking() const : bool
++check() : void
++elapsedMs() const : qint64
++extend() : void
++metaObject() const : const QMetaObject *
++qt_metacall(QMetaObject::Call, int, void **) : int
++qt_metacast(const char *) : void *
++running() const : bool
++setClock(SlowWatch::Clock clock) : void
++slow() : void
++start() : void
++stop() : void
++ticked() : void
+{static} +tr(const char * s, const char * c = nullptr, int n = -1) : QString
+__
+{static} +kExtraMs : const qint64
+{static} +kFirstLimitMs : const qint64
+{static} +staticMetaObject : const QMetaObject
+}
+class "SlowWatch::QPrivateSignal" as C_0004959849071737134796
+class C_0004959849071737134796 {
+__
+}
+class "GstVersion" as C_0002536466532685571211
+class C_0002536466532685571211 {
+__
++major : int
++minor : int
+}
+class "StartupResult" as C_0000786335990513270246
+class C_0000786335990513270246 {
++bad() const : bool
++statusText() const : QString
+__
++detail : QString
++nvidia : bool
++nvidiaElements : int
++state : StartupResult::State
++version : QString
+}
+enum "StartupResult::State" as C_0006263498917605400145
+enum C_0006263498917605400145 {
+Checking
+Ready
+NotInstalled
+TooOld
+HelperBroken
+}
+class "StartupCheck" as C_0005396626821373679476
+class C_0005396626821373679476 {
++StartupCheck(QObject * parent = nullptr) : void
+..
++finished(const StartupResult & result) : void
++metaObject() const : const QMetaObject *
++qt_metacall(QMetaObject::Call, int, void **) : int
++qt_metacast(const char *) : void *
++result() const : const StartupResult &
++start() : void
+{static} +tr(const char * s, const char * c = nullptr, int n = -1) : QString
+__
+{static} +staticMetaObject : const QMetaObject
+}
+class "StartupCheck::QPrivateSignal" as C_0000729321711497778431
+class C_0000729321711497778431 {
+__
+}
+class "SupportInfo" as C_0017985201969498605282
+class C_0017985201969498605282 {
+__
++action : QString
++appVersion : QString
++arch : QString
++driver : QString
++gstreamer : QString
++home : QString
++host : QString
++linking : QString
++logTail : QStringList
++nvidiaElements : int
++os : QString
++qt : QString
++title : QString
++user : QString
++validation : QString
+}
+abstract "UrlOpener" as C_0000040363516898838832
+abstract C_0000040363516898838832 {
++~UrlOpener() = default : void
+..
+{abstract} +open(const QUrl & url) = 0 : bool
+__
+}
+class "DesktopUrlOpener" as C_0010103978309542821448
+class C_0010103978309542821448 {
++open(const QUrl & url) : bool
+__
+}
+class "SupportReport" as C_0008593688650496965834
+class C_0008593688650496965834 {
+{static} +body(const SupportInfo & info) : QString
+{static} +hidePrivate(const QString & text, const SupportInfo & info) : QString
+{static} +issueUrl() : QString
+{static} +open(const SupportInfo & info, UrlOpener & opener) : bool
+{static} +systemInfo() : SupportInfo
+{static} +text(const SupportInfo & info) : QString
+{static} +title(const SupportInfo & info) : QString
+{static} +url(const SupportInfo & info) : QUrl
+__
+}
+class "ExistingTarget" as C_0013976325284150630411
+class C_0013976325284150630411 {
+__
++element : QString
++factory : QString
++request : bool
++sinkPad : QString
+}
+class "QList<ListEntry>" as C_0003005884773251599584
+class C_0003005884773251599584 {
+__
+}
+class "QList<CustomElementInfo>" as C_0009711730893776059610
+class C_0009711730893776059610 {
+__
+}
+class "QList<LinkView>" as C_0007411800888073565430
+class C_0007411800888073565430 {
+__
+}
+class "QList<ExistingTarget>" as C_0007758275561917401976
+class C_0007758275561917401976 {
+__
+}
+class "QList<QPair<QString,QString>>" as C_0010810181838344526365
+class C_0010810181838344526365 {
+__
+}
+class "QList<QPair<QString,QPointF>>" as C_0014505686398828612521
+class C_0014505686398828612521 {
+__
+}
+class "QSet<QString>" as C_0008164134631715614687
+class C_0008164134631715614687 {
+__
+}
+class "QList<std::function<void(ElementInfo const*)>>" as C_0013111531193382671559
+class C_0013111531193382671559 {
+__
+}
+class "QHash<QString,QList<std::function<void(ElementInfo const*)>>>" as C_0003631864318731712859
+class C_0003631864318731712859 {
+__
+}
+class "QHash<QString,QList<QString>>" as C_0011566092623429779142
+class C_0011566092623429779142 {
+__
+}
+class "Controller" as C_0015707221190624193204
+class C_0015707221190624193204 {
++Controller(QObject * parent = nullptr) : void
+..
++addAfter(const QString & element, const QString & pad, const QString & factory, const QString & sinkPad, const ElementEdit & edit) : bool
++addCustomElement(const QString & customName, double x = -1.0, double y = -1.0) : QStringList
++addCustomElementAfter(const QString & srcElement, const QString & srcPad, const QString & customName) : QStringList
++addElement(const QString & factory, const ElementEdit & edit, double x = -1.0, double y = -1.0) : bool
++addSource(const QString & factory, const ElementEdit & edit) : bool
++alignElementsHorizontally(const QStringList & names) : bool
++alignElementsVertically(const QStringList & names) : bool
++busy() const : bool
++canRedo() const : bool
++canRun() const : bool
++canSave() const : bool
++canUndo() const : bool
++cancelUpdate() : void
++cancelling() const : bool
++catalog() const : const QList<ListEntry> &
++catalogLoaded() const : bool
++catalogReady() : void
++changed() : void
++checkEnvironment() : void
++connectSelectedElements(const QStringList & names) : bool
++copySubplan(const QStringList & elementNames) const : gps::Plan
++customElementPlan(const QString & name) const : const gps::Plan *
++customElements() const : const QList<CustomElementInfo> &
+{static} +customElementsDir() : QString
++cut(const QString & element, const QString & pad) : bool
++deleteElement(const QString & element, bool autoHeal = true) : bool
++deleteSelection(const QStringList & elementNames, const QList<QPair<QString,QString>> & links = = {}, bool autoHeal = true) : bool
++deleteSource(const QString & element) : bool
++dirty() const : bool
++disconnectBetweenElements(const QStringList & names) : bool
++disconnectLink(const QString & element, const QString & pad) : bool
++duplicateElements(const QStringList & names) : QStringList
++editElement(const QString & element, const ElementEdit & edit) : bool
++elementGroup(const QString & elementName) const : QString
++environment() const : const StartupResult &
++environmentBlocked() const : bool
++environmentChecked() : void
++existingTargets(const QString & element, const QString & identity) const : QList<ExistingTarget>
++expandSelectionWithGroups(const QStringList & elementNames) const : QStringList
++fetchCompatible(const QString & caps, Controller::NamesCallback done) : void
++fetchInfo(const QString & factory, Controller::InfoCallback done) : void
++filePath() const : QString
++groupMembers(const QString & groupId) const : QStringList
++groupSelectedElements(const QStringList & elementNames, const QString & groupTitle) : bool
++groupView(const QString & groupId) const : ElementView
++helperStopped() const : bool
++info(const QString & factory) const : const ElementInfo *
++insertQueue(const QString & element, const QString & pad) : bool
++isGroupExpanded(const QString & groupId) const : bool
++launchCommand() const : QString
++linkExisting(const QString & element, const QString & pad, const QString & sinkElement, const QString & sinkPad) : bool
++linkSinkIdentity(int link) const : QString
++linkSinkTemplate(int link) const : const PadTemplateInfo *
++linkViews() const : QList<LinkView>
++loadCatalog() : void
++loadCustomElements() : void
++logLine(const QString & line) : void
++metaObject() const : const QMetaObject *
++newPlan() : void
++notValidated() const : bool
++notice(const QString & text) : void
++open(const QString & path) : void
++padAllowed(const QString & element, const QString & identity) const : QString
++padStructures(const QString & element, const QString & identity) const : QList<StructureInfo>
++pasteSubplan(const gps::Plan & clip, double targetX = -1.0, double targetY = -1.0) : QStringList
++plan() const : const gps::Plan &
++previewCut(const QString & element, const QString & pad) const : gps::Removal
++previewDeleteSource(const QString & element) const : gps::Removal
++previewReplace(const QString & element, const QString & pad) const : gps::Removal
++qt_metacall(QMetaObject::Call, int, void **) : int
++qt_metacast(const char *) : void *
++redo() : bool
++refresh() : bool
++removeCustomElement(const QString & customName) : bool
++removeQueue(const QString & queue) : bool
++replace(const QString & element, const QString & pad, const QString & factory, const QString & sinkPad, const ElementEdit & edit) : bool
++requestSupport(const QString & title) : void
++result() const : const UpdateResult &
++run() : bool
++runBlockedReason() const : QString
++runFinished(const QString & status) : void
++running() const : bool
++save(const QString & path, QString * error) : bool
++saveBlockedReason() const : QString
++saveCustomElement(const QString & customName, const QStringList & elementNames, const QString & description = QString()) : bool
++setCaps(const QString & element, const QString & pad, const QString & caps, const gps::Props & sinkPadProps) : bool
++setGroupExpanded(const QString & groupId, bool expanded) : void
++setPosition(const QString & element, double x, double y) : void
++setPositions(const QList<QPair<QString,QPointF>> & positions) : void
++setUpdateTimeoutMs(int ms) : void
++setUrlOpener(UrlOpener * opener) : void
++sinkChoices(const ElementInfo & info, const QString & element, const QString & identity) const : QList<PadTemplateInfo>
++slowAsked() const : bool
++slowWatch() const : SlowWatch *
++spliceElement(const QString & element, const QString & linkSrcElement, const QString & linkSrcPad) : bool
++spliceElements(const QStringList & elements, const QString & linkSrcElement, const QString & linkSrcPad) : bool
++stopRun() : void
++supportInfo(const QString & title) const : SupportInfo
+{static} +tr(const char * s, const char * c = nullptr, int n = -1) : QString
++traits() const : gps::TraitsFn
++undo() : bool
++ungroupElements(const QString & groupId) : bool
++updateFinished(bool ok) : void
++updating() const : bool
++view(const QString & element) const : ElementView
++waitMore() : void
+__
+{static} +staticMetaObject : const QMetaObject
+}
+class "Controller::QPrivateSignal" as C_0016524983601950161467
+class C_0016524983601950161467 {
+__
+}
+class "QTimer" as C_0009680095602480678080
+class C_0009680095602480678080 {
+__
+}
+class "Flows" as C_0016262270350986146131
+class C_0016262270350986146131 {
++Flows(Controller * controller, Drawer * drawer, QWidget * window) : void
+..
++addQueue(const QString & element, const QString & identity) : void
++capsPage() const : CapsPage *
++capsTitle() const : QString
++chooseElement() : void
++chooseSource() : void
++closeCaps() : void
++closeProperties() : void
++cutLink(const QString & element, const QString & identity) : void
++deleteElementOnly(const QString & element) : void
++deleteSource(const QString & element) : void
++disconnectLinkOnly(const QString & element, const QString & identity) : void
++editCaps(const QString & element, const QString & identity) : void
++editProperties(const QString & element) : void
++fromFreePad(const QString & element, const QString & identity) : void
++metaObject() const : const QMetaObject *
++propertiesTitle() const : QString
++propertyPage() const : PropertyPage *
++qt_metacall(QMetaObject::Call, int, void **) : int
++qt_metacast(const char *) : void *
++replaceBehind(const QString & element, const QString & identity) : void
++setBottomPanels(QTabWidget * tabs, QWidget * propsTab, QWidget * capsTab, QWidget * defaultTab) : void
++setBusy(bool busy) : void
++showElementMenu(const QString & element, const QPoint & at) : void
++showLinkMenu(const QString & element, const QString & identity, const QPoint & at) : void
+{static} +tr(const char * s, const char * c = nullptr, int n = -1) : QString
+__
+{static} +staticMetaObject : const QMetaObject
+}
+class "Flows::QPrivateSignal" as C_0015756547865060155446
+class C_0015756547865060155446 {
+__
+}
+enum "Flows::Mode" as C_0008955225542699994340
+enum C_0008955225542699994340 {
+Add
+Replace
+}
+class "DrawerPage" as C_0000145809191659128510
+class C_0000145809191659128510 {
++cancelled() : void
++focusFirst() : void
++focusSearch() : void
++metaObject() const : const QMetaObject *
++primary() const : QPushButton *
++qt_metacall(QMetaObject::Call, int, void **) : int
++qt_metacast(const char *) : void *
+{static} +tr(const char * s, const char * c = nullptr, int n = -1) : QString
+__
+#primary_ : QPushButton *
+{static} +staticMetaObject : const QMetaObject
+}
+class "DrawerPage::QPrivateSignal" as C_0008440645080397540871
+class C_0008440645080397540871 {
+__
+}
+class "Drawer" as C_0002456918911559055454
+class C_0002456918911559055454 {
++Drawer(QWidget * parent = nullptr) : void
+..
++closed() : void
++depth() const : int
++dismiss() : void
++focusSearch() : void
++goBack() : void
++isOpen() const : bool
+#keyPressEvent(QKeyEvent * event) : void
++metaObject() const : const QMetaObject *
++page<T>() const : T *
++page() const : DrawerPage *
++present(DrawerPage * page, const QString & title, const QString & subtitle, Drawer::Placement placement) : void
++qt_metacall(QMetaObject::Call, int, void **) : int
++qt_metacast(const char *) : void *
+#resizeEvent(QResizeEvent * event) : void
++setBusy(bool busy) : void
++subtitle() const : QString
++title() const : QString
+{static} +tr(const char * s, const char * c = nullptr, int n = -1) : QString
+__
+{static} +kSlideMs : const int
+{static} +kWidth : const int
+{static} +staticMetaObject : const QMetaObject
+}
+class "Drawer::QPrivateSignal" as C_0016209880975862749864
+class C_0016209880975862749864 {
+__
+}
+enum "Drawer::Placement" as C_0005566660973310226340
+enum C_0005566660973310226340 {
+Replace
+Push
+}
+class "Drawer::Entry" as C_0008346668426801030749
+class C_0008346668426801030749 {
+__
++subtitle : QString
++title : QString
++widget : DrawerPage *
+}
+class "QList<PropertyEditor *>" as C_0011185713172788746388
+class C_0011185713172788746388 {
+__
+}
+class "PropertyEditor" as C_0008195480479041533139
+class C_0008195480479041533139 {
++PropertyEditor(const PropertyInfo & info, const std::optional<QString> & current, QWidget * parent = nullptr) : void
+..
+{static} +collect(const QList<PropertyEditor *> & editors, const gps::Props & original) : gps::Props
+{static} +editable(const PropertyInfo & info) : bool
++edited() : void
++info() const : const PropertyInfo &
++isDefault() const : bool
++metaObject() const : const QMetaObject *
++qt_metacall(QMetaObject::Call, int, void **) : int
++qt_metacast(const char *) : void *
++text() const : QString
++touched() const : bool
+{static} +tr(const char * s, const char * c = nullptr, int n = -1) : QString
+__
+{static} +staticMetaObject : const QMetaObject
+}
+class "PropertyEditor::QPrivateSignal" as C_0017380701998761528931
+class C_0017380701998761528931 {
+__
+}
+class "CapsPageInput" as C_0017332961717563919323
+class C_0017332961717563919323 {
+__
++allowed : QList<StructureInfo>
++current : QString
++padProperties : QList<PropertyInfo>
++padProps : gps::Props
++skippable : bool
+}
+class "QList<CapsFieldEditor *>" as C_0006310955856490095158
+class C_0006310955856490095158 {
+__
+}
+class "QList<QList<CapsFieldEditor *>>" as C_0015389695410406266575
+class C_0015389695410406266575 {
+__
+}
+class "CapsPage" as C_0015985410746251324844
+class C_0015985410746251324844 {
++CapsPage(const CapsPageInput & input, QWidget * parent = nullptr) : void
+..
++applied() : void
++caps() const : QString
++focusFirst() : void
++metaObject() const : const QMetaObject *
++padProps() const : gps::Props
++qt_metacall(QMetaObject::Call, int, void **) : int
++qt_metacast(const char *) : void *
++skipped() : void
+{static} +tr(const char * s, const char * c = nullptr, int n = -1) : QString
+__
+{static} +staticMetaObject : const QMetaObject
+}
+class "CapsPage::QPrivateSignal" as C_0007221181844177573166
+class C_0007221181844177573166 {
+__
+}
+class "ConfirmDialog" as C_0014186147702699419356
+class C_0014186147702699419356 {
++ConfirmDialog(const QString & title, const QString & heading, const QStringList & lines, const QString & confirmText, QWidget * parent = nullptr) : void
+..
++metaObject() const : const QMetaObject *
++qt_metacall(QMetaObject::Call, int, void **) : int
++qt_metacast(const char *) : void *
+{static} +tr(const char * s, const char * c = nullptr, int n = -1) : QString
+__
+{static} +staticMetaObject : const QMetaObject
+}
+class "ConfirmDialog::QPrivateSignal" as C_0013461963740654938089
+class C_0013461963740654938089 {
+__
+}
+class "PickerData" as C_0006938078587214530927
+class C_0006938078587214530927 {
+__
++candidates : QList<ListEntry>
++compatible : QStringList
++custom : QList<CustomElementInfo>
++existing : QList<ExistingTarget>
++newHeader : QString
++showFilters : bool
+}
+class "PickerChoice" as C_0007551114300021711176
+class C_0007551114300021711176 {
+__
++existing : ExistingTarget
++factory : QString
++kind : PickerChoice::Kind
+}
+enum "PickerChoice::Kind" as C_0007925203253760423562
+enum C_0007925203253760423562 {
+None
+Existing
+CustomElement
+NewElement
+}
+class "PickerPage" as C_0008674658058463196152
+class C_0008674658058463196152 {
++PickerPage(const PickerData & data, QWidget * parent = nullptr) : void
+..
++choice() const : PickerChoice
+#eventFilter(QObject * watched, QEvent * event) : bool
++focusFirst() : void
++focusSearch() : void
++metaObject() const : const QMetaObject *
++picked(const PickerChoice & choice) : void
++presenceFilter() const : PickerPage::PresenceFilter
++previewRequested(const QString & factory) : void
++qt_metacall(QMetaObject::Call, int, void **) : int
++qt_metacast(const char *) : void *
++roleFilter() const : PickerPage::RoleFilter
++setPresenceFilter(PickerPage::PresenceFilter presence) : void
++setRoleFilter(PickerPage::RoleFilter role) : void
+{static} +tr(const char * s, const char * c = nullptr, int n = -1) : QString
+__
+{static} +staticMetaObject : const QMetaObject
+}
+class "PickerPage::QPrivateSignal" as C_0014079804680996735770
+class C_0014079804680996735770 {
+__
+}
+enum "PickerPage::RoleFilter" as C_0014964410302297996115
+enum C_0014964410302297996115 {
+RoleAll
+RoleSrc
+RoleFilterElem
+RoleSink
+}
+enum "PickerPage::PresenceFilter" as C_0010724955662260223966
+enum C_0010724955662260223966 {
+PresenceAll
+PresenceAlways
+PresenceSometimes
+PresenceRequest
+}
+class "PropertyPageInput" as C_0016312564146755577407
+class C_0016312564146755577407 {
+__
++acceptText : QString
++canDelete : bool
++exposed : std::vector<std::string>
++info : ElementInfo
++linkedSink : std::map<std::string,int>
++linkedSrc : std::map<std::string,int>
++props : gps::Props
++requestSink : std::map<std::string,int>
++requestSrc : std::map<std::string,int>
++sinkPads : QStringList
+}
+class "QMap<QString,QCheckBox *>" as C_0010817025229795479608
+class C_0010817025229795479608 {
+__
+}
+class "QMap<QString,QWidget *>" as C_0012294321321651902808
+class C_0012294321321651902808 {
+__
+}
+class "QMap<QString,QSpinBox *>" as C_0012331852393199964191
+class C_0012331852393199964191 {
+__
+}
+class "PropertyPage" as C_0002734678754415143440
+class C_0002734678754415143440 {
++PropertyPage(const PropertyPageInput & input, QWidget * parent = nullptr) : void
+..
++confirmed() : void
++deleteRequested() : void
++edit() const : ElementEdit
++focusFirst() : void
++metaObject() const : const QMetaObject *
++qt_metacall(QMetaObject::Call, int, void **) : int
++qt_metacast(const char *) : void *
++sinkPad() const : QString
+{static} +tr(const char * s, const char * c = nullptr, int n = -1) : QString
+__
+{static} +staticMetaObject : const QMetaObject
+}
+class "PropertyPage::QPrivateSignal" as C_0014406763008644374016
+class C_0014406763008644374016 {
+__
+}
+class "Theme" as C_0007948538995288720498
+class C_0007948538995288720498 {
+{static} +accent() : QColor
+{static} +accentHover() : QColor
+{static} +apply(QApplication & app) : void
+{static} +background() : QColor
+{static} +box() : QColor
+{static} +contrast(const QColor & a, const QColor & b) : double
+{static} +error() : QColor
+{static} +focusRing() : QColor
+{static} +line() : QColor
+{static} +muted() : QColor
+{static} +onAccent() : QColor
+{static} +panel() : QColor
+{static} +styleSheet() : QString
+{static} +text() : QColor
+{static} +warning() : QColor
+__
+}
+class "QListWidgetItem" as C_0002314471622653931033
+class C_0002314471622653931033 {
+__
+}
+class "QCheckBox" as C_0002325834612087365632
+class C_0002325834612087365632 {
+__
+}
+class "QToolButton" as C_0002713915665603350620
+class C_0002713915665603350620 {
+__
+}
+class "QLineEdit" as C_0005011033231925861129
+class C_0005011033231925861129 {
+__
+}
+class "QDialog" as C_0005070420275076019822
+class C_0005070420275076019822 {
+__
+}
+class "QComboBox" as C_0005475568053934269922
+class C_0005475568053934269922 {
+__
+}
+class "QListWidget" as C_0005765977198030773914
+class C_0005765977198030773914 {
+__
+}
+class "QApplication" as C_0006425361574640335962
+class C_0006425361574640335962 {
+__
+}
+class "CapsFieldEditor" as C_0008847078964758475532
+class C_0008847078964758475532 {
++CapsFieldEditor(const FieldInfo & field, QWidget * parent = nullptr) : void
+..
++field() const : const FieldInfo &
++metaObject() const : const QMetaObject *
++pin(const QString & value) : void
++pinned() const : std::optional<QString>
++qt_metacall(QMetaObject::Call, int, void **) : int
++qt_metacast(const char *) : void *
+{static} +tr(const char * s, const char * c = nullptr, int n = -1) : QString
+__
+{static} +staticMetaObject : const QMetaObject
+}
+class "QTabWidget" as C_0009629298219316237426
+class C_0009629298219316237426 {
+__
+}
+class "QButtonGroup" as C_0010146328032546478185
+class C_0010146328032546478185 {
+__
+}
+class "QLabel" as C_0010243902860537568452
+class C_0010243902860537568452 {
+__
+}
+class "QWidget" as C_0010488706901139931706
+class C_0010488706901139931706 {
+__
+}
+class "QStackedWidget" as C_0010961314842418363583
+class C_0010961314842418363583 {
+__
+}
+class "QPushButton" as C_0012212393180388198131
+class C_0012212393180388198131 {
+__
+}
+class "QPropertyAnimation" as C_0013042764973270852574
+class C_0013042764973270852574 {
+__
+}
+class "QSpinBox" as C_0014221582055846323125
+class C_0014221582055846323125 {
+__
+}
+enum "FactoryRole" as C_0001967142304982225294
+enum C_0001967142304982225294 {
+LongNameRole
+NvidiaRole
+HintRole
+SearchRole
+HeaderRole
+}
+class "FactoryDelegate" as C_0002730795784659818993
+class C_0002730795784659818993 {
++paint(QPainter * painter, const QStyleOptionViewItem & option, const QModelIndex & index) const : void
++sizeHint(const QStyleOptionViewItem & option, const QModelIndex & index) const : QSize
+__
+}
+class "UpdatePanel" as C_0000642356404951253398
+class C_0000642356404951253398 {
++UpdatePanel(Controller * controller, QWidget * parent = nullptr) : void
+..
++metaObject() const : const QMetaObject *
++qt_metacall(QMetaObject::Call, int, void **) : int
++qt_metacast(const char *) : void *
++refresh() : void
++table() const : QTableWidget *
+{static} +tr(const char * s, const char * c = nullptr, int n = -1) : QString
+__
+{static} +staticMetaObject : const QMetaObject
+}
+class "UpdatePanel::QPrivateSignal" as C_0012595940486591309220
+class C_0012595940486591309220 {
+__
+}
+class "QTableWidget" as C_0001140447176299668279
+class C_0001140447176299668279 {
+__
+}
+class "ValidationIndicator" as C_0008710527227265050895
+class C_0008710527227265050895 {
++ValidationIndicator(Controller * controller, QWidget * parent = nullptr) : void
+..
++metaObject() const : const QMetaObject *
++mode() const : ValidationIndicator::Mode
++qt_metacall(QMetaObject::Call, int, void **) : int
++qt_metacast(const char *) : void *
++refresh() : void
+{static} +tr(const char * s, const char * c = nullptr, int n = -1) : QString
+__
+{static} +staticMetaObject : const QMetaObject
+}
+class "ValidationIndicator::QPrivateSignal" as C_0005936501695387849685
+class C_0005936501695387849685 {
+__
+}
+enum "ValidationIndicator::Mode" as C_0011488323291509901227
+enum C_0011488323291509901227 {
+Hidden
+Validating
+Slow
+Stopped
+}
+class "Spinner" as C_0006016411065821632504
+class C_0006016411065821632504 {
++Spinner(QWidget * parent = nullptr) : void
+..
++animating() const : bool
+#hideEvent(QHideEvent * event) : void
++metaObject() const : const QMetaObject *
+#paintEvent(QPaintEvent * event) : void
++qt_metacall(QMetaObject::Call, int, void **) : int
++qt_metacast(const char *) : void *
+#showEvent(QShowEvent * event) : void
++sizeHint() const : QSize
+{static} +tr(const char * s, const char * c = nullptr, int n = -1) : QString
+__
+{static} +staticMetaObject : const QMetaObject
+}
+class "Spinner::QPrivateSignal" as C_0003730647937730399052
+class C_0003730647937730399052 {
+__
+}
+class "CapsFieldEditor::QPrivateSignal" as C_0003914933973169258435
+class C_0003914933973169258435 {
+__
+}
+class "LogPanel" as C_0000275612833831204327
+class C_0000275612833831204327 {
++LogPanel(QWidget * parent = nullptr) : void
+..
++append(const QString & line) : void
++metaObject() const : const QMetaObject *
++qt_metacall(QMetaObject::Call, int, void **) : int
++qt_metacast(const char *) : void *
+{static} +tr(const char * s, const char * c = nullptr, int n = -1) : QString
+__
+{static} +staticMetaObject : const QMetaObject
+}
+class "LogPanel::QPrivateSignal" as C_0008627484532983123310
+class C_0008627484532983123310 {
+__
+}
+class "SetupPage" as C_0005910837485816191280
+class C_0005910837485816191280 {
++SetupPage(QWidget * parent = nullptr) : void
+..
++command() const : QString
++metaObject() const : const QMetaObject *
++qt_metacall(QMetaObject::Call, int, void **) : int
++qt_metacast(const char *) : void *
++retry() : void
++show(const StartupResult & result) : void
+{static} +tr(const char * s, const char * c = nullptr, int n = -1) : QString
+__
+{static} +staticMetaObject : const QMetaObject
+}
+class "SetupPage::QPrivateSignal" as C_0008192824855641580804
+class C_0008192824855641580804 {
+__
+}
+class "MainWindow" as C_0005789804228041011096
+class C_0005789804228041011096 {
++MainWindow(Controller * controller, QWidget * parent = nullptr) : void
+..
++bottomTabs() const : QTabWidget *
++capsTab() const : QWidget *
+#closeEvent(QCloseEvent * event) : void
++drawer() const : Drawer *
++flows() const : Flows *
++indicator() const : ValidationIndicator *
++logPanel() const : LogPanel *
++metaObject() const : const QMetaObject *
++openCapsTab(const QString & srcElement, const QString & srcIdentity) : void
++openFile(const QString & path) : void
++openPropertiesTab(const QString & element) : void
++propertiesTab() const : QWidget *
++qt_metacall(QMetaObject::Call, int, void **) : int
++qt_metacast(const char *) : void *
++resetCapsTab() : void
++resetPropertiesTab() : void
++saveFile(const QString & path) : bool
++scene() const : CanvasScene *
++setupPage() const : SetupPage *
++showingSetup() const : bool
+{static} +tr(const char * s, const char * c = nullptr, int n = -1) : QString
++updatePanel() const : UpdatePanel *
++view() const : CanvasView *
+__
+{static} +staticMetaObject : const QMetaObject
+}
+class "MainWindow::QPrivateSignal" as C_0008974768779937952624
+class C_0008974768779937952624 {
+__
+}
+class "QList<LinkItem *>" as C_0009608756339675951311
+class C_0009608756339675951311 {
+__
+}
+class "QHash<QString,ElementItem *>" as C_0008820062599271446533
+class C_0008820062599271446533 {
+__
+}
+class "QHash<QString,PadItem *>" as C_0002543182899989632653
+class C_0002543182899989632653 {
+__
+}
+class "CanvasScene" as C_0009323835702146778844
+class C_0009323835702146778844 {
++CanvasScene(Controller * controller, QObject * parent = nullptr) : void
+..
++canvasContextMenuRequested(const QPoint & screenPos, const QPointF & scenePos) : void
+#contextMenuEvent(QGraphicsSceneContextMenuEvent * event) : void
++element(const QString & name) const : ElementItem *
++elementActivated(const QString & element) : void
++elementContext(const QString & element, const QPoint & screenPos) : void
++elementDoubleClicked(const QString & element) : void
++elementDragged(const QString & element, const QPointF & pos) : void
++elementMenuRequested(const QString & element, const QPoint & screenPos) : void
++elementMoved(const QString & element, double x, double y) : void
++elementSpliced(const QString & element, const QString & linkSrcElement, const QString & linkSrcPad) : void
++elementsMoved(const QList<QPair<QString,QPointF>> & positions) : void
++freeSrcPadClicked(const QString & element, const QString & identity, const QPoint & screenPos) : void
++linkClicked(const QString & srcElement, const QString & srcIdentity) : void
++linkClickedSignal(const QString & srcElement, const QString & srcIdentity) : void
++linkContext(const QString & srcElement, const QString & srcIdentity, const QPoint & screenPos) : void
++linkMenuRequested(const QString & srcElement, const QString & srcIdentity, const QPoint & screenPos) : void
++links() const : const QList<LinkItem *> &
++locked() const : bool
++metaObject() const : const QMetaObject *
++pad(const QString & element, const QString & identity, bool isSrc) const : PadItem *
++padClicked(const PadView & pad, Qt::MouseButton button, const QPoint & screenPos) : void
++padDragEnded() : void
++padDragMoved(const PadView & from, const QPointF & scenePos) : void
++padDroppedOnPad(const PadView & from, const PadView & to) : void
++qt_metacall(QMetaObject::Call, int, void **) : int
++qt_metacast(const char *) : void *
++rebuild() : void
++rebuilt() : void
++scheduleRebuild() : void
++selectedElementNames() const : QStringList
++setLocked(bool locked) : void
++setSelectedElements(const QStringList & names) : void
++setStale(bool stale) : void
+{static} +tr(const char * s, const char * c = nullptr, int n = -1) : QString
++updateLinks() : void
+__
+{static} +staticMetaObject : const QMetaObject
+}
+class "CanvasScene::QPrivateSignal" as C_0007255850611517608923
+class C_0007255850611517608923 {
+__
+}
+class "CanvasView" as C_0017409921218832797350
+class C_0017409921218832797350 {
++CanvasView(QGraphicsScene * scene, QWidget * parent = nullptr) : void
+..
++deletePressed() : void
++dimmed() const : bool
+#drawBackground(QPainter * painter, const QRectF & rect) : void
+#drawForeground(QPainter * painter, const QRectF & rect) : void
++fitAll() : void
+#keyPressEvent(QKeyEvent * event) : void
+#keyReleaseEvent(QKeyEvent * event) : void
++metaObject() const : const QMetaObject *
+#mouseMoveEvent(QMouseEvent * event) : void
+#mousePressEvent(QMouseEvent * event) : void
+#mouseReleaseEvent(QMouseEvent * event) : void
++qt_metacall(QMetaObject::Call, int, void **) : int
++qt_metacast(const char *) : void *
++setDimmed(bool dimmed) : void
+{static} +tr(const char * s, const char * c = nullptr, int n = -1) : QString
+#wheelEvent(QWheelEvent * event) : void
++zoom() const : double
++zoomBy(double factor) : void
+__
+{static} +staticMetaObject : const QMetaObject
+}
+class "CanvasView::QPrivateSignal" as C_0011855073109475986688
+class C_0011855073109475986688 {
+__
+}
+class "QList<PadItem *>" as C_0010174159400680706255
+class C_0010174159400680706255 {
+__
+}
+class "ElementItem" as C_0002346763977265743966
+class C_0002346763977265743966 {
++ElementItem(const ElementView & view) : void
+..
++boundingRect() const : QRectF
+{static} +fitNote(const QString & note, const QFont & font) : QString
+#hoverEnterEvent(QGraphicsSceneHoverEvent * event) : void
+#hoverLeaveEvent(QGraphicsSceneHoverEvent * event) : void
+#itemChange(QGraphicsItem::GraphicsItemChange change, const QVariant & value) : QVariant
+#mouseDoubleClickEvent(QGraphicsSceneMouseEvent * event) : void
+#mousePressEvent(QGraphicsSceneMouseEvent * event) : void
+#mouseReleaseEvent(QGraphicsSceneMouseEvent * event) : void
+{static} +padLabel(const PadView & pad) : ElementItem::PadLabel
++pads() const : const QList<PadItem *> &
++paint(QPainter * painter, const QStyleOptionGraphicsItem * option, QWidget * widget) : void
++shape() const : QPainterPath
++view() const : const ElementView &
+__
+}
+class "ElementItem::PadLabel" as C_0002890379382429470359
+class C_0002890379382429470359 {
+__
++media : QString
++name : QString
+}
+class "LinkItem" as C_0010111424301699298583
+class C_0010111424301699298583 {
++LinkItem(const LinkView & view, PadItem * from, PadItem * to) : void
+..
++boundingRect() const : QRectF
+{static} +capsFields(const QString & capsText) : QStringList
+{static} +decideLayout(double pipeLength, double singleLineWidth, double zoomLevel) : LinkItem::LabelLayout
+{static} +formatMultiLine(const QString & capsText) : QString
+{static} +formatSingleLine(const QString & capsText) : QString
+#hoverEnterEvent(QGraphicsSceneHoverEvent * event) : void
+#hoverLeaveEvent(QGraphicsSceneHoverEvent * event) : void
++midPoint() const : QPointF
+#mousePressEvent(QGraphicsSceneMouseEvent * event) : void
+#mouseReleaseEvent(QGraphicsSceneMouseEvent * event) : void
++paint(QPainter * painter, const QStyleOptionGraphicsItem * option, QWidget * widget) : void
++pipeLength() const : double
++shape() const : QPainterPath
++updatePath() : void
++view() const : const LinkView &
+__
+}
+enum "LinkItem::LabelLayout" as C_0008377422864342182846
+enum C_0008377422864342182846 {
+Hidden
+SingleLine
+MultiLine
+AtPads
+}
+class "PadItem" as C_0002043267432329240682
+class C_0002043267432329240682 {
++PadItem(const PadView & view, QGraphicsItem * parent) : void
+..
++boundingRect() const : QRectF
++center() const : QPointF
+#hoverEnterEvent(QGraphicsSceneHoverEvent * event) : void
+#hoverLeaveEvent(QGraphicsSceneHoverEvent * event) : void
+#mouseMoveEvent(QGraphicsSceneMouseEvent * event) : void
+#mousePressEvent(QGraphicsSceneMouseEvent * event) : void
+#mouseReleaseEvent(QGraphicsSceneMouseEvent * event) : void
++paint(QPainter * painter, const QStyleOptionGraphicsItem * option, QWidget * widget) : void
++shape() const : QPainterPath
++view() const : const PadView &
+__
+}
+class "QAction" as C_0013748804682844678274
+class C_0013748804682844678274 {
+__
+}
+C_0006156734009172850642 ..> C_0001275076681856179721
+C_0012004170049756060246 ..> C_0001275076681856179721
+C_0001347152004389415025 ..> C_0001275076681856179721
+C_0008907935393304499989 ..> C_0013051742850553982975
+C_0008907935393304499989 ..> C_0001275076681856179721
+C_0001223623293534481516 ..> C_0009995579580061596989
+C_0009953426076712291422 ..> C_0001275076681856179721
+C_0015467040182755354183 ..> C_0009953426076712291422
+C_0015948527389287391171 ..> C_0007539717992276085532
+C_0017787860428970857447 ..> C_0006075855463494315183
+C_0003093103939169444057 ..> C_0006508864473784456079
+C_0000106675201623106182 ..> C_0013453943726969206921
+C_0004237358879711363125 ..> C_0008375322064658753815
+C_0006320070713169585957 ..> C_0002630062948833941350
+C_0018117365157425103285 ..> C_0000028171970329881143
+C_0003258844757269243860 ..> C_0000028171970329881143
+C_0004339314899492021131 ..> C_0013453943726969206921
+C_0016704062536531909690 o-- C_0008375322064658753815 : +values
+C_0008408160776673194884 ..> C_0016704062536531909690
+C_0013922526044744629173 o-- C_0008375322064658753815 : +features
+C_0013922526044744629173 o-- C_0008408160776673194884 : +fields
+C_0012210628278553350253 ..> C_0017454559587956927426
+C_0017231763468275670661 o-- C_0012210628278553350253 : +enumValues
+C_0003806610176957307951 ..> C_0013922526044744629173
+C_0017624030923317678952 ..> C_0017231763468275670661
+C_0010798006487996639193 o-- C_0003806610176957307951 : +structures
+C_0010798006487996639193 o-- C_0017624030923317678952 : +padProperties
+C_0011498643518036065935 ..> C_0010798006487996639193
+C_0013453943726969206921 ..> C_0010798006487996639193
+C_0013453943726969206921 ..> C_0003806610176957307951
+C_0013453943726969206921 ..> C_0013922526044744629173
+C_0013453943726969206921 ..> C_0006156734009172850642
+C_0013453943726969206921 o-- C_0011498643518036065935 : +padTemplates
+C_0013453943726969206921 o-- C_0017624030923317678952 : +properties
+C_0007539717992276085532 o-- C_0001275076681856179721 : +name
+C_0007539717992276085532 o-- C_0001275076681856179721 : +factory
+C_0007539717992276085532 o-- C_0001275076681856179721 : +group
+C_0007539717992276085532 o-- C_0012004170049756060246 : +props
+C_0007539717992276085532 o-- C_0006156734009172850642 : +requestSrc
+C_0007539717992276085532 o-- C_0006156734009172850642 : +requestSink
+C_0006075855463494315183 o-- C_0001275076681856179721 : +srcElement
+C_0006075855463494315183 o-- C_0001275076681856179721 : +srcPad
+C_0006075855463494315183 o-- C_0001275076681856179721 : +sinkElement
+C_0006075855463494315183 o-- C_0001275076681856179721 : +sinkPad
+C_0006075855463494315183 o-- C_0001275076681856179721 : +caps
+C_0006075855463494315183 o-- C_0012004170049756060246 : +sinkPadProps
+C_0009995579580061596989 o-- C_0001275076681856179721 : +name
+C_0009995579580061596989 o-- C_0001275076681856179721 : +element
+C_0009995579580061596989 o-- C_0001275076681856179721 : +property
+C_0012887087281388355273 o-- C_0001347152004389415025 : +elements
+C_0014123026597954571416 o-- C_0001275076681856179721 : +element
+C_0014123026597954571416 o-- C_0012887087281388355273 : +removed
+C_0000028171970329881143 ..> C_0007539717992276085532
+C_0000028171970329881143 ..> C_0009228492206209329687
+C_0000028171970329881143 ..> C_0008907935393304499989
+C_0000028171970329881143 ..> C_0001347152004389415025
+C_0000028171970329881143 ..> C_0012004170049756060246
+C_0000028171970329881143 ..> C_0009995579580061596989
+C_0000028171970329881143 ..> C_0015467040182755354183
+C_0000028171970329881143 ..> C_0012887087281388355273
+C_0000028171970329881143 ..> C_0014123026597954571416
+C_0000028171970329881143 o-- C_0001275076681856179721 : +name
+C_0000028171970329881143 o-- C_0015948527389287391171 : +elements
+C_0000028171970329881143 o-- C_0017787860428970857447 : +links
+C_0000028171970329881143 o-- C_0001223623293534481516 : +exposed
+C_0006508864473784456079 o-- C_0001275076681856179721 : +name
+C_0006508864473784456079 o-- C_0001275076681856179721 : +type
+C_0006508864473784456079 o-- C_0001275076681856179721 : +value
+C_0017766622697688448882 o-- C_0001275076681856179721 : +media
+C_0017766622697688448882 o-- C_0001347152004389415025 : +features
+C_0017766622697688448882 o-- C_0003093103939169444057 : +fields
+C_0005354390743968186286 o-- C_0003806610176957307951 : +allowedStructures
+C_0014440815251678094538 ..> C_0005354390743968186286
+C_0003695217879551100703 ..> C_0005354390743968186286
+C_0003695217879551100703 o-- C_0014440815251678094538 : +pads
+C_0003695217879551100703 o-- C_0008375322064658753815 : +missing
+C_0003695217879551100703 o-- C_0008375322064658753815 : +refused
+C_0009394456598674207837 o-- C_0012004170049756060246 : +props
+C_0009394456598674207837 o-- C_0006156734009172850642 : +requestSrc
+C_0009394456598674207837 o-- C_0006156734009172850642 : +requestSink
+C_0009394456598674207837 o-- C_0001347152004389415025 : +exposed
+C_0012472509010406550700 o-- C_0011593891194939906917 : +state
+C_0011593891194939906917 --+ C_0012472509010406550700
+C_0006247082211085301559 ..> C_0012472509010406550700
+C_0016384269535921001916 o-- C_0008375322064658753815 : +groupMembers
+C_0016384269535921001916 o-- C_0006247082211085301559 : +sinks
+C_0016384269535921001916 o-- C_0006247082211085301559 : +srcs
+C_0016384269535921001916 o-- C_0008375322064658753815 : +propLines
+C_0002630062948833941350 o-- C_0003196740245377419402 : +outcome
+C_0003196740245377419402 --+ C_0002630062948833941350
+C_0008648990762088764965 ..> C_0008375322064658753815
+C_0008648990762088764965 ..> C_0002630062948833941350
+C_0008648990762088764965 ..> C_0003196740245377419402
+C_0015086987019751461525 --+ C_0008648990762088764965
+C_0007273334928930425835 o-- C_0016201832421748368533 : -clock_
+C_0004959849071737134796 --+ C_0007273334928930425835
+C_0000786335990513270246 o-- C_0006263498917605400145 : +state
+C_0006263498917605400145 --+ C_0000786335990513270246
+C_0005396626821373679476 o-- C_0000786335990513270246 : -result_
+C_0000729321711497778431 --+ C_0005396626821373679476
+C_0017985201969498605282 o-- C_0008375322064658753815 : +logTail
+C_0000040363516898838832 <|-- C_0010103978309542821448
+C_0008593688650496965834 ..> C_0017985201969498605282
+C_0008593688650496965834 ..> C_0000040363516898838832
+C_0003005884773251599584 ..> C_0014706911130947084033
+C_0009711730893776059610 ..> C_0016147898643595257757
+C_0007411800888073565430 ..> C_0015287089273536692991
+C_0007758275561917401976 ..> C_0013976325284150630411
+C_0010810181838344526365 ..> C_0002545201444471589314
+C_0014505686398828612521 ..> C_0011270599558423720070
+C_0013111531193382671559 ..> C_0000106675201623106182
+C_0003631864318731712859 ..> C_0013111531193382671559
+C_0011566092623429779142 ..> C_0008375322064658753815
+C_0015707221190624193204 ..> C_0000786335990513270246
+C_0015707221190624193204 ..> C_0017985201969498605282
+C_0015707221190624193204 ..> C_0014706911130947084033
+C_0015707221190624193204 ..> C_0013453943726969206921
+C_0015707221190624193204 ..> C_0000106675201623106182
+C_0015707221190624193204 ..> C_0004237358879711363125
+C_0015707221190624193204 ..> C_0008907935393304499989
+C_0015707221190624193204 ..> C_0016147898643595257757
+C_0015707221190624193204 ..> C_0016384269535921001916
+C_0015707221190624193204 ..> C_0007411800888073565430
+C_0015707221190624193204 ..> C_0015287089273536692991
+C_0015707221190624193204 ..> C_0003806610176957307951
+C_0015707221190624193204 ..> C_0013922526044744629173
+C_0015707221190624193204 ..> C_0007758275561917401976
+C_0015707221190624193204 ..> C_0013976325284150630411
+C_0015707221190624193204 ..> C_0011498643518036065935
+C_0015707221190624193204 ..> C_0010798006487996639193
+C_0015707221190624193204 ..> C_0009394456598674207837
+C_0015707221190624193204 ..> C_0012004170049756060246
+C_0015707221190624193204 ..> C_0010810181838344526365
+C_0015707221190624193204 ..> C_0014505686398828612521
+C_0015707221190624193204 ..> C_0012887087281388355273
+C_0015707221190624193204 ..> C_0006320070713169585957
+C_0015707221190624193204 ..> C_0002630062948833941350
+C_0015707221190624193204 ..> C_0006524058372096270699
+C_0015707221190624193204 ..> C_0001275076681856179721
+C_0015707221190624193204 ..> C_0012472509010406550700
+C_0015707221190624193204 o-- C_0000028171970329881143 : -plan_
+C_0015707221190624193204 o-- C_0018117365157425103285 : -undoStack_
+C_0015707221190624193204 o-- C_0018117365157425103285 : -redoStack_
+C_0015707221190624193204 o-- C_0003695217879551100703 : -result_
+C_0015707221190624193204 o-- C_0003005884773251599584 : -catalog_
+C_0015707221190624193204 o-- C_0009711730893776059610 : -customElements_
+C_0015707221190624193204 o-- C_0003258844757269243860 : -customPlans_
+C_0015707221190624193204 o-- C_0008164134631715614687 : -expandedGroups_
+C_0015707221190624193204 o-- C_0004339314899492021131 : -infos_
+C_0015707221190624193204 o-- C_0003631864318731712859 : -pendingInfo_
+C_0015707221190624193204 o-- C_0011566092623429779142 : -compatible_
+C_0015707221190624193204 --> C_0008648990762088764965 : -runClient_
+C_0015707221190624193204 --> C_0008648990762088764965 : -updateClient_
+C_0015707221190624193204 --> C_0007273334928930425835 : -watch_
+C_0015707221190624193204 --> C_0005396626821373679476 : -startup_
+C_0015707221190624193204 o-- C_0010103978309542821448 : -desktopOpener_
+C_0015707221190624193204 --> C_0000040363516898838832 : -opener_
+C_0015707221190624193204 o-- C_0008375322064658753815 : -logTail_
+C_0016524983601950161467 --+ C_0015707221190624193204
+C_0016262270350986146131 ..> C_0002734678754415143440
+C_0016262270350986146131 ..> C_0015985410746251324844
+C_0016262270350986146131 ..> C_0002536466532685571211
+C_0016262270350986146131 ..> C_0012887087281388355273
+C_0016262270350986146131 ..> C_0013286274850898176297
+C_0016262270350986146131 ..> C_0008955225542699994340
+C_0016262270350986146131 ..> C_0005541826913145604472
+C_0016262270350986146131 --> C_0015707221190624193204 : -controller_
+C_0016262270350986146131 --> C_0002456918911559055454 : -drawer_
+C_0015756547865060155446 --+ C_0016262270350986146131
+C_0008955225542699994340 --+ C_0016262270350986146131
+C_0000145809191659128510 --> C_0012212393180388198131 : #primary_
+C_0010488706901139931706 <|-- C_0000145809191659128510
+C_0008440645080397540871 --+ C_0000145809191659128510
+C_0002456918911559055454 ..> C_0000145809191659128510
+C_0002456918911559055454 ..> C_0005566660973310226340
+C_0002456918911559055454 --> C_0010961314842418363583 : -stack_
+C_0002456918911559055454 --> C_0013042764973270852574 : -slide_
+C_0002456918911559055454 o-- C_0012080817896115492257 : -pages_
+C_0010488706901139931706 <|-- C_0002456918911559055454
+C_0016209880975862749864 --+ C_0002456918911559055454
+C_0005566660973310226340 --+ C_0002456918911559055454
+C_0008346668426801030749 --+ C_0002456918911559055454
+C_0008346668426801030749 --> C_0000145809191659128510 : +widget
+C_0011185713172788746388 ..> C_0008195480479041533139
+C_0008195480479041533139 ..> C_0000285973155044203420
+C_0008195480479041533139 ..> C_0011185713172788746388
+C_0008195480479041533139 ..> C_0012004170049756060246
+C_0008195480479041533139 o-- C_0017231763468275670661 : -info_
+C_0008195480479041533139 o-- C_0016352831460880391547 : -read_
+C_0010488706901139931706 <|-- C_0008195480479041533139
+C_0017380701998761528931 --+ C_0008195480479041533139
+C_0017332961717563919323 o-- C_0003806610176957307951 : +allowed
+C_0017332961717563919323 o-- C_0017624030923317678952 : +padProperties
+C_0017332961717563919323 o-- C_0012004170049756060246 : +padProps
+C_0006310955856490095158 ..> C_0008847078964758475532
+C_0015389695410406266575 ..> C_0006310955856490095158
+C_0015985410746251324844 ..> C_0012004170049756060246
+C_0015985410746251324844 o-- C_0017332961717563919323 : -input_
+C_0015985410746251324844 --> C_0010961314842418363583 : -pages_
+C_0015985410746251324844 o-- C_0015389695410406266575 : -fields_
+C_0015985410746251324844 o-- C_0011185713172788746388 : -padEditors_
+C_0000145809191659128510 <|-- C_0015985410746251324844
+C_0007221181844177573166 --+ C_0015985410746251324844
+C_0014186147702699419356 ..> C_0008375322064658753815
+C_0005070420275076019822 <|-- C_0014186147702699419356
+C_0013461963740654938089 --+ C_0014186147702699419356
+C_0006938078587214530927 o-- C_0007758275561917401976 : +existing
+C_0006938078587214530927 o-- C_0009711730893776059610 : +custom
+C_0006938078587214530927 o-- C_0008375322064658753815 : +compatible
+C_0006938078587214530927 o-- C_0003005884773251599584 : +candidates
+C_0007551114300021711176 o-- C_0007925203253760423562 : +kind
+C_0007551114300021711176 o-- C_0013976325284150630411 : +existing
+C_0007925203253760423562 --+ C_0007551114300021711176
+C_0008674658058463196152 ..> C_0007551114300021711176
+C_0008674658058463196152 o-- C_0006938078587214530927 : -data_
+C_0008674658058463196152 --> C_0005011033231925861129 : -search_
+C_0008674658058463196152 --> C_0005765977198030773914 : -list_
+C_0008674658058463196152 o-- C_0014964410302297996115 : -roleFilter_
+C_0008674658058463196152 o-- C_0010724955662260223966 : -presenceFilter_
+C_0000145809191659128510 <|-- C_0008674658058463196152
+C_0014079804680996735770 --+ C_0008674658058463196152
+C_0014964410302297996115 --+ C_0008674658058463196152
+C_0010724955662260223966 --+ C_0008674658058463196152
+C_0016312564146755577407 o-- C_0013453943726969206921 : +info
+C_0016312564146755577407 o-- C_0012004170049756060246 : +props
+C_0016312564146755577407 o-- C_0006156734009172850642 : +requestSrc
+C_0016312564146755577407 o-- C_0006156734009172850642 : +requestSink
+C_0016312564146755577407 o-- C_0006156734009172850642 : +linkedSrc
+C_0016312564146755577407 o-- C_0006156734009172850642 : +linkedSink
+C_0016312564146755577407 o-- C_0001347152004389415025 : +exposed
+C_0016312564146755577407 o-- C_0008375322064658753815 : +sinkPads
+C_0010817025229795479608 ..> C_0002325834612087365632
+C_0012294321321651902808 ..> C_0010488706901139931706
+C_0012331852393199964191 ..> C_0014221582055846323125
+C_0002734678754415143440 ..> C_0009394456598674207837
+C_0002734678754415143440 o-- C_0016312564146755577407 : -input_
+C_0002734678754415143440 --> C_0005011033231925861129 : -search_
+C_0002734678754415143440 o-- C_0011185713172788746388 : -editors_
+C_0002734678754415143440 o-- C_0010817025229795479608 : -expose_
+C_0002734678754415143440 o-- C_0012294321321651902808 : -rows_
+C_0002734678754415143440 o-- C_0012331852393199964191 : -pads_
+C_0002734678754415143440 o-- C_0012331852393199964191 : -sinkPadsCount_
+C_0000145809191659128510 <|-- C_0002734678754415143440
+C_0014406763008644374016 --+ C_0002734678754415143440
+C_0008847078964758475532 ..> C_0000285973155044203420
+C_0008847078964758475532 o-- C_0016704062536531909690 : -field_
+C_0008847078964758475532 o-- C_0016352831460880391547 : -read_
+C_0008847078964758475532 o-- C_0005577933538676687574 : -write_
+C_0010488706901139931706 <|-- C_0008847078964758475532
+C_0000642356404951253398 --> C_0015707221190624193204 : -controller_
+C_0010488706901139931706 <|-- C_0000642356404951253398
+C_0012595940486591309220 --+ C_0000642356404951253398
+C_0008710527227265050895 --> C_0015707221190624193204 : -controller_
+C_0008710527227265050895 o-- C_0011488323291509901227 : -mode_
+C_0008710527227265050895 --> C_0006016411065821632504 : -spinner_
+C_0010488706901139931706 <|-- C_0008710527227265050895
+C_0005936501695387849685 --+ C_0008710527227265050895
+C_0011488323291509901227 --+ C_0008710527227265050895
+C_0010488706901139931706 <|-- C_0006016411065821632504
+C_0003730647937730399052 --+ C_0006016411065821632504
+C_0003914933973169258435 --+ C_0008847078964758475532
+C_0008627484532983123310 --+ C_0000275612833831204327
+C_0005910837485816191280 ..> C_0000786335990513270246
+C_0010488706901139931706 <|-- C_0005910837485816191280
+C_0008192824855641580804 --+ C_0005910837485816191280
+C_0005789804228041011096 --> C_0015707221190624193204 : -controller_
+C_0005789804228041011096 --> C_0016262270350986146131 : -flows_
+C_0005789804228041011096 --> C_0009323835702146778844 : -scene_
+C_0005789804228041011096 --> C_0017409921218832797350 : -view_
+C_0005789804228041011096 --> C_0002456918911559055454 : -drawer_
+C_0005789804228041011096 --> C_0005910837485816191280 : -setup_
+C_0005789804228041011096 --> C_0000642356404951253398 : -updates_
+C_0005789804228041011096 --> C_0000275612833831204327 : -log_
+C_0005789804228041011096 --> C_0008710527227265050895 : -indicator_
+C_0005789804228041011096 o-- C_0008375322064658753815 : -lastNames_
+C_0008974768779937952624 --+ C_0005789804228041011096
+C_0009608756339675951311 ..> C_0010111424301699298583
+C_0008820062599271446533 ..> C_0002346763977265743966
+C_0002543182899989632653 ..> C_0002043267432329240682
+C_0009323835702146778844 ..> C_0002346763977265743966
+C_0009323835702146778844 ..> C_0002043267432329240682
+C_0009323835702146778844 ..> C_0010111424301699298583
+C_0009323835702146778844 ..> C_0008375322064658753815
+C_0009323835702146778844 ..> C_0012472509010406550700
+C_0009323835702146778844 ..> C_0014505686398828612521
+C_0009323835702146778844 --> C_0015707221190624193204 : -controller_
+C_0009323835702146778844 o-- C_0008820062599271446533 : -elements_
+C_0009323835702146778844 o-- C_0002543182899989632653 : -pads_
+C_0009323835702146778844 o-- C_0009608756339675951311 : -links_
+C_0009323835702146778844 o-- C_0008164134631715614687 : -selectedElements_
+C_0007255850611517608923 --+ C_0009323835702146778844
+C_0011855073109475986688 --+ C_0017409921218832797350
+C_0010174159400680706255 ..> C_0002043267432329240682
+C_0002346763977265743966 ..> C_0002043267432329240682
+C_0002346763977265743966 ..> C_0012472509010406550700
+C_0002346763977265743966 ..> C_0002890379382429470359
+C_0002346763977265743966 o-- C_0016384269535921001916 : -view_
+C_0002346763977265743966 o-- C_0010174159400680706255 : -pads_
+C_0002890379382429470359 --+ C_0002346763977265743966
+C_0010111424301699298583 ..> C_0008375322064658753815
+C_0010111424301699298583 ..> C_0008377422864342182846
+C_0010111424301699298583 o-- C_0015287089273536692991 : -view_
+C_0010111424301699298583 --> C_0002043267432329240682 : -from_
+C_0010111424301699298583 --> C_0002043267432329240682 : -to_
+C_0008377422864342182846 --+ C_0010111424301699298583
+C_0002043267432329240682 o-- C_0012472509010406550700 : -view_
+
+'Generated with clang-uml, version 0.6.3
+'LLVM version Ubuntu clang version 15.0.7
+@enduml

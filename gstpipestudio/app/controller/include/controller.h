@@ -8,7 +8,9 @@
 
 #include <QHash>
 #include <QObject>
+#include <QPair>
 #include <QPointF>
+#include <QSet>
 #include <QTemporaryDir>
 #include <functional>
 #include <map>
@@ -81,8 +83,26 @@ public:
     void fetchCompatible(const QString& caps, NamesCallback done);  // ranked factories that can follow these caps
     gps::TraitsFn traits() const;
 
+    // ---- custom elements (saved multi-element presets & canvas groups)
+    static QString customElementsDir();
+    void loadCustomElements();
+    const QList<CustomElementInfo>& customElements() const { return customElements_; }
+    const gps::Plan* customElementPlan(const QString& name) const;
+    bool saveCustomElement(const QString& customName, const QStringList& elementNames, const QString& description = QString());
+    bool removeCustomElement(const QString& customName);
+    QStringList addCustomElement(const QString& customName, double x = -1.0, double y = -1.0);
+    QStringList addCustomElementAfter(const QString& srcElement, const QString& srcPad, const QString& customName);
+    bool groupSelectedElements(const QStringList& elementNames, const QString& groupTitle);
+    bool ungroupElements(const QString& groupId);
+    bool isGroupExpanded(const QString& groupId) const { return expandedGroups_.contains(groupId); }
+    void setGroupExpanded(const QString& groupId, bool expanded);
+    QStringList groupMembers(const QString& groupId) const;
+    QString elementGroup(const QString& elementName) const;
+    QStringList expandSelectionWithGroups(const QStringList& elementNames) const;
+
     // ---- what the canvas and the drawer show
     ElementView view(const QString& element) const;
+    ElementView groupView(const QString& groupId) const;
     QList<LinkView> linkViews() const;
     QString linkSinkIdentity(int link) const;
     QList<StructureInfo> padStructures(const QString& element, const QString& identity) const;  // allowed by a src pad
@@ -105,10 +125,24 @@ public:
                  const ElementEdit& edit);
     bool deleteSource(const QString& element);
     bool deleteElement(const QString& element, bool autoHeal = true);
+    bool deleteSelection(const QStringList& elementNames, const QList<QPair<QString, QString>>& links = {}, bool autoHeal = true);
     bool spliceElement(const QString& element, const QString& linkSrcElement, const QString& linkSrcPad);
+    bool spliceElements(const QStringList& elements, const QString& linkSrcElement, const QString& linkSrcPad);
     bool insertQueue(const QString& element, const QString& pad);
     bool removeQueue(const QString& queue);
     void setPosition(const QString& element, double x, double y);  // dragging; no update
+    void setPositions(const QList<QPair<QString, QPointF>>& positions);
+    bool canUndo() const { return !undoStack_.empty() && !busy(); }
+    bool canRedo() const { return !redoStack_.empty() && !busy(); }
+    bool undo();
+    bool redo();
+    gps::Plan copySubplan(const QStringList& elementNames) const;
+    QStringList pasteSubplan(const gps::Plan& clip, double targetX = -1.0, double targetY = -1.0);
+    QStringList duplicateElements(const QStringList& names);
+    bool connectSelectedElements(const QStringList& names);
+    bool disconnectBetweenElements(const QStringList& names);
+    bool alignElementsHorizontally(const QStringList& names);
+    bool alignElementsVertically(const QStringList& names);
     gps::Removal previewCut(const QString& element, const QString& pad) const;
     gps::Removal previewReplace(const QString& element, const QString& pad) const;
     gps::Removal previewDeleteSource(const QString& element) const;
@@ -137,7 +171,8 @@ private:
     HelperClient* runHelper(const QString& name, const QStringList& args, int killAfterMs, std::function<void(const HelperResult&)> done);
     void fetchInfos(const QStringList& factories, std::function<void(bool)> done);
     bool beginEdit() const;
-    void edited(const QString& touchedElement);  // dirty + update
+    void pushUndo();
+    void edited(const QString& touchedElement, bool validate = true);  // dirty + optional update
     void startUpdate();
     void finishUpdate(const HelperResult& r);
     void applyEdit(const std::string& element, const ElementEdit& edit);
@@ -145,8 +180,12 @@ private:
     void makeRoomForQueue(const std::string& source, const std::string& queue);
     QPointF freeSpot() const;
     QString elementNote(const QString& element, bool* isError) const;
+    void subgraphExternalPads(const QStringList& members, QList<PadView>* outSinks, QList<PadView>* outSrcs) const;
+    bool linkOrderedInternal(const QStringList& expanded, QString* lastTouched = nullptr);
 
     gps::Plan plan_;
+    std::vector<gps::Plan> undoStack_;
+    std::vector<gps::Plan> redoStack_;
     UpdateResult result_;
     QString path_;
     bool dirty_ = false;
@@ -159,6 +198,10 @@ private:
     QTemporaryDir tmp_;
     QList<ListEntry> catalog_;
     bool catalogLoaded_ = false;
+    QList<CustomElementInfo> customElements_;
+    std::map<QString, gps::Plan> customPlans_;
+    QSet<QString> expandedGroups_;
+    int nextGroupId_ = 1;
     std::map<QString, ElementInfo> infos_;  // node based: pointers handed out stay valid
     QHash<QString, QList<InfoCallback>> pendingInfo_;
     QHash<QString, QStringList> compatible_;

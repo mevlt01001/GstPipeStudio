@@ -20,22 +20,31 @@ PropertyPage::PropertyPage(const PropertyPageInput& input, QWidget* parent) : Dr
 
     auto* root = new QVBoxLayout(this);
     root->setContentsMargins(0, 0, 0, 0);
-    root->setSpacing(10);
+    root->setSpacing(6);
 
+    auto* topBar = new QHBoxLayout;
+    auto* titleCol = new QVBoxLayout;
+    titleCol->setSpacing(2);
     auto* heading = new QLabel(input.info.factory + "  —  " + input.info.longName, this);
     heading->setObjectName("heading");
     heading->setWordWrap(true);
-    root->addWidget(heading);
+    titleCol->addWidget(heading);
     auto* sub = new QLabel(input.info.klass + (input.info.description.isEmpty() ? "" : "  ·  " + input.info.description), this);
     sub->setObjectName("muted");
     sub->setWordWrap(true);
-    root->addWidget(sub);
+    titleCol->addWidget(sub);
+    topBar->addLayout(titleCol, 1);
 
     search_ = new QLineEdit(this);
     search_->setObjectName("searchBox");
     search_->setPlaceholderText("Search properties…");
     search_->setClearButtonEnabled(true);
-    root->addWidget(search_);
+    search_->setMaximumWidth(320);
+    topBar->addWidget(search_, 0, Qt::AlignTop);
+    root->addLayout(topBar);
+
+    auto* contentRow = new QHBoxLayout;
+    contentRow->setSpacing(12);
 
     // One row per editable property. Rows are hidden, not removed, by the search box.
     auto* list = new QWidget;
@@ -55,7 +64,6 @@ PropertyPage::PropertyPage(const PropertyPageInput& input, QWidget* parent) : Dr
         line->setContentsMargins(0, 0, 0, 0);
         line->setSpacing(3);
 
-        // The drawer is narrow: the name sits above its editor.
         auto* label = new QLabel(p.deprecated ? p.name + "  (deprecated)" : p.name, row);
         label->setToolTip(p.blurb);
         label->setWordWrap(true);
@@ -91,7 +99,11 @@ PropertyPage::PropertyPage(const PropertyPageInput& input, QWidget* parent) : Dr
     auto* scroll = new QScrollArea(this);
     scroll->setWidgetResizable(true);
     scroll->setWidget(list);
-    root->addWidget(scroll, 1);
+    contentRow->addWidget(scroll, 3);
+
+    auto* sideCol = new QVBoxLayout;
+    sideCol->setSpacing(6);
+    bool hasSide = false;
 
     // Request src pads: how many to ask for before the run.
     QList<PadTemplateInfo> requestSrc;
@@ -115,7 +127,8 @@ PropertyPage::PropertyPage(const PropertyPageInput& input, QWidget* parent) : Dr
             form->addLayout(line);
             pads_[t.name] = spin;
         }
-        root->addWidget(group);
+        sideCol->addWidget(group);
+        hasSide = true;
     }
 
     // Request sink pads: how many to ask for before the run.
@@ -140,7 +153,8 @@ PropertyPage::PropertyPage(const PropertyPageInput& input, QWidget* parent) : Dr
             form->addLayout(line);
             sinkPadsCount_[t.name] = spin;
         }
-        root->addWidget(group);
+        sideCol->addWidget(group);
+        hasSide = true;
     }
 
     if (input.sinkPads.size() > 1) {
@@ -150,10 +164,26 @@ PropertyPage::PropertyPage(const PropertyPageInput& input, QWidget* parent) : Dr
         sinkPads_->setObjectName("sinkPadCombo");
         sinkPads_->addItems(input.sinkPads);
         form->addWidget(sinkPads_);
-        root->addWidget(group);
+        sideCol->addWidget(group);
+        hasSide = true;
     }
+    if (hasSide) {
+        sideCol->addStretch(1);
+        contentRow->addLayout(sideCol, 1);
+    } else {
+        delete sideCol;
+    }
+    root->addLayout(contentRow, 1);
 
     auto* buttons = new QHBoxLayout;
+    if (input.canDelete) {
+        auto* del = new QPushButton("Delete", this);
+        del->setObjectName("deleteElementButton");
+        del->setStyleSheet("QPushButton { background: #3b1c1e; border-color: #ff6369; color: #ff6369; font-weight: bold; }"
+                           "QPushButton:hover { background: #ff6369; color: #111111; }");
+        buttons->addWidget(del);
+        connect(del, &QPushButton::clicked, this, &PropertyPage::deleteRequested);
+    }
     buttons->addStretch(1);
     auto* cancel = new QPushButton("Cancel", this);
     cancel->setObjectName("cancelButton");

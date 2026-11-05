@@ -75,17 +75,18 @@ void ElementItem::paint(QPainter* p, const QStyleOptionGraphicsItem*, QWidget*) 
     else if (isSelected()) border = Theme::accent(), borderWidth = 2;
     else if (hover_) border = Theme::accentHover();
 
-    // Body, header band (clipped to the rounded box), NVIDIA stripe; the border goes on top of all of it.
+    // Body, header band (clipped to the rounded box), NVIDIA or Custom stripe; the border goes on top of all of it.
     p->setPen(Qt::NoPen);
     p->setBrush(Theme::box());
     p->drawRoundedRect(box, 6, 6);
     p->save();
     p->setClipPath(shape());
-    p->fillRect(QRectF(0, 0, kBoxWidth, kHeader), QColor("#333333"));
+    p->fillRect(QRectF(0, 0, kBoxWidth, kHeader), view_.isCustomGroup ? QColor("#263526") : QColor("#333333"));
     p->restore();
     p->setPen(Theme::line());
     p->drawLine(QPointF(1, kHeader), QPointF(kBoxWidth - 1, kHeader));
-    if (view_.nvidia) p->fillRect(QRectF(1, 8, 3, kHeader - 16), Theme::accent());
+    if (view_.isCustomGroup) p->fillRect(QRectF(1, 6, 4, kHeader - 12), Theme::accentHover());
+    else if (view_.nvidia) p->fillRect(QRectF(1, 8, 3, kHeader - 16), Theme::accent());
     p->setPen(QPen(border, borderWidth));
     p->setBrush(Qt::NoBrush);
     p->drawRoundedRect(box, 6, 6);
@@ -96,13 +97,19 @@ void ElementItem::paint(QPainter* p, const QStyleOptionGraphicsItem*, QWidget*) 
     QFont small = base;
     small.setPointSizeF(8);
 
+    QString headerTitle = view_.displayTitle.isEmpty() ? view_.name : view_.displayTitle;
     p->setFont(bold);
-    p->setPen(Theme::text());
+    p->setPen(view_.isCustomGroup ? Theme::accentHover() : Theme::text());
     p->drawText(QRectF(12, 5, kBoxWidth - 24, 20), Qt::AlignLeft | Qt::AlignVCenter,
-                QFontMetrics(bold).elidedText(view_.name, Qt::ElideRight, int(kBoxWidth - 24)));
+                QFontMetrics(bold).elidedText(headerTitle, Qt::ElideRight, int(kBoxWidth - 24)));
     p->setFont(small);
     p->setPen(Theme::muted());
-    p->drawText(QRectF(12, 24, kBoxWidth - 24, 16), Qt::AlignLeft | Qt::AlignVCenter, view_.factory);
+    QString subTitle = view_.factory;
+    if (!view_.isCustomGroup && !view_.groupId.isEmpty()) {
+        subTitle += "  [" + view_.groupId.section('#', 0, 0) + "]";
+    }
+    p->drawText(QRectF(12, 24, kBoxWidth - 24, 16), Qt::AlignLeft | Qt::AlignVCenter,
+                QFontMetrics(small).elidedText(subTitle, Qt::ElideRight, int(kBoxWidth - 24)));
 
     // Pad labels: name, then the media type. Sinks on the left half, srcs on the right half.
     QFontMetrics sm(small);
@@ -164,16 +171,33 @@ void ElementItem::hoverLeaveEvent(QGraphicsSceneHoverEvent*) {
 
 void ElementItem::mousePressEvent(QGraphicsSceneMouseEvent* event) {
     pressPos_ = pos();
+    if (event->button() == Qt::RightButton) {
+        if (!isSelected()) {
+            if (scene() && event->modifiers() == Qt::NoModifier) scene()->clearSelection();
+            setSelected(true);
+        }
+        event->accept();
+        return;
+    }
     QGraphicsItem::mousePressEvent(event);
-    event->accept();  // a right press must reach the release below
+    event->accept();  // a press must reach the release below
 }
 
 void ElementItem::mouseReleaseEvent(QGraphicsSceneMouseEvent* event) {
-    QGraphicsItem::mouseReleaseEvent(event);
     if (event->button() == Qt::RightButton) {
         if (auto* canvas = qobject_cast<CanvasScene*>(scene())) canvas->elementContext(view_.name, event->screenPos());
-    } else if (pos() != pressPos_) {
+        event->accept();
+        return;
+    }
+    QGraphicsItem::mouseReleaseEvent(event);
+    if (pos() != pressPos_) {
         if (auto* canvas = qobject_cast<CanvasScene*>(scene())) canvas->elementDragged(view_.name, pos());
+    } else if (event->button() == Qt::LeftButton && event->modifiers() == Qt::NoModifier) {
+        if (auto* canvas = qobject_cast<CanvasScene*>(scene())) {
+            if (canvas->selectedElementNames().size() <= 1 && !view_.isCustomGroup) {
+                canvas->elementDoubleClicked(view_.name);
+            }
+        }
     }
 }
 

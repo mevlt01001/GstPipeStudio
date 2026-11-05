@@ -16,11 +16,6 @@ name: Build and Test
 # itself has many packages installed that a plain Ubuntu does not: they would change what Qt is built with).
 # The ARM machines of GitHub are free only for public repositories.
 on:
-  push:
-    branches: [main]
-    paths:
-      - gstpipestudio/**
-  pull_request:
   workflow_dispatch:
   workflow_call:
     inputs:

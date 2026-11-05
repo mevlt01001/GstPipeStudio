@@ -32,13 +32,18 @@ public:
     UpdatePanel* updatePanel() const { return updates_; }
     LogPanel* logPanel() const { return log_; }
     QTabWidget* bottomTabs() const { return tabs_; }
+    QWidget* propertiesTab() const { return propsTab_; }
+    QWidget* capsTab() const { return capsTab_; }
     SetupPage* setupPage() const { return setup_; }
     ValidationIndicator* indicator() const { return indicator_; }
     bool showingSetup() const;
 
     void openFile(const QString& path);
     bool saveFile(const QString& path);  // "" = where the plan lives now
+    void openPropertiesTab(const QString& element);
+    void resetPropertiesTab();
     void openCapsTab(const QString& srcElement, const QString& srcIdentity);
+    void resetCapsTab();
 
 protected:
     void closeEvent(QCloseEvent* event) override;
@@ -53,7 +58,14 @@ private:
     void saveAs();
     void toggleRun();
     void showAbout();
+    void showCanvasMenu(const QPoint& screenPos);
+    void onElementMenuRequested(const QString& element, const QPoint& screenPos);
+    void showSelectionMenu(const QString& clickedElement, const QPoint& screenPos);
+    void saveSelectedAsCustomElement();
+    void connectSelected();
     void deleteSelected();
+    void duplicateSelected();
+    void selectAll();
     void copySelected();
     void cutSelected();
     void pasteClipboard();
@@ -68,6 +80,7 @@ private:
     SetupPage* setup_;
     UpdatePanel* updates_;
     LogPanel* log_;
+    QWidget* propsTab_ = nullptr;
     QWidget* capsTab_ = nullptr;
     QTabWidget* tabs_;
     QLabel* state_;

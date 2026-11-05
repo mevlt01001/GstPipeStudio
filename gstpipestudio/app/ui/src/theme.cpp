@@ -53,6 +53,8 @@ QToolButton { background: transparent; border: 1px solid transparent; border-rad
 QToolButton:hover { border-color: @accent@; }
 QToolButton:focus { border: 2px solid @focus@; padding: 4px 11px; }
 QToolButton:pressed { background: @line@; }
+QToolButton:checked { background: @accent@; color: @onAccent@; border-color: @accent@; font-weight: bold; }
+QToolButton:checked:hover { background: @hover@; border-color: @hover@; }
 QToolButton:disabled { color: #5c5c5c; }
 QToolButton#primaryAction { background: @accent@; color: @onAccent@; font-weight: bold; }
 QToolButton#primaryAction:hover { background: @hover@; }
@@ -96,25 +98,29 @@ QPushButton#saveButton:focus, QPushButton[accent="true"]:focus { border: 2px sol
 QPushButton#saveButton:disabled { background: #36401f; color: #6c7358; border-color: #36401f; }
 
 QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QPlainTextEdit, QTextEdit {
-    background: @panel@; border: 1px solid @line@; border-radius: 3px; padding: 4px 6px;
+    background: @panel@; border: 1px solid @line@; border-radius: 3px; padding: 5px 8px; min-height: 22px;
     selection-background-color: @accent@; selection-color: @onAccent@; }
-QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus, QPlainTextEdit:focus { border: 2px solid @focus@; padding: 3px 5px; }
+QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus, QPlainTextEdit:focus { border: 2px solid @focus@; padding: 4px 7px; }
 QListWidget:focus, QTableWidget:focus { border: 2px solid @focus@; }
-QCheckBox::indicator:focus { border: 2px solid @focus@; }
+QCheckBox::indicator:focus, QRadioButton::indicator:focus { border: 2px solid @focus@; }
 QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled, QComboBox:disabled { color: #5c5c5c; }
-QSpinBox::up-button, QDoubleSpinBox::up-button { subcontrol-origin: border; subcontrol-position: top right; width: 18px; border-left: 1px solid @line@; background: #303030; }
-QSpinBox::down-button, QDoubleSpinBox::down-button { subcontrol-origin: border; subcontrol-position: bottom right; width: 18px; border-left: 1px solid @line@; background: #303030; }
+QSpinBox::up-button, QDoubleSpinBox::up-button { subcontrol-origin: border; subcontrol-position: top right; width: 20px; border-left: 1px solid @line@; background: #303030; }
+QSpinBox::down-button, QDoubleSpinBox::down-button { subcontrol-origin: border; subcontrol-position: bottom right; width: 20px; border-left: 1px solid @line@; background: #303030; }
 QSpinBox::up-arrow, QDoubleSpinBox::up-arrow { image: url(@arrowUp@); width: 10px; height: 6px; }
 QSpinBox::down-arrow, QDoubleSpinBox::down-arrow { image: url(@arrowDown@); width: 10px; height: 6px; }
-QComboBox::drop-down { border: none; width: 22px; }
+QComboBox::drop-down { border: none; width: 24px; }
 QComboBox::down-arrow { image: url(@arrowDown@); width: 10px; height: 6px; }
-QComboBox QAbstractItemView { background: @panel@; border: 1px solid @line@; selection-background-color: @accent@; selection-color: @onAccent@; outline: none; }
+QComboBox QAbstractItemView { background: @panel@; border: 1px solid @line@; selection-background-color: @accent@; selection-color: @onAccent@; outline: none; padding: 4px; }
+QComboBox QAbstractItemView::item { min-height: 28px; padding: 4px 8px; }
 
-QCheckBox { spacing: 8px; background: transparent; }
-QCheckBox::indicator { width: 14px; height: 14px; border: 1px solid #5a5a5a; border-radius: 2px; background: @bg@; }
+QCheckBox, QRadioButton { spacing: 8px; background: transparent; padding: 3px 0; }
+QCheckBox::indicator { width: 18px; height: 18px; border: 1px solid #6a6a6a; border-radius: 3px; background: @bg@; }
 QCheckBox::indicator:hover { border-color: @accent@; }
 QCheckBox::indicator:checked { background: @accent@; border-color: @accent@; }
-QCheckBox:disabled { color: #5c5c5c; }
+QRadioButton::indicator { width: 18px; height: 18px; border: 1px solid #6a6a6a; border-radius: 9px; background: @bg@; }
+QRadioButton::indicator:hover { border-color: @accent@; }
+QRadioButton::indicator:checked { background: @accent@; border-color: @accent@; }
+QCheckBox:disabled, QRadioButton:disabled { color: #5c5c5c; }
 
 QGroupBox { border: 1px solid @line@; border-radius: 4px; margin-top: 14px; padding: 12px 8px 8px 8px; background: transparent; }
 QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 6px; color: @accent@; font-weight: bold; background: transparent; }

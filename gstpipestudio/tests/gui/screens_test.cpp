@@ -173,35 +173,38 @@ private slots:
         QVERIFY(waitFor([&] { return (picker = w.drawer()->page<PickerPage>()) != nullptr; }));
         saveWithDrawer(w, "ux_10_drawer_picker");
 
-        // Properties of the element chosen there.
+        // Properties of the element chosen there (opens in bottom Properties tab; right drawer closes!).
         QTest::keyClicks(picker->findChild<QLineEdit*>("searchBox"), "propdemo");
         QTest::keyClick(picker->findChild<QLineEdit*>("searchBox"), Qt::Key_Return);
         auto* props = static_cast<PropertyPage*>(nullptr);
-        QVERIFY(waitFor([&] { return (props = w.drawer()->page<PropertyPage>()) != nullptr; }));
-        saveWithDrawer(w, "ux_11_drawer_properties");
-        w.drawer()->dismiss();
+        QVERIFY(waitFor([&] { return (props = w.flows()->propertyPage()) != nullptr && !w.drawer()->isOpen(); }));
+        QTest::qWait(100);
+        save(&w, "ux_11_drawer_properties");
+        w.flows()->closeProperties();
 
-        // Caps and pad settings of the compositor link.
-        QVERIFY(waitFor([&] { return !w.drawer()->isOpen(); }));
+        // Caps and pad settings of the compositor link (opens in bottom Caps tab).
         w.flows()->editCaps("videoconvert_4", "src");
-        QVERIFY(w.drawer()->page<CapsPage>());
-        saveWithDrawer(w, "ux_12_drawer_caps");
-        w.drawer()->dismiss();
-        QTest::qWait(300);
+        QVERIFY(w.flows()->capsPage());
+        QVERIFY(!w.drawer()->isOpen());
+        QTest::qWait(100);
+        save(&w, "ux_12_drawer_caps");
+        w.flows()->closeCaps();
+        QTest::qWait(100);
 
-        // Add source.
+        // Add source (in right drawer).
         w.flows()->chooseSource();
         QVERIFY(w.drawer()->page<PickerPage>());
         saveWithDrawer(w, "ux_13_drawer_add_source");
         w.drawer()->dismiss();
         QTest::qWait(300);
 
-        // Add any element with Role & Pad Presence filters in the right drawer + Bottom Caps tab open.
+        // Bottom Caps tab open + Add any element with Role & Pad Presence filters in the right drawer.
+        w.openCapsTab("videoconvert_4", "src");
         w.flows()->chooseElement();
         QVERIFY(w.drawer()->page<PickerPage>());
-        w.openCapsTab("videoconvert_4", "src");
         saveWithDrawer(w, "ux_13b_right_drawer_filters_and_bottom_caps");
         w.drawer()->dismiss();
+        w.flows()->closeCaps();
         QTest::qWait(300);
 
         ConfirmDialog confirm("Remove elements", "These 3 elements will be removed, with 3 links",

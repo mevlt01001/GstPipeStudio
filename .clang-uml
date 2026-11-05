@@ -1,19 +1,66 @@
 compilation_database_dir: build
-output_directory: docs/uml
+output_directory: gstpipestudio/docs/uml
+
 diagrams:
-  core_class_diagram:
+  architecture_overview:
+    type: package
+    package_type: directory
+    glob:
+      - gstpipestudio/core/**/*.cpp
+      - gstpipestudio/app/**/*.cpp
+
+  core_overview:
     type: class
+    title: "GstPipeStudio Core — High Level Overview (Relationships Only)"
     glob:
       - gstpipestudio/core/**/*.cpp
       - gstpipestudio/core/**/*.h
     include:
       namespaces:
         - gps
+    exclude:
+      access:
+        - public
+        - protected
+        - private
+    include_relations_also_as_members: false
     generate_packages: true
-  app_class_diagram:
+
+  app_overview:
     type: class
+    title: "GstPipeStudio App — High Level Overview (Relationships Only)"
     glob:
       - gstpipestudio/app/**/*.cpp
       - gstpipestudio/app/**/*.h
+    exclude:
+      access:
+        - public
+        - protected
+        - private
+    include_relations_also_as_members: false
     generate_packages: true
 
+  core_detailed:
+    type: class
+    title: "GstPipeStudio Core — Zoom-In Details (Public & Protected Members)"
+    glob:
+      - gstpipestudio/core/**/*.cpp
+      - gstpipestudio/core/**/*.h
+    include:
+      namespaces:
+        - gps
+    exclude:
+      access:
+        - private
+    generate_packages: true
+
+  app_detailed:
+    type: class
+    title: "GstPipeStudio App — Zoom-In Details (Public & Protected Members)"
+    glob:
+      - gstpipestudio/app/**/*.cpp
+      - gstpipestudio/app/**/*.h
+    exclude:
+      access:
+        - private
+    generate_packages: true

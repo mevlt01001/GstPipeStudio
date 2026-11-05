@@ -19,7 +19,12 @@ CapsPage::CapsPage(const CapsPageInput& input, QWidget* parent) : DrawerPage(par
 
     auto* root = new QVBoxLayout(this);
     root->setContentsMargins(0, 0, 0, 0);
-    root->setSpacing(10);
+    root->setSpacing(6);
+
+    auto* contentRow = new QHBoxLayout;
+    contentRow->setSpacing(12);
+    auto* leftCol = new QVBoxLayout;
+    leftCol->setSpacing(6);
 
     // Media type: Auto or one of the structures the pad can produce.
     media_ = new QComboBox(this);
@@ -32,7 +37,7 @@ CapsPage::CapsPage(const CapsPageInput& input, QWidget* parent) : DrawerPage(par
         auto* page = new QWidget(pages_);
         auto* form = new QFormLayout(page);
         form->setContentsMargins(0, 8, 0, 0);
-        form->setRowWrapPolicy(QFormLayout::WrapAllRows);  // the drawer is narrow
+        form->setRowWrapPolicy(QFormLayout::WrapAllRows);
         QList<CapsFieldEditor*> editors;
         for (const FieldInfo& f : s.fields) {
             auto* editor = new CapsFieldEditor(f, page);
@@ -48,14 +53,15 @@ CapsPage::CapsPage(const CapsPageInput& input, QWidget* parent) : DrawerPage(par
     }
     auto* mediaRow = new QFormLayout;
     mediaRow->addRow("Media type", media_);
-    root->addLayout(mediaRow);
+    leftCol->addLayout(mediaRow);
     if (input.allowed.isEmpty()) {
         auto* none = new QLabel("The last validation gave no caps to choose from for this pad.", this);
         none->setObjectName("muted");
         none->setWordWrap(true);
-        root->addWidget(none);
+        leftCol->addWidget(none);
     }
-    root->addWidget(pages_, 3);
+    leftCol->addWidget(pages_, 1);
+    contentRow->addLayout(leftCol, 3);
     connect(media_, &QComboBox::currentIndexChanged, pages_, &QStackedWidget::setCurrentIndex);
 
     // Prefill from the caps the link already has.
@@ -75,7 +81,6 @@ CapsPage::CapsPage(const CapsPageInput& input, QWidget* parent) : DrawerPage(par
     // The sink pad's own settings (xpos of a compositor pad ...). Hidden when the pad has none.
     auto* padBox = new QGroupBox("Pad settings", this);
     padBox->setObjectName("padSettings");
-    // The settings scroll inside a box of their own, so ten of them cannot squeeze the caps fields above.
     auto* padLayout = new QVBoxLayout(padBox);
     auto* padScroll = new QScrollArea(padBox);
     padScroll->setFrameShape(QFrame::NoFrame);
@@ -96,7 +101,8 @@ CapsPage::CapsPage(const CapsPageInput& input, QWidget* parent) : DrawerPage(par
         padEditors_ << editor;
     }
     padBox->setVisible(!padEditors_.isEmpty());
-    root->addWidget(padBox, 2);
+    contentRow->addWidget(padBox, 2);
+    root->addLayout(contentRow, 1);
 
     auto* buttons = new QHBoxLayout;
     buttons->addStretch(1);

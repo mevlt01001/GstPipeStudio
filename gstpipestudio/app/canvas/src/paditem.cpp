@@ -6,6 +6,7 @@
 #include <QPainter>
 
 #include "canvasscene.h"
+#include "elementitem.h"
 #include "theme.h"
 
 PadItem::PadItem(const PadView& view, QGraphicsItem* parent) : QGraphicsItem(parent), view_(view) {
@@ -50,9 +51,19 @@ void PadItem::mousePressEvent(QGraphicsSceneMouseEvent* event) {
     event->accept();  // keeps the element from being dragged by its pad
 }
 
+void PadItem::mouseMoveEvent(QGraphicsSceneMouseEvent* event) {
+    if (event->buttons() & Qt::LeftButton) {
+        if (auto* canvas = qobject_cast<CanvasScene*>(scene())) {
+            canvas->padDragMoved(view_, event->scenePos());
+        }
+    }
+    event->accept();
+}
+
 void PadItem::mouseReleaseEvent(QGraphicsSceneMouseEvent* event) {
     auto* canvas = qobject_cast<CanvasScene*>(scene());
     if (!canvas) return;
+    canvas->padDragEnded();
     if (contains(event->pos())) {
         canvas->padClicked(view_, event->button(), event->screenPos());
         return;
@@ -63,6 +74,17 @@ void PadItem::mouseReleaseEvent(QGraphicsSceneMouseEvent* event) {
                 if (target != this) {
                     canvas->padDroppedOnPad(view_, target->view());
                     return;
+                }
+            }
+        }
+        // Dropped directly onto an element box: find its first free sink (or src) pad and link!
+        for (QGraphicsItem* item : canvas->items(event->scenePos())) {
+            if (auto* elem = dynamic_cast<ElementItem*>(item)) {
+                for (PadItem* p : elem->pads()) {
+                    if (p->view().isSrc != view_.isSrc && p->view().state != PadView::Linked) {
+                        canvas->padDroppedOnPad(view_, p->view());
+                        return;
+                    }
                 }
             }
         }

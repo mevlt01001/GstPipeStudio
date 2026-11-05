@@ -68,13 +68,16 @@ static void chain() {
     CHECK_EQ(p.linkFrom(b, "src"), -1);
 
     Removal preview = p.previewCut(a, "src", T);
-    CHECK_EQ(preview.elements, Names({b}));
+    CHECK(preview.elements.empty());
+    CHECK_EQ(preview.links, 1);
     CHECK_EQ(p.elements.size(), size_t(3));  // the preview changed nothing
 
     Removal r = p.cut(a, "src", T);
-    CHECK_EQ(r.elements, Names({b}));
+    CHECK(r.elements.empty());
     CHECK_EQ(r.links, 1);
-    CHECK_EQ(p.elements.size(), size_t(2));
+    CHECK_EQ(p.elements.size(), size_t(3));  // free canvas: cutting a link keeps the downstream element
+    CHECK(p.isElementTracked(a, T));
+    CHECK(!p.isElementTracked(b, T));        // disconnected element is no longer tracked
 
     // Cutting a free pad does nothing.
     Removal none = p.cut(a, "src", T);
@@ -89,15 +92,31 @@ static void chain() {
 }
 
 static void pruning() {
-    // Everything behind a cut goes, as long as nothing else feeds it.
+    // Cutting a link only removes the link; downstream elements stay on the free canvas as untracked.
     Plan p;
     std::string s = p.addSource("src");
     std::string a = p.addAfter(s, "src", "f", "sink");
     std::string b = p.addAfter(a, "src", "f", "sink");
     std::string c = p.addAfter(b, "src", "f", "sink");
     Removal r = p.cut(s, "src", T);
-    CHECK_EQ(r.elements, Names({a, b, c}));
-    CHECK_EQ(p.elements.size(), size_t(1));
+    CHECK(r.elements.empty());
+    CHECK_EQ(r.links, 1);
+    CHECK_EQ(p.elements.size(), size_t(4));
+    CHECK(!p.isElementTracked(a, T));
+    CHECK(!p.isElementTracked(b, T));
+    CHECK(!p.isElementTracked(c, T));
+
+    // Multi-element deletion auto-heals across a connected chain.
+    Plan h;
+    std::string hs = h.addSource("src");
+    std::string ha = h.addAfter(hs, "src", "f", "sink");
+    std::string hb = h.addAfter(ha, "src", "f", "sink");
+    std::string hc = h.addAfter(hb, "src", "f", "sink");
+    CHECK(h.deleteElements({ha, hb}, true));
+    CHECK_EQ(h.elements.size(), size_t(2));
+    CHECK_EQ(h.links.size(), size_t(1));
+    CHECK_EQ(h.links[0].srcElement, hs);
+    CHECK_EQ(h.links[0].sinkElement, hc);
 
     // An element with one linked input stays although another sink pad is free (textoverlay).
     Plan o;
@@ -107,7 +126,7 @@ static void pruning() {
     CHECK(o.prune(T).elements.empty());
     CHECK(o.find(overlay) && o.find(out));
 
-    // Two sources into a mixer: the mixer lives while one of them does.
+    // Two sources into a mixer: deleting a source only deletes that source; downstream elements stay on canvas.
     Plan m;
     std::string s1 = m.addSource("src");
     std::string s2 = m.addSource("src");
@@ -120,10 +139,12 @@ static void pruning() {
     CHECK_EQ(m.elements.size(), size_t(4));
     m.deleteSource(s1, T);
     CHECK(m.find(mix) && m.find(end));
+    CHECK(m.isElementTracked(mix, T));
     Removal both = m.deleteSource(s2, T);
-    CHECK_EQ(both.elements, Names({s2, mix, end}));
-    CHECK(m.elements.empty());
-    CHECK(m.links.empty());
+    CHECK_EQ(both.elements, Names({s2}));
+    CHECK_EQ(m.elements.size(), size_t(2));  // mix and end stay on the free canvas
+    CHECK(!m.isElementTracked(mix, T));
+    CHECK(!m.isElementTracked(end, T));
 
     // Only sources can be deleted this way.
     Plan n;
@@ -165,11 +186,11 @@ static void replacing() {
     std::string b = p.addAfter(a, "src", "f", "sink");
     CHECK(p.setCaps(s, "src", "video/x-raw, width=(int)640"));
 
-    CHECK_EQ(p.previewReplace(s, "src", T).elements, Names({a, b}));
+    CHECK_EQ(p.previewReplace(s, "src", T).elements, Names({a}));
     Addition r = p.replace(s, "src", "other", "video_sink", {{"k", "v"}}, T);
-    CHECK_EQ(r.removed.elements, Names({a, b}));
+    CHECK_EQ(r.removed.elements, Names({a}));
     CHECK(!r.element.empty());
-    CHECK_EQ(p.elements.size(), size_t(2));
+    CHECK_EQ(p.elements.size(), size_t(3));  // s, b (untracked), and the new element
     int i = p.linkFrom(s, "src");
     CHECK(i >= 0);
     CHECK_EQ(p.links[i].sinkElement, r.element);
@@ -181,7 +202,7 @@ static void replacing() {
     Addition none = p.replace(r.element, "src", "other", "sink", {}, T);
     CHECK(none.element.empty());
     CHECK(none.removed.elements.empty());
-    CHECK_EQ(p.elements.size(), size_t(2));
+    CHECK_EQ(p.elements.size(), size_t(3));
 }
 
 static void queues() {

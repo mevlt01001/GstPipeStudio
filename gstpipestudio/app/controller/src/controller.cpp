@@ -4,11 +4,14 @@
 #include "capsparse.h"
 
 #include <QClipboard>
+#include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QJsonArray>
 #include <QRectF>
 #include <QRegularExpression>
+#include <QStandardPaths>
 #include <algorithm>
 #include <memory>
 #include <set>
@@ -40,6 +43,7 @@ Controller::Controller(QObject* parent) : QObject(parent), watch_(new SlowWatch(
     bool ok = false;
     int ms = qEnvironmentVariableIntValue("GPS_UPDATE_TIMEOUT_MS", &ok);
     if (ok && ms > 0) updateTimeoutMs_ = ms;
+    loadCustomElements();
     connect(watch_, &SlowWatch::slow, this, [this] {
         log("Validation is taking longer than expected");
         emit changed();
@@ -153,6 +157,7 @@ void Controller::loadCatalog() {
         catalog_.clear();
         for (const QJsonValue& v : r.json["elements"].toArray()) catalog_ << ListEntry::fromJson(v.toObject());
         catalogLoaded_ = true;
+        loadCustomElements();
         log(QString("Element list: %1 factories").arg(catalog_.size()));
         emit catalogReady();
         emit changed();
@@ -231,6 +236,275 @@ gps::TraitsFn Controller::traits() const {
     };
 }
 
+// ---- custom elements & groups
+
+QString Controller::customElementsDir() {
+    QString env = qEnvironmentVariable("GPS_CUSTOM_ELEMENTS_DIR");
+    if (!env.isEmpty()) return env;
+    return QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) + "/custom_elements";
+}
+
+void Controller::loadCustomElements() {
+    customElements_.clear();
+    customPlans_.clear();
+    QDir dir(customElementsDir());
+    if (!dir.exists()) return;
+    QStringList files = dir.entryList({"*.conf"}, QDir::Files, QDir::Name);
+    for (const QString& f : files) {
+        gps::Plan sub;
+        std::string err;
+        if (!gps::Plan::load(toStd(dir.filePath(f)), &sub, &err) || sub.elements.empty()) continue;
+        CustomElementInfo ci;
+        ci.name = fromStd(sub.name).isEmpty() ? QFileInfo(f).completeBaseName() : fromStd(sub.name);
+        ci.elementCount = static_cast<int>(sub.elements.size());
+        QStringList factories;
+        bool anyFreeSink = false;
+        bool anyFreeSrc = false;
+        for (const gps::PlanElement& e : sub.elements) {
+            QString fac = fromStd(e.factory);
+            factories << fac;
+            bool isSrc = false, isSnk = false;
+            if (const ElementInfo* inf = info(fac)) {
+                isSrc = inf->isSource;
+                isSnk = inf->isSink;
+            } else {
+                for (const ListEntry& le : catalog_) {
+                    if (le.factory == fac) {
+                        isSrc = le.isSource;
+                        isSnk = le.isSink;
+                        break;
+                    }
+                }
+            }
+            if (!isSrc && sub.linksInto(e.name).empty()) anyFreeSink = true;
+            if (!isSnk && sub.linksFromElement(e.name).empty()) anyFreeSrc = true;
+        }
+        ci.description = factories.join(" → ");
+        ci.hasFreeSink = anyFreeSink;
+        ci.hasFreeSrc = anyFreeSrc;
+        ci.isSource = !anyFreeSink && anyFreeSrc;
+        ci.isSink = anyFreeSink && !anyFreeSrc;
+        customPlans_[ci.name] = sub;
+        customElements_ << ci;
+    }
+}
+
+const gps::Plan* Controller::customElementPlan(const QString& name) const {
+    auto it = customPlans_.find(name);
+    return it == customPlans_.end() ? nullptr : &it->second;
+}
+
+QString Controller::elementGroup(const QString& elementName) const {
+    const gps::PlanElement* e = plan_.find(toStd(elementName));
+    return e ? fromStd(e->group) : QString();
+}
+
+QStringList Controller::groupMembers(const QString& groupId) const {
+    if (groupId.isEmpty()) return {};
+    QStringList out;
+    std::string g = toStd(groupId);
+    for (const gps::PlanElement& e : plan_.elements) {
+        if (e.group == g) out << fromStd(e.name);
+    }
+    return out;
+}
+
+QStringList Controller::expandSelectionWithGroups(const QStringList& elementNames) const {
+    QStringList out;
+    QSet<QString> seen;
+    for (const QString& n : elementNames) {
+        if (!plan_.find(toStd(n))) continue;
+        QString grp = elementGroup(n);
+        if (!grp.isEmpty() && !isGroupExpanded(grp)) {
+            for (const QString& m : groupMembers(grp)) {
+                if (!seen.contains(m)) {
+                    seen.insert(m);
+                    out << m;
+                }
+            }
+        } else if (!seen.contains(n)) {
+            seen.insert(n);
+            out << n;
+        }
+    }
+    return out;
+}
+
+void Controller::setGroupExpanded(const QString& groupId, bool expanded) {
+    if (groupId.isEmpty()) return;
+    if (expanded) expandedGroups_.insert(groupId);
+    else expandedGroups_.remove(groupId);
+    emit changed();
+}
+
+bool Controller::groupSelectedElements(const QStringList& elementNames, const QString& groupTitle) {
+    if (busy()) return false;
+    QStringList expanded = expandSelectionWithGroups(elementNames);
+    if (expanded.isEmpty()) return false;
+    QString cleanTitle = groupTitle.trimmed();
+    if (cleanTitle.isEmpty()) cleanTitle = "CustomGroup";
+    cleanTitle.replace('#', '_');
+    QString groupId = cleanTitle + "#" + QString::number(nextGroupId_++);
+    pushUndo();
+    for (const QString& n : expanded) {
+        if (gps::PlanElement* e = plan_.find(toStd(n))) e->group = toStd(groupId);
+    }
+    expandedGroups_.remove(groupId);
+    dirty_ = true;
+    note("Grouped elements as " + cleanTitle);
+    emit changed();
+    return true;
+}
+
+bool Controller::ungroupElements(const QString& groupId) {
+    if (busy() || groupId.isEmpty()) return false;
+    QStringList members = groupMembers(groupId);
+    if (members.isEmpty()) return false;
+    pushUndo();
+    for (const QString& m : members) {
+        if (gps::PlanElement* e = plan_.find(toStd(m))) e->group.clear();
+    }
+    expandedGroups_.remove(groupId);
+    dirty_ = true;
+    note("Ungrouped " + groupId.section('#', 0, 0));
+    emit changed();
+    return true;
+}
+
+bool Controller::saveCustomElement(const QString& customName, const QStringList& elementNames, const QString& description) {
+    Q_UNUSED(description);
+    QString clean = customName.trimmed();
+    clean.replace('#', '_');
+    if (clean.isEmpty()) return false;
+    QStringList expanded = expandSelectionWithGroups(elementNames);
+    if (expanded.isEmpty()) return false;
+
+    gps::Plan sub = copySubplan(expanded);
+    if (sub.elements.empty()) return false;
+    sub.name = toStd(clean);
+
+    // Normalize relative positions so top-left starts at (0, 0).
+    double minX = sub.elements.front().x;
+    double minY = sub.elements.front().y;
+    for (const gps::PlanElement& e : sub.elements) {
+        minX = std::min(minX, e.x);
+        minY = std::min(minY, e.y);
+    }
+    for (gps::PlanElement& e : sub.elements) {
+        e.x -= minX;
+        e.y -= minY;
+        e.group = toStd(clean + "#0");
+    }
+
+    QDir dir(customElementsDir());
+    if (!dir.exists() && !dir.mkpath(".")) return false;
+    QString safeFile = clean;
+    safeFile.replace(QRegularExpression("[^A-Za-z0-9_.-]"), "_");
+    std::string err;
+    if (!sub.save(toStd(dir.filePath(safeFile + ".conf")), &err)) {
+        emit notice("Unable to save custom element: " + fromStd(err));
+        return false;
+    }
+
+    // Also group the selected elements on the active canvas as a collapsed instance of this custom element.
+    if (!busy()) {
+        groupSelectedElements(expanded, clean);
+    }
+    loadCustomElements();
+    emit changed();
+    return true;
+}
+
+bool Controller::removeCustomElement(const QString& customName) {
+    QDir dir(customElementsDir());
+    QString safeFile = customName;
+    safeFile.replace(QRegularExpression("[^A-Za-z0-9_.-]"), "_");
+    bool removed = QFile::remove(dir.filePath(safeFile + ".conf"));
+    loadCustomElements();
+    emit changed();
+    return removed;
+}
+
+QStringList Controller::addCustomElement(const QString& customName, double x, double y) {
+    const gps::Plan* tmpl = customElementPlan(customName);
+    if (!tmpl || busy()) return {};
+    gps::Plan copy = *tmpl;
+    QString groupId = customName + "#" + QString::number(nextGroupId_++);
+    for (gps::PlanElement& e : copy.elements) e.group = toStd(groupId);
+    expandedGroups_.remove(groupId);
+    QPointF at = (x >= 0.0 && y >= 0.0) ? QPointF(x, y) : freeSpot();
+    return pasteSubplan(copy, at.x(), at.y());
+}
+
+QStringList Controller::addCustomElementAfter(const QString& srcElement, const QString& srcPad, const QString& customName) {
+    const gps::Plan* tmpl = customElementPlan(customName);
+    const gps::PlanElement* from = plan_.find(toStd(srcElement));
+    if (!tmpl || !from || busy()) return {};
+    gps::Plan copy = *tmpl;
+    QString groupId = customName + "#" + QString::number(nextGroupId_++);
+    for (gps::PlanElement& e : copy.elements) e.group = toStd(groupId);
+    expandedGroups_.remove(groupId);
+
+    // Ensure all factories are cached, then insert and link the entry element.
+    QStringList missing;
+    for (const gps::PlanElement& e : copy.elements) {
+        QString fac = fromStd(e.factory);
+        if (!info(fac) && !missing.contains(fac)) missing << fac;
+    }
+    if (!missing.isEmpty()) {
+        fetchInfos(missing, [this, srcElement, srcPad, customName](bool ok) {
+            if (ok) addCustomElementAfter(srcElement, srcPad, customName);
+        });
+        return {};
+    }
+    pushUndo();
+    double baseX = from->x + metrics::kColumn;
+    double baseY = from->y;
+    double minX = copy.elements.front().x;
+    double minY = copy.elements.front().y;
+    for (const gps::PlanElement& e : copy.elements) {
+        minX = std::min(minX, e.x);
+        minY = std::min(minY, e.y);
+    }
+
+    std::map<std::string, std::string> nameMap;
+    QStringList createdNames;
+    for (const gps::PlanElement& e : copy.elements) {
+        std::string created = plan_.addElement(e.factory, e.props, baseX + (e.x - minX), baseY + (e.y - minY));
+        if (gps::PlanElement* pe = plan_.find(created)) pe->group = toStd(groupId);
+        ElementEdit edit;
+        edit.props = e.props;
+        edit.requestSrc = e.requestSrc;
+        edit.requestSink = e.requestSink;
+        applyEdit(created, edit);
+        nameMap[e.name] = created;
+        createdNames << fromStd(created);
+    }
+    for (const gps::PlanLink& l : copy.links) {
+        auto itSrc = nameMap.find(l.srcElement);
+        auto itSnk = nameMap.find(l.sinkElement);
+        if (itSrc != nameMap.end() && itSnk != nameMap.end()) {
+            plan_.linkExisting(itSrc->second, l.srcPad, itSnk->second, l.sinkPad, l.caps, l.sinkPadProps);
+        }
+    }
+
+    // Link srcElement.srcPad to the first free sink pad of the custom element group.
+    ElementView gv = groupView(groupId);
+    for (const PadView& p : gv.sinks) {
+        if (p.state != PadView::Linked) {
+            plan_.linkExisting(toStd(srcElement), toStd(srcPad), toStd(p.element), toStd(p.templateName));
+            break;
+        }
+    }
+    note("Added custom element " + customName + " after " + srcElement + "." + srcPad);
+    bool anyTracked = false;
+    for (const QString& n : createdNames) {
+        if (plan_.isElementTracked(toStd(n), traits())) anyTracked = true;
+    }
+    edited(createdNames.value(0), anyTracked);
+    return createdNames;
+}
+
 // ---- views
 
 QString Controller::elementNote(const QString& element, bool* isError) const {
@@ -254,13 +528,17 @@ ElementView Controller::view(const QString& name) const {
     if (!element) return v;
 
     v.factory = fromStd(element->factory);
+    v.groupId = fromStd(element->group);
+    if (!v.groupId.isEmpty()) v.groupMembers = groupMembers(v.groupId);
     for (const ListEntry& e : catalog_) {
         if (e.factory == v.factory) v.nvidia = e.nvidia;
     }
 
     // Changed properties, the exposed ones marked.
     QStringList lines;
-    for (const auto& [key, value] : element->props) {
+    for (const auto& entry : element->props) {
+        const auto& key = entry.first;
+        const auto& value = entry.second;
         bool exposed = std::any_of(plan_.exposed.begin(), plan_.exposed.end(),
                                    [&](const gps::ExposedParam& p) { return p.element == element->name && p.property == key; });
         lines << (exposed ? "↗ " : "") + fromStd(key) + " = " + fromStd(value);
@@ -382,6 +660,74 @@ ElementView Controller::view(const QString& name) const {
             p.state = p.link >= 0 ? PadView::Linked : ((!v.isTracked || (r && r->unknownData)) ? PadView::Unknown : PadView::Free);
             v.srcs << p;
         }
+    }
+    return v;
+}
+
+void Controller::subgraphExternalPads(const QStringList& members, QList<PadView>* outSinks, QList<PadView>* outSrcs) const {
+    QSet<QString> memberSet(members.begin(), members.end());
+    for (const QString& m : members) {
+        ElementView mv = view(m);
+        if (outSinks) {
+            for (const PadView& sp : mv.sinks) {
+                bool internal = sp.link >= 0 && sp.link < static_cast<int>(plan_.links.size()) &&
+                                memberSet.contains(fromStd(plan_.links[sp.link].srcElement));
+                if (!internal) *outSinks << sp;
+            }
+        }
+        if (outSrcs) {
+            for (const PadView& srp : mv.srcs) {
+                bool internal = srp.link >= 0 && srp.link < static_cast<int>(plan_.links.size()) &&
+                                memberSet.contains(fromStd(plan_.links[srp.link].sinkElement));
+                if (!internal) *outSrcs << srp;
+            }
+        }
+    }
+}
+
+ElementView Controller::groupView(const QString& groupId) const {
+    ElementView v;
+    QStringList members = groupMembers(groupId);
+    if (members.isEmpty()) return v;
+
+    QString title = groupId.section('#', 0, 0);
+    v.name = members.first();
+    v.displayTitle = title.isEmpty() ? groupId : title;
+    v.groupId = groupId;
+    v.isCustomGroup = true;
+    v.groupMembers = members;
+    v.isTracked = false;
+
+    QStringList factories;
+    QStringList propSummary;
+    for (const QString& m : members) {
+        ElementView mv = view(m);
+        factories << mv.factory;
+        if (mv.nvidia) v.nvidia = true;
+        if (mv.isTracked) v.isTracked = true;
+        if (mv.isError && !mv.note.isEmpty()) {
+            v.isError = true;
+            v.note = m + ": " + mv.note;
+        } else if (v.note.isEmpty() && !mv.note.isEmpty() && !mv.isInfo) {
+            v.note = m + ": " + mv.note;
+        }
+        for (const QString& pl : mv.propLines) {
+            if (!pl.startsWith("…")) propSummary << (m + "." + pl);
+        }
+    }
+    subgraphExternalPads(members, &v.sinks, &v.srcs);
+    v.isSource = v.sinks.isEmpty() && !v.srcs.isEmpty();
+    v.isSink = !v.sinks.isEmpty() && v.srcs.isEmpty();
+    v.factory = QString("custom (%1) · %2").arg(members.size()).arg(factories.join(" → "));
+    if (propSummary.size() > metrics::kMaxPropLines) {
+        int hidden = propSummary.size() - (metrics::kMaxPropLines - 1);
+        propSummary = propSummary.mid(0, metrics::kMaxPropLines - 1);
+        propSummary << QString("… +%1 more").arg(hidden);
+    }
+    v.propLines = propSummary;
+    if (!v.isTracked && v.note.isEmpty() && !v.isSource) {
+        v.isInfo = true;
+        v.note = "ℹ Unlinked custom element — not tracked until fed by a source.";
     }
     return v;
 }
@@ -531,11 +877,142 @@ void Controller::applyEdit(const std::string& element, const ElementEdit& edit) 
     plan_.setExposed(all);
 }
 
-void Controller::edited(const QString& touchedElement) {
+void Controller::pushUndo() {
+    undoStack_.push_back(plan_);
+    if (undoStack_.size() > 64) undoStack_.erase(undoStack_.begin());
+    redoStack_.clear();
+}
+
+void Controller::edited(const QString& touchedElement, bool validate) {
     dirty_ = true;
     touched_ = touchedElement;
     emit changed();
-    startUpdate();
+    if (validate) {
+        startUpdate();
+    } else {
+        emit updateFinished(true);
+    }
+}
+
+bool Controller::undo() {
+    if (!canUndo()) return false;
+    redoStack_.push_back(plan_);
+    plan_ = undoStack_.back();
+    undoStack_.pop_back();
+    note("Undo");
+    edited(QString(), true);
+    return true;
+}
+
+bool Controller::redo() {
+    if (!canRedo()) return false;
+    undoStack_.push_back(plan_);
+    plan_ = redoStack_.back();
+    redoStack_.pop_back();
+    note("Redo");
+    edited(QString(), true);
+    return true;
+}
+
+gps::Plan Controller::copySubplan(const QStringList& elementNames) const {
+    gps::Plan sub;
+    QStringList expanded = expandSelectionWithGroups(elementNames);
+    std::set<std::string> chosen;
+    for (const QString& n : expanded) {
+        std::string s = toStd(n);
+        if (const gps::PlanElement* pe = plan_.find(s)) {
+            chosen.insert(s);
+            sub.elements.push_back(*pe);
+        }
+    }
+    for (const gps::PlanLink& l : plan_.links) {
+        if (chosen.count(l.srcElement) && chosen.count(l.sinkElement)) {
+            sub.links.push_back(l);
+        }
+    }
+    for (const gps::ExposedParam& ep : plan_.exposed) {
+        if (chosen.count(ep.element)) {
+            sub.exposed.push_back(ep);
+        }
+    }
+    return sub;
+}
+
+QStringList Controller::pasteSubplan(const gps::Plan& clip, double targetX, double targetY) {
+    if (busy() || clip.elements.empty()) return {};
+    QStringList missing;
+    for (const gps::PlanElement& e : clip.elements) {
+        QString fac = fromStd(e.factory);
+        if (!info(fac) && !missing.contains(fac)) missing << fac;
+    }
+    if (!missing.isEmpty()) {
+        fetchInfos(missing, [this, clip, targetX, targetY](bool ok) {
+            if (ok) pasteSubplan(clip, targetX, targetY);
+        });
+        return {};
+    }
+
+    double minX = clip.elements.front().x;
+    double minY = clip.elements.front().y;
+    for (const gps::PlanElement& e : clip.elements) {
+        minX = std::min(minX, e.x);
+        minY = std::min(minY, e.y);
+    }
+    double offsetX = (targetX >= 0.0) ? (targetX - minX) : 40.0;
+    double offsetY = (targetY >= 0.0) ? (targetY - minY) : 40.0;
+
+    pushUndo();
+    std::map<std::string, std::string> nameMap;
+    std::map<std::string, std::string> groupMap;
+    QStringList createdNames;
+    bool anyTracked = false;
+
+    for (const gps::PlanElement& e : clip.elements) {
+        std::string created = plan_.addElement(e.factory, e.props, e.x + offsetX, e.y + offsetY);
+        if (!e.group.empty()) {
+            auto git = groupMap.find(e.group);
+            if (git == groupMap.end()) {
+                QString baseTitle = fromStd(e.group).section('#', 0, 0);
+                std::string newGrp = toStd(baseTitle + "#" + QString::number(nextGroupId_++));
+                git = groupMap.emplace(e.group, newGrp).first;
+            }
+            if (gps::PlanElement* pe = plan_.find(created)) pe->group = git->second;
+        }
+        ElementEdit edit;
+        edit.props = e.props;
+        edit.requestSrc = e.requestSrc;
+        edit.requestSink = e.requestSink;
+        for (const gps::ExposedParam& ep : clip.exposed) {
+            if (ep.element == e.name) edit.exposed.push_back(ep.property);
+        }
+        applyEdit(created, edit);
+        nameMap[e.name] = created;
+        createdNames << fromStd(created);
+    }
+
+    for (const gps::PlanLink& l : clip.links) {
+        auto itSrc = nameMap.find(l.srcElement);
+        auto itSnk = nameMap.find(l.sinkElement);
+        if (itSrc != nameMap.end() && itSnk != nameMap.end()) {
+            plan_.linkExisting(itSrc->second, l.srcPad, itSnk->second, l.sinkPad, l.caps, l.sinkPadProps);
+        }
+    }
+
+    for (const QString& n : createdNames) {
+        if (plan_.isElementTracked(toStd(n), traits())) anyTracked = true;
+    }
+    if (!createdNames.isEmpty()) {
+        note(QString("Pasted %1 element(s)").arg(createdNames.size()));
+        edited(createdNames.last(), anyTracked);
+    }
+    return createdNames;
+}
+
+QStringList Controller::duplicateElements(const QStringList& names) {
+    if (busy() || names.isEmpty()) return {};
+    gps::Plan sub = copySubplan(names);
+    if (sub.elements.empty()) return {};
+    return pasteSubplan(sub, -1.0, -1.0);
 }
 
 bool Controller::addSource(const QString& factory, const ElementEdit& edit) {
@@ -544,11 +1021,13 @@ bool Controller::addSource(const QString& factory, const ElementEdit& edit) {
 
 bool Controller::addElement(const QString& factory, const ElementEdit& edit, double x, double y) {
     if (busy() || !info(factory)) return false;
+    pushUndo();
     QPointF at = (x >= 0.0 && y >= 0.0) ? QPointF(x, y) : freeSpot();
     std::string name = plan_.addElement(toStd(factory), edit.props, at.x(), at.y());
     note("Added " + factory);
     applyEdit(name, edit);
-    edited(fromStd(name));
+    bool isTracked = plan_.isElementTracked(name, traits());
+    edited(fromStd(name), isTracked);
     return true;
 }
 
@@ -557,12 +1036,17 @@ bool Controller::addAfter(const QString& element, const QString& pad, const QStr
     if (busy() || !info(factory)) return false;
     const gps::PlanElement* from = plan_.find(toStd(element));
     if (!from) return false;
+    pushUndo();
     std::string name = plan_.addAfter(toStd(element), toStd(pad), toStd(factory), toStd(sinkPad), edit.props,
                                       from->x + metrics::kColumn, from->y);
-    if (name.empty()) return false;
+    if (name.empty()) {
+        undoStack_.pop_back();
+        return false;
+    }
     applyEdit(name, edit);
     note("Added " + factory + " after " + element + "." + pad, padText(element, pad) + " -> " + padText(fromStd(name), sinkPad));
-    edited(fromStd(name));
+    bool isTracked = plan_.isElementTracked(name, traits());
+    edited(fromStd(name), isTracked);
     return true;
 }
 
@@ -572,42 +1056,63 @@ bool Controller::linkExisting(const QString& element, const QString& pad, const 
         emit notice(fromStd(gps::Plan::ouroborosMessage(toStd(element), toStd(sinkElement))));
         return false;
     }
-    if (!plan_.linkExisting(toStd(element), toStd(pad), toStd(sinkElement), toStd(sinkPad))) return false;
+    pushUndo();
+    if (!plan_.linkExisting(toStd(element), toStd(pad), toStd(sinkElement), toStd(sinkPad))) {
+        undoStack_.pop_back();
+        return false;
+    }
     note("Linked " + element + "." + pad + " to an existing element", padText(element, pad) + " -> " + padText(sinkElement, sinkPad));
-    edited(sinkElement);
+    bool isTracked = plan_.isElementTracked(toStd(element), traits()) || plan_.isElementTracked(toStd(sinkElement), traits());
+    edited(sinkElement, isTracked);
     return true;
 }
 
 bool Controller::editElement(const QString& element, const ElementEdit& edit) {
-    if (busy() || !plan_.setProps(toStd(element), edit.props)) return false;
+    if (busy() || !plan_.find(toStd(element))) return false;
+    pushUndo();
+    plan_.setProps(toStd(element), edit.props);
     applyEdit(toStd(element), edit);
     const gps::PlanElement* e = plan_.find(toStd(element));
     note("Edited the properties of " + element + (e ? " (" + fromStd(e->factory) + ")" : QString()));
-    edited(element);
+    bool isTracked = plan_.isElementTracked(toStd(element), traits());
+    edited(element, isTracked);
     return true;
 }
 
 bool Controller::setCaps(const QString& element, const QString& pad, const QString& caps, const gps::Props& sinkPadProps) {
-    if (busy() || !plan_.setCaps(toStd(element), toStd(pad), toStd(caps))) return false;
+    if (busy() || plan_.linkFrom(toStd(element), toStd(pad)) < 0) return false;
+    pushUndo();
+    plan_.setCaps(toStd(element), toStd(pad), toStd(caps));
     plan_.setSinkPadProps(toStd(element), toStd(pad), sinkPadProps);
     note("Changed the caps of " + element + "." + pad, padText(element, pad));
-    edited(element);
+    edited(element, true);
     return true;
 }
 
 bool Controller::cut(const QString& element, const QString& pad) {
     QString linking = padText(element, pad);
-    if (busy() || plan_.cut(toStd(element), toStd(pad), traits()).links == 0) return false;
+    if (busy()) return false;
+    pushUndo();
+    if (plan_.cut(toStd(element), toStd(pad), traits()).links == 0) {
+        undoStack_.pop_back();
+        return false;
+    }
     note("Cut the link at " + element + "." + pad, linking);
-    edited(element);
+    edited(element, true);
     return true;
 }
 
 bool Controller::disconnectLink(const QString& element, const QString& pad) {
     QString linking = padText(element, pad);
-    if (busy() || !plan_.disconnectLink(toStd(element), toStd(pad))) return false;
+    if (busy()) return false;
+    bool wasTracked = plan_.isElementTracked(toStd(element), traits());
+    pushUndo();
+    if (!plan_.disconnectLink(toStd(element), toStd(pad))) {
+        undoStack_.pop_back();
+        return false;
+    }
     note("Disconnected the link at " + element + "." + pad, linking);
-    edited(element);
+    edited(element, wasTracked);
     return true;
 }
 
@@ -615,62 +1120,125 @@ bool Controller::replace(const QString& element, const QString& pad, const QStri
                          const ElementEdit& edit) {
     if (busy() || !info(factory)) return false;
     QString linking = padText(element, pad);
+    pushUndo();
     gps::Addition added = plan_.replace(toStd(element), toStd(pad), toStd(factory), toStd(sinkPad), edit.props, traits());
-    if (added.element.empty()) return false;
+    if (added.element.empty()) {
+        undoStack_.pop_back();
+        return false;
+    }
     note("Replaced the element behind " + element + "." + pad + " with " + factory, linking + " -> " + factory);
     applyEdit(added.element, edit);
-    edited(fromStd(added.element));
+    edited(fromStd(added.element), plan_.isElementTracked(added.element, traits()));
     return true;
 }
 
 bool Controller::deleteSource(const QString& element) {
-    if (busy() || plan_.deleteSource(toStd(element), traits()).elements.empty()) return false;
-    note("Deleted source " + element);
-    edited(QString());
-    return true;
+    return deleteSelection({element}, {}, false);
 }
 
 bool Controller::deleteElement(const QString& element, bool autoHeal) {
+    return deleteSelection({element}, {}, autoHeal);
+}
+
+bool Controller::deleteSelection(const QStringList& elementNames, const QList<QPair<QString, QString>>& links, bool autoHeal) {
     if (busy()) return false;
-    const gps::PlanElement* e = plan_.find(toStd(element));
-    if (!e) return false;
-    int totalSrcPads = view(element).srcs.size();
-    if (!plan_.deleteElement(toStd(element), autoHeal, totalSrcPads)) return false;
-    note("Deleted element " + element);
-    edited(QString());
+    QStringList expanded = expandSelectionWithGroups(elementNames);
+    if (expanded.isEmpty() && links.isEmpty()) return false;
+
+    bool anyTracked = false;
+    for (const QString& n : expanded) {
+        if (plan_.isElementTracked(toStd(n), traits())) anyTracked = true;
+    }
+    for (const auto& [srcEl, srcPad] : links) {
+        Q_UNUSED(srcPad);
+        if (plan_.isElementTracked(toStd(srcEl), traits())) anyTracked = true;
+    }
+
+    int exitTotalSrcPads = 1;
+    QList<PadView> extSrcs;
+    subgraphExternalPads(expanded, nullptr, &extSrcs);
+    if (!extSrcs.isEmpty()) exitTotalSrcPads = extSrcs.size();
+
+    std::vector<std::string> stdNames;
+    for (const QString& n : expanded) stdNames.push_back(toStd(n));
+
+    pushUndo();
+    bool changedAny = false;
+    for (const auto& [srcEl, srcPad] : links) {
+        if (plan_.disconnectLink(toStd(srcEl), toStd(srcPad))) changedAny = true;
+    }
+    if (!stdNames.empty()) {
+        if (plan_.deleteElements(stdNames, autoHeal, exitTotalSrcPads)) changedAny = true;
+    }
+    if (!changedAny) {
+        undoStack_.pop_back();
+        return false;
+    }
+    note(expanded.size() == 1 ? ("Deleted element " + expanded.first())
+                              : QString("Deleted selection (%1 elements)").arg(expanded.size()));
+    edited(QString(), anyTracked);
     return true;
 }
 
 bool Controller::spliceElement(const QString& element, const QString& linkSrcElement, const QString& linkSrcPad) {
-    if (busy()) return false;
-    ElementView v = view(element);
-    std::vector<std::string> freeSinks, freeSrcs;
-    for (const PadView& p : v.sinks) {
-        if (p.state != PadView::Linked) freeSinks.push_back(toStd(p.templateName));
+    return spliceElements({element}, linkSrcElement, linkSrcPad);
+}
+
+bool Controller::spliceElements(const QStringList& elements, const QString& linkSrcElement, const QString& linkSrcPad) {
+    if (busy() || elements.isEmpty()) return false;
+    QStringList expanded = expandSelectionWithGroups(elements);
+    if (expanded.isEmpty()) return false;
+
+    pushUndo();
+    // If multiple unconnected elements are dragged together onto a link, connect them in left-to-right order first.
+    if (expanded.size() > 1) {
+        linkOrderedInternal(expanded);
     }
-    if (const ElementInfo* inf = info(v.factory)) {
-        for (const PadTemplateInfo& t : inf->sinkTemplates()) {
-            if (t.isRequest() && std::find(freeSinks.begin(), freeSinks.end(), toStd(t.name)) == freeSinks.end()) {
-                freeSinks.push_back(toStd(t.name));
+
+    QList<PadView> extSinks, extSrcs;
+    subgraphExternalPads(expanded, &extSinks, &extSrcs);
+
+    std::vector<std::pair<std::string, std::string>> freeSinks, freeSrcs;
+    for (const PadView& p : extSinks) {
+        if (p.state != PadView::Linked) freeSinks.emplace_back(toStd(p.element), toStd(p.templateName));
+    }
+    if (expanded.size() == 1) {
+        const QString& only = expanded.first();
+        if (const ElementInfo* inf = info(view(only).factory)) {
+            for (const PadTemplateInfo& t : inf->sinkTemplates()) {
+                if (t.isRequest()) {
+                    std::pair<std::string, std::string> cand{toStd(only), toStd(t.name)};
+                    if (std::find(freeSinks.begin(), freeSinks.end(), cand) == freeSinks.end()) {
+                        freeSinks.push_back(cand);
+                    }
+                }
             }
         }
     }
-    for (const PadView& p : v.srcs) {
-        if (p.state != PadView::Linked) freeSrcs.push_back(toStd(p.identity));
+    for (const PadView& p : extSrcs) {
+        if (p.state != PadView::Linked) freeSrcs.emplace_back(toStd(p.element), toStd(p.identity));
     }
-    if (!plan_.spliceElement(toStd(element), toStd(linkSrcElement), toStd(linkSrcPad), freeSinks, freeSrcs)) return false;
-    note("Spliced " + element + " into link from " + linkSrcElement + "." + linkSrcPad);
-    edited(element);
+
+    if (!plan_.spliceChain(toStd(linkSrcElement), toStd(linkSrcPad), freeSinks, freeSrcs)) {
+        undoStack_.pop_back();
+        return false;
+    }
+    note("Spliced " + expanded.join(", ") + " into link from " + linkSrcElement + "." + linkSrcPad);
+    edited(expanded.first(), plan_.isElementTracked(toStd(linkSrcElement), traits()));
     return true;
 }
 
 bool Controller::insertQueue(const QString& element, const QString& pad) {
     if (busy() || !info(fromStd(gps::kQueueFactory))) return false;
+    pushUndo();
     std::string name = plan_.insertQueue(toStd(element), toStd(pad));
-    if (name.empty()) return false;
+    if (name.empty()) {
+        undoStack_.pop_back();
+        return false;
+    }
     makeRoomForQueue(element.toStdString(), name);
     note("Inserted a queue after " + element + "." + pad, padText(element, pad));
-    edited(fromStd(name));
+    edited(fromStd(name), plan_.isElementTracked(name, traits()));
     return true;
 }
 
@@ -702,19 +1270,222 @@ void Controller::makeRoomForQueue(const std::string& source, const std::string& 
 }
 
 bool Controller::removeQueue(const QString& queue) {
-    if (busy() || !plan_.removeQueue(toStd(queue))) return false;
+    if (busy()) return false;
+    bool wasTracked = plan_.isElementTracked(toStd(queue), traits());
+    pushUndo();
+    if (!plan_.removeQueue(toStd(queue))) {
+        undoStack_.pop_back();
+        return false;
+    }
     note("Removed queue " + queue);
-    edited(QString());
+    edited(QString(), wasTracked);
     return true;
 }
 
 void Controller::setPosition(const QString& element, double x, double y) {
-    gps::PlanElement* e = plan_.find(toStd(element));
-    if (!e || (e->x == x && e->y == y)) return;
-    e->x = x;
-    e->y = y;
+    setPositions({{element, QPointF(x, y)}});
+}
+
+void Controller::setPositions(const QList<QPair<QString, QPointF>>& positions) {
+    if (positions.isEmpty()) return;
+    bool moved = false;
+    QSet<QString> handledGroups;
+    for (const auto& [element, pt] : positions) {
+        gps::PlanElement* e = plan_.find(toStd(element));
+        if (!e) continue;
+        double dx = pt.x() - e->x;
+        double dy = pt.y() - e->y;
+        if (std::abs(dx) < 0.01 && std::abs(dy) < 0.01) continue;
+        QString grp = fromStd(e->group);
+        if (!grp.isEmpty() && !isGroupExpanded(grp)) {
+            if (handledGroups.contains(grp)) continue;
+            handledGroups.insert(grp);
+            for (const QString& m : groupMembers(grp)) {
+                if (gps::PlanElement* me = plan_.find(toStd(m))) {
+                    me->x += dx;
+                    me->y += dy;
+                    moved = true;
+                }
+            }
+        } else {
+            e->x = pt.x();
+            e->y = pt.y();
+            moved = true;
+        }
+    }
+    if (!moved) return;
     dirty_ = true;
     emit changed();
+}
+
+bool Controller::linkOrderedInternal(const QStringList& expanded, QString* lastTouched) {
+    if (expanded.size() < 2) return false;
+    std::vector<QString> sorted(expanded.begin(), expanded.end());
+    std::stable_sort(sorted.begin(), sorted.end(), [this](const QString& a, const QString& b) {
+        const gps::PlanElement* ea = plan_.find(toStd(a));
+        const gps::PlanElement* eb = plan_.find(toStd(b));
+        if (!ea || !eb) return a < b;
+        if (std::abs(ea->x - eb->x) > 1.0) return ea->x < eb->x;
+        ElementView va = view(a), vb = view(b);
+        int roleA = va.isSource ? 0 : (va.isSink ? 2 : 1);
+        int roleB = vb.isSource ? 0 : (vb.isSink ? 2 : 1);
+        if (roleA != roleB) return roleA < roleB;
+        return ea->y < eb->y;
+    });
+
+    bool linkedAny = false;
+    for (size_t i = 0; i + 1 < sorted.size(); ++i) {
+        const QString& srcEl = sorted[i];
+        const QString& snkEl = sorted[i + 1];
+        if (plan_.wouldCycle(toStd(srcEl), toStd(snkEl))) continue;
+        ElementView sv = view(srcEl);
+        ElementView dv = view(snkEl);
+        QString srcPad;
+        for (const PadView& p : sv.srcs) {
+            if (p.state != PadView::Linked) {
+                srcPad = p.identity;
+                break;
+            }
+        }
+        QString sinkPad;
+        for (const PadView& p : dv.sinks) {
+            if (p.state != PadView::Linked) {
+                sinkPad = p.templateName;
+                break;
+            }
+        }
+        if (sinkPad.isEmpty()) {
+            if (const ElementInfo* inf = info(dv.factory)) {
+                for (const PadTemplateInfo& t : inf->sinkTemplates()) {
+                    if (t.isRequest()) {
+                        sinkPad = t.name;
+                        break;
+                    }
+                }
+            }
+        }
+        if (!srcPad.isEmpty() && !sinkPad.isEmpty()) {
+            if (plan_.linkExisting(toStd(srcEl), toStd(srcPad), toStd(snkEl), toStd(sinkPad))) {
+                linkedAny = true;
+                if (lastTouched) *lastTouched = snkEl;
+            }
+        }
+    }
+    return linkedAny;
+}
+
+bool Controller::connectSelectedElements(const QStringList& names) {
+    if (busy() || names.size() < 2) return false;
+    QStringList expanded = expandSelectionWithGroups(names);
+    if (expanded.size() < 2) return false;
+
+    pushUndo();
+    QString lastTouched;
+    if (!linkOrderedInternal(expanded, &lastTouched)) {
+        undoStack_.pop_back();
+        return false;
+    }
+    bool anyTracked = false;
+    for (const QString& n : expanded) {
+        if (plan_.isElementTracked(toStd(n), traits())) anyTracked = true;
+    }
+    note("Connected selected elements");
+    edited(lastTouched, anyTracked);
+    return true;
+}
+
+bool Controller::disconnectBetweenElements(const QStringList& names) {
+    if (busy() || names.size() < 2) return false;
+    QStringList expanded = expandSelectionWithGroups(names);
+    std::set<std::string> chosen;
+    for (const QString& n : expanded) chosen.insert(toStd(n));
+
+    bool anyTracked = false;
+    for (const QString& n : expanded) {
+        if (plan_.isElementTracked(toStd(n), traits())) anyTracked = true;
+    }
+
+    pushUndo();
+    size_t before = plan_.links.size();
+    plan_.links.erase(std::remove_if(plan_.links.begin(), plan_.links.end(),
+                                     [&](const gps::PlanLink& l) { return chosen.count(l.srcElement) && chosen.count(l.sinkElement); }),
+                      plan_.links.end());
+    if (plan_.links.size() == before) {
+        undoStack_.pop_back();
+        return false;
+    }
+    note("Disconnected links between selected elements");
+    edited(QString(), anyTracked);
+    return true;
+}
+
+bool Controller::alignElementsHorizontally(const QStringList& names) {
+    if (busy() || names.size() < 2) return false;
+    QStringList expanded = expandSelectionWithGroups(names);
+    if (expanded.size() < 2) return false;
+    pushUndo();
+    double sumY = 0;
+    std::vector<gps::PlanElement*> elems;
+    for (const QString& n : expanded) {
+        if (gps::PlanElement* e = plan_.find(toStd(n))) {
+            elems.push_back(e);
+            sumY += e->y;
+        }
+    }
+    if (elems.size() < 2) {
+        undoStack_.pop_back();
+        return false;
+    }
+    double avgY = std::round(sumY / elems.size());
+    std::sort(elems.begin(), elems.end(), [](const gps::PlanElement* a, const gps::PlanElement* b) { return a->x < b->x; });
+    double curX = elems.front()->x;
+    for (size_t i = 0; i < elems.size(); ++i) {
+        elems[i]->y = avgY;
+        if (i > 0 && elems[i]->x < curX + metrics::kColumn) {
+            elems[i]->x = curX + metrics::kColumn;
+        }
+        curX = elems[i]->x;
+    }
+    dirty_ = true;
+    note("Aligned selected elements horizontally");
+    emit changed();
+    return true;
+}
+
+bool Controller::alignElementsVertically(const QStringList& names) {
+    if (busy() || names.size() < 2) return false;
+    QStringList expanded = expandSelectionWithGroups(names);
+    if (expanded.size() < 2) return false;
+    pushUndo();
+    double sumX = 0;
+    std::vector<gps::PlanElement*> elems;
+    for (const QString& n : expanded) {
+        if (gps::PlanElement* e = plan_.find(toStd(n))) {
+            elems.push_back(e);
+            sumX += e->x;
+        }
+    }
+    if (elems.size() < 2) {
+        undoStack_.pop_back();
+        return false;
+    }
+    double avgX = std::round(sumX / elems.size());
+    std::sort(elems.begin(), elems.end(), [](const gps::PlanElement* a, const gps::PlanElement* b) { return a->y < b->y; });
+    double curY = elems.front()->y;
+    for (size_t i = 0; i < elems.size(); ++i) {
+        elems[i]->x = avgX;
+        if (i > 0) {
+            double prevH = view(fromStd(elems[i - 1]->name)).height();
+            if (elems[i]->y < curY + prevH + metrics::kGap) {
+                elems[i]->y = curY + prevH + metrics::kGap;
+            }
+        }
+        curY = elems[i]->y;
+    }
+    dirty_ = true;
+    note("Aligned selected elements vertically");
+    emit changed();
+    return true;
 }
 
 gps::Removal Controller::previewCut(const QString& element, const QString& pad) const {
@@ -825,6 +1596,8 @@ bool Controller::refresh() {
 
 void Controller::newPlan() {
     if (busy()) return;
+    undoStack_.clear();
+    redoStack_.clear();
     plan_ = gps::Plan();
     result_ = UpdateResult();
     cancelled_ = false;
@@ -853,6 +1626,8 @@ void Controller::open(const QString& path) {
             emit changed();
             return;
         }
+        undoStack_.clear();
+        redoStack_.clear();
         plan_ = *loaded;
         path_ = path;
         dirty_ = false;

@@ -2,13 +2,18 @@
 #include "flows.h"
 
 #include <QAction>
+#include <QHBoxLayout>
+#include <QLabel>
 #include <QMenu>
+#include <QTabWidget>
+#include <QVBoxLayout>
 
 #include "capspage.h"
 #include "confirmdialog.h"
 #include "drawer.h"
 #include "pickerpage.h"
 #include "propertypage.h"
+#include "theme.h"
 
 namespace {
 
@@ -16,14 +21,129 @@ QString pathText(const QString& element, const QString& identity) { return eleme
 
 QString pluralElements(int n) { return QString("%1 element%2").arg(n).arg(n == 1 ? "" : "s"); }
 
+void clearTabLayout(QWidget* tab) {
+    if (!tab || !tab->layout()) return;
+    QLayout* layout = tab->layout();
+    while (QLayoutItem* item = layout->takeAt(0)) {
+        if (QWidget* w = item->widget()) {
+            w->hide();
+            w->setParent(nullptr);
+            w->deleteLater();
+        }
+        delete item;
+    }
+}
+
 }  // namespace
 
 Flows::Flows(Controller* controller, Drawer* drawer, QWidget* window)
-    : QObject(window), controller_(controller), drawer_(drawer), window_(window) {
-    connect(drawer_, &Drawer::closed, this, &Flows::abandonPending);
+    : QObject(window), controller_(controller), drawer_(drawer), window_(window) {}
+
+void Flows::setBottomPanels(QTabWidget* tabs, QWidget* propsTab, QWidget* capsTab, QWidget* defaultTab) {
+    tabs_ = tabs;
+    propsTab_ = propsTab;
+    capsTab_ = capsTab;
+    defaultTab_ = defaultTab;
+    closeProperties();
+    closeCaps();
 }
 
-// The user closed the drawer while the validation of an edit was still running: no caps page opens afterwards.
+void Flows::setBusy(bool busy) {
+    if (PropertyPage* p = propertyPage()) p->setEnabled(!busy);
+    if (CapsPage* c = capsPage()) c->setEnabled(!busy);
+}
+
+PropertyPage* Flows::propertyPage() const {
+    return propsTab_ ? propsTab_->findChild<PropertyPage*>() : nullptr;
+}
+
+CapsPage* Flows::capsPage() const {
+    return capsTab_ ? capsTab_->findChild<CapsPage*>() : nullptr;
+}
+
+void Flows::presentProperties(PropertyPage* page, const QString& title) {
+    drawer_->dismiss();
+    if (!propsTab_ || !tabs_) {
+        page->deleteLater();
+        return;
+    }
+    clearTabLayout(propsTab_);
+    propsTitle_ = title;
+    auto* layout = static_cast<QVBoxLayout*>(propsTab_->layout());
+    auto* titleLabel = new QLabel(title, propsTab_);
+    titleLabel->setObjectName("propsTabTitle");
+    titleLabel->setStyleSheet("font-weight: bold; color: " + Theme::accent().name() + ";");
+    layout->addWidget(titleLabel);
+    page->setParent(propsTab_);
+    layout->addWidget(page, 1);
+    page->show();
+    connect(page, &DrawerPage::cancelled, this, &Flows::closeProperties);
+    tabs_->setCurrentWidget(propsTab_);
+    page->focusFirst();
+}
+
+void Flows::closeProperties() {
+    abandonPending();  // closing while a validation runs: no caps step afterwards
+    propsTitle_.clear();
+    if (!propsTab_) return;
+    bool wasCurrent = tabs_ && tabs_->currentWidget() == propsTab_;
+    clearTabLayout(propsTab_);
+    auto* layout = static_cast<QVBoxLayout*>(propsTab_->layout());
+    auto* hint = new QLabel("Click an element on the canvas to inspect or edit its Properties.", propsTab_);
+    hint->setObjectName("muted");
+    layout->addWidget(hint);
+    layout->addStretch(1);
+    if (wasCurrent && tabs_ && defaultTab_) tabs_->setCurrentWidget(defaultTab_);
+}
+
+void Flows::presentCaps(CapsPage* page, const QString& title, const QString& subtitle) {
+    drawer_->dismiss();
+    if (!capsTab_ || !tabs_) {
+        page->deleteLater();
+        return;
+    }
+    clearTabLayout(capsTab_);
+    capsTitle_ = title;
+    auto* layout = static_cast<QVBoxLayout*>(capsTab_->layout());
+    auto* headRow = new QHBoxLayout;
+    auto* titleLabel = new QLabel(title, capsTab_);
+    titleLabel->setObjectName("capsTabTitle");
+    titleLabel->setStyleSheet("font-weight: bold; color: " + Theme::accent().name() + ";");
+    headRow->addWidget(titleLabel);
+    if (!subtitle.isEmpty()) {
+        auto* subLabel = new QLabel(subtitle, capsTab_);
+        subLabel->setObjectName("capsTabSubtitle");
+        subLabel->setStyleSheet("color: " + Theme::muted().name() + ";");
+        headRow->addWidget(subLabel);
+    }
+    headRow->addStretch(1);
+    auto* headWidget = new QWidget(capsTab_);
+    headWidget->setLayout(headRow);
+    headRow->setContentsMargins(0, 0, 0, 0);
+    layout->addWidget(headWidget);
+    page->setParent(capsTab_);
+    layout->addWidget(page, 1);
+    page->show();
+    connect(page, &DrawerPage::cancelled, this, &Flows::closeCaps);
+    connect(page, &CapsPage::skipped, this, &Flows::closeCaps);
+    tabs_->setCurrentWidget(capsTab_);
+    page->focusFirst();
+}
+
+void Flows::closeCaps() {
+    capsTitle_.clear();
+    if (!capsTab_) return;
+    bool wasCurrent = tabs_ && tabs_->currentWidget() == capsTab_;
+    clearTabLayout(capsTab_);
+    auto* layout = static_cast<QVBoxLayout*>(capsTab_->layout());
+    auto* hint = new QLabel("Click a link on the canvas to inspect or edit its Caps.", capsTab_);
+    hint->setObjectName("muted");
+    layout->addWidget(hint);
+    layout->addStretch(1);
+    if (wasCurrent && tabs_ && defaultTab_) tabs_->setCurrentWidget(defaultTab_);
+}
+
+// The user closed the drawer or cancelled while the validation of an edit was still running: no caps page opens afterwards.
 void Flows::abandonPending() { disconnect(pending_); }
 
 void Flows::confirmRemoval(const gps::Removal& removal, const QString& verb, std::function<void()> accepted) {
@@ -44,17 +164,27 @@ void Flows::confirmRemoval(const gps::Removal& removal, const QString& verb, std
     dialog->open();
 }
 
-// ---- Add source
+// ---- Add source / Add element (Right Drawer ONLY presents PickerPage)
 
 void Flows::chooseSource() {
     if (controller_->busy()) return;
     PickerData data;
     data.newHeader = "Sources";
+    for (const CustomElementInfo& c : controller_->customElements()) {
+        if (c.isSource) data.custom << c;
+    }
     for (const ListEntry& e : controller_->catalog()) {
         if (e.isSource) data.candidates << e;
     }
     auto* page = new PickerPage(data);
-    connect(page, &PickerPage::picked, this, [this](const PickerChoice& choice) { sourceProperties(choice.factory); });
+    connect(page, &PickerPage::picked, this, [this](const PickerChoice& choice) {
+        if (choice.kind == PickerChoice::CustomElement) {
+            controller_->addCustomElement(choice.factory);
+            drawer_->dismiss();
+        } else {
+            sourceProperties(choice.factory);
+        }
+    });
     drawer_->present(page, "Add source", "Choose the first element of the pipeline.", Drawer::Replace);
 }
 
@@ -63,10 +193,18 @@ void Flows::chooseElement() {
     PickerData data;
     data.newHeader = "Elements";
     data.showFilters = true;
+    data.custom = controller_->customElements();
     data.candidates = controller_->catalog();
     auto* page = new PickerPage(data);
-    connect(page, &PickerPage::picked, this, [this](const PickerChoice& choice) { sourceProperties(choice.factory); });
-    drawer_->present(page, "Add element", "Choose any element (SRC, FILTER, or SINK) to place on the canvas.", Drawer::Replace);
+    connect(page, &PickerPage::picked, this, [this](const PickerChoice& choice) {
+        if (choice.kind == PickerChoice::CustomElement) {
+            controller_->addCustomElement(choice.factory);
+            drawer_->dismiss();
+        } else {
+            sourceProperties(choice.factory);
+        }
+    });
+    drawer_->present(page, "Add element", "Choose any element (SRC, FILTER, SINK, or Custom) to place on the canvas.", Drawer::Replace);
 }
 
 void Flows::sourceProperties(const QString& factory) {
@@ -78,14 +216,14 @@ void Flows::sourceProperties(const QString& factory) {
         in.requestSink = info->defaultRequestSink();
         auto* page = new PropertyPage(in);
         connect(page, &PropertyPage::confirmed, this, [this, page, factory] {
-            if (controller_->addElement(factory, page->edit())) drawer_->dismiss();
+            if (controller_->addElement(factory, page->edit())) closeProperties();
         });
         QString prefix = info->isSource ? "Add source · " : "Add element · ";
-        drawer_->present(page, prefix + factory, QString(), Drawer::Push);
+        presentProperties(page, prefix + factory);
     });
 }
 
-// ---- left click on a free src pad
+// ---- left click on a free src pad (Right Drawer ONLY presents PickerPage)
 
 void Flows::fromFreePad(const QString& element, const QString& identity) {
     if (controller_->busy()) return;
@@ -93,6 +231,9 @@ void Flows::fromFreePad(const QString& element, const QString& identity) {
     controller_->fetchCompatible(allowed, [this, element, identity, allowed](const QStringList& compatible) {
         PickerData data;
         data.existing = controller_->existingTargets(element, identity);
+        for (const CustomElementInfo& c : controller_->customElements()) {
+            if (c.hasFreeSink) data.custom << c;
+        }
         data.compatible = compatible;
         for (const ListEntry& e : controller_->catalog()) {
             if (!e.isSource) data.candidates << e;
@@ -100,8 +241,14 @@ void Flows::fromFreePad(const QString& element, const QString& identity) {
         auto* page = new PickerPage(data);
         connect(page, &PickerPage::picked, this, [this, element, identity](const PickerChoice& choice) {
             if (choice.kind == PickerChoice::Existing) {
+                drawer_->dismiss();
                 editThenCaps(element, identity, [=] {
                     return controller_->linkExisting(element, identity, choice.existing.element, choice.existing.sinkPad);
+                });
+            } else if (choice.kind == PickerChoice::CustomElement) {
+                drawer_->dismiss();
+                editThenCaps(element, identity, [=] {
+                    return !controller_->addCustomElementAfter(element, identity, choice.factory).isEmpty();
                 });
             } else {
                 newElement(Mode::Add, element, identity, choice.factory);
@@ -125,26 +272,23 @@ void Flows::newElement(Mode mode, const QString& element, const QString& identit
         connect(page, &PropertyPage::confirmed, this, [this, mode, page, element, identity, factory, onlyPad = choices.first().name] {
             ElementEdit edit = page->edit();
             QString sinkPad = page->sinkPad().isEmpty() ? onlyPad : page->sinkPad();
-            auto apply = [=] {
-                editThenCaps(element, identity, [=] {
-                    return mode == Mode::Add ? controller_->addAfter(element, identity, factory, sinkPad, edit)
-                                             : controller_->replace(element, identity, factory, sinkPad, edit);
-                });
-            };
-            if (mode == Mode::Replace) confirmRemoval(controller_->previewReplace(element, identity), "Replace", apply);
-            else apply();
+            editThenCaps(element, identity, [=] {
+                return mode == Mode::Add ? controller_->addAfter(element, identity, factory, sinkPad, edit)
+                                         : controller_->replace(element, identity, factory, sinkPad, edit);
+            });
         });
         QString title = (mode == Mode::Add ? "Add after " : "Replace after ") + pathText(element, identity) + " · " + factory;
-        drawer_->present(page, title, QString(), Drawer::Push);
+        presentProperties(page, title);
     });
 }
 
+// Runs an edit; once its validation ends the Properties tab closes and, on success, the Caps tab opens for the link.
 void Flows::editThenCaps(const QString& element, const QString& identity, std::function<bool()> edit) {
     auto connection = std::make_shared<QMetaObject::Connection>();
     *connection = connect(controller_, &Controller::updateFinished, this, [this, connection, element, identity](bool ok) {
         disconnect(*connection);
+        closeProperties();
         if (ok) openCaps(element, identity, true);
-        else drawer_->dismiss();
     });
     pending_ = *connection;
     if (!edit()) disconnect(*connection);  // refused: the page stays as it is
@@ -153,7 +297,7 @@ void Flows::editThenCaps(const QString& element, const QString& identity, std::f
 void Flows::openCaps(const QString& element, const QString& identity, bool afterEdit) {
     int link = controller_->plan().linkFrom(element.toStdString(), identity.toStdString());
     if (link < 0) {
-        drawer_->dismiss();
+        closeCaps();
         return;
     }
     CapsPageInput in;
@@ -168,19 +312,17 @@ void Flows::openCaps(const QString& element, const QString& identity, bool after
     }
     in.padProps = l.sinkPadProps;
     if (afterEdit && in.allowed.isEmpty() && in.padProperties.isEmpty()) {  // nothing to choose
-        drawer_->dismiss();
         return;
     }
 
     auto* page = new CapsPage(in);
     connect(page, &CapsPage::applied, this, [this, page, element, identity] {
         controller_->setCaps(element, identity, page->caps(), page->padProps());
-        drawer_->dismiss();
+        closeCaps();
     });
-    connect(page, &CapsPage::skipped, drawer_, &Drawer::dismiss);
     QString title = (afterEdit ? "Caps · " : "Edit caps · ") + pathText(element, identity);
     QString sub = pathText(element, identity) + "  →  " + pathText(fromStd(l.sinkElement), fromStd(l.sinkPad));
-    drawer_->present(page, title, sub, Drawer::Replace);
+    presentCaps(page, title, sub);
 }
 
 // ---- menus
@@ -205,7 +347,11 @@ void Flows::showElementMenu(const QString& element, const QPoint& at) {
     menu->setObjectName("elementMenu");
     menu->setAttribute(Qt::WA_DeleteOnClose);
     menu->addAction("Edit properties…", this, [=] { editProperties(element); })->setObjectName("actionProperties");
-    if (controller_->view(element).isSource) menu->addAction("Delete source", this, [=] { deleteSource(element); })->setObjectName("actionDelete");
+    if (controller_->view(element).isSource) {
+        menu->addAction("Delete source", this, [=] { deleteSource(element); })->setObjectName("actionDelete");
+    } else {
+        menu->addAction("Delete element", this, [=] { deleteElementOnly(element); })->setObjectName("actionDeleteElement");
+    }
     if (e->factory == gps::kQueueFactory) {
         menu->addAction("Remove queue", this, [=] { controller_->removeQueue(element); })->setObjectName("actionRemoveQueue");
     }
@@ -237,7 +383,7 @@ void Flows::replaceBehind(const QString& element, const QString& identity) {
 
 void Flows::cutLink(const QString& element, const QString& identity) {
     if (controller_->busy()) return;
-    confirmRemoval(controller_->previewCut(element, identity), "Remove", [this, element, identity] { controller_->cut(element, identity); });
+    controller_->cut(element, identity);
 }
 
 void Flows::disconnectLinkOnly(const QString& element, const QString& identity) {
@@ -254,6 +400,11 @@ void Flows::addQueue(const QString& element, const QString& identity) {
 
 void Flows::editProperties(const QString& element) {
     if (controller_->busy()) return;
+    QString grp = controller_->elementGroup(element);
+    if (!grp.isEmpty() && !controller_->isGroupExpanded(grp)) {
+        controller_->setGroupExpanded(grp, true);
+        return;
+    }
     const gps::PlanElement* e = controller_->plan().find(element.toStdString());
     const ElementInfo* info = e ? controller_->info(fromStd(e->factory)) : nullptr;
     if (!info) return;
@@ -261,6 +412,7 @@ void Flows::editProperties(const QString& element) {
     PropertyPageInput in;
     in.info = *info;
     in.acceptText = "Save";
+    in.canDelete = true;
     in.props = e->props;
     in.requestSrc = e->requestSrc;
     in.requestSink = e->requestSink;
@@ -275,14 +427,18 @@ void Flows::editProperties(const QString& element) {
     }
     auto* page = new PropertyPage(in);
     connect(page, &PropertyPage::confirmed, this, [this, page, element] {
-        if (controller_->editElement(element, page->edit())) drawer_->dismiss();
+        if (controller_->editElement(element, page->edit())) closeProperties();
     });
-    drawer_->present(page, "Edit properties · " + element, QString(), Drawer::Replace);
+    connect(page, &PropertyPage::deleteRequested, this, [this, element] {
+        closeProperties();
+        deleteElementOnly(element);
+    });
+    presentProperties(page, "Edit properties · " + element);
 }
 
 void Flows::deleteSource(const QString& element) {
     if (controller_->busy()) return;
-    confirmRemoval(controller_->previewDeleteSource(element), "Delete", [this, element] { controller_->deleteSource(element); });
+    controller_->deleteSource(element);
 }
 
 void Flows::deleteElementOnly(const QString& element) {
