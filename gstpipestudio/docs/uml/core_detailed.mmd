@@ -2,6 +2,103 @@
 title: GstPipeStudio Core — Zoom-In Details (Public & Protected Members)
 ---
 classDiagram
+    class C_0013051742850553982975["gps::FactoryTraits"]
+    class C_0013051742850553982975 {
+        +isSource : bool
+    }
+    class C_0007539717992276085532["gps::PlanElement"]
+    class C_0007539717992276085532 {
+        +factory : std::string
+        +group : std::string
+        +name : std::string
+        +props : gps::Props
+        +requestSink : std::map&lt;std::string,int&gt;
+        +requestSrc : std::map&lt;std::string,int&gt;
+        +x : double
+        +y : double
+    }
+    class C_0006075855463494315183["gps::PlanLink"]
+    class C_0006075855463494315183 {
+        +caps : std::string
+        +sinkElement : std::string
+        +sinkPad : std::string
+        +sinkPadProps : gps::Props
+        +srcElement : std::string
+        +srcPad : std::string
+    }
+    class C_0009995579580061596989["gps::ExposedParam"]
+    class C_0009995579580061596989 {
+        +element : std::string
+        +name : std::string
+        +property : std::string
+    }
+    class C_0012887087281388355273["gps::Removal"]
+    class C_0012887087281388355273 {
+        +elements : std::vector&lt;std::string&gt;
+        +links : int
+    }
+    class C_0014123026597954571416["gps::Addition"]
+    class C_0014123026597954571416 {
+        +element : std::string
+        +removed : gps::Removal
+    }
+    class C_0000028171970329881143["gps::Plan"]
+    class C_0000028171970329881143 {
+        +addAfter(const std::string & srcElement, const std::string & srcPad, const std::string & factory, const std::string & sinkPad, const gps::Props & props = = &lbrace;&rbrace;, double x = 0, double y = 0) std::string
+        +addElement(const std::string & factory, const gps::Props & props = = &lbrace;&rbrace;, double x = 0, double y = 0) std::string
+        +addSource(const std::string & factory, const gps::Props & props = = &lbrace;&rbrace;, double x = 0, double y = 0) std::string
+        +cut(const std::string & srcElement, const std::string & srcPad, const gps::TraitsFn & traits) gps::Removal
+        +deleteElement(const std::string & name, bool autoHeal = true, int totalSrcPads = 1) bool
+        +deleteElements(const std::vector&lt;std::string&gt; & names, bool autoHeal = true, int exitTotalSrcPads = 1) bool
+        +deleteSource(const std::string & name, const gps::TraitsFn & traits) gps::Removal
+        +disconnectLink(const std::string & srcElement, const std::string & srcPad) bool
+        +empty() [const] bool
+        +find(const std::string & name) gps::PlanElement *
+        +find(const std::string & name) [const] const gps::PlanElement *
+        +fromConf(const std::string & text, gps::Plan * out, std::string * error) bool$
+        +insertQueue(const std::string & srcElement, const std::string & srcPad) std::string
+        +isElementTracked(const std::string & name, const gps::TraitsFn & traits) [const] bool
+        +linkExisting(const std::string & srcElement, const std::string & srcPad, const std::string & sinkElement, const std::string & sinkPad, const std::string & caps = "", const gps::Props & sinkPadProps = = &lbrace;&rbrace;) bool
+        +linkFrom(const std::string & srcElement, const std::string & srcPad) [const] int
+        +linksFromElement(const std::string & srcElement) [const] std::vector&lt;int&gt;
+        +linksInto(const std::string & sinkElement) [const] std::vector&lt;int&gt;
+        +load(const std::string & path, gps::Plan * out, std::string * error) bool$
+        +ouroborosMessage(const std::string & srcElement, const std::string & sinkElement) std::string$
+        +previewCut(const std::string & srcElement, const std::string & srcPad, const gps::TraitsFn & traits) [const] gps::Removal
+        +previewDeleteSource(const std::string & name, const gps::TraitsFn & traits) [const] gps::Removal
+        +previewReplace(const std::string & srcElement, const std::string & srcPad, const gps::TraitsFn & traits) [const] gps::Removal
+        +prune(const gps::TraitsFn & traits) gps::Removal
+        +removeQueue(const std::string & queueName) bool
+        +replace(const std::string & srcElement, const std::string & srcPad, const std::string & factory, const std::string & sinkPad, const gps::Props & props, const gps::TraitsFn & traits) gps::Addition
+        +save(const std::string & path, std::string * error) [const] bool
+        +setCaps(const std::string & srcElement, const std::string & srcPad, const std::string & caps) bool
+        +setExposed(const std::vector&lt;ExposedParam&gt; & params) void
+        +setProps(const std::string & element, const gps::Props & props) bool
+        +setRequestSink(const std::string & element, const std::string & templateName, int count) bool
+        +setRequestSrc(const std::string & element, const std::string & templateName, int count) bool
+        +setSinkPadProps(const std::string & srcElement, const std::string & srcPad, const gps::Props & props) bool
+        +sinkPadTaken(const std::string & sinkElement, const std::string & sinkPad) [const] bool
+        +spliceChain(const std::string & linkSrcElement, const std::string & linkSrcPad, const std::vector&lt;std::pair&lt;std::string,std::string&gt;&gt; & freeSinkPads, const std::vector&lt;std::pair&lt;std::string,std::string&gt;&gt; & freeSrcPads) bool
+        +spliceElement(const std::string & elementName, const std::string & linkSrcElement, const std::string & linkSrcPad, const std::vector&lt;std::string&gt; & freeSinkPads, const std::vector&lt;std::string&gt; & freeSrcPads) bool
+        +toConf() [const] std::string
+        +trackedElements(const gps::TraitsFn & traits) [const] std::vector&lt;std::string&gt;
+        +trackedSubplan(const gps::TraitsFn & traits) [const] gps::Plan
+        +wouldCycle(const std::string & srcElement, const std::string & sinkElement) [const] bool
+        +complete : bool
+        +elements : std::vector&lt;PlanElement&gt;
+        +exposed : std::vector&lt;ExposedParam&gt;
+        +links : std::vector&lt;PlanLink&gt;
+        +name : std::string
+        +nextId : int
+    }
+    class C_0005222315936444744904["gps::GstElementCreator"]
+    class C_0005222315936444744904 {
+        +createElement(const gps::PlanElement & spec, std::string * error, const gps::LogFn & log = = &lbrace;&rbrace;) GstElement *$
+        +formatPropertyError(const std::string & label, const std::string & text, const std::string & reason) std::string$
+        +queryFactoryTraits(const std::string & factory) gps::FactoryTraits$
+        +requestPad(GstElement * element, const std::string & templateName, const gps::LogFn & log = = &lbrace;&rbrace;) GstPad *$
+        +setProperty(GObject * object, const std::string & property, const std::string & text, std::string * reason) bool$
+    }
     class C_0010289958056822335974["gps::JsonWriter"]
     class C_0010289958056822335974 {
         +beginArray() gps::JsonWriter &
@@ -92,95 +189,6 @@ classDiagram
         +entry : gps::FactoryEntry
         +padTemplates : std::vector&lt;PadTemplateInfo&gt;
         +properties : std::vector&lt;PropertyInfo&gt;
-    }
-    class C_0013051742850553982975["gps::FactoryTraits"]
-    class C_0013051742850553982975 {
-        +isSource : bool
-    }
-    class C_0007539717992276085532["gps::PlanElement"]
-    class C_0007539717992276085532 {
-        +factory : std::string
-        +group : std::string
-        +name : std::string
-        +props : gps::Props
-        +requestSink : std::map&lt;std::string,int&gt;
-        +requestSrc : std::map&lt;std::string,int&gt;
-        +x : double
-        +y : double
-    }
-    class C_0006075855463494315183["gps::PlanLink"]
-    class C_0006075855463494315183 {
-        +caps : std::string
-        +sinkElement : std::string
-        +sinkPad : std::string
-        +sinkPadProps : gps::Props
-        +srcElement : std::string
-        +srcPad : std::string
-    }
-    class C_0009995579580061596989["gps::ExposedParam"]
-    class C_0009995579580061596989 {
-        +element : std::string
-        +name : std::string
-        +property : std::string
-    }
-    class C_0012887087281388355273["gps::Removal"]
-    class C_0012887087281388355273 {
-        +elements : std::vector&lt;std::string&gt;
-        +links : int
-    }
-    class C_0014123026597954571416["gps::Addition"]
-    class C_0014123026597954571416 {
-        +element : std::string
-        +removed : gps::Removal
-    }
-    class C_0000028171970329881143["gps::Plan"]
-    class C_0000028171970329881143 {
-        +addAfter(const std::string & srcElement, const std::string & srcPad, const std::string & factory, const std::string & sinkPad, const gps::Props & props = = &lbrace;&rbrace;, double x = 0, double y = 0) std::string
-        +addElement(const std::string & factory, const gps::Props & props = = &lbrace;&rbrace;, double x = 0, double y = 0) std::string
-        +addSource(const std::string & factory, const gps::Props & props = = &lbrace;&rbrace;, double x = 0, double y = 0) std::string
-        +cut(const std::string & srcElement, const std::string & srcPad, const gps::TraitsFn & traits) gps::Removal
-        +deleteElement(const std::string & name, bool autoHeal = true, int totalSrcPads = 1) bool
-        +deleteElements(const std::vector&lt;std::string&gt; & names, bool autoHeal = true, int exitTotalSrcPads = 1) bool
-        +deleteSource(const std::string & name, const gps::TraitsFn & traits) gps::Removal
-        +disconnectLink(const std::string & srcElement, const std::string & srcPad) bool
-        +empty() [const] bool
-        +find(const std::string & name) gps::PlanElement *
-        +find(const std::string & name) [const] const gps::PlanElement *
-        +fromConf(const std::string & text, gps::Plan * out, std::string * error) bool$
-        +insertQueue(const std::string & srcElement, const std::string & srcPad) std::string
-        +isElementTracked(const std::string & name, const gps::TraitsFn & traits) [const] bool
-        +linkExisting(const std::string & srcElement, const std::string & srcPad, const std::string & sinkElement, const std::string & sinkPad, const std::string & caps = "", const gps::Props & sinkPadProps = = &lbrace;&rbrace;) bool
-        +linkFrom(const std::string & srcElement, const std::string & srcPad) [const] int
-        +linksFromElement(const std::string & srcElement) [const] std::vector&lt;int&gt;
-        +linksInto(const std::string & sinkElement) [const] std::vector&lt;int&gt;
-        +load(const std::string & path, gps::Plan * out, std::string * error) bool$
-        +ouroborosMessage(const std::string & srcElement, const std::string & sinkElement) std::string$
-        +previewCut(const std::string & srcElement, const std::string & srcPad, const gps::TraitsFn & traits) [const] gps::Removal
-        +previewDeleteSource(const std::string & name, const gps::TraitsFn & traits) [const] gps::Removal
-        +previewReplace(const std::string & srcElement, const std::string & srcPad, const gps::TraitsFn & traits) [const] gps::Removal
-        +prune(const gps::TraitsFn & traits) gps::Removal
-        +removeQueue(const std::string & queueName) bool
-        +replace(const std::string & srcElement, const std::string & srcPad, const std::string & factory, const std::string & sinkPad, const gps::Props & props, const gps::TraitsFn & traits) gps::Addition
-        +save(const std::string & path, std::string * error) [const] bool
-        +setCaps(const std::string & srcElement, const std::string & srcPad, const std::string & caps) bool
-        +setExposed(const std::vector&lt;ExposedParam&gt; & params) void
-        +setProps(const std::string & element, const gps::Props & props) bool
-        +setRequestSink(const std::string & element, const std::string & templateName, int count) bool
-        +setRequestSrc(const std::string & element, const std::string & templateName, int count) bool
-        +setSinkPadProps(const std::string & srcElement, const std::string & srcPad, const gps::Props & props) bool
-        +sinkPadTaken(const std::string & sinkElement, const std::string & sinkPad) [const] bool
-        +spliceChain(const std::string & linkSrcElement, const std::string & linkSrcPad, const std::vector&lt;std::pair&lt;std::string,std::string&gt;&gt; & freeSinkPads, const std::vector&lt;std::pair&lt;std::string,std::string&gt;&gt; & freeSrcPads) bool
-        +spliceElement(const std::string & elementName, const std::string & linkSrcElement, const std::string & linkSrcPad, const std::vector&lt;std::string&gt; & freeSinkPads, const std::vector&lt;std::string&gt; & freeSrcPads) bool
-        +toConf() [const] std::string
-        +trackedElements(const gps::TraitsFn & traits) [const] std::vector&lt;std::string&gt;
-        +trackedSubplan(const gps::TraitsFn & traits) [const] gps::Plan
-        +wouldCycle(const std::string & srcElement, const std::string & sinkElement) [const] bool
-        +complete : bool
-        +elements : std::vector&lt;PlanElement&gt;
-        +exposed : std::vector&lt;ExposedParam&gt;
-        +links : std::vector&lt;PlanLink&gt;
-        +name : std::string
-        +nextId : int
     }
     class C_0017990539626448234546["gps::PadReport"]
     class C_0017990539626448234546 {
@@ -277,14 +285,6 @@ classDiagram
         Refused
         Failed
     }
-    class C_0005222315936444744904["gps::GstElementCreator"]
-    class C_0005222315936444744904 {
-        +createElement(const gps::PlanElement & spec, std::string * error, const gps::LogFn & log = = &lbrace;&rbrace;) GstElement *$
-        +formatPropertyError(const std::string & label, const std::string & text, const std::string & reason) std::string$
-        +queryFactoryTraits(const std::string & factory) gps::FactoryTraits$
-        +requestPad(GstElement * element, const std::string & templateName, const gps::LogFn & log = = &lbrace;&rbrace;) GstPad *$
-        +setProperty(GObject * object, const std::string & property, const std::string & text, std::string * reason) bool$
-    }
     class C_0014040444836502338537["gps::Caps"]
     class C_0014040444836502338537 {
         +displayText() [const] std::string
@@ -378,14 +378,6 @@ classDiagram
         +run(gps::Pipeline * pipeline, const gps::UpdateOptions & options = &lbrace;&rbrace;, const gps::LogFn & log = = &lbrace;&rbrace;) gps::UpdateResult$
         +validateTracked(const gps::Plan & plan, const gps::UpdateOptions & options = &lbrace;&rbrace;, const gps::LogFn & log = = &lbrace;&rbrace;) gps::UpdateResult$
     }
-    class C_0015391064260961665124["gps::Section"]
-    class C_0015391064260961665124 {
-        +get(const std::string & key) [const] const std::string *
-        +keys : std::vector&lt;std::pair&lt;std::string,std::string&gt;&gt;
-        +kind : std::string
-        +line : int
-        +name : std::string
-    }
     class C_0006508864473784456079["gps::CapsField"]
     class C_0006508864473784456079 {
         +name : std::string
@@ -399,6 +391,22 @@ classDiagram
         +fields : std::vector&lt;CapsField&gt;
         +media : std::string
     }
+    class C_0015391064260961665124["gps::Section"]
+    class C_0015391064260961665124 {
+        +get(const std::string & key) [const] const std::string *
+        +keys : std::vector&lt;std::pair&lt;std::string,std::string&gt;&gt;
+        +kind : std::string
+        +line : int
+        +name : std::string
+    }
+    C_0014123026597954571416 o-- C_0012887087281388355273 : +removed
+    C_0000028171970329881143 ..> C_0012887087281388355273 : 
+    C_0000028171970329881143 ..> C_0014123026597954571416 : 
+    C_0000028171970329881143 o-- C_0007539717992276085532 : +elements
+    C_0000028171970329881143 o-- C_0006075855463494315183 : +links
+    C_0000028171970329881143 o-- C_0009995579580061596989 : +exposed
+    C_0005222315936444744904 ..> C_0007539717992276085532 : 
+    C_0005222315936444744904 ..> C_0013051742850553982975 : 
     C_0005882221733675194402 o-- C_0012765824391351199139 : +enumValues
     C_0003746534394387167421 o-- C_0013410461275766476270 : +fields
     C_0007136070967673481743 o-- C_0003746534394387167421 : +structures
@@ -406,12 +414,6 @@ classDiagram
     C_0015854607360646402873 o-- C_0000440172370049072548 : +entry
     C_0015854607360646402873 o-- C_0007136070967673481743 : +padTemplates
     C_0015854607360646402873 o-- C_0005882221733675194402 : +properties
-    C_0014123026597954571416 o-- C_0012887087281388355273 : +removed
-    C_0000028171970329881143 ..> C_0012887087281388355273 : 
-    C_0000028171970329881143 ..> C_0014123026597954571416 : 
-    C_0000028171970329881143 o-- C_0007539717992276085532 : +elements
-    C_0000028171970329881143 o-- C_0006075855463494315183 : +links
-    C_0000028171970329881143 o-- C_0009995579580061596989 : +exposed
     C_0017990539626448234546 o-- C_0003746534394387167421 : +allowedStructures
     C_0013065720672133927035 o-- C_0017990539626448234546 : +pads
     C_0009118436794158611664 ..> C_0017990539626448234546 : 
@@ -425,8 +427,6 @@ classDiagram
     C_0009118436794158611664 ()-- C_0004291238238351396201 : 
     C_0009118436794158611664 ()-- C_0010578016348553779959 : 
     C_0009118436794158611664 ()-- C_0002012926535479199836 : 
-    C_0005222315936444744904 ..> C_0007539717992276085532 : 
-    C_0005222315936444744904 ..> C_0013051742850553982975 : 
     C_0009518918721721265326 --> C_0001326683342747104663 : -element_
     C_0009518918721721265326 o-- C_0017606117253161268534 : -direction_
     C_0009518918721721265326 o-- C_0001294005907106994464 : -presence_
