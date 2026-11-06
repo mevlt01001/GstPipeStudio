@@ -123,6 +123,21 @@ class WidgetsTest : public QObject {
     }
 
 private slots:
+    void canvasExpandsBeyondTheOriginalRectangle() {
+        auto controller = makeController();
+        CanvasScene scene(controller.get());
+        CanvasView view(&scene);
+        view.resize(800, 600);
+        view.show();
+        const QRectF distant(-50000, -40000, 800, 600);
+        view.ensureSpace(distant);
+        QVERIFY(scene.sceneRect().contains(distant));
+        const QRectF grown = scene.sceneRect();
+        scene.rebuild();
+        QVERIFY(scene.sceneRect().contains(grown));
+        QCOMPARE(&scene.pipeline(), &controller->pipeline());
+    }
+
     void initTestCase() {
         isolateSettings();
         Theme::apply(*qApp);  // widgets are tested the way they look
@@ -746,12 +761,12 @@ private slots:
         QVERIFY(label().contains("Empty canvas"));
         QVERIFY(act("actionSave")->toolTip().contains("The canvas is empty"));  // a disabled action says why
 
-        // updating: everything that edits is off
+        // updating: document replacement waits; canvas edits stay available
         need(*c, "videotestsrc");
         QVERIFY(c->addSource("videotestsrc", {}));
-        QVERIFY(!act("actionNew")->isEnabled() && !act("actionOpen")->isEnabled() && !act("actionAddSource")->isEnabled());
+        QVERIFY(!act("actionNew")->isEnabled() && !act("actionOpen")->isEnabled() && act("actionAddSource")->isEnabled());
         QVERIFY(!act("actionSave")->isEnabled() && !act("actionRun")->isEnabled());
-        QVERIFY(label().contains("locked while validating"));
+        QVERIFY(label().contains("keep editing"));
         QVERIFY(act("actionSave")->toolTip().contains("Validation is running"));
         QVERIFY(settle(*c));
 
@@ -1228,13 +1243,15 @@ private slots:
         QCOMPARE(c->plan().links[0].caps, std::string("video/x-raw, width=(int)1280"));
     }
 
-    void everythingIsRefusedWhileBusy() {
+    void editingIsRefusedDuringPlayback() {
         MainWindow w(c.get());
         w.show();
         QString src = addSource(*c, "videotestsrc");
         need(*c, "fakesink");
         QVERIFY(c->addAfter(src, "src", "fakesink", "sink", {}));
-        QVERIFY(c->updating());
+        QVERIFY(settle(*c));
+        QVERIFY(c->run());
+        QVERIFY(c->editingBlocked());
         w.flows()->fromFreePad(src, "src");
         w.flows()->showLinkMenu(src, "src", QPoint(10, 10));
         w.flows()->showElementMenu(src, QPoint(10, 10));
@@ -1245,7 +1262,7 @@ private slots:
         QVERIFY(!visibleChild<QMenu>(&w));
         QVERIFY(!visibleChild<QDialog>(&w));
         QVERIFY(!w.drawer()->isOpen());
-        QVERIFY(settle(*c));
+        QVERIFY(waitFor([&] { return !c->running(); }));
         QCOMPARE(c->plan().elements.size(), size_t(2));
     }
 

@@ -131,7 +131,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: deb-${{ matrix.ubuntu }}-${{ matrix.arch }}
-          path: out/*.deb
+          path: |
+            out/*.deb
+            out/*.sha256
           retention-days: 14
 
   # The .deb on a plain Ubuntu: nothing of the build is there (no Qt, no compiler, no GStreamer tools), so apt has to bring

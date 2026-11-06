@@ -6,7 +6,7 @@
   <b>Build GStreamer and DeepStream media pipelines by clicking, then run them as one command or as a single GStreamer element.</b>
 </p>
 
-> **Status: early development, no release yet.** It builds and its tests pass on Ubuntu 20.04, 22.04 and 24.04 (x86-64) and on the DeepStream 7.1 image. ARM and real Jetson devices are not tested yet.
+> **Status: early development.** The `dev-zero` branch reorganizes the application into GUI, Pipeline and GstEngine. Hardware support must be backed by device-specific test results; ARM builds alone do not demonstrate Jetson support.
 
 ## What it is
 
@@ -29,35 +29,14 @@ You draw a media pipeline instead of writing it. Everything starts at an output 
 ## Architecture
 
 ```mermaid
-graph TD
-    subgraph Core ["gstpipestudio::core (Pure C++17 / GStreamer)"]
-        Engine["gps::Engine"]
-        Plan["gps::PipelinePlan"]
-        Inspector["gps::GstInspector"]
-    end
-
-    subgraph AppModel ["App :: Model"]
-        CanvasModel["CanvasModel"]
-        ElementNode["Element / Pad / Link"]
-    end
-
-    subgraph AppController ["App :: Controller"]
-        Ctrl["Controller"]
-    end
-
-    subgraph AppUI ["App :: UI & Canvas (Qt6)"]
-        CanvasScene["CanvasScene & CanvasView"]
-        MainWindow["MainWindow & Drawer"]
-    end
-
-    AppUI -->|User Actions| AppController
-    AppController -->|Updates| AppModel
-    AppController -->|Executes / Validates| Core
-    Core -->|Status Events| AppController
-    AppModel -->|Signals| AppUI
+flowchart LR
+    GUI["GUI: canvas and actions"] --> Pipeline["Pipeline: shared document and transactions"]
+    Pipeline --> Contract["Execution snapshot / result contract"]
+    Contract --> GstEngine["GstEngine: native GStreamer"]
+    GstEngine -->|revision-tagged observations| Pipeline
 ```
 
-Detailed class diagrams, relationship overviews, and the interactive diagram viewer are available in [gstpipestudio/docs/uml](gstpipestudio/docs/uml/README.md).
+[Architecture and class relationships](docs/architecture/README.md) · [Build, test and release](docs/development/README.md) · [Contributing](CONTRIBUTING.md)
 
 ## Requirements
 

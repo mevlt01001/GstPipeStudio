@@ -2,13 +2,8 @@ name: Release
 
 # Builds the six packages (3 Ubuntu versions x 2 architectures), publishes GitHub Release,
 # and pushes runnable application and dev Docker images to GitHub Container Registry (GHCR).
-# Triggers on push to main or manual dispatch.
+# Manual release only, after maintainer review and merge to main.
 on:
-  push:
-    branches: [main]
-    paths:
-      - gstpipestudio/**
-      - docker/**
   workflow_dispatch:
     inputs:
       bump:
@@ -19,7 +14,7 @@ on:
       draft:
         description: "Only a draft: nobody sees it until you press Publish on the release page"
         type: boolean
-        default: false
+        default: true
 
 permissions:
   contents: read
@@ -71,7 +66,9 @@ jobs:
           draft: ${{ github.event_name == 'workflow_dispatch' && inputs.draft || false }}
           prerelease: ${{ startsWith(needs.Version.outputs.version, '0.') }}   # below 1.0.0 the tool is not finished
           generate_release_notes: true
-          files: deb/*.deb
+          files: |
+            deb/*.deb
+            deb/*.sha256
           fail_on_unmatched_files: true
           body: |
             GstPipeStudio builds GStreamer and DeepStream pipelines by clicking, saves them as a `.conf` file, and runs them

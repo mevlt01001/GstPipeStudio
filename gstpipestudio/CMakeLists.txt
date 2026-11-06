@@ -13,6 +13,11 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
+option(GPS_SANITIZERS "Enable address and undefined behaviour sanitizers" OFF)
+if(GPS_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=address,undefined)
+endif()
 set(GPS_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 enable_testing()
 
@@ -22,14 +27,16 @@ enable_testing()
 include(GNUInstallDirs)
 set(GPS_PRIVATE_DIR lib/gstpipestudio)
 
-# Each directory owns its CMakeLists.txt; a directory without one is skipped.
+# The three product units are Pipeline, GstEngine and GUI. Other targets are entrypoints/tests.
 # GPS_DIRS lets one developer build only what they work on while others are mid-edit:
-#   -DGPS_DIRS="core/plan;app;tests" -DGPS_TEST_DIRS="unit;gui"
-set(GPS_DIRS "core/plan;core/engine;tools;plugin;app;packaging;tests" CACHE STRING "Directories to build")
+#   -DGPS_DIRS="Pipeline;GUI;tests" -DGPS_TEST_DIRS="unit;gui"
+set(GPS_DIRS "Pipeline;GstEngine;tools;plugin;GUI;packaging;tests" CACHE STRING "Directories to build")
 set(GPS_TEST_DIRS "unit;engine;cli;plugin;gui;sweep;deepstream" CACHE STRING "Test groups to build")
 foreach(dir ${GPS_DIRS})
     if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${dir}/CMakeLists.txt)
         add_subdirectory(${dir})
+    else()
+        message(FATAL_ERROR "Unknown GPS_DIRS entry: ${dir}")
     endif()
 endforeach()
 

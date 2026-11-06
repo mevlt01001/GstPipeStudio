@@ -1,0 +1,64 @@
+# Development and review
+
+Use C++17, CMake 3.16+, Qt 6.8 and GStreamer development packages 1.16+. Ninja is optional. The system setup scripts install dependencies; `dev.sh` only builds and tests. No agent-specific instruction files are required.
+
+```bash
+# Pure Pipeline, no Qt/GStreamer dependency:
+gstpipestudio/scripts/dev.sh core
+
+# Full application and tests (set CMAKE_PREFIX_PATH if Qt is not on the default path):
+CMAKE_PREFIX_PATH=/path/to/Qt/6.8.3 gstpipestudio/scripts/dev.sh full
+build-dev-zero-full/bin/gstpipestudio
+
+# Same core suite with memory/undefined-behaviour checks:
+GPS_BUILD_DIR="$PWD/build-dev-zero-asan" GPS_SANITIZERS=ON gstpipestudio/scripts/dev.sh core
+```
+
+For manual control:
+
+```bash
+cmake -S gstpipestudio -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_PREFIX_PATH=/path/to/Qt/6.8.3
+cmake --build build --parallel 4
+(cd build && ctest --output-on-failure)
+```
+
+`GPS_DIRS` can select `Pipeline;GstEngine;tools;plugin;GUI;packaging;tests`; invalid directory names fail configuration. `GPS_TEST_DIRS` selects test groups. `GPS_SWEEP_ALL=ON` opts into the long all-factory survey. Test screenshots/logs go under the build directory, so a read-only source checkout is supported.
+
+| Change | Relevant checks |
+|---|---|
+| Graph, action, history, persistence | `ctest -L unit --output-on-failure` |
+| Native binding, caps, runtime | `ctest -L engine --output-on-failure` |
+| CLI/plugin contracts | `ctest -L 'cli|plugin' --output-on-failure` |
+| Canvas/controller/presentation | `ctest -L gui --output-on-failure` |
+| Cross-unit changes | Full suite, plus supported-minimum environment |
+
+Run ctest from the build directory for CMake 3.16. Qt tests use the offscreen platform. DeepStream tests skip when their required environment is absent; a skip is not GPU validation.
+
+## Build container
+
+`docker/Dockerfile` builds the development image. Once available:
+
+```bash
+docker run --rm -v "$PWD:/workspace:ro" -v "$PWD/build-container:/build" \
+  gstpipestudio-dev:latest bash -lc \
+  'cmake -S /workspace/gstpipestudio -B /build -DCMAKE_BUILD_TYPE=Debug && cmake --build /build -j4 && cd /build && ctest --output-on-failure'
+```
+
+Use a separate build directory for each compiler/container. Reusing a host build inside a container can preserve incompatible absolute paths.
+
+## Packages and release gate
+
+```bash
+cmake -S gstpipestudio -B build -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_PREFIX_PATH=/path/to/Qt/6.8.3 -DCMAKE_INSTALL_PREFIX=/usr -DGPS_BUNDLE_QT=ON
+cmake --build build --parallel 4
+(cd build && ctest --output-on-failure)
+DESTDIR=/tmp/stage cmake --install build
+gstpipestudio/scripts/make_deb.sh 22.04 x86_64
+```
+
+`GPS_BUILD_DIR`, `GPS_STAGE_DIR` and `GPS_OUTPUT_DIR` override the package script paths. The package has a SHA-256 checksum. Test clean installation in a matching OS image before distribution; a staging smoke check alone does not prove dependency completeness.
+
+The fast workflow runs on dev-zero pushes, pull requests and manual dispatch, and uploads packages/test screenshots. The six-platform matrix remains manual/reusable, including Ubuntu 20.04 for GStreamer 1.16. A release is manual, restricted to main and defaults to a draft. Changes in this branch do not publish a release.
+
+Before merging: inspect the running UI, compare actions with the documented model, review test evidence and limitations, and obtain the maintainer's approval. Publishing remains a separate step after merge.

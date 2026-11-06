@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fake gps-update for the GUI tests: reads the plan and answers in the schema of SPEC 7 without GStreamer.
 
-Plan-aware: pads follow the templates (Always / Sometimes / Request), caps travel along the links and a link's caps
+Graph-aware: pads follow the templates (Always / Sometimes / Request), caps travel along the links and a link's caps
 choice changes them, a link whose media types do not meet is refused. Test switches are plain element properties:
   fake-error=<text>  the update fails with this message, reported for that element
   fake-crash=1       the helper dies with SIGSEGV

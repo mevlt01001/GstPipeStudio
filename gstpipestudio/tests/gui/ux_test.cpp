@@ -251,61 +251,28 @@ private slots:
         }
     }
 
-    // ---- 2. the validation indicator and the locked canvas
-
-    void indicatorShowsDuringASlowUpdateAndTheCanvasIsLocked() {
-        MainWindow w(c.get());
-        w.show();
-        QString src = addSource(*c, "videotestsrc");
-        w.scene()->rebuild();
-        w.view()->fitAll();
-        auto* ind = w.indicator();
-        QVERIFY(!ind->isVisible());
-        QVERIFY(!w.scene()->locked());
-
+    // Preview status is visible while the document remains editable.
+    void indicatorShowsDuringASlowUpdateAndCanvasRemainsEditable() {
+        MainWindow w(c.get()); w.show();
+        const QString src = addSource(*c, "videotestsrc");
+        w.scene()->rebuild(); w.view()->fitAll();
         QVERIFY(c->editElement(src, withProps({{"fake-slow", "1500"}})));
-        QVERIFY(waitFor([&] { return ind->isVisible(); }, 2000));
-        QCOMPARE(ind->mode(), ValidationIndicator::Validating);
-        QCOMPARE(ind->findChild<QLabel*>("indicatorText")->text(), QString("Validating…"));
-        QVERIFY(ind->findChild<QLabel*>("indicatorElapsed")->text().endsWith(" s"));
-        QVERIFY(ind->findChild<Spinner*>()->isVisible());
-        QVERIFY(ind->findChild<Spinner*>()->animating());
-        QVERIFY(ind->findChild<QPushButton*>("cancelValidationButton")->isVisible());
-        QVERIFY(!ind->findChild<QPushButton*>("waitButton")->isVisible());  // not slow yet
-        QVERIFY(w.findChild<QLabel*>("stateLabel")->text().contains("locked"));
-
-        // Locked: clicks, menus and dragging do nothing; zoom still works.
-        QVERIFY(w.scene()->locked());
-        QVERIFY(w.view()->dimmed());
-        QSignalSpy freePad(w.scene(), &CanvasScene::freeSrcPadClicked);
-        QSignalSpy elementMenu(w.scene(), &CanvasScene::elementMenuRequested);
-        QSignalSpy activated(w.scene(), &CanvasScene::elementActivated);
-        QSignalSpy moved(w.scene(), &CanvasScene::elementMoved);
-        w.scene()->disconnect(&w);
-        QPoint pad = w.view()->mapFromScene(w.scene()->pad(src, "src", true)->center());
-        QTest::mouseClick(w.view()->viewport(), Qt::LeftButton, Qt::NoModifier, pad);
-        QPoint body = w.view()->mapFromScene(w.scene()->element(src)->pos() + QPointF(120, 12));
-        QTest::mouseClick(w.view()->viewport(), Qt::RightButton, Qt::NoModifier, body);
-        QTest::mouseDClick(w.view()->viewport(), Qt::LeftButton, Qt::NoModifier, body);
-        QVERIFY(!(w.scene()->element(src)->flags() & QGraphicsItem::ItemIsMovable));
-        QCOMPARE(freePad.count() + elementMenu.count() + activated.count() + moved.count(), 0);
-        double zoom = w.view()->zoom();
-        w.view()->zoomBy(1.25);
-        QVERIFY(w.view()->zoom() != zoom);
-        QVERIFY(!w.findChild<QAction*>("actionAddSource")->isEnabled());
-
-        // Over: the indicator is gone, the canvas answers again.
-        QVERIFY(settle(*c));
-        QVERIFY(!ind->isVisible());
-        QVERIFY(!ind->findChild<Spinner*>()->animating());  // the timer stopped with the widget
-        QVERIFY(!w.scene()->locked());
-        QVERIFY(!w.view()->dimmed());
+        QVERIFY(waitFor([&] { return w.indicator()->isVisible(); }, 2000));
+        QCOMPARE(w.indicator()->mode(), ValidationIndicator::Validating);
+        QVERIFY(w.indicator()->findChild<Spinner*>()->animating());
+        QVERIFY(!w.scene()->locked()); QVERIFY(!w.view()->dimmed());
+        QVERIFY(w.findChild<QAction*>("actionAddSource")->isEnabled());
+        QVERIFY(w.findChild<QLabel*>("stateLabel")->text().contains("keep editing"));
         w.scene()->rebuild();
         QVERIFY(w.scene()->element(src)->flags() & QGraphicsItem::ItemIsMovable);
-        pad = w.view()->mapFromScene(w.scene()->pad(src, "src", true)->center());
-        QTest::mouseClick(w.view()->viewport(), Qt::LeftButton, Qt::NoModifier, pad);
-        QCOMPARE(freePad.count(), 1);
-        QVERIFY(waitFor([&] { return w.drawer()->isOpen(); }));  // and the click did open the drawer
+        const auto revision = c->pipeline().lastChange().executionRevision;
+        c->setPosition(src, -9000, 200);
+        QCOMPARE(c->pipeline().lastChange().executionRevision, revision);
+        const double zoom = w.view()->zoom(); w.view()->zoomBy(1.25);
+        QVERIFY(w.view()->zoom() != zoom);
+        QVERIFY(settle(*c));
+        QVERIFY(!w.indicator()->isVisible());
+        QCOMPARE(c->plan().find(src.toStdString())->x, -9000.0);
     }
 
     void updateGetsTheLargeBackstopTimeout() {

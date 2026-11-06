@@ -1,7 +1,7 @@
-// gps-update – builds the Plan, gives free src pads a temporary end, reads every caps, prints JSON (SPEC 5 and 7).
+// gps-update – builds the Graph, gives free src pads a temporary end, reads every caps, prints JSON (SPEC 5 and 7).
 //   gps-update <plan.conf> [--timeout-ms N]
 // SIGINT and SIGTERM end it within about 2 s (status error, no process left).
-#include "builder.h"
+#include "gst_engine.h"
 #include "common.h"
 
 int main(int argc, char** argv) {
@@ -13,8 +13,8 @@ int main(int argc, char** argv) {
     if (!gps::takeTimeout(&args, &options.timeoutMs, &error)) return gps::usageError(out, error);
     if (args.size() != 1) return gps::usageError(out, "gps-update <plan.conf> [--timeout-ms N]");
 
-    gps::Plan plan;
-    if (!gps::Plan::load(args[0], &plan, &error)) {
+    gps::Graph plan;
+    if (!gps::Graph::load(args[0], &plan, &error)) {
         gps::UpdateResult failed;  // a bad file is a result, not a crash (SPEC 7: exit 0 when the work is done)
         failed.status = "error";
         failed.message = args[0] + ": " + error;
@@ -23,6 +23,8 @@ int main(int argc, char** argv) {
     }
     gps::installStopHandler();
     options.shouldStop = gps::stopRequested;
-    out.json(gps::updateJson(gps::update(plan, options, gps::logLine)));
+    gps::GstEngine engine(options, gps::logLine);
+    engine.execute(gps::ExecutionPlan(std::move(plan), {0, 1}),
+                   [&](gps::ExecutionResult result) { out.json(gps::updateJson(result.report)); });
     return 0;
 }

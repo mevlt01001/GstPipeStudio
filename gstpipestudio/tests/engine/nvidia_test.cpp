@@ -17,7 +17,7 @@ int main(int argc, char** argv) {
     gst_init(&argc, &argv);
     if (!factoryExists("nvstreammux") || !factoryExists("nvvideoconvert")) {
         std::puts("SKIP: no DeepStream elements");
-        return 0;
+        return 77;
     }
 
     std::puts("-- nvstreammux: its Request pads want a number (sink_0), the bare template is refused");

@@ -12,7 +12,7 @@ using gps::RunResult;
 static const char* kFrameCaps = "video/x-raw, format=(string)I420, width=(int)16, height=(int)16";
 static const size_t kFrameBytes = 384;
 
-static RunResult run(const gps::Plan& plan, std::map<std::string, std::string> params = {}, gps::RunOptions options = {}) {
+static RunResult run(const gps::Graph& plan, std::map<std::string, std::string> params = {}, gps::RunOptions options = {}) {
     Log log;
     return gps::run(plan, params, options, log.fn());
 }

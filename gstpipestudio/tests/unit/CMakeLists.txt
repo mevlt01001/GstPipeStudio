@@ -1,5 +1,11 @@
 add_executable(plan_test plan_test.cpp)
-target_link_libraries(plan_test PRIVATE gps_plan)
+target_link_libraries(plan_test PRIVATE gps_pipeline)
 target_include_directories(plan_test PRIVATE ${GPS_TEST_DIR})
 add_test(NAME unit.plan COMMAND plan_test)
 set_tests_properties(unit.plan PROPERTIES LABELS unit)
+
+add_executable(pipeline_test pipeline_test.cpp)
+target_link_libraries(pipeline_test PRIVATE gps_pipeline)
+target_include_directories(pipeline_test PRIVATE ${GPS_TEST_DIR})
+add_test(NAME unit.pipeline COMMAND pipeline_test)
+set_tests_properties(unit.pipeline PROPERTIES LABELS unit)

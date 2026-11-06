@@ -4,22 +4,22 @@
 
 #include "capstext.h"
 #include "check.h"
-#include "plan.h"
+#include "graph.h"
 
 using gps::CapsChoice;
 using gps::CapsField;
 
-static std::string capsOfLink(const gps::Plan& plan, const std::string& src, const std::string& sink) {
-    for (const gps::PlanLink& l : plan.links) {
+static std::string capsOfLink(const gps::Graph& plan, const std::string& src, const std::string& sink) {
+    for (const gps::Connection& l : plan.links) {
         if (l.srcElement == src && l.sinkElement == sink) return l.caps;
     }
     return "<no such link>";
 }
 
 int main() {
-    gps::Plan plan;
+    gps::Graph plan;
     std::string error;
-    bool loaded = gps::Plan::load(std::string(GPS_DS_PLANS) + "/s5_caps_choice.conf", &plan, &error);
+    bool loaded = gps::Graph::load(std::string(GPS_DS_PLANS) + "/s5_caps_choice.conf", &plan, &error);
     CHECK(loaded);
     if (!loaded) {
         std::printf("load: %s\n", error.c_str());
@@ -49,12 +49,12 @@ int main() {
     CHECK_EQ(onlyFeature.toText(), std::string("video/x-raw(memory:NVMM)"));
 
     // .conf round trip keeps the parentheses and the feature
-    gps::Plan again;
-    CHECK(gps::Plan::fromConf(plan.toConf(), &again, &error));
+    gps::Graph again;
+    CHECK(gps::Graph::fromConf(plan.toConf(), &again, &error));
     CHECK_EQ(capsOfLink(again, "nvvideoconvert_1", "nvvideoconvert_2"), nvmm.toText());
 
     // setCaps writes the same text
-    gps::Plan edited = plan;
+    gps::Graph edited = plan;
     CHECK(edited.setCaps("nvvideoconvert_1", "src", onlyFeature.toText()));
     CHECK_EQ(capsOfLink(edited, "nvvideoconvert_1", "nvvideoconvert_2"), std::string("video/x-raw(memory:NVMM)"));
 

@@ -89,7 +89,7 @@ def conf_value(v):
 
 
 class PlanBuilder:
-    """A Plan in Python; to_conf() gives the text of SPEC 3."""
+    """A Graph in Python; to_conf() gives the text of SPEC 3."""
 
     def __init__(self, name="sweep"):
         self.name = name

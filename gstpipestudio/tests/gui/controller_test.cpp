@@ -68,8 +68,8 @@ private slots:
         QVERIFY(c->updating());
         QVERIFY(c->busy());
         QVERIFY(c->dirty());
-        // Actions are disabled while updating.
-        QVERIFY(!c->addSource("videotestsrc", {}));
+        // Preview keeps editing available; saving/running waits for the result.
+        QVERIFY(!c->editingBlocked());
         QVERIFY(!c->refresh());
         QVERIFY(!c->cut("videotestsrc_0", "src"));
         QVERIFY(!c->canSave());
@@ -136,9 +136,9 @@ private slots:
 
     void newElementIsPlacedRightOfItsSource() {
         Chain ch = makeChain();
-        const gps::PlanElement* s = c->plan().find(ch.src.toStdString());
-        const gps::PlanElement* v = c->plan().find(ch.convert.toStdString());
-        QCOMPARE(v->x, s->x + 280);  // Plan::addAfter's step: the box is 240 wide, so 40 px are left for the link
+        const gps::Element* s = c->plan().find(ch.src.toStdString());
+        const gps::Element* v = c->plan().find(ch.convert.toStdString());
+        QCOMPARE(v->x, s->x + 280);  // Graph::addAfter's step: the box is 240 wide, so 40 px are left for the link
     }
 
     void requestPadOnACompositor() {
@@ -176,8 +176,8 @@ private slots:
     void secondSourceDoesNotOverlap() {
         QString a = addSource(*c, "videotestsrc");
         QString b = addSource(*c, "audiotestsrc");
-        const gps::PlanElement* ea = c->plan().find(a.toStdString());
-        const gps::PlanElement* eb = c->plan().find(b.toStdString());
+        const gps::Element* ea = c->plan().find(a.toStdString());
+        const gps::Element* eb = c->plan().find(b.toStdString());
         QRectF ra(ea->x, ea->y, metrics::kBoxWidth, c->view(a).height());
         QRectF rb(eb->x, eb->y, metrics::kBoxWidth, c->view(b).height());
         QVERIFY(!ra.intersects(rb));
@@ -200,7 +200,7 @@ private slots:
         }
         QVERIFY(c->result().isComplete());
         QList<QRectF> rects;
-        for (const gps::PlanElement& e : c->plan().elements) {
+        for (const gps::Element& e : c->plan().elements) {
             rects << QRectF(e.x, e.y, metrics::kBoxWidth, c->view(text(e.name)).height());
         }
         QCOMPARE(rects.size(), 8);
@@ -454,14 +454,16 @@ private slots:
         QVERIFY2(c->save(path, &error), qPrintable(error));
         QVERIFY(!c->dirty());
         QCOMPARE(c->filePath(), path);
-        QVERIFY(text(c->plan().toConf()).contains("complete=1"));
+        gps::Graph persisted; std::string loadError;
+        QVERIFY(gps::Graph::load(path.toStdString(), &persisted, &loadError));
+        QVERIFY(persisted.complete);
         QVERIFY(c->launchCommand().contains("gst-launch-1.0 demo"));
         QVERIFY(c->launchCommand().contains("GPS_PIPELINE_PATH=" + dir.path()));
 
         auto other = makeController();
         other->open(path);
         QVERIFY(waitFor([&] { return other->result().valid() && !other->busy(); }));
-        QCOMPARE(text(other->plan().toConf()), text(c->plan().toConf()));
+        QCOMPARE(text(other->plan().toConf()), text(persisted.toConf()));
         QVERIFY(other->result().isComplete());
         QVERIFY(!other->dirty());
         QVERIFY(other->canRun());
@@ -473,7 +475,8 @@ private slots:
         QVERIFY(settle(*other));
         QVERIFY(other->dirty());
         QVERIFY(other->save("", &error));
-        QVERIFY(text(other->plan().toConf()).contains("complete=0"));
+        QVERIFY(gps::Graph::load(path.toStdString(), &persisted, &loadError));
+        QVERIFY(!persisted.complete);
     }
 
     void openingABrokenFileChangesNothing() {
@@ -589,6 +592,50 @@ private slots:
         QVERIFY(text(c->plan().toConf()).contains("y=384"));
         c->setPosition(src, 512, 384);  // same place: nothing to report
         QCOMPARE(changed.count(), 1);
+    }
+
+    void latestEditWinsDuringPreview() {
+        need(*c, "videotestsrc");
+        QSignalSpy finished(c.get(), &Controller::updateFinished);
+        QVERIFY(c->addSource("videotestsrc", withProps({{"fake-slow", "1200"}})));
+        const QString source = text(c->plan().elements.front().name);
+        QTest::qWait(150); // first helper is running
+        QVERIFY(c->updating());
+        QVERIFY(c->editElement(source, withProps({{"pattern", "snow"}})));
+        QVERIFY(c->editElement(source, withProps({{"pattern", "ball"}})));
+        QVERIFY(settle(*c));
+        QCOMPARE(finished.count(), 1); // superseded completions do not escape
+        QCOMPARE(c->plan().find(toStd(source))->props.at("pattern"), std::string("ball"));
+        QCOMPARE(c->result().status, QString("ok"));
+        QVERIFY(!c->notValidated());
+        QVERIFY(c->editElement(source, withProps({{"fake-slow", "1200"}})));
+        QTest::qWait(100);
+        QVERIFY(c->deleteElement(source));
+        QVERIFY(settle(*c));
+        QVERIFY(c->plan().empty());
+        QVERIFY(!c->result().valid());
+    }
+
+    void sharedDocumentAndPresentationHistory() {
+        const QString source = addSource(*c, "videotestsrc");
+        const auto initial = c->plan().find(toStd(source));
+        const double oldX = initial->x, oldY = initial->y;
+        const auto executionRevision = c->pipeline().lastChange().executionRevision;
+        QSignalSpy completed(c.get(), &Controller::updateFinished);
+        c->setPosition(source, -12000, -8000);
+        QCOMPARE(c->pipeline().graph().find(toStd(source))->x, -12000.0);
+        QCOMPARE(c->pipeline().lastChange().executionRevision, executionRevision);
+        QVERIFY(!c->updating());
+        QCOMPARE(completed.count(), 0);
+        QVERIFY(c->undo());
+        QCOMPARE(c->plan().find(toStd(source))->x, oldX);
+        QCOMPARE(c->plan().find(toStd(source))->y, oldY);
+        QVERIFY(!c->updating());
+        QVERIFY(c->redo());
+        QCOMPARE(c->plan().find(toStd(source))->x, -12000.0);
+        QVERIFY(c->refresh()); QVERIFY(settle(*c));
+        QCOMPARE(c->plan().find(toStd(source))->x, -12000.0);
+        QVERIFY(!c->pipeline().graph().find(toStd(source))->pads.empty());
     }
 
     void newPlanClearsEverything() {
@@ -766,9 +813,13 @@ private slots:
         QVERIFY(c->ungroupElements(insGrp));
         QVERIFY(c->disconnectBetweenElements(inserted));
         QCOMPARE(c->plan().links.size(), size_t(1));  // only src -> snk
+        const auto beforeRejectedSplice = c->plan().toConf();
+        QVERIFY(!c->spliceElements(inserted, src, "src"));
+        QCOMPARE(c->plan().toConf(), beforeRejectedSplice);
+        QVERIFY(c->connectSelectedElements(inserted));
         QVERIFY(c->spliceElements(inserted, src, "src"));
         QVERIFY(settle(*c));
-        // Both elements were auto-linked left-to-right and spliced into src -> snk!
+        // Both explicitly connected elements were spliced into src -> snk!
         QCOMPARE(c->plan().links.size(), size_t(3));
         QVERIFY(c->result().isComplete());
         // Deleting the multi-selection auto-heals back to src -> snk!
