@@ -1,8 +1,8 @@
 // gstgpsconf.cpp – the GStreamer plugin of SPEC 6.
-// Every *.conf in GPS_PIPELINE_PATH becomes an element: a GstBin subclass that builds the Plan with the same
+// Every *.conf in GPS_PIPELINE_PATH becomes an element: a GstBin subclass that builds the Graph with the same
 // Builder as gps-run. GstBin brings GstChildProxy, so "demo src::num-buffers=3" reaches every inner property.
 // Exposed parameters become properties (type, range and default cloned from the target property, else string).
-// Free src pads of an incomplete Plan become ghost pads of the bin.
+// Free src pads of an incomplete Graph become ghost pads of the bin.
 #include <gst/gst.h>
 
 #include <algorithm>
@@ -10,7 +10,7 @@
 #include <vector>
 
 #include "builder.h"
-#include "plan.h"
+#include "graph.h"
 
 GST_DEBUG_CATEGORY_STATIC(gpsconf_debug);
 #define GST_CAT_DEFAULT gpsconf_debug
@@ -33,7 +33,7 @@ struct Slot {
 
 struct ConfClass {
     GstBinClass parent;
-    gps::Plan* plan;
+    gps::Graph* plan;
     std::vector<Slot>* slots;
     std::string* loadError;
 };
@@ -41,14 +41,14 @@ struct ConfClass {
 struct Conf {
     GstBin parent;
     gps::Builder* builder;
-    std::string* error;  // why the Plan could not be built; the element then fails at NULL -> READY
+    std::string* error;  // why the Graph could not be built; the element then fails at NULL -> READY
 };
 
 gpointer parentClass = nullptr;
 
 // The property of the target element, or null. Needs the target's plugin loaded.
-GParamSpec* targetSpec(const gps::Plan& plan, const gps::ExposedParam& param) {
-    const gps::PlanElement* element = plan.find(param.element);
+GParamSpec* targetSpec(const gps::Graph& plan, const gps::ExposedParam& param) {
+    const gps::Element* element = plan.find(param.element);
     if (!element) return nullptr;
     GstElementFactory* factory = gst_element_factory_find(element->factory.c_str());
     if (!factory) return nullptr;
@@ -159,10 +159,10 @@ void finalizeConf(GObject* object) {
 void classInit(gpointer g_class, gpointer classData) {
     ConfClass* klass = static_cast<ConfClass*>(g_class);
     parentClass = g_type_class_peek_parent(g_class);
-    klass->plan = new gps::Plan;
+    klass->plan = new gps::Graph;
     klass->slots = new std::vector<Slot>;
     klass->loadError = new std::string;
-    if (!gps::Plan::load(static_cast<const char*>(classData), klass->plan, klass->loadError)) {
+    if (!gps::Graph::load(static_cast<const char*>(classData), klass->plan, klass->loadError)) {
         GST_WARNING("%s: %s", static_cast<const char*>(classData), klass->loadError->c_str());
     }
 
@@ -238,9 +238,9 @@ gboolean pluginInit(GstPlugin* plugin) {
         for (char& c : type) {
             if (!g_ascii_isalnum(c) && c != '_' && c != '-') c = '_';
         }
-        gps::Plan plan;
+        gps::Graph plan;
         std::string error;
-        if (!gps::Plan::load(entry.second, &plan, &error)) {
+        if (!gps::Graph::load(entry.second, &plan, &error)) {
             GST_WARNING("%s skipped: %s", entry.second.c_str(), error.c_str());
             continue;
         }

@@ -1,3 +1,5 @@
+> The checked-in generated diagrams below describe the pre-dev-zero implementation. For the current units, ownership and interfaces, use [the maintained architecture diagram](../../../docs/architecture/README.md). Regenerate these snapshots with the updated `.clang-uml` configuration after building.
+
 # Architecture & Class Diagrams
 
 Automated UML diagrams for **GstPipeStudio**, generated from C++ source via `clang-uml`.

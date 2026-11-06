@@ -1,10 +1,10 @@
-if(NOT TARGET gps_engine)
-    message(STATUS "plugin: gps_engine is not part of this build, skipped")
+if(NOT TARGET gps_gstengine)
+    message(STATUS "plugin: gps_gstengine is not part of this build, skipped")
     return()
 endif()
 
 add_library(gstgpsconf MODULE gstgpsconf.cpp)
-target_link_libraries(gstgpsconf PRIVATE gps_engine)
+target_link_libraries(gstgpsconf PRIVATE gps_gstengine)
 target_compile_definitions(gstgpsconf PRIVATE GPS_VERSION="${PROJECT_VERSION}")
 set_target_properties(gstgpsconf PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib/gstreamer-1.0)
 # GStreamer finds it there with no setting, when the prefix is /usr (lib/x86_64-linux-gnu or lib/aarch64-linux-gnu on Ubuntu)

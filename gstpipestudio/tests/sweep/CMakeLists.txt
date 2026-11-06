@@ -15,7 +15,7 @@ if(TARGET gps-update AND TARGET gps-inspect AND TARGET gps-run)
             add_test(NAME sweep.all
                      COMMAND ${GPS_PYTHON} ${CMAKE_CURRENT_SOURCE_DIR}/sweep.py
                              --bin-dir $<TARGET_FILE_DIR:gps-update> --work-dir ${CMAKE_BINARY_DIR}/sweep-work
-                             --report-dir ${GPS_ROOT}/report --jobs ${GPS_SWEEP_JOBS})
+                             --report-dir ${CMAKE_BINARY_DIR}/report --jobs ${GPS_SWEEP_JOBS})
             set_tests_properties(sweep.all PROPERTIES LABELS "sweep;slow" TIMEOUT 3000)
         endif()
     endif()

@@ -15,9 +15,9 @@ if(TARGET gps-update AND TARGET gps-run AND TARGET gps-inspect AND TARGET gstgps
 endif()
 
 # CapsChoice text == the caps in the plan files (the GUI writes what the tests read).
-if(TARGET gps_plan)
+if(TARGET gps_pipeline)
     add_executable(deepstream_caps_test caps_test.cpp)
-    target_link_libraries(deepstream_caps_test PRIVATE gps_plan)
+    target_link_libraries(deepstream_caps_test PRIVATE gps_pipeline)
     target_include_directories(deepstream_caps_test PRIVATE ${GPS_TEST_DIR})
     target_compile_definitions(deepstream_caps_test PRIVATE GPS_DS_PLANS="${CMAKE_CURRENT_SOURCE_DIR}/plans")
     add_test(NAME deepstream.caps COMMAND deepstream_caps_test)

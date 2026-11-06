@@ -1,4 +1,4 @@
-// testutil.h – helpers for the engine tests: fixtures in a temp folder, a short way to write a Plan, pad lookup.
+// testutil.h – helpers for the engine tests: fixtures in a temp folder, a short way to write a Graph, pad lookup.
 #pragma once
 
 #include <unistd.h>
@@ -15,7 +15,7 @@
 
 #include "builder.h"
 #include "check.h"
-#include "plan.h"
+#include "graph.h"
 
 namespace gpstest {
 
@@ -50,11 +50,11 @@ inline size_t fileSize(const std::string& path) {
     return ec ? static_cast<size_t>(-1) : static_cast<size_t>(size);
 }
 
-// A Plan written in a few readable lines.
+// A Graph written in a few readable lines.
 class P {
 public:
     P& el(const std::string& name, const std::string& factory, gps::Props props = {}) {
-        gps::PlanElement e;
+        gps::Element e;
         e.name = name;
         e.factory = factory;
         e.props = std::move(props);
@@ -74,7 +74,7 @@ public:
         plan.exposed.push_back({name, element, property});
         return *this;
     }
-    gps::Plan plan;
+    gps::Graph plan;
 };
 
 inline const gps::PadReport* pad(const gps::UpdateResult& r, const std::string& element, const std::string& identity,
@@ -109,7 +109,7 @@ struct Log {
     }
 };
 
-inline gps::UpdateResult update(const gps::Plan& plan, int timeoutMs = 10000, Log* log = nullptr) {
+inline gps::UpdateResult update(const gps::Graph& plan, int timeoutMs = 10000, Log* log = nullptr) {
     gps::UpdateOptions options;
     options.timeoutMs = timeoutMs;
     Log local;

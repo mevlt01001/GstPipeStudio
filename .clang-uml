@@ -6,15 +6,18 @@ diagrams:
     type: package
     package_type: directory
     glob:
-      - gstpipestudio/core/**/*.cpp
-      - gstpipestudio/app/**/*.cpp
+      - gstpipestudio/Pipeline/**/*.cpp
+      - gstpipestudio/GstEngine/**/*.cpp
+      - gstpipestudio/GUI/**/*.cpp
 
   core_overview:
     type: class
     title: "GstPipeStudio Core — High Level Overview (Relationships Only)"
     glob:
-      - gstpipestudio/core/**/*.cpp
-      - gstpipestudio/core/**/*.h
+      - gstpipestudio/Pipeline/**/*.cpp
+      - gstpipestudio/GstEngine/**/*.cpp
+      - gstpipestudio/Pipeline/**/*.h
+      - gstpipestudio/GstEngine/**/*.h
     include:
       namespaces:
         - gps
@@ -30,8 +33,8 @@ diagrams:
     type: class
     title: "GstPipeStudio App — High Level Overview (Relationships Only)"
     glob:
-      - gstpipestudio/app/**/*.cpp
-      - gstpipestudio/app/**/*.h
+      - gstpipestudio/GUI/**/*.cpp
+      - gstpipestudio/GUI/**/*.h
     exclude:
       access:
         - public
@@ -44,8 +47,10 @@ diagrams:
     type: class
     title: "GstPipeStudio Core — Zoom-In Details (Public & Protected Members)"
     glob:
-      - gstpipestudio/core/**/*.cpp
-      - gstpipestudio/core/**/*.h
+      - gstpipestudio/Pipeline/**/*.cpp
+      - gstpipestudio/GstEngine/**/*.cpp
+      - gstpipestudio/Pipeline/**/*.h
+      - gstpipestudio/GstEngine/**/*.h
     include:
       namespaces:
         - gps
@@ -58,8 +63,8 @@ diagrams:
     type: class
     title: "GstPipeStudio App — Zoom-In Details (Public & Protected Members)"
     glob:
-      - gstpipestudio/app/**/*.cpp
-      - gstpipestudio/app/**/*.h
+      - gstpipestudio/GUI/**/*.cpp
+      - gstpipestudio/GUI/**/*.h
     exclude:
       access:
         - private

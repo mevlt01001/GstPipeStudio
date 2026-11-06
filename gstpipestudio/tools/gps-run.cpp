@@ -1,4 +1,4 @@
-// gps-run – runs the Plan for real, with no temporary ends (SPEC 6 and 7).
+// gps-run – runs the Graph for real, with no temporary ends (SPEC 6 and 7).
 //   gps-run <plan.conf> [name=value ...] [--timeout-ms N]
 // SIGINT and SIGTERM become EOS, so files get finished properly.
 #include "builder.h"
@@ -22,8 +22,8 @@ int main(int argc, char** argv) {
     }
     if (path.empty()) return gps::usageError(out, "gps-run <plan.conf> [name=value ...] [--timeout-ms N]");
 
-    gps::Plan plan;
-    if (!gps::Plan::load(path, &plan, &error)) {
+    gps::Graph plan;
+    if (!gps::Graph::load(path, &plan, &error)) {
         gps::RunResult failed;
         failed.status = "error";
         failed.message = path + ": " + error;

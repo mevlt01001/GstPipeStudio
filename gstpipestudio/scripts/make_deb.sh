@@ -7,11 +7,13 @@ set -euo pipefail
 UBUNTU=$1
 ARCH=$2
 NAME="GstPipeStudio-$UBUNTU-$ARCH.deb"
-STAGE=/tmp/stage
+STAGE=${GPS_STAGE_DIR:-/tmp/stage}
+BUILD_DIR=${GPS_BUILD_DIR:-build}
 PRIVATE=$STAGE/usr/lib/gstpipestudio
 
 # dpkg-shlibdeps asks for a debian/control file in the folder it runs in; an empty one is enough
 WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
 mkdir "$WORK/debian"
 touch "$WORK/debian/control"
 
@@ -24,11 +26,12 @@ DEPENDS="$(cd "$WORK" && dpkg-shlibdeps -O --ignore-missing-info -l"$PRIVATE/lib
 echo "dependencies on system libraries: $DEPENDS"
 
 # GStreamer is not carried: apt installs it with the package (the programs run gst-inspect-1.0 and the plugin lives in its folder)
-OUT="$PWD/out"   # a full path: the CMake of Ubuntu 20.04 (3.16) cannot make the links of bin/ inside a relative one
-cpack --config build/CPackConfig.cmake -G DEB -B "$OUT" \
+OUT="${GPS_OUTPUT_DIR:-$PWD/out}"   # a full path: the CMake of Ubuntu 20.04 (3.16) cannot make the links of bin/ inside a relative one
+cpack --config "$BUILD_DIR/CPackConfig.cmake" -G DEB -B "$OUT" \
     -D CPACK_DEBIAN_FILE_NAME="$NAME" \
     -D CPACK_DEBIAN_PACKAGE_DEPENDS="gstreamer1.0-tools (>= 1.16), gstreamer1.0-plugins-base (>= 1.16), fonts-dejavu-core, $DEPENDS"
 
 # exit code of the script: 0 = the package exists, 1 = not
-test -f "out/$NAME"
-dpkg-deb --info "out/$NAME"
+test -f "$OUT/$NAME"
+dpkg-deb --info "$OUT/$NAME"
+(cd "$OUT" && sha256sum "$NAME" > "$NAME.sha256")

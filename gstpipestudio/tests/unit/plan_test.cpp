@@ -5,7 +5,7 @@
 #include "capstext.h"
 #include "check.h"
 #include "pipeline.h"
-#include "plan.h"
+#include "graph.h"
 
 using namespace gps;
 
@@ -51,7 +51,7 @@ static void defaults() {
 }
 
 static void chain() {
-    Plan p;
+    Graph p;
     std::string s = p.addSource("src", {{"num", "1"}});
     CHECK_EQ(s, std::string("src_0"));
     std::string a = p.addAfter(s, "src", "filter", "sink", {}, 280, 5);
@@ -85,7 +85,7 @@ static void chain() {
     CHECK_EQ(none.links, 0);
 
     // Names are never reused.
-    Plan q;
+    Graph q;
     std::string first = q.addSource("src");
     q.deleteSource(first, T);
     CHECK_EQ(q.addSource("src"), std::string("src_1"));
@@ -93,7 +93,7 @@ static void chain() {
 
 static void pruning() {
     // Cutting a link only removes the link; downstream elements stay on the free canvas as untracked.
-    Plan p;
+    Graph p;
     std::string s = p.addSource("src");
     std::string a = p.addAfter(s, "src", "f", "sink");
     std::string b = p.addAfter(a, "src", "f", "sink");
@@ -107,7 +107,7 @@ static void pruning() {
     CHECK(!p.isElementTracked(c, T));
 
     // Multi-element deletion auto-heals across a connected chain.
-    Plan h;
+    Graph h;
     std::string hs = h.addSource("src");
     std::string ha = h.addAfter(hs, "src", "f", "sink");
     std::string hb = h.addAfter(ha, "src", "f", "sink");
@@ -119,7 +119,7 @@ static void pruning() {
     CHECK_EQ(h.links[0].sinkElement, hc);
 
     // An element with one linked input stays although another sink pad is free (textoverlay).
-    Plan o;
+    Graph o;
     std::string v = o.addSource("src");
     std::string overlay = o.addAfter(v, "src", "overlay", "video_sink");
     std::string out = o.addAfter(overlay, "src", "sink", "sink");
@@ -127,7 +127,7 @@ static void pruning() {
     CHECK(o.find(overlay) && o.find(out));
 
     // Two sources into a mixer: deleting a source only deletes that source; downstream elements stay on canvas.
-    Plan m;
+    Graph m;
     std::string s1 = m.addSource("src");
     std::string s2 = m.addSource("src");
     std::string mix = m.addAfter(s1, "src", "mixer", "sink_%u");
@@ -147,7 +147,7 @@ static void pruning() {
     CHECK(!m.isElementTracked(end, T));
 
     // Only sources can be deleted this way.
-    Plan n;
+    Graph n;
     std::string ns = n.addSource("src");
     std::string nf = n.addAfter(ns, "src", "f", "sink");
     CHECK(n.deleteSource(nf, T).elements.empty());
@@ -156,7 +156,7 @@ static void pruning() {
 }
 
 static void linking() {
-    Plan p;
+    Graph p;
     std::string s1 = p.addSource("src");
     std::string s2 = p.addSource("src");
     std::string f = p.addAfter(s1, "src", "f", "sink");
@@ -180,7 +180,7 @@ static void linking() {
 }
 
 static void replacing() {
-    Plan p;
+    Graph p;
     std::string s = p.addSource("src");
     std::string a = p.addAfter(s, "src", "f", "sink");
     std::string b = p.addAfter(a, "src", "f", "sink");
@@ -206,7 +206,7 @@ static void replacing() {
 }
 
 static void queues() {
-    Plan p;
+    Graph p;
     std::string s1 = p.addSource("src");
     std::string s2 = p.addSource("src");
     std::string mix = p.addAfter(s1, "src", "mixer", "sink_%u");
@@ -258,7 +258,7 @@ static void queues() {
 }
 
 static void requestSources() {
-    Plan p;
+    Graph p;
     std::string s = p.addSource("src");
     std::string tee = p.addAfter(s, "src", "tee", "sink");
     CHECK(p.setRequestSrc(tee, "src_%u", 3));
@@ -278,7 +278,7 @@ static void requestSources() {
 }
 
 static void edits() {
-    Plan p;
+    Graph p;
     std::string s = p.addSource("src");
     std::string a = p.addAfter(s, "src", "f", "sink");
     CHECK(p.setProps(a, {{"a", "1"}, {"b", "2"}}));
@@ -300,7 +300,7 @@ static void edits() {
 }
 
 static void confRoundTrip() {
-    Plan p;
+    Graph p;
     p.name = "demo robot";
     std::string s = p.addSource("filesrc", {{"location", "/data/my file=1.avi"}, {"note", "line1\nline2\\end"}}, 40.5, -80);
     std::string tee = p.addAfter(s, "src", "tee", "sink");
@@ -312,9 +312,9 @@ static void confRoundTrip() {
     p.complete = true;
 
     std::string text = p.toConf();
-    Plan q;
+    Graph q;
     std::string error;
-    CHECK(Plan::fromConf(text, &q, &error));
+    CHECK(Graph::fromConf(text, &q, &error));
     CHECK_EQ(error, std::string(""));
     CHECK_EQ(q.toConf(), text);  // the text is a fixed point
     CHECK_EQ(q.name, std::string("demo robot"));
@@ -333,51 +333,51 @@ static void confRoundTrip() {
     (void) mix;
 
     // File round trip.
-    std::string path = "/tmp/gps_plan_test.conf";
+    std::string path = "/tmp/gps_pipeline_test.conf";
     CHECK(p.save(path, &error));
-    Plan r;
-    CHECK(Plan::load(path, &r, &error));
+    Graph r;
+    CHECK(Graph::load(path, &r, &error));
     CHECK_EQ(r.toConf(), text);
-    CHECK(!Plan::load("/no/such/dir/x.conf", &r, &error));
+    CHECK(!Graph::load("/no/such/dir/x.conf", &r, &error));
     CHECK(!error.empty());
     std::remove(path.c_str());
 
     // Unknown sections and keys are ignored.
-    Plan u;
-    CHECK(Plan::fromConf(text + "\n[future:thing]\nx=1\n", &u, &error));
+    Graph u;
+    CHECK(Graph::fromConf(text + "\n[future:thing]\nx=1\n", &u, &error));
     CHECK_EQ(u.elements.size(), p.elements.size());
 }
 
 static void confErrors() {
-    Plan out;
+    Graph out;
     std::string error;
     const std::string head = "[gstpipestudio]\nversion=1\n";
-    CHECK(!Plan::fromConf("", &out, &error));
-    CHECK(!Plan::fromConf("[element:a]\nfactory=x\n", &out, &error));                      // no header
-    CHECK(!Plan::fromConf("[gstpipestudio]\nversion=2\n", &out, &error));                  // other version
-    CHECK(!Plan::fromConf("key=value\n", &out, &error));                                   // before a section
-    CHECK(!Plan::fromConf(head + "[element:a]\n", &out, &error));                          // no factory
-    CHECK(!Plan::fromConf(head + "[element:a b]\nfactory=x\n", &out, &error));             // bad name
-    CHECK(!Plan::fromConf(head + "[element:a]\nfactory=x\n[element:a]\nfactory=y\n", &out, &error));
-    CHECK(!Plan::fromConf(head + "[element:a\nfactory=x\n", &out, &error));                // unclosed
-    CHECK(!Plan::fromConf(head + "[element:a]\nfactory\n", &out, &error));                 // no '='
+    CHECK(!Graph::fromConf("", &out, &error));
+    CHECK(!Graph::fromConf("[element:a]\nfactory=x\n", &out, &error));                      // no header
+    CHECK(!Graph::fromConf("[gstpipestudio]\nversion=2\n", &out, &error));                  // other version
+    CHECK(!Graph::fromConf("key=value\n", &out, &error));                                   // before a section
+    CHECK(!Graph::fromConf(head + "[element:a]\n", &out, &error));                          // no factory
+    CHECK(!Graph::fromConf(head + "[element:a b]\nfactory=x\n", &out, &error));             // bad name
+    CHECK(!Graph::fromConf(head + "[element:a]\nfactory=x\n[element:a]\nfactory=y\n", &out, &error));
+    CHECK(!Graph::fromConf(head + "[element:a\nfactory=x\n", &out, &error));                // unclosed
+    CHECK(!Graph::fromConf(head + "[element:a]\nfactory\n", &out, &error));                 // no '='
     const std::string two = head + "[element:a]\nfactory=src\n[element:b]\nfactory=f\n[element:c]\nfactory=f\n";
-    CHECK(Plan::fromConf(two, &out, &error));
-    CHECK(!Plan::fromConf(two + "[link:0]\nsrc=a\nsrcpad=src\nsink=zzz\nsinkpad=sink\n", &out, &error));
-    CHECK(!Plan::fromConf(two + "[link:0]\nsrc=a\nsrcpad=src\nsink=b\n", &out, &error));  // sinkpad missing
-    CHECK(!Plan::fromConf(two + "[link:0]\nsrc=a\nsrcpad=src\nsink=b\nsinkpad=sink\n"
+    CHECK(Graph::fromConf(two, &out, &error));
+    CHECK(!Graph::fromConf(two + "[link:0]\nsrc=a\nsrcpad=src\nsink=zzz\nsinkpad=sink\n", &out, &error));
+    CHECK(!Graph::fromConf(two + "[link:0]\nsrc=a\nsrcpad=src\nsink=b\n", &out, &error));  // sinkpad missing
+    CHECK(!Graph::fromConf(two + "[link:0]\nsrc=a\nsrcpad=src\nsink=b\nsinkpad=sink\n"
                                 "[link:1]\nsrc=a\nsrcpad=src\nsink=c\nsinkpad=sink\n", &out, &error));  // one src pad twice
-    CHECK(!Plan::fromConf(two + "[link:0]\nsrc=a\nsrcpad=src\nsink=c\nsinkpad=sink\n"
+    CHECK(!Graph::fromConf(two + "[link:0]\nsrc=a\nsrcpad=src\nsink=c\nsinkpad=sink\n"
                                 "[link:1]\nsrc=b\nsrcpad=src\nsink=c\nsinkpad=sink\n", &out, &error));  // one sink pad twice
-    CHECK(Plan::fromConf(two + "[link:0]\nsrc=a\nsrcpad=src\nsink=c\nsinkpad=sink_%u\n"
+    CHECK(Graph::fromConf(two + "[link:0]\nsrc=a\nsrcpad=src\nsink=c\nsinkpad=sink_%u\n"
                                "[link:1]\nsrc=b\nsrcpad=src\nsink=c\nsinkpad=sink_%u\n", &out, &error));  // a template may repeat
-    CHECK(!Plan::fromConf(two + "[link:0]\nsrc=b\nsrcpad=src\nsink=c\nsinkpad=sink\n"
+    CHECK(!Graph::fromConf(two + "[link:0]\nsrc=b\nsrcpad=src\nsink=c\nsinkpad=sink\n"
                                 "[link:1]\nsrc=c\nsrcpad=src\nsink=b\nsinkpad=sink2\n", &out, &error));  // cycle
-    CHECK(!Plan::fromConf(two + "[expose:p]\ntarget=nope.x\n", &out, &error));
-    CHECK(!Plan::fromConf(two + "[expose:p]\ntarget=nodot\n", &out, &error));
+    CHECK(!Graph::fromConf(two + "[expose:p]\ntarget=nope.x\n", &out, &error));
+    CHECK(!Graph::fromConf(two + "[expose:p]\ntarget=nodot\n", &out, &error));
     CHECK(!error.empty());
     // Windows line ends are fine.
-    CHECK(Plan::fromConf("[gstpipestudio]\r\nversion=1\r\n[element:a]\r\nfactory=src\r\n", &out, &error));
+    CHECK(Graph::fromConf("[gstpipestudio]\r\nversion=1\r\n[element:a]\r\nfactory=src\r\n", &out, &error));
     CHECK_EQ(out.find("a")->factory, std::string("src"));
 }
 
@@ -407,8 +407,8 @@ static void capsText() {
 }
 
 static void freeFormAndOopPipeline() {
-    // 1. Free-form Plan additions, tracked elements, disconnect without pruning, auto-heal delete, splice, Ouroboros.
-    Plan p;
+    // 1. Free-form Graph additions, tracked elements, disconnect without pruning, auto-heal delete, splice, Ouroboros.
+    Graph p;
     std::string flt = p.addElement("videoconvert", {}, 100, 100);
     std::string snk = p.addElement("fakesink", {}, 300, 100);
     CHECK(p.linkExisting(flt, "src", snk, "sink"));
@@ -445,47 +445,9 @@ static void freeFormAndOopPipeline() {
     CHECK_EQ(p.links[0].sinkElement, snk);
 
     // Ouroboros message check.
-    CHECK(Plan::ouroborosMessage("a", "a").find("Ouroboros!") == 0);
+    CHECK(Graph::ouroborosMessage("a", "a").find("Ouroboros!") == 0);
 
-    // 2. OOP Pipeline -> Element -> Pad -> Caps model + Pipeline.run() trigger.
-    Pipeline pipe("oop_demo");
-    int runs = 0;
-    pipe.setEngineRunner([&](Pipeline*) { ++runs; });
 
-    Element* cam = pipe.addElement("videotestsrc", Element::Role::Src);
-    cam->addPad("src", "src", Pad::Direction::Src, Pad::Presence::Always, "video/x-raw");
-    Element* conv = pipe.addElement("videoconvert", Element::Role::Filter);
-    conv->addPad("sink", "sink", Pad::Direction::Sink, Pad::Presence::Always, "video/x-raw");
-    conv->addPad("src", "src", Pad::Direction::Src, Pad::Presence::Always, "video/x-raw");
-    Element* out = pipe.addElement("autovideosink", Element::Role::Sink);
-    out->addPad("sink", "sink", Pad::Direction::Sink, Pad::Presence::Always, "video/x-raw");
-
-    CHECK(cam->isTracked());
-    CHECK(!conv->isTracked());
-    CHECK(!out->isTracked());
-
-    std::string err;
-    // Self-loop is rejected with Ouroboros!
-    CHECK(!pipe.connect(conv->srcPads()[0], conv->sinkPads()[0], &err));
-    CHECK(err.find("Ouroboros!") == 0);
-
-    CHECK(pipe.connect(cam->srcPads()[0], conv->sinkPads()[0], &err));
-    CHECK(conv->isTracked());
-    CHECK(!out->isTracked());
-    CHECK(pipe.connect(conv->srcPads()[0], out->sinkPads()[0], &err));
-    CHECK(out->isTracked());
-    CHECK_EQ(runs, 2);
-
-    // Setting caps triggers Pipeline.run() and associates caps with both linked pads.
-    CHECK(pipe.setCaps(cam->srcPads()[0], "video/x-raw, width=(int)1920, height=(int)1080"));
-    CHECK_EQ(cam->srcPads()[0]->caps().userFilter, std::string("video/x-raw, width=(int)1920, height=(int)1080"));
-    CHECK_EQ(conv->sinkPads()[0]->caps().userFilter, std::string("video/x-raw, width=(int)1920, height=(int)1080"));
-    CHECK_EQ(runs, 3);
-
-    // Auto-heal when removing conv from Pipeline.
-    CHECK(pipe.removeElement(conv->name(), true));
-    CHECK_EQ(cam->srcPads()[0]->linkedPad(), out->sinkPads()[0]);
-    CHECK(out->isTracked());
 }
 
 int main() {

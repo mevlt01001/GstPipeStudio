@@ -125,7 +125,7 @@ class IntegrationTest : public QObject {
     // After every step of every flow: no two boxes overlap, and every link runs from left to right
     // (a box that sits left of its source makes the link curl back over the boxes).
     void checkLayout() {
-        const gps::Plan& plan = c->plan();
+        const gps::Graph& plan = c->plan();
         for (size_t i = 0; i < plan.elements.size(); ++i) {
             QRectF a(plan.elements[i].x, plan.elements[i].y, metrics::kBoxWidth, c->view(text(plan.elements[i].name)).height());
             for (size_t j = i + 1; j < plan.elements.size(); ++j) {
@@ -133,9 +133,9 @@ class IntegrationTest : public QObject {
                 QVERIFY2(!a.intersects(b), qPrintable(QString("boxes overlap: %1 and %2").arg(text(plan.elements[i].name), text(plan.elements[j].name))));
             }
         }
-        for (const gps::PlanLink& l : plan.links) {
-            const gps::PlanElement* from = plan.find(l.srcElement);
-            const gps::PlanElement* to = plan.find(l.sinkElement);
+        for (const gps::Connection& l : plan.links) {
+            const gps::Element* from = plan.find(l.srcElement);
+            const gps::Element* to = plan.find(l.sinkElement);
             QVERIFY2(from->x + metrics::kBoxWidth <= to->x,
                      qPrintable(QString("link runs backwards: %1 (x=%2) -> %3 (x=%4)").arg(text(l.srcElement)).arg(from->x).arg(text(l.sinkElement)).arg(to->x)));
         }
@@ -375,7 +375,7 @@ class IntegrationTest : public QObject {
     // The links of the plan as comparable text, ignoring element positions and the plan's name.
     QString linkText() const {
         QStringList out;
-        for (const gps::PlanLink& l : c->plan().links) {
+        for (const gps::Connection& l : c->plan().links) {
             out << text(l.srcElement + "." + l.srcPad + ">" + l.sinkElement + "." + l.sinkPad + "[" + l.caps + "]");
         }
         return out.join("\n");
@@ -512,7 +512,7 @@ private slots:
         QString demux = addBehind(file, "src", "avidemux");
         QVERIFY(!demux.isEmpty());
         QVERIFY2(c->result().ok(), qPrintable(c->result().message));
-        // Sometimes pads exist only in the update result; the Plan has no link from them yet
+        // Sometimes pads exist only in the update result; the Graph has no link from them yet
         QVERIFY(c->plan().linkFrom(demux.toStdString(), "video_%u#0") < 0);
         QCOMPARE(c->view(demux).srcs.size(), 2);
         PadItem* video = w->scene()->pad(demux, "video_%u#0", true);
@@ -550,7 +550,7 @@ private slots:
         timed("Add element: jpegdec (behind a Sometimes pad)", [&] { press(props, "saveButton"); });
         idle();
         QVERIFY2(c->result().ok(), qPrintable(c->result().message));
-        // the same Sometimes pad must have been linked by the second update (Plan persists, pads come back)
+        // the same Sometimes pad must have been linked by the second update (Graph persists, pads come back)
         QCOMPARE(c->plan().links.size(), size_t(2));
         QCOMPARE(text(c->plan().links[1].srcPad), QString("video_%u#0"));
         auto* caps = capsPage();
@@ -824,7 +824,7 @@ private slots:
         QVERIFY2(c->result().ok(), qPrintable(c->result().message));
         QVERIFY(c->plan().find(cc.toStdString()) == nullptr);
         QVERIFY(c->plan().find(d.toStdString()) != nullptr);  // d was NOT cascade-deleted!
-        const gps::PlanElement* flip = c->plan().find(c->plan().elements.back().name);
+        const gps::Element* flip = c->plan().find(c->plan().elements.back().name);
         QCOMPARE(text(flip->factory), QString("videoflip"));
         QCOMPARE(flip->props.at("method"), std::string("vertical-flip"));
         QCOMPARE(c->plan().linkFrom(b.toStdString(), "src") >= 0, true);
@@ -992,7 +992,7 @@ private slots:
         QString links = linkText();
         QString planText = text(c->plan().toConf());
         QStringList names;
-        for (const gps::PlanElement& e : c->plan().elements) names << text(e.name);
+        for (const gps::Element& e : c->plan().elements) names << text(e.name);
 
         // New: empty canvas
         c->newPlan();
@@ -1010,7 +1010,7 @@ private slots:
         qInfo() << "TIMING Open (avi pipeline):" << clock.elapsed() << "ms";
         QCOMPARE(linkText(), links);
         QStringList again;
-        for (const gps::PlanElement& e : c->plan().elements) again << text(e.name);
+        for (const gps::Element& e : c->plan().elements) again << text(e.name);
         QCOMPARE(again, names);
         QVERIFY2(c->result().isComplete(), qPrintable(c->result().status + ": " + c->result().message));
         QVERIFY(c->canRun());
@@ -1079,8 +1079,8 @@ private slots:
         QVERIFY(c->busy());
         // while the helper hangs, the GUI is still alive: it paints, and the actions are off
         QVERIFY(!w->findChild<QAction*>("actionSave")->isEnabled());
-        QVERIFY(!w->findChild<QAction*>("actionAddSource")->isEnabled());
-        QVERIFY(w->findChild<QLabel*>("stateLabel")->text().contains("locked while validating"));
+        QVERIFY(w->findChild<QAction*>("actionAddSource")->isEnabled());
+        QVERIFY(w->findChild<QLabel*>("stateLabel")->text().contains("keep editing"));
         QVERIFY(shot("19_validating_hung"));
         QVERIFY(waitFor([&] { return !c->busy(); }, 20000));
         qint64 took = clock.elapsed();
@@ -1209,7 +1209,7 @@ private slots:
         AviPipeline p = buildAvi(true);
         QVERIFY(!p.asink.isEmpty());
         int checked = 0;
-        for (const gps::PlanElement& e : c->plan().elements) {
+        for (const gps::Element& e : c->plan().elements) {
             ElementView v = c->view(text(e.name));
             for (const QList<PadView>& pads : {v.sinks, v.srcs}) {
                 for (const PadView& pad : pads) {
@@ -1260,7 +1260,7 @@ private slots:
         timed("Insert queue (layout)", [&] { linkMenu(a, "src", "actionInsertQueue"); });
         idle();  // checkLayout() runs here: no overlap, no backwards link
         QString queue = text(c->plan().elements.back().name);
-        const gps::PlanElement* q = c->plan().find(queue.toStdString());
+        const gps::Element* q = c->plan().find(queue.toStdString());
         QVERIFY(q->x > c->plan().find(a.toStdString())->x);
         QVERIFY(q->x < c->plan().find(sink.toStdString())->x);
         QVERIFY(shot("23_queue_layout"));
