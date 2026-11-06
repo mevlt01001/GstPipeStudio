@@ -2,23 +2,71 @@
 title: GstPipeStudio Core — Zoom-In Details (Public & Protected Members)
 ---
 classDiagram
+    class C_0006508864473784456079["gps::CapsField"]
+    class C_0006508864473784456079 {
+        +name : std::string
+        +type : std::string
+        +value : std::string
+    }
+    class C_0017766622697688448882["gps::CapsChoice"]
+    class C_0017766622697688448882 {
+        +toText() [const] std::string
+        +features : std::vector&lt;std::string&gt;
+        +fields : std::vector&lt;CapsField&gt;
+        +media : std::string
+    }
     class C_0013051742850553982975["gps::FactoryTraits"]
     class C_0013051742850553982975 {
         +isSource : bool
     }
-    class C_0007539717992276085532["gps::PlanElement"]
-    class C_0007539717992276085532 {
+    class C_0009518918721721265326["gps::Pad"]
+    class C_0009518918721721265326 {
+        +allowedCaps : std::string
+        +direction : gps::Pad::Direction
+        +identity : std::string
+        +negotiatedCaps : std::string
+        +presence : gps::Pad::Presence
+        +templateCaps : std::string
+        +templateName : std::string
+    }
+    class C_0017606117253161268534["gps::Pad::Direction"]
+    class C_0017606117253161268534 {
+        <<enumeration>>
+        Source
+        Sink
+    }
+    class C_0001294005907106994464["gps::Pad::Presence"]
+    class C_0001294005907106994464 {
+        <<enumeration>>
+        Always
+        Sometimes
+        Request
+    }
+    class C_0004459205221438128071["gps::PadAddress"]
+    class C_0004459205221438128071 {
+        +direction : Pad::Direction
+        +element : std::string
+        +pad : std::string
+    }
+    class C_0015968372269811866177["gps::FactoryDefinition"]
+    class C_0015968372269811866177 {
+        +isSource : bool
+        +templates : std::vector&lt;Pad&gt;
+    }
+    class C_0001326683342747104663["gps::Element"]
+    class C_0001326683342747104663 {
         +factory : std::string
         +group : std::string
         +name : std::string
+        +pads : std::vector&lt;Pad&gt;
         +props : gps::Props
         +requestSink : std::map&lt;std::string,int&gt;
         +requestSrc : std::map&lt;std::string,int&gt;
         +x : double
         +y : double
     }
-    class C_0006075855463494315183["gps::PlanLink"]
-    class C_0006075855463494315183 {
+    class C_0002505624204310929246["gps::Connection"]
+    class C_0002505624204310929246 {
         +caps : std::string
         +sinkElement : std::string
         +sinkPad : std::string
@@ -42,8 +90,8 @@ classDiagram
         +element : std::string
         +removed : gps::Removal
     }
-    class C_0000028171970329881143["gps::Plan"]
-    class C_0000028171970329881143 {
+    class C_0018067283933574651792["gps::Graph"]
+    class C_0018067283933574651792 {
         +addAfter(const std::string & srcElement, const std::string & srcPad, const std::string & factory, const std::string & sinkPad, const gps::Props & props = = &lbrace;&rbrace;, double x = 0, double y = 0) std::string
         +addElement(const std::string & factory, const gps::Props & props = = &lbrace;&rbrace;, double x = 0, double y = 0) std::string
         +addSource(const std::string & factory, const gps::Props & props = = &lbrace;&rbrace;, double x = 0, double y = 0) std::string
@@ -53,16 +101,16 @@ classDiagram
         +deleteSource(const std::string & name, const gps::TraitsFn & traits) gps::Removal
         +disconnectLink(const std::string & srcElement, const std::string & srcPad) bool
         +empty() [const] bool
-        +find(const std::string & name) gps::PlanElement *
-        +find(const std::string & name) [const] const gps::PlanElement *
-        +fromConf(const std::string & text, gps::Plan * out, std::string * error) bool$
+        +find(const std::string & name) [const] const gps::Element *
+        +find(const std::string & name) gps::Element *
+        +fromConf(const std::string & text, gps::Graph * out, std::string * error) bool$
         +insertQueue(const std::string & srcElement, const std::string & srcPad) std::string
         +isElementTracked(const std::string & name, const gps::TraitsFn & traits) [const] bool
         +linkExisting(const std::string & srcElement, const std::string & srcPad, const std::string & sinkElement, const std::string & sinkPad, const std::string & caps = "", const gps::Props & sinkPadProps = = &lbrace;&rbrace;) bool
         +linkFrom(const std::string & srcElement, const std::string & srcPad) [const] int
         +linksFromElement(const std::string & srcElement) [const] std::vector&lt;int&gt;
         +linksInto(const std::string & sinkElement) [const] std::vector&lt;int&gt;
-        +load(const std::string & path, gps::Plan * out, std::string * error) bool$
+        +load(const std::string & path, gps::Graph * out, std::string * error) bool$
         +ouroborosMessage(const std::string & srcElement, const std::string & sinkElement) std::string$
         +previewCut(const std::string & srcElement, const std::string & srcPad, const gps::TraitsFn & traits) [const] gps::Removal
         +previewDeleteSource(const std::string & name, const gps::TraitsFn & traits) [const] gps::Removal
@@ -77,23 +125,195 @@ classDiagram
         +setRequestSink(const std::string & element, const std::string & templateName, int count) bool
         +setRequestSrc(const std::string & element, const std::string & templateName, int count) bool
         +setSinkPadProps(const std::string & srcElement, const std::string & srcPad, const gps::Props & props) bool
+        +sinkIdentity(size_t link) [const] std::string
         +sinkPadTaken(const std::string & sinkElement, const std::string & sinkPad) [const] bool
         +spliceChain(const std::string & linkSrcElement, const std::string & linkSrcPad, const std::vector&lt;std::pair&lt;std::string,std::string&gt;&gt; & freeSinkPads, const std::vector&lt;std::pair&lt;std::string,std::string&gt;&gt; & freeSrcPads) bool
         +spliceElement(const std::string & elementName, const std::string & linkSrcElement, const std::string & linkSrcPad, const std::vector&lt;std::string&gt; & freeSinkPads, const std::vector&lt;std::string&gt; & freeSrcPads) bool
         +toConf() [const] std::string
         +trackedElements(const gps::TraitsFn & traits) [const] std::vector&lt;std::string&gt;
-        +trackedSubplan(const gps::TraitsFn & traits) [const] gps::Plan
+        +trackedSubplan(const gps::TraitsFn & traits) [const] gps::Graph
         +wouldCycle(const std::string & srcElement, const std::string & sinkElement) [const] bool
         +complete : bool
-        +elements : std::vector&lt;PlanElement&gt;
+        +elements : std::vector&lt;Element&gt;
         +exposed : std::vector&lt;ExposedParam&gt;
-        +links : std::vector&lt;PlanLink&gt;
+        +links : std::vector&lt;Connection&gt;
         +name : std::string
         +nextId : int
     }
+    class C_0015391064260961665124["gps::Section"]
+    class C_0015391064260961665124 {
+        +get(const std::string & key) [const] const std::string *
+        +keys : std::vector&lt;std::pair&lt;std::string,std::string&gt;&gt;
+        +kind : std::string
+        +line : int
+        +name : std::string
+    }
+    class C_0013410461275766476270["gps::CapsFieldInfo"]
+    class C_0013410461275766476270 {
+        +kind : std::string
+        +name : std::string
+        +type : std::string
+        +values : std::vector&lt;std::string&gt;
+    }
+    class C_0003746534394387167421["gps::StructureInfo"]
+    class C_0003746534394387167421 {
+        +features : std::vector&lt;std::string&gt;
+        +fields : std::vector&lt;CapsFieldInfo&gt;
+        +media : std::string
+    }
+    class C_0017990539626448234546["gps::PadReport"]
+    class C_0017990539626448234546 {
+        +allowed : std::string
+        +allowedStructures : std::vector&lt;StructureInfo&gt;
+        +caps : std::string
+        +element : std::string
+        +identity : std::string
+        +isSrc : bool
+        +linked : bool
+        +pad : std::string
+        +presence : std::string
+        +templateName : std::string
+        +temporaryEnd : bool
+        +unknownData : bool
+    }
+    class C_0013065720672133927035["gps::UpdateResult"]
+    class C_0013065720672133927035 {
+        +complete() [const] bool
+        +errorElement : std::string
+        +message : std::string
+        +missing : std::vector&lt;std::string&gt;
+        +ms : double
+        +pads : std::vector&lt;PadReport&gt;
+        +refused : std::vector&lt;std::string&gt;
+        +status : std::string
+    }
+    class C_0018362449830922159198["gps::ChangeKind"]
+    class C_0018362449830922159198 {
+        <<enumeration>>
+        Presentation
+        Execution
+    }
+    class C_0018307412983780087959["gps::Change"]
+    class C_0018307412983780087959 {
+        +executionRevision : std::uint64_t
+        +kind : gps::ChangeKind
+        +revision : std::uint64_t
+    }
+    class C_0011849018542757719141["gps::ExecutionTicket"]
+    class C_0011849018542757719141 {
+        +operator==(const gps::ExecutionTicket & other) [const] bool
+        +revision : std::uint64_t
+        +run : std::uint64_t
+    }
+    class C_0003081048646486760799["gps::ExecutionPlan"]
+    class C_0003081048646486760799 {
+        +ExecutionPlan(gps::Graph graph, gps::ExecutionTicket ticket) void
+        +graph() [const] const gps::Graph &
+        +ticket() [const] gps::ExecutionTicket
+    }
+    class C_0018096670095179205606["gps::ExecutionResult"]
+    class C_0018096670095179205606 {
+        +report : gps::UpdateResult
+        +ticket : gps::ExecutionTicket
+    }
+    class C_0015605349187254247432["gps::IExecutionBackend"]
+    class C_0015605349187254247432 {
+        <<abstract>>
+        +~IExecutionBackend() [default] void
+        +cancel() void*
+        +execute(const gps::ExecutionPlan &, gps::IExecutionBackend::Completion) void*
+    }
+    class C_0010317797543984879948["gps::IAction"]
+    class C_0010317797543984879948 {
+        <<abstract>>
+        +~IAction() [default] void
+        +apply(gps::Graph & draft, std::string * error) [const] bool*
+        +unavailableReason(const gps::Graph &) [const] std::string
+    }
+    class C_0001005249180849585297["gps::EditAction"]
+    class C_0001005249180849585297 {
+        +EditAction(gps::EditAction::Operation operation) void
+        +apply(gps::Graph & graph, std::string * error) [const] bool
+    }
+    class C_0016614322488672564990["gps::GraphEditor"]
+    class C_0016614322488672564990 {
+        +GraphEditor(gps::Pipeline & document) void
+        +begin() gps::Graph &
+        +canRedo() [const] bool
+        +canUndo() [const] bool
+        +commit(std::string * error = nullptr) bool
+        +draft() gps::Graph &
+        +editing() [const] bool
+        +execute(const gps::IAction &, std::string * error = nullptr) bool
+        +redo() bool
+        +rollback() void
+        +undo() bool
+        +view() [const] const gps::Graph &
+    }
+    class C_0007768853586094295840["gps::GraphEditor::Entry"]
+    class C_0007768853586094295840 {
+        +after : gps::Graph
+        +before : gps::Graph
+    }
+    class C_0003483808225129356273["gps::GraphFragment"]
+    class C_0003483808225129356273 {
+        +GraphFragment(std::vector&lt;std::string&gt; elements) void
+        +connected(const gps::Graph &) [const] bool
+        +copy(const gps::Graph &) [const] gps::Graph
+        +elements() [const] const std::vector&lt;std::string&gt; &
+    }
+    class C_0016155900727951096977["gps::Pipeline"]
+    class C_0016155900727951096977 {
+        +Pipeline(std::string name = "pipeline") void
+        +Pipeline(const gps::Pipeline &) void
+        +operator=(const gps::Pipeline &) gps::Pipeline &
+        +apply(const gps::ExecutionResult &, gps::ExecutionTicket expected) bool
+        +editor() gps::GraphEditor &
+        +editor() [const] const gps::GraphEditor &
+        +executionPlan(const gps::TraitsFn &, std::uint64_t run) [const] gps::ExecutionPlan
+        +graph() [const] const gps::Graph &
+        +lastChange() [const] gps::Change
+        +observations() [const] const gps::UpdateResult &
+        +peer(const gps::PadAddress &) [const] std::optional&lt;PadAddress&gt;
+        +registerFactory(std::string name, gps::FactoryDefinition definition) void
+        +reset(gps::Graph graph = &lbrace;&rbrace;, std::string * error = nullptr) bool
+        +validate(const gps::Graph &, std::string * error = nullptr) bool$
+    }
+    class C_0012554930199260142410["gps::ExecutionCoordinator"]
+    class C_0012554930199260142410 {
+        +ExecutionCoordinator(gps::Pipeline & document, gps::IExecutionBackend & backend) void
+        +~ExecutionCoordinator() void
+        +active() [const] bool
+        +cancel() void
+        +start(const gps::TraitsFn &, gps::ExecutionCoordinator::Completion) void
+        +supersede() void
+    }
+    class C_0008300182268554480961["gps::Placement"]
+    class C_0008300182268554480961 {
+        +element : std::string
+        +x : double
+        +y : double
+    }
+    class C_0012363950950962011195["gps::MoveElementsAction"]
+    class C_0012363950950962011195 {
+        +MoveElementsAction(std::vector&lt;Placement&gt; positions) void
+        +apply(gps::Graph &, std::string *) [const] bool
+    }
+    class C_0007814516208255693743["gps::DisconnectAction"]
+    class C_0007814516208255693743 {
+        +DisconnectAction(std::string element, std::string pad) void
+        +apply(gps::Graph &, std::string *) [const] bool
+        +unavailableReason(const gps::Graph &) [const] std::string
+    }
+    class C_0005716851070787457504["gps::InsertFragmentAction"]
+    class C_0005716851070787457504 {
+        +InsertFragmentAction(gps::GraphFragment fragment, gps::InsertFragmentAction::Port target, std::vector&lt;Port&gt; inputs, std::vector&lt;Port&gt; outputs) void
+        +apply(gps::Graph &, std::string *) [const] bool
+        +unavailableReason(const gps::Graph &) [const] std::string
+    }
     class C_0005222315936444744904["gps::GstElementCreator"]
     class C_0005222315936444744904 {
-        +createElement(const gps::PlanElement & spec, std::string * error, const gps::LogFn & log = = &lbrace;&rbrace;) GstElement *$
+        +createElement(const gps::Element & spec, std::string * error, const gps::LogFn & log = = &lbrace;&rbrace;) GstElement *$
         +formatPropertyError(const std::string & label, const std::string & text, const std::string & reason) std::string$
         +queryFactoryTraits(const std::string & factory) gps::FactoryTraits$
         +requestPad(GstElement * element, const std::string & templateName, const gps::LogFn & log = = &lbrace;&rbrace;) GstPad *$
@@ -160,19 +380,6 @@ classDiagram
         +typeName : std::string
         +writable : bool
     }
-    class C_0013410461275766476270["gps::CapsFieldInfo"]
-    class C_0013410461275766476270 {
-        +kind : std::string
-        +name : std::string
-        +type : std::string
-        +values : std::vector&lt;std::string&gt;
-    }
-    class C_0003746534394387167421["gps::StructureInfo"]
-    class C_0003746534394387167421 {
-        +features : std::vector&lt;std::string&gt;
-        +fields : std::vector&lt;CapsFieldInfo&gt;
-        +media : std::string
-    }
     class C_0007136070967673481743["gps::PadTemplateInfo"]
     class C_0007136070967673481743 {
         +caps : std::string
@@ -190,36 +397,10 @@ classDiagram
         +padTemplates : std::vector&lt;PadTemplateInfo&gt;
         +properties : std::vector&lt;PropertyInfo&gt;
     }
-    class C_0017990539626448234546["gps::PadReport"]
-    class C_0017990539626448234546 {
-        +allowed : std::string
-        +allowedStructures : std::vector&lt;StructureInfo&gt;
-        +caps : std::string
-        +element : std::string
-        +identity : std::string
-        +isSrc : bool
-        +linked : bool
-        +pad : std::string
-        +presence : std::string
-        +templateName : std::string
-        +temporaryEnd : bool
-        +unknownData : bool
-    }
     class C_0004763058859458917422["gps::UpdateOptions"]
     class C_0004763058859458917422 {
         +shouldStop : std::function&lt;bool &lpar;&rpar;&gt;
         +timeoutMs : int
-    }
-    class C_0013065720672133927035["gps::UpdateResult"]
-    class C_0013065720672133927035 {
-        +complete() [const] bool
-        +errorElement : std::string
-        +message : std::string
-        +missing : std::vector&lt;std::string&gt;
-        +ms : double
-        +pads : std::vector&lt;PadReport&gt;
-        +refused : std::vector&lt;std::string&gt;
-        +status : std::string
     }
     class C_0012291864674614843750["gps::RunOptions"]
     class C_0012291864674614843750 {
@@ -240,7 +421,7 @@ classDiagram
     }
     class C_0009118436794158611664["gps::Builder"]
     class C_0009118436794158611664 {
-        +Builder(const gps::Plan & plan, GstBin * bin, const gps::BuildOptions & options, gps::LogFn log) void
+        +Builder(const gps::Graph & plan, GstBin * bin, const gps::BuildOptions & options, gps::LogFn log) void
         +Builder(const gps::Builder &) void
         +~Builder() void
         +operator=(const gps::Builder &) gps::Builder &
@@ -285,174 +466,95 @@ classDiagram
         Refused
         Failed
     }
-    class C_0014040444836502338537["gps::Caps"]
-    class C_0014040444836502338537 {
-        +displayText() [const] std::string
-        +hasFlow() [const] bool
-        +allowedCaps : std::string
-        +currentCaps : std::string
-        +templateCaps : std::string
-        +userFilter : std::string
-    }
-    class C_0009518918721721265326["gps::Pad"]
-    class C_0009518918721721265326 {
-        +Pad(gps::Element * owner, std::string name, std::string templateName, gps::Pad::Direction dir, gps::Pad::Presence presence, std::string templateCaps = "") void
-        +caps() [const] const gps::Caps &
-        +caps() gps::Caps &
-        +direction() [const] gps::Pad::Direction
-        +element() [const] gps::Element *
-        +hasActiveFlow() [const] bool
-        +isLinked() [const] bool
-        +isSink() [const] bool
-        +isSrc() [const] bool
-        +linkedPad() [const] gps::Pad *
-        +name() [const] const std::string &
-        +padProps() [const] const gps::Props &
-        +padProps() gps::Props &
-        +presence() [const] gps::Pad::Presence
-        +templateName() [const] const std::string &
-    }
-    class C_0017606117253161268534["gps::Pad::Direction"]
-    class C_0017606117253161268534 {
-        <<enumeration>>
-        Src
-        Sink
-    }
-    class C_0001294005907106994464["gps::Pad::Presence"]
-    class C_0001294005907106994464 {
-        <<enumeration>>
-        Always
-        Sometimes
-        Request
-    }
-    class C_0001326683342747104663["gps::Element"]
-    class C_0001326683342747104663 {
-        +Element(std::string name, std::string factory, gps::Element::Role role, gps::Props props = = &lbrace;&rbrace;, double x = 0, double y = 0) void
-        +addPad(const std::string & name, const std::string & templateName, Pad::Direction dir, Pad::Presence presence, const std::string & templateCaps = "") gps::Pad *
-        +canLinkSink() [const] bool
-        +canLinkSrc() [const] bool
-        +factory() [const] const std::string &
-        +findPad(const std::string & name, Pad::Direction dir) [const] gps::Pad *
-        +hasUnlinkedPads() [const] bool
-        +infoNote() [const] std::string
-        +isFilter() [const] bool
-        +isSink() [const] bool
-        +isSource() [const] bool
-        +isTracked() [const] bool
-        +name() [const] const std::string &
-        +props() gps::Props &
-        +props() [const] const gps::Props &
-        +role() [const] gps::Element::Role
-        +setPosition(double x, double y) void
-        +sinkPads() [const] const std::vector&lt;Pad *&gt; &
-        +srcPads() [const] const std::vector&lt;Pad *&gt; &
-        +x() [const] double
-        +y() [const] double
-    }
-    class C_0017390648208247545476["gps::Element::Role"]
-    class C_0017390648208247545476 {
-        <<enumeration>>
-        Src
-        Filter
-        Sink
-    }
-    class C_0016155900727951096977["gps::Pipeline"]
-    class C_0016155900727951096977 {
-        +Pipeline(std::string name = "pipeline") void
-        +addElement(const std::string & factory, Element::Role role, const gps::Props & props = = &lbrace;&rbrace;, double x = 0, double y = 0) gps::Element *
-        +connect(gps::Pad * srcPad, gps::Pad * sinkPad, std::string * error = nullptr) bool
-        +disconnect(gps::Pad * pad) bool
-        +elements() [const] std::vector&lt;Element *&gt;
-        +findElement(const std::string & name) [const] gps::Element *
-        +name() [const] const std::string &
-        +removeElement(const std::string & name, bool autoHeal = true) bool
-        +run() void
-        +setCaps(gps::Pad * srcPad, const std::string & filterCaps) bool
-        +setEngineRunner(gps::Pipeline::EngineRunner runner) void
-        +setName(const std::string & n) void
-        +srcElements() [const] std::vector&lt;Element *&gt;
-        +trackedElements() [const] std::vector&lt;Element *&gt;
-    }
     class C_0001752346928852604195["gps::GstEngine"]
     class C_0001752346928852604195 {
-        +run(gps::Pipeline * pipeline, const gps::UpdateOptions & options = &lbrace;&rbrace;, const gps::LogFn & log = = &lbrace;&rbrace;) gps::UpdateResult$
-        +validateTracked(const gps::Plan & plan, const gps::UpdateOptions & options = &lbrace;&rbrace;, const gps::LogFn & log = = &lbrace;&rbrace;) gps::UpdateResult$
+        +GstEngine(gps::UpdateOptions options = &lbrace;&rbrace;, gps::LogFn log = = &lbrace;&rbrace;) void
+        +cancel() void
+        +execute(const gps::ExecutionPlan &, gps::IExecutionBackend::Completion) void
+        +validateTracked(const gps::Graph &, const gps::UpdateOptions &  = &lbrace;&rbrace;, const gps::LogFn &  = = &lbrace;&rbrace;) gps::UpdateResult$
     }
-    class C_0006508864473784456079["gps::CapsField"]
-    class C_0006508864473784456079 {
-        +name : std::string
-        +type : std::string
-        +value : std::string
-    }
-    class C_0017766622697688448882["gps::CapsChoice"]
-    class C_0017766622697688448882 {
-        +toText() [const] std::string
-        +features : std::vector&lt;std::string&gt;
-        +fields : std::vector&lt;CapsField&gt;
-        +media : std::string
-    }
-    class C_0015391064260961665124["gps::Section"]
-    class C_0015391064260961665124 {
-        +get(const std::string & key) [const] const std::string *
-        +keys : std::vector&lt;std::pair&lt;std::string,std::string&gt;&gt;
-        +kind : std::string
-        +line : int
-        +name : std::string
-    }
+    C_0017766622697688448882 o-- C_0006508864473784456079 : +fields
+    C_0009518918721721265326 o-- C_0017606117253161268534 : +direction
+    C_0009518918721721265326 o-- C_0001294005907106994464 : +presence
+    C_0009518918721721265326 ()-- C_0017606117253161268534 : 
+    C_0009518918721721265326 ()-- C_0001294005907106994464 : 
+    C_0004459205221438128071 o-- C_0017606117253161268534 : +direction
+    C_0015968372269811866177 o-- C_0009518918721721265326 : +templates
+    C_0001326683342747104663 o-- C_0009518918721721265326 : +pads
     C_0014123026597954571416 o-- C_0012887087281388355273 : +removed
-    C_0000028171970329881143 ..> C_0012887087281388355273 : 
-    C_0000028171970329881143 ..> C_0014123026597954571416 : 
-    C_0000028171970329881143 o-- C_0007539717992276085532 : +elements
-    C_0000028171970329881143 o-- C_0006075855463494315183 : +links
-    C_0000028171970329881143 o-- C_0009995579580061596989 : +exposed
-    C_0005222315936444744904 ..> C_0007539717992276085532 : 
+    C_0018067283933574651792 ..> C_0012887087281388355273 : 
+    C_0018067283933574651792 ..> C_0014123026597954571416 : 
+    C_0018067283933574651792 o-- C_0001326683342747104663 : +elements
+    C_0018067283933574651792 o-- C_0002505624204310929246 : +links
+    C_0018067283933574651792 o-- C_0009995579580061596989 : +exposed
+    C_0003746534394387167421 o-- C_0013410461275766476270 : +fields
+    C_0017990539626448234546 o-- C_0003746534394387167421 : +allowedStructures
+    C_0013065720672133927035 o-- C_0017990539626448234546 : +pads
+    C_0018307412983780087959 o-- C_0018362449830922159198 : +kind
+    C_0003081048646486760799 o-- C_0018067283933574651792 : -graph_
+    C_0003081048646486760799 o-- C_0011849018542757719141 : -ticket_
+    C_0018096670095179205606 o-- C_0011849018542757719141 : +ticket
+    C_0018096670095179205606 o-- C_0013065720672133927035 : +report
+    C_0015605349187254247432 ..> C_0003081048646486760799 : 
+    C_0015605349187254247432 ..> C_0018096670095179205606 : 
+    C_0010317797543984879948 ..> C_0018067283933574651792 : 
+    C_0001005249180849585297 --> C_0018067283933574651792 : -operation_
+    C_0010317797543984879948 <|-- C_0001005249180849585297 : 
+    C_0016614322488672564990 ..> C_0010317797543984879948 : 
+    C_0016614322488672564990 --> C_0016155900727951096977 : -document_
+    C_0016614322488672564990 o-- C_0018067283933574651792 : -draft_
+    C_0016614322488672564990 <.. C_0016155900727951096977 : +[friend]
+    C_0016614322488672564990 ()-- C_0007768853586094295840 : 
+    C_0007768853586094295840 o-- C_0018067283933574651792 : +before
+    C_0007768853586094295840 o-- C_0018067283933574651792 : +after
+    C_0003483808225129356273 ..> C_0018067283933574651792 : 
+    C_0016155900727951096977 ..> C_0004459205221438128071 : 
+    C_0016155900727951096977 ..> C_0003081048646486760799 : 
+    C_0016155900727951096977 ..> C_0018096670095179205606 : 
+    C_0016155900727951096977 ..> C_0011849018542757719141 : 
+    C_0016155900727951096977 o-- C_0015968372269811866177 : -factories_
+    C_0016155900727951096977 o-- C_0018067283933574651792 : -graph_
+    C_0016155900727951096977 o-- C_0016614322488672564990 : -editor_
+    C_0016155900727951096977 o-- C_0018307412983780087959 : -change_
+    C_0016155900727951096977 o-- C_0013065720672133927035 : -observations_
+    C_0016155900727951096977 <.. C_0016614322488672564990 : +[friend]
+    C_0012554930199260142410 ..> C_0018096670095179205606 : 
+    C_0012554930199260142410 --> C_0016155900727951096977 : -document_
+    C_0012554930199260142410 --> C_0015605349187254247432 : -backend_
+    C_0012554930199260142410 o-- C_0011849018542757719141 : -expected_
+    C_0012363950950962011195 ..> C_0018067283933574651792 : 
+    C_0012363950950962011195 o-- C_0008300182268554480961 : -positions_
+    C_0010317797543984879948 <|-- C_0012363950950962011195 : 
+    C_0007814516208255693743 ..> C_0018067283933574651792 : 
+    C_0010317797543984879948 <|-- C_0007814516208255693743 : 
+    C_0005716851070787457504 ..> C_0018067283933574651792 : 
+    C_0005716851070787457504 o-- C_0003483808225129356273 : -fragment_
+    C_0010317797543984879948 <|-- C_0005716851070787457504 : 
+    C_0005222315936444744904 ..> C_0001326683342747104663 : 
     C_0005222315936444744904 ..> C_0013051742850553982975 : 
     C_0005882221733675194402 o-- C_0012765824391351199139 : +enumValues
-    C_0003746534394387167421 o-- C_0013410461275766476270 : +fields
     C_0007136070967673481743 o-- C_0003746534394387167421 : +structures
     C_0007136070967673481743 o-- C_0005882221733675194402 : +padProperties
     C_0015854607360646402873 o-- C_0000440172370049072548 : +entry
     C_0015854607360646402873 o-- C_0007136070967673481743 : +padTemplates
     C_0015854607360646402873 o-- C_0005882221733675194402 : +properties
-    C_0017990539626448234546 o-- C_0003746534394387167421 : +allowedStructures
-    C_0013065720672133927035 o-- C_0017990539626448234546 : +pads
     C_0009118436794158611664 ..> C_0017990539626448234546 : 
     C_0009118436794158611664 ..> C_0010578016348553779959 : 
-    C_0009118436794158611664 ..> C_0006075855463494315183 : 
+    C_0009118436794158611664 ..> C_0002505624204310929246 : 
     C_0009118436794158611664 ..> C_0002012926535479199836 : 
-    C_0009118436794158611664 o-- C_0000028171970329881143 : -plan_
+    C_0009118436794158611664 o-- C_0018067283933574651792 : -plan_
     C_0009118436794158611664 o-- C_0016130374138168955360 : -options_
     C_0009118436794158611664 o-- C_0011418329162554135375 : -failure_
     C_0009118436794158611664 ()-- C_0011418329162554135375 : 
     C_0009118436794158611664 ()-- C_0004291238238351396201 : 
     C_0009118436794158611664 ()-- C_0010578016348553779959 : 
     C_0009118436794158611664 ()-- C_0002012926535479199836 : 
-    C_0009518918721721265326 --> C_0001326683342747104663 : -element_
-    C_0009518918721721265326 o-- C_0017606117253161268534 : -direction_
-    C_0009518918721721265326 o-- C_0001294005907106994464 : -presence_
-    C_0009518918721721265326 --> C_0009518918721721265326 : -linkedPad_
-    C_0009518918721721265326 o-- C_0014040444836502338537 : -caps_
-    C_0009518918721721265326 <.. C_0001326683342747104663 : +[friend]
-    C_0009518918721721265326 <.. C_0016155900727951096977 : +[friend]
-    C_0009518918721721265326 ()-- C_0017606117253161268534 : 
-    C_0009518918721721265326 ()-- C_0001294005907106994464 : 
-    C_0001326683342747104663 ..> C_0017606117253161268534 : 
-    C_0001326683342747104663 ..> C_0001294005907106994464 : 
-    C_0001326683342747104663 o-- C_0017390648208247545476 : -role_
-    C_0001326683342747104663 o-- C_0009518918721721265326 : -ownedPads_
-    C_0001326683342747104663 --> C_0009518918721721265326 : -srcRaw_
-    C_0001326683342747104663 --> C_0009518918721721265326 : -sinkRaw_
-    C_0001326683342747104663 <.. C_0016155900727951096977 : +[friend]
-    C_0001326683342747104663 ()-- C_0017390648208247545476 : 
-    C_0016155900727951096977 ..> C_0017390648208247545476 : 
-    C_0016155900727951096977 ..> C_0009518918721721265326 : 
-    C_0016155900727951096977 o-- C_0001326683342747104663 : -elements_
-    C_0016155900727951096977 --> C_0016155900727951096977 : -runner_
-    C_0001752346928852604195 ..> C_0000028171970329881143 : 
-    C_0001752346928852604195 ..> C_0004763058859458917422 : 
+    C_0001752346928852604195 ..> C_0003081048646486760799 : 
+    C_0001752346928852604195 ..> C_0018096670095179205606 : 
+    C_0001752346928852604195 ..> C_0018067283933574651792 : 
     C_0001752346928852604195 ..> C_0013065720672133927035 : 
-    C_0001752346928852604195 ..> C_0016155900727951096977 : 
-    C_0017766622697688448882 o-- C_0006508864473784456079 : +fields
+    C_0001752346928852604195 o-- C_0004763058859458917422 : -options_
+    C_0015605349187254247432 <|-- C_0001752346928852604195 : 
 
 %% Generated with clang-uml, version 0.6.3
 %% LLVM version Ubuntu clang version 15.0.7
