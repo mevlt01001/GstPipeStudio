@@ -34,6 +34,17 @@ cmake --build build --parallel 4
 
 Run ctest from the build directory for CMake 3.16. Qt tests use the offscreen platform. DeepStream tests skip when their required environment is absent; a skip is not GPU validation.
 
+For the live metrics walkthrough, capture the actual Qt window with the built helpers, then generate the README clips from its numbered frames. `ffmpeg` and the DejaVu Sans font are needed for video generation:
+
+```bash
+cmake --build build --target demo_capture
+GPS_BIN_DIR="$PWD/build/bin" GPS_DEMO_DIR="$PWD/build/demo/frames" \
+  QT_QPA_PLATFORM=offscreen build/bin/demo_capture
+GPS_DEMO_DIR="$PWD/build/demo/frames" gstpipestudio/scripts/make_demos.sh
+```
+
+The generated clips under `docs/media` come from the running application and a standard GStreamer test source. The two monitoring examples can also be checked with `gps-monitor examples/monitoring/02-slow-stage.conf --timeout-ms 3000`.
+
 ## Build container
 
 `docker/Dockerfile` builds the development image. Once available:
@@ -61,4 +72,4 @@ gstpipestudio/scripts/make_deb.sh 22.04 x86_64
 
 The fast workflow runs on dev-zero pushes, pull requests and manual dispatch, and uploads packages/test screenshots. The six-platform matrix remains manual/reusable, including Ubuntu 20.04 for GStreamer 1.16. A release is manual, restricted to main and defaults to a draft. Changes in this branch do not publish a release.
 
-Before merging: inspect the running UI, compare actions with the documented model, review test evidence and limitations, and obtain the maintainer's approval. Publishing remains a separate step after merge.
+Before merging: inspect the running UI, compare actions with the documented model, and review test evidence and limitations with the maintainer. Publishing remains a separate step after merge.

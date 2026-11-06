@@ -2,6 +2,8 @@
 #include "flows.h"
 
 #include <QAction>
+#include <QClipboard>
+#include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMenu>
@@ -347,6 +349,17 @@ void Flows::showElementMenu(const QString& element, const QPoint& at) {
     menu->setObjectName("elementMenu");
     menu->setAttribute(Qt::WA_DeleteOnClose);
     menu->addAction("Edit properties…", this, [=] { editProperties(element); })->setObjectName("actionProperties");
+    menu->addAction("Copy element", this, [=] {
+        if (auto* clipboard = QGuiApplication::clipboard())
+            clipboard->setText(QString::fromStdString(controller_->copySubplan({element}).toConf()));
+    })->setObjectName("actionCopyElement");
+    menu->addAction("Duplicate element", this, [=] { controller_->duplicateElements({element}); })->setObjectName("actionDuplicateElement");
+    menu->addAction("Paste", this, [=] {
+        auto* clipboard = QGuiApplication::clipboard();
+        if (!clipboard) return;
+        gps::Graph graph; std::string error;
+        if (gps::Graph::fromConf(clipboard->text().toStdString(), &graph, &error)) controller_->pasteSubplan(graph);
+    })->setObjectName("actionPasteElement");
     if (controller_->view(element).isSource) {
         menu->addAction("Delete source", this, [=] { deleteSource(element); })->setObjectName("actionDelete");
     } else {

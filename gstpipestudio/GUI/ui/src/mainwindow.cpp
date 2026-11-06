@@ -30,6 +30,7 @@
 #include "setuppage.h"
 #include "theme.h"
 #include "updatepanel.h"
+#include "telemetrypanel.h"
 #include "validationindicator.h"
 
 #include <QClipboard>
@@ -150,9 +151,13 @@ void MainWindow::buildActions() {
     });
     auto* showLog = make("actionShowLog", "&Log", {}, [this] { tabs_->setCurrentWidget(log_); });
     auto* showValidation = make("actionShowValidation", "&Validation", {}, [this] { tabs_->setCurrentWidget(updates_); });
+    auto* showTelemetry = make("actionShowTelemetry", "&Live metrics", {}, [this] { tabs_->setCurrentWidget(telemetry_); });
     auto* showProps = make("actionShowProperties", "&Properties", {}, [this] { tabs_->setCurrentWidget(propsTab_); });
     auto* showCaps = make("actionShowCaps", "&Caps", {}, [this] { tabs_->setCurrentWidget(capsTab_); });
     auto* fit = make("actionFit", "Zoom to &fit", {QKeySequence(Qt::CTRL | Qt::Key_0)}, [this] { view_->fitAll(); });
+    auto* arrange = make("actionArrange", "Arrange &pipeline", {QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_L)}, [this] {
+        if (controller_->arrangePipeline()) QTimer::singleShot(0, view_, &CanvasView::fitAll);
+    });
     auto* zoomIn = make("actionZoomIn", "Zoom &in", {QKeySequence::ZoomIn}, [this] { view_->zoomBy(1.25); });
     auto* zoomOut = make("actionZoomOut", "Zoom &out", {QKeySequence::ZoomOut}, [this] { view_->zoomBy(0.8); });
     auto* quit = make("actionQuit", "&Quit", {QKeySequence::Quit}, [this] { close(); });
@@ -176,9 +181,9 @@ void MainWindow::buildActions() {
     pipeline->addSeparator();
     pipeline->addActions({connectSelAct, saveCustomAct});
     QMenu* viewMenu = menuBar()->addMenu("&View");
-    viewMenu->addActions({showLog, showValidation, showProps, showCaps, find});
+    viewMenu->addActions({showLog, showValidation, showTelemetry, showProps, showCaps, find});
     viewMenu->addSeparator();
-    viewMenu->addActions({fit, zoomIn, zoomOut});
+    viewMenu->addActions({arrange, fit, zoomIn, zoomOut});
     QMenu* help = menuBar()->addMenu("&Help");
     help->addActions({support, gstInfo, about});
 
@@ -201,6 +206,7 @@ void MainWindow::buildActions() {
 void MainWindow::buildPanels() {
     log_ = new LogPanel(this);
     updates_ = new UpdatePanel(controller_, this);
+    telemetry_ = new TelemetryPanel(controller_, this);
     propsTab_ = new QWidget(this);
     propsTab_->setObjectName("propsTab");
     new QVBoxLayout(propsTab_);
@@ -212,6 +218,7 @@ void MainWindow::buildPanels() {
     tabs_->setObjectName("bottomTabs");
     tabs_->addTab(log_, "Log");
     tabs_->addTab(updates_, "Validation");
+    tabs_->addTab(telemetry_, "Live metrics");
     tabs_->addTab(propsTab_, "Properties");
     tabs_->addTab(capsTab_, "Caps");
     tabs_->setCurrentWidget(updates_);
@@ -268,6 +275,7 @@ void MainWindow::refreshState() {
     act("actionSave")->setEnabled(controller_->canSave());
     act("actionSaveAs")->setEnabled(controller_->canSave());
     act("actionUpdate")->setEnabled(!busy && hasPlan);
+    act("actionArrange")->setEnabled(!editBlocked && hasPlan);
     act("actionRun")->setText(controller_->running() ? "&Stop" : "&Run");
     act("actionRun")->setEnabled(controller_->canRun() || controller_->running());
 
@@ -288,6 +296,7 @@ void MainWindow::refreshState() {
     if (blocked) text = "GStreamer is not ready";
     else if (controller_->updating()) text = "Validating the latest changes… You can keep editing";
     else if (controller_->running()) text = "Running…";
+    else if (controller_->monitoring()) text = "Monitoring live metrics…";
     else if (!hasPlan) text = "Empty canvas: choose Add source to start";
     else if (controller_->notValidated()) text = "Validation was cancelled — press Validate. Save and Run are off", colour = Theme::warning().name();
     else if (r.valid() && !r.ok()) text = "Validation reported a problem. Save and Run are off", colour = Theme::error().name();
@@ -424,6 +433,9 @@ void MainWindow::showCanvasMenu(const QPoint& screenPos) {
     menu->addSeparator();
     menu->addAction("Select all", this, [this] { selectAll(); });
     menu->addAction("Zoom to fit", this, [this] { view_->fitAll(); });
+    menu->addAction("Arrange pipeline", this, [this] {
+        if (controller_->arrangePipeline()) QTimer::singleShot(0, view_, &CanvasView::fitAll);
+    });
     auto* v = menu->addAction("Validate", this, [this] { controller_->refresh(); });
     v->setEnabled(!controller_->plan().empty());
     menu->popup(screenPos);

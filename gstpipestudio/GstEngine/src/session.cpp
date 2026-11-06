@@ -1,5 +1,6 @@
 #include "builder.h"
 #include "gstcompat.h"
+#include "telemetry.h"
 
 namespace gps {
 namespace {
@@ -188,6 +189,22 @@ std::string runJson(const RunResult& r) {
     return w.str();
 }
 
+std::string telemetryJson(const TelemetrySample& sample) {
+    JsonWriter w;
+    w.beginObject().field("type", "sample").field("elapsedMs", sample.elapsedMs).key("elements").beginArray();
+    for (const auto& item : sample.elements) {
+        w.beginObject().field("element", item.element);
+        w.key("ageMs"); item.ageMs < 0 ? w.null() : w.number(item.ageMs);
+        w.key("queueMs"); item.queueMs < 0 ? w.null() : w.number(item.queueMs);
+        w.key("lossPercent"); item.lossPercent < 0 ? w.null() : w.number(item.lossPercent);
+        w.key("inputBuffers").integer(static_cast<long long>(item.inputBuffers));
+        w.key("outputBuffers").integer(static_cast<long long>(item.outputBuffers));
+        w.end();
+    }
+    w.end().end();
+    return w.str();
+}
+
 RunResult run(const Graph& plan, const std::map<std::string, std::string>& params, const RunOptions& options, const LogFn& log) {
     double begin = nowMs();
     RunResult result;
@@ -197,6 +214,7 @@ RunResult run(const Graph& plan, const std::map<std::string, std::string>& param
         BuildOptions build;
         build.params = params;
         Builder builder(plan, GST_BIN(pipeline), build, log);
+        std::unique_ptr<TelemetrySampler> sampler;
         if (!builder.build()) {
             Builder::Failure f = builder.failure();
             result.status = "error";
@@ -205,14 +223,21 @@ RunResult run(const Graph& plan, const std::map<std::string, std::string>& param
             result.status = "refused";
             result.message = "the plan is not complete, src pad " + builder.freePads().front() + " has no link";
         } else {
+            if (options.onTelemetry) sampler = std::make_unique<TelemetrySampler>(plan, pipeline);
             GstBus* bus = gst_element_get_bus(pipeline);
             say("PLAYING");
-            gst_element_set_state(pipeline, GST_STATE_PLAYING);
+            auto change = gst_element_set_state(pipeline, GST_STATE_PLAYING);
+            if (sampler) sampler->setLive(change == GST_STATE_CHANGE_NO_PREROLL);
+            double lastSample = begin;
             bool stopping = false;       // EOS was sent because of SIGINT or the timeout
             std::string stopReason;      // interrupted | timeout
             double stopSince = 0;
             bool done = false;
             while (!done) {
+                if (sampler && nowMs() - lastSample >= 250) {
+                    lastSample = nowMs();
+                    options.onTelemetry(sampler->sample(lastSample - begin));
+                }
                 if (builder.failed()) {
                     result.status = "error";
                     result.message = builder.failure().message;
@@ -248,9 +273,11 @@ RunResult run(const Graph& plan, const std::map<std::string, std::string>& param
                     break;
                 }
                 GstMessage* msg = gst_bus_timed_pop_filtered(
-                    bus, 50 * GST_MSECOND, static_cast<GstMessageType>(GST_MESSAGE_ERROR | GST_MESSAGE_WARNING | GST_MESSAGE_EOS));
+                    bus, 50 * GST_MSECOND, static_cast<GstMessageType>(GST_MESSAGE_ERROR | GST_MESSAGE_WARNING | GST_MESSAGE_EOS | GST_MESSAGE_QOS));
                 if (!msg) continue;
-                if (GST_MESSAGE_TYPE(msg) == GST_MESSAGE_EOS) {
+                if (GST_MESSAGE_TYPE(msg) == GST_MESSAGE_QOS) {
+                    if (sampler) sampler->onQos(msg);
+                } else if (GST_MESSAGE_TYPE(msg) == GST_MESSAGE_EOS) {
                     result.status = stopping ? stopReason : "eos";
                     say("bus: EOS");
                     done = true;
@@ -274,6 +301,7 @@ RunResult run(const Graph& plan, const std::map<std::string, std::string>& param
                 gst_message_unref(msg);
             }
             gst_object_unref(bus);
+            if (sampler) options.onTelemetry(sampler->sample(nowMs() - begin));
             if (result.status == "eos" || result.status == "interrupted" || result.status == "timeout") {
                 builder.checkMissing();  // it may have ended before the loop looked
                 if (!builder.missing().empty()) {
@@ -286,6 +314,7 @@ RunResult run(const Graph& plan, const std::map<std::string, std::string>& param
             }
         }
         gst_element_set_state(pipeline, GST_STATE_NULL);
+        sampler.reset();
     }
     gst_object_unref(pipeline);
     result.ms = nowMs() - begin;

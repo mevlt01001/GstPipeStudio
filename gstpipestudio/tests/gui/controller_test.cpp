@@ -61,6 +61,23 @@ private slots:
         QVERIFY(!c->refresh());
     }
 
+    void arrangingPipelineKeepsExecutionAndCanUndo() {
+        const Chain chain = makeChain();
+        QVERIFY(settle(*c));
+        const auto before = c->plan().find(toStd(chain.convert))->x;
+        const auto revision = c->pipeline().lastChange().executionRevision;
+        QVERIFY(c->arrangePipeline());
+        const auto* source = c->plan().find(toStd(chain.src));
+        const auto* convert = c->plan().find(toStd(chain.convert));
+        const auto* sink = c->plan().find(toStd(chain.sink));
+        QVERIFY(convert->x - source->x >= 500);
+        QVERIFY(sink->x - convert->x >= 500);
+        QCOMPARE(c->pipeline().lastChange().executionRevision, revision);
+        QVERIFY(!c->updating());
+        QVERIFY(c->undo());
+        QCOMPARE(c->plan().find(toStd(chain.convert))->x, before);
+    }
+
     void addSourceRunsAnUpdate() {
         need(*c, "videotestsrc");
         QSignalSpy finished(c.get(), &Controller::updateFinished);

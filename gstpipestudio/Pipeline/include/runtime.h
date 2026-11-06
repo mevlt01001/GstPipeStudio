@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -31,5 +32,19 @@ struct UpdateResult {
     std::vector<std::string> refused;  // "src.pad -> sink.pad: reason"
 
     bool complete() const;
+};
+
+// Measurements belong to an execution, never to the authored document.
+// Missing values are represented by negative numbers, not fabricated zeros.
+struct ElementTelemetry {
+    std::string element;
+    double ageMs = -1;          // live source: pipeline running time minus outgoing buffer running time
+    double queueMs = -1;        // queue's current-level-time, when available
+    double lossPercent = -1;    // reported QoS processed/dropped units, when available
+    std::uint64_t inputBuffers = 0, outputBuffers = 0;
+};
+struct TelemetrySample {
+    double elapsedMs = 0;
+    std::vector<ElementTelemetry> elements;
 };
 } // namespace gps
