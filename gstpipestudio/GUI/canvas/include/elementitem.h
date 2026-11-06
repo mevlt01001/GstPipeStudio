@@ -2,13 +2,14 @@
 #pragma once
 
 #include <QFont>
-#include <QGraphicsItem>
+#include <QGraphicsObject>
+#include <QVariantAnimation>
 
 #include "elementview.h"
 
 class PadItem;
 
-class ElementItem : public QGraphicsItem {
+class ElementItem : public QGraphicsObject {
 public:
     explicit ElementItem(const ElementView& view);
 
@@ -40,6 +41,8 @@ private:
     ElementView view_;
     QList<PadItem*> pads_;
     bool hover_ = false;
+    double hoverProgress_ = 0;
+    QVariantAnimation hoverAnimation_;
     bool telemetry_ = false;
     double ageMs_ = -1;
     double processingMs_ = -1, dropRatePercent_ = -1;

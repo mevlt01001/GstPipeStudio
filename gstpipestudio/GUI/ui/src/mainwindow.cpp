@@ -1,5 +1,9 @@
 // mainwindow.cpp
 #include "mainwindow.h"
+#include "windowchrome.h"
+#include "aboutdialog.h"
+#include "buildinfo.h"
+#include "pipelinefiledialog.h"
 
 #include <QAction>
 #include <QCloseEvent>
@@ -41,6 +45,8 @@
 
 MainWindow::MainWindow(Controller* controller, QWidget* parent) : QMainWindow(parent), controller_(controller) {
     setObjectName("mainWindow");
+    setWindowFlag(Qt::FramelessWindowHint);
+    setWindowIcon(QIcon(":/brand/gstpipestudio.png"));
     setMinimumSize(960, 600);
     resize(1360, 860);
 
@@ -65,6 +71,9 @@ MainWindow::MainWindow(Controller* controller, QWidget* parent) : QMainWindow(pa
 
     buildActions();
     buildPanels();
+    auto* menus = menuBar();
+    auto* chrome = new WindowChrome(this, menus);
+    setMenuWidget(chrome);
 
     // The canvas reports clicks; the work happens after the item's event handler has returned.
     connect(scene_, &CanvasScene::freeSrcPadClicked, flows_, [this](const QString& e, const QString& id, const QPoint&) { flows_->fromFreePad(e, id); }, Qt::QueuedConnection);
@@ -118,7 +127,7 @@ void MainWindow::buildActions() {
     auto* open = make("actionOpen", "&Open…", {QKeySequence::Open}, [this] {
         if (!confirmDiscard()) return;
         QSettings settings;
-        QString path = QFileDialog::getOpenFileName(this, "Open pipeline", settings.value("lastDir").toString(), "Pipeline (*.conf)");
+        QString path = PipelineFileDialog::choose(this, false, settings.value("lastDir").toString());
         if (!path.isEmpty()) openFile(path);
     });
     auto* import = make("actionImportLaunch", "Import gst-launch pipeline…", {}, [this] {
@@ -194,6 +203,10 @@ void MainWindow::buildActions() {
     viewMenu->addActions({showLog, showValidation, showTelemetry, showProps, showCaps, find});
     viewMenu->addSeparator();
     viewMenu->addActions({arrange, fit, zoomIn, zoomOut});
+    auto* connectedMove = viewMenu->addAction("Move connected elements together");
+    connectedMove->setObjectName("actionConnectedMove"); connectedMove->setCheckable(true);
+    connectedMove->setToolTip("Drag an element to move its connected component; undo restores all positions");
+    connect(connectedMove, &QAction::toggled, scene_, &CanvasScene::setConnectedMoveEnabled);
     QMenu* help = menuBar()->addMenu("&Help");
     help->addActions({support, gstInfo, about});
 
@@ -328,7 +341,7 @@ void MainWindow::refreshState() {
     flows_->setBusy(editBlocked);
 
     QString name = controller_->filePath().isEmpty() ? "untitled" : QFileInfo(controller_->filePath()).fileName();
-    setWindowTitle("GstPipeStudio – " + name + (controller_->dirty() ? " *" : ""));
+    setWindowTitle(BuildInfo::title() + " " + BuildInfo::version() + " – " + name + (controller_->dirty() ? " *" : ""));
 }
 
 void MainWindow::onEnvironment() {
@@ -377,7 +390,7 @@ bool MainWindow::saveFile(const QString& path) {
 void MainWindow::saveAs() {
     QSettings settings;
     QString start = controller_->filePath().isEmpty() ? settings.value("lastDir").toString() : controller_->filePath();
-    QString path = QFileDialog::getSaveFileName(this, "Save pipeline as", start, "Pipeline (*.conf)");
+    QString path = PipelineFileDialog::choose(this, true, start);
     if (path.isEmpty()) return;
     if (!path.endsWith(".conf")) path += ".conf";
     saveFile(path);
@@ -605,9 +618,8 @@ void MainWindow::pasteClipboard() {
 }
 
 void MainWindow::showAbout() {
-    QMessageBox::about(this, "About GstPipeStudio",
-                       "GstPipeStudio builds GStreamer pipelines on a canvas.\n\nIt validates every step with the real GStreamer and saves a "
-                       "file that gst-launch-1.0 runs through the gpsconf plugin.");
+    AboutDialog dialog(controller_->environment().statusText(), this);
+    dialog.exec();
 }
 
 bool MainWindow::confirmDiscard() {

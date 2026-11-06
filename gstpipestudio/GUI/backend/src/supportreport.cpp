@@ -1,5 +1,6 @@
 // supportreport.cpp
 #include "supportreport.h"
+#include "buildinfo.h"
 
 #include <QCoreApplication>
 #include <QDesktopServices>
@@ -11,7 +12,6 @@
 namespace {
 
 constexpr const char* kIssueUrl = "https://github.com/mevlt01001/GstPipeStudio/issues/new";
-constexpr const char* kAppVersion = "0.1.0";
 constexpr int kMaxLineLength = 300;
 
 QString driverVersion() {
@@ -55,7 +55,7 @@ bool DesktopUrlOpener::open(const QUrl& url) { return QDesktopServices::openUrl(
 
 SupportInfo SupportReport::systemInfo() {
     SupportInfo i;
-    i.appVersion = kAppVersion;
+    i.appVersion = BuildInfo::version() + " (" + BuildInfo::channel() + ", " + BuildInfo::revision() + ")";
     i.os = QSysInfo::prettyProductName();
     i.arch = QSysInfo::currentCpuArchitecture();
     i.qt = qVersion();

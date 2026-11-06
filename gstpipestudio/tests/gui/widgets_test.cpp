@@ -37,6 +37,10 @@
 #include "propertypage.h"
 #include "testsupport.h"
 #include "theme.h"
+#include "buildinfo.h"
+#include "aboutdialog.h"
+#include "connectionpreview.h"
+#include <QMovie>
 #include "telemetrypanel.h"
 #include "updatepanel.h"
 
@@ -233,8 +237,39 @@ private slots:
         QCOMPARE(spin->value(), 19);
     }
 
+    void aboutShowsBuildIdentityAndAnimation() {
+        AboutDialog dialog("GStreamer 1.20.3");
+        auto* details = dialog.findChild<QLabel*>("buildDetails");
+        QVERIFY(details); QVERIFY(details->text().contains(BuildInfo::version()));
+        QVERIFY(details->text().contains(BuildInfo::channel()));
+        QVERIFY(details->text().contains(QCoreApplication::applicationFilePath()));
+        QVERIFY(dialog.findChild<QMovie*>()->isValid());
+    }
+
+    void retractingWireCanBeDestroyedDuringAnimation() {
+        QGraphicsScene scene;
+        QPointer<ConnectionPreview> wire = new ConnectionPreview;
+        scene.addItem(wire); wire->setEndpoints({0,0}, {200,100}, true); wire->retract();
+        scene.clear(); QTest::qWait(250); QVERIFY(wire.isNull());
+    }
+
+    void connectedMovementFollowsAndCommitsTogether() {
+        MainWindow window(c.get()); window.show();
+        QString src, mid, sink; buildChain(window, &src, &mid, &sink);
+        auto* scene = window.scene();
+        const QPointF start = scene->element(src)->pos(), before = scene->element(mid)->pos();
+        scene->setConnectedMoveEnabled(true); scene->beginConnectedMove(src);
+        scene->element(src)->setPos(start+QPointF(120,60));
+        QCOMPARE(scene->element(mid)->pos(), before+QPointF(120,60));
+        scene->finishConnectedMove(); scene->elementDragged(src, start+QPointF(120,60));
+        QTest::qWait(100);
+        QVERIFY(c->canUndo()); QVERIFY(c->undo());
+        QTest::qWait(100);
+        QCOMPARE(scene->element(mid)->pos(), before);
+    }
+
     void themeUsesTheColoursOfTheSpec() {
-        QCOMPARE(Theme::background().name(), QString("#1b1b1b"));
+        QCOMPARE(Theme::background().name(), QString("#202224"));
         QCOMPARE(Theme::panel().name(), QString("#242424"));
         QCOMPARE(Theme::line().name(), QString("#3a3a3a"));
         QCOMPARE(Theme::text().name(), QString("#e8e8e8"));
@@ -1385,7 +1420,7 @@ private slots:
         w.openFile(path);
         QVERIFY(waitFor([&] { return other->result().valid() && !other->busy() && w.scene()->element(sink) != nullptr; }, 8000));
         QCOMPARE(w.scene()->links().size(), 2);
-        QCOMPARE(w.windowTitle(), QString("GstPipeStudio – keep.conf"));
+        QCOMPARE(w.windowTitle(), BuildInfo::title() + " " + BuildInfo::version() + " – keep.conf");
         QVERIFY(w.findChild<QAction*>("actionRun")->isEnabled());
         QTest::qWait(100);
         // fitAll ran: the whole pipeline is inside the viewport

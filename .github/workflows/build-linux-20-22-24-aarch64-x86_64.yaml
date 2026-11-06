@@ -86,6 +86,8 @@ jobs:
           -DCMAKE_PREFIX_PATH="$HOME/Qt/6.8.3" \
           -DCMAKE_INSTALL_PREFIX=/usr \
           -DGPS_BUNDLE_QT=ON \
+          -DGPS_BUILD_CHANNEL=Release \
+          -DGPS_BUILD_REVISION="${{ github.sha }}" \
           ${GPS_VERSION:+-DGPS_VERSION=$GPS_VERSION}
           cmake --build build
 

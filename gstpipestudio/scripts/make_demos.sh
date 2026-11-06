@@ -9,7 +9,7 @@ mkdir -p "$OUT"
 
 caption="fontfile=$FONT:fontsize=23:fontcolor=white:box=1:boxcolor=black@0.82:boxborderw=10:x=28:y=96"
 build="scale=960:-2,drawtext=$caption:text='Start with a live source':enable='between(t,0,2.4)',drawtext=$caption:text='Add a queue and a slow stage':enable='between(t,2.4,4.8)',drawtext=$caption:text='Connect a sink and arrange the graph':enable='between(t,4.8,7.4)'"
-metrics="scale=960:-2,drawtext=$caption:text='Buffer age exposes a slow stage':enable='between(t,0,2)',drawtext=$caption:text='Queue level shows buffered media':enable='between(t,2,4)'"
+metrics="scale=960:-2,drawtext=$caption:text='Compare timing and reported drops':enable='between(t,0,2)',drawtext=$caption:text='Queue level shows buffered media':enable='between(t,2,4)'"
 
 ffmpeg -hide_banner -loglevel error -y -framerate 10 -start_number 0 -i "$FRAMES/%04d.png" -frames:v 74 -vf "$build" -c:v libx264 -pix_fmt yuv420p -crf 26 -movflags +faststart "$OUT/build-and-arrange.mp4"
 ffmpeg -hide_banner -loglevel error -y -framerate 10 -start_number 74 -i "$FRAMES/%04d.png" -frames:v 40 -vf "$metrics" -c:v libx264 -pix_fmt yuv420p -crf 26 -movflags +faststart "$OUT/live-metrics.mp4"

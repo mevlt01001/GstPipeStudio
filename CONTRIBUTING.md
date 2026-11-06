@@ -13,3 +13,16 @@ Avoid duplicating state or editing rules. Add an interface when multiple impleme
 For a bug fix, add a focused regression when practical. For a behavior change, update the relevant test and documentation together. Record the actual commands/results in the PR, including skipped hardware checks and environments you could not exercise. A plugin discovered in the registry is not evidence that it runs on a GPU.
 
 A PR should explain the user-visible problem, resulting behavior, affected contract/format and verification. Discuss file-format or architectural changes before widening their scope. Maintainer review is required before merging dev-zero into main.
+
+## Where a change belongs
+
+| Change | Owner | Verification |
+|---|---|---|
+| Graph operation, connections, undo | `Pipeline` / GraphEditor | unit tests |
+| Native elements, runtime metrics | `GstEngine` | engine tests |
+| Window, dialog, shared input behavior | `GUI/ui` | GUI tests |
+| Pads, elements, connection visuals | `GUI/canvas` | GUI tests and visual review |
+
+Keep animation state in the visual object that owns it; document edits go through Controller and Pipeline transactions. A new input rule belongs in a shared component, not copied event handlers. Use `.clang-format` and `.editorconfig`; avoid reformatting unrelated files. This applies equally to human and AI-authored changes.
+
+Follow [C++ Core Guidelines](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines) for ownership and RAII, and [Qt object ownership](https://doc.qt.io/qt-6/objecttrees.html) for widgets and animations. Prefer composition; introduce polymorphism when there are interchangeable implementations. Keep factory-specific behavior out of generic widgets.

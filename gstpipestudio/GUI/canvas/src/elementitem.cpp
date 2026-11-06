@@ -40,6 +40,10 @@ QString ElementItem::fitNote(const QString& note, const QFont& font) {
 ElementItem::ElementItem(const ElementView& view) : view_(view) {
     setFlags(ItemIsMovable | ItemIsSelectable | ItemSendsGeometryChanges);
     setAcceptHoverEvents(true);
+    hoverAnimation_.setDuration(140); hoverAnimation_.setEasingCurve(QEasingCurve::OutCubic);
+    connect(&hoverAnimation_, &QVariantAnimation::valueChanged, this, [this](const QVariant& value) {
+        hoverProgress_ = value.toDouble(); update();
+    });
     setAcceptedMouseButtons(Qt::LeftButton | Qt::RightButton);
     setZValue(1);
     setToolTip(view.note.isEmpty() ? view.factory : view.factory + "\n\n" + view.note);
@@ -92,7 +96,7 @@ void ElementItem::paint(QPainter* p, const QStyleOptionGraphicsItem*, QWidget*) 
 
     // Body, header band (clipped to the rounded box), NVIDIA or Custom stripe; the border goes on top of all of it.
     p->setPen(Qt::NoPen);
-    p->setBrush(Theme::box());
+    p->setBrush(Theme::box().lighter(100 + qRound(hoverProgress_*9)));
     p->drawRoundedRect(box, 6, 6);
     p->save();
     p->setClipPath(shape());
@@ -185,19 +189,21 @@ void ElementItem::paint(QPainter* p, const QStyleOptionGraphicsItem*, QWidget*) 
 
 QVariant ElementItem::itemChange(GraphicsItemChange change, const QVariant& value) {
     if (change == ItemPositionHasChanged) {
-        if (auto* canvas = qobject_cast<CanvasScene*>(scene())) canvas->updateLinks();
+        if (auto* canvas = qobject_cast<CanvasScene*>(scene())) {
+            canvas->followConnectedMove(view_.name, pos()); canvas->updateLinks();
+        }
     }
     return QGraphicsItem::itemChange(change, value);
 }
 
 void ElementItem::hoverEnterEvent(QGraphicsSceneHoverEvent*) {
     hover_ = true;
-    update();
+    hoverAnimation_.stop(); hoverAnimation_.setStartValue(hoverProgress_); hoverAnimation_.setEndValue(1.0); hoverAnimation_.start();
 }
 
 void ElementItem::hoverLeaveEvent(QGraphicsSceneHoverEvent*) {
     hover_ = false;
-    update();
+    hoverAnimation_.stop(); hoverAnimation_.setStartValue(hoverProgress_); hoverAnimation_.setEndValue(0.0); hoverAnimation_.start();
 }
 
 void ElementItem::mousePressEvent(QGraphicsSceneMouseEvent* event) {
@@ -211,6 +217,10 @@ void ElementItem::mousePressEvent(QGraphicsSceneMouseEvent* event) {
         return;
     }
     QGraphicsItem::mousePressEvent(event);
+    if (event->button() == Qt::LeftButton) {
+        setCursor(Qt::ClosedHandCursor); setZValue(2);
+        if (auto* canvas = qobject_cast<CanvasScene*>(scene())) canvas->beginConnectedMove(view_.name);
+    }
     event->accept();  // a press must reach the release below
 }
 
@@ -221,6 +231,8 @@ void ElementItem::mouseReleaseEvent(QGraphicsSceneMouseEvent* event) {
         return;
     }
     QGraphicsItem::mouseReleaseEvent(event);
+    unsetCursor(); setZValue(1);
+    if (auto* canvas = qobject_cast<CanvasScene*>(scene())) canvas->finishConnectedMove();
     if (pos() != pressPos_) {
         if (auto* canvas = qobject_cast<CanvasScene*>(scene())) canvas->elementDragged(view_.name, pos());
     } else if (event->button() == Qt::LeftButton && event->modifiers() == Qt::NoModifier) {

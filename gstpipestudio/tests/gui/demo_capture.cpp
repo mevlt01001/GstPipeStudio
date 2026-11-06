@@ -9,6 +9,8 @@
 #include "mainwindow.h"
 #include "telemetrypanel.h"
 #include "testsupport.h"
+#include "aboutdialog.h"
+#include "pipelinefiledialog.h"
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
@@ -52,5 +54,9 @@ int main(int argc, char** argv) {
     capture(20);
     controller->stopMonitoring();
     support::waitFor([&] { return !controller->monitoring(); }, 4000);
+    AboutDialog about(controller->environment().statusText(), &window);
+    about.show(); QTest::qWait(200); about.grab().save(output + "/../about.png"); about.close();
+    PipelineFileDialog picker(&window, false, "/workspace/examples/monitoring");
+    picker.show(); QTest::qWait(200); picker.grab().save(output + "/../files.png"); picker.close();
     return frame == 114 ? 0 : 9;
 }

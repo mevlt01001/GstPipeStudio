@@ -1,95 +1,52 @@
 <p align="center">
-  <img src="gstpipestudio/assets/logo/animation.gif" alt="GstPipeStudio" width="680">
+  <img src="gstpipestudio/assets/logo/animation.gif" alt="GstPipeStudio" width="540">
 </p>
+<p align="center"><b>Build, inspect and understand GStreamer pipelines visually.</b></p>
+<p align="center">
+  <a href="https://github.com/mevlt01001/GstPipeStudio/releases">Download</a> ·
+  <a href="examples/monitoring/README.md">Try an example</a> ·
+  <a href="https://github.com/mevlt01001/GstPipeStudio/issues">Report a bug / request a feature</a> ·
+  <a href="CONTRIBUTING.md">Contribute</a>
+</p>
+
+> Early development. Camera, GPU and DeepStream compatibility depends on your plugins and hardware. Hardware test reports are welcome.
+
+## From an idea to a running pipeline
 
 <p align="center">
-  <b>Build GStreamer and DeepStream media pipelines by clicking, then run them as one command or as a single GStreamer element.</b>
+  <a href="docs/media/build-and-arrange.mp4"><img src="docs/media/build-and-arrange.gif" alt="Add elements, connect pads and arrange a pipeline" width="800"></a>
 </p>
 
-> **Status: early development.** The application is organized into GUI, Pipeline and GstEngine. Hardware support must be backed by device-specific test results; ARM builds alone do not demonstrate Jetson support.
+| Build | Understand | Reuse |
+|---|---|---|
+| Add elements from your GStreamer installation; connect pads and edit properties. | Inspect negotiated caps, processing time, buffer age and reported drops across elements. | Import a gst-launch description, save a `.conf`, and run it again with `gps-run`. |
 
-## What it is
+## Get started
 
-You draw a media pipeline instead of writing it. Everything starts at an output (a *src pad*): click a free pad, pick an element that fits, set its properties, and the pipeline is checked right away by really building it with GStreamer. The result is a small `.conf` file.
+1. Download the `.deb` matching your Ubuntu version and processor from [Releases](https://github.com/mevlt01001/GstPipeStudio/releases).
+2. Install it with `sudo apt install ./GstPipeStudio-22.04-x86_64.deb` (replace the filename with your download).
+3. Open **GstPipeStudio**, add a source, then drag from its output pad to connect elements.
+
+Qt is bundled in release packages. GStreamer **1.16+** and the plugins your pipeline needs must be installed. For a camera-free first run, open an [example pipeline](examples/monitoring/README.md).
+
+**Already have a pipeline?** Use **File → Import gst-launch pipeline…** and paste its description. Import briefly probes devices; check validation before running. Import does not attach to another process by pipeline name.
+
+## See where time and buffers go
 
 <p align="center">
-  <a href="docs/media/build-and-arrange.mp4"><img src="docs/media/build-and-arrange.gif" alt="Add and connect elements, then arrange the pipeline on the canvas" width="680"></a><br>
-  <sub>Build a live pipeline and arrange its elements. Click for the short video.</sub>
+  <a href="docs/media/live-metrics.mp4"><img src="docs/media/live-metrics.gif" alt="Compare live timing and queue occupancy across the pipeline" width="800"></a>
 </p>
 
-- **No hand-written C and no `gst-launch` strings.** The tools build the pipeline with the GStreamer API.
-- **Nothing is special-cased per element.** Elements, properties, pads and caps all come from GStreamer itself, so the elements your system has (including DeepStream's `nv*` elements) are the elements you get. The one exception is `queue`, which has a shortcut because pipelines need it so often.
-- **Run it your way:** `gps-run pipeline.conf`, or let the plugin turn a `.conf` into a normal GStreamer element and use it in `gst-launch-1.0` with its exposed parameters.
+Open **View → Live metrics → Start monitoring**. Every element shows processing time, age and Drop Rate. The graph compares all elements; choose one for detail. A dash means the measurement is unavailable. Drop Rate requires QoS-reported buffer counts; it is not inferred from input/output differences.
 
-## Parts
+**Small conveniences:** reset properties to defaults, undo graph edits, copy one or several elements, arrange the graph, and enable **View → Move connected elements together**. Hover a value control for 500 ms before using the wheel to edit it.
 
-| | |
-|---|---|
-| `gstpipestudio` | The Qt 6 window: canvas, drawer for picking elements and setting properties, validation. |
-| `gps-inspect` | Lists the elements GStreamer has and describes them (properties, pads, caps) as JSON. |
-| `gps-update` | Builds a pipeline from a `.conf`, runs it just far enough to read every pad's caps, and reports them. |
-| `gps-run` | Runs a finished `.conf`. |
-| `gps-monitor` | Runs a `.conf` and emits live per-element metrics as JSON. |
-| `gps-import` | Reads a `gst-launch` description through GStreamer and saves its elements and links as a `.conf`. |
-| `libgstgpsconf` | A GStreamer plugin: every `.conf` in `GPS_PIPELINE_PATH` becomes an element without pads. |
+## Help improve it
 
-## Architecture
+Use **Help → Request support…** to prepare an issue with environment details. Review it before submitting. **Help → About** shows your app version, build channel, commit, runtime and executable location.
 
-```mermaid
-flowchart LR
-    GUI["GUI: canvas and actions"] --> Pipeline["Pipeline: shared document and transactions"]
-    Pipeline --> Contract["Execution snapshot / result contract"]
-    Contract --> GstEngine["GstEngine: native GStreamer"]
-    GstEngine -->|revision-tagged observations| Pipeline
-```
+We especially welcome reproducible bugs, hardware results and improvements to element discovery. [Contribution guide](CONTRIBUTING.md) · [Build and test](docs/development/README.md) · [Architecture](docs/architecture/README.md).
 
-[Architecture and class relationships](docs/architecture/README.md) · [Build, test and release](docs/development/README.md) · [Contributing](CONTRIBUTING.md)
+Development builds are labelled **Development** and use separate settings from the installed release.
 
-## Requirements
-
-- Ubuntu 20.04, 22.04 or 24.04 (x86-64; ARM is planned).
-- GStreamer **1.16 or newer** with the plugins you want to use. DeepStream is optional and is found through GStreamer.
-- Building from source: a C++17 compiler, CMake 3.16, Ninja, the GStreamer development packages (`libgstreamer1.0-dev`, `libgstreamer-plugins-base1.0-dev`) and Qt 6.8. The planned `.deb` packages will bring their own Qt.
-
-## Build from source
-
-```bash
-cmake -S gstpipestudio -B build -G Ninja -DCMAKE_PREFIX_PATH=/path/to/Qt/6.8.3/gcc_64
-cmake --build build
-ctest --test-dir build        # CMake 3.20 or newer; older: cd build && ctest
-build/bin/gstpipestudio
-```
-
-Run a saved pipeline, or use it as a GStreamer element:
-
-```bash
-build/bin/gps-run my_pipeline.conf
-GST_PLUGIN_PATH=build/lib/gstreamer-1.0 GPS_PIPELINE_PATH=. gst-launch-1.0 my_pipeline
-```
-
-## Something wrong?
-
-The window has **Help ▸ Request support…**. It opens a pre-filled issue on GitHub with your system and GStreamer information and the pads that were being linked (home folders and user names are removed). You read it, add what you like and press submit yourself.
-
-## Live pipeline metrics
-
-Open **View → Live metrics** after validating a complete pipeline. While monitoring, every element on the canvas shows **Avg. Processing Time** and **Drop Rate** together. The panel compares all elements on one graph by default; choose one for detail. It also shows pending time, source age, queue buffered time, and input/output rates. Drop Rate uses only QoS-reported buffer drops; a dash means unknown, not zero. The monitor does not change the saved graph. Three hardware-free test pipelines are in [examples/monitoring](examples/monitoring/README.md).
-
-<p align="center">
-  <a href="docs/media/live-metrics.mp4"><img src="docs/media/live-metrics.gif" alt="Watch source age rise at a slow stage and inspect buffered time in a queue" width="680"></a><br>
-  <sub>Spot a slow stage and see how much media is buffered. Click for the short video.</sub>
-</p>
-
-## Bring in an existing pipeline
-
-Use **File → Import gst-launch pipeline…** to paste a pipeline description or a `gst-launch-1.0` command. The importer briefly runs it in a separate process, reads its native element factories, changed properties and linked pads, then draws an **unsaved** pipeline on the canvas. Check the validation result before stopping the original pipeline or running the imported one. You can also import from the command line:
-
-```bash
-gps-import --output imported.conf --probe-ms 1000 'videotestsrc is-live=true ! queue ! fakesink sync=false'
-```
-
-The imported native pipeline name appears in the Log. GStreamer does not expose a general way to attach to a pipeline object in another process by name. To import an application-owned pipeline, supply its launch description; [DOT snapshots](https://gstreamer.freedesktop.org/documentation/gstreamer/running.html) can help inspect topology but cannot guarantee a replayable copy of all runtime properties. A short probe may need the same camera or device as the original, so stop the original first if the device is exclusive. Nested explicit bins and application-only callbacks still need manual work.
-
-## License
-
-[MIT](LICENSE). GstPipeStudio uses GStreamer (LGPL) and Qt (LGPLv3) as separate libraries.
+[MIT](LICENSE). GStreamer and Qt remain separately licensed libraries.

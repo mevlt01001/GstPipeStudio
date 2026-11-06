@@ -9,8 +9,12 @@
 #include "elementitem.h"
 #include "theme.h"
 
-PadItem::PadItem(const PadView& view, QGraphicsItem* parent) : QGraphicsItem(parent), view_(view) {
+PadItem::PadItem(const PadView& view, QGraphicsItem* parent) : QGraphicsObject(parent), view_(view) {
     setAcceptHoverEvents(true);
+    hoverAnimation_.setDuration(140); hoverAnimation_.setEasingCurve(QEasingCurve::OutCubic);
+    connect(&hoverAnimation_, &QVariantAnimation::valueChanged, this, [this](const QVariant& value) {
+        hoverProgress_ = value.toDouble(); update();
+    });
     setAcceptedMouseButtons(Qt::LeftButton | Qt::RightButton);
     setZValue(2);
     if (!view.tip.isEmpty()) setToolTip(view.tip);
@@ -30,8 +34,10 @@ void PadItem::paint(QPainter* p, const QStyleOptionGraphicsItem*, QWidget*) {
     if (view_.isSrc) {
         colour = view_.state == PadView::Unknown ? Theme::warning() : (hover_ ? Theme::accentHover() : Theme::accent());
     }
-    double r = metrics::kPadRadius + (hover_ ? 1.5 : 0);
+    double r = metrics::kPadRadius + (hoverProgress_ * 1.5);
     p->setRenderHint(QPainter::Antialiasing);
+    QColor halo = colour; halo.setAlpha(qRound(hoverProgress_*55));
+    p->setPen(Qt::NoPen); p->setBrush(halo); p->drawEllipse(QPointF(0,0), r+2, r+2);
     p->setPen(QPen(colour, 2));
     p->setBrush(filled ? QBrush(colour) : QBrush(Theme::background()));
     p->drawEllipse(QPointF(0, 0), r, r);
@@ -39,12 +45,12 @@ void PadItem::paint(QPainter* p, const QStyleOptionGraphicsItem*, QWidget*) {
 
 void PadItem::hoverEnterEvent(QGraphicsSceneHoverEvent*) {
     hover_ = true;
-    update();
+    hoverAnimation_.stop(); hoverAnimation_.setStartValue(hoverProgress_); hoverAnimation_.setEndValue(1.0); hoverAnimation_.start();
 }
 
 void PadItem::hoverLeaveEvent(QGraphicsSceneHoverEvent*) {
     hover_ = false;
-    update();
+    hoverAnimation_.stop(); hoverAnimation_.setStartValue(hoverProgress_); hoverAnimation_.setEndValue(0.0); hoverAnimation_.start();
 }
 
 void PadItem::mousePressEvent(QGraphicsSceneMouseEvent* event) {

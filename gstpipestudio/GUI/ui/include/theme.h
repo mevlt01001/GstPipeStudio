@@ -8,7 +8,7 @@ class QApplication;
 
 class Theme {
 public:
-    static QColor background() { return QColor("#1b1b1b"); }
+    static QColor background() { return QColor("#202224"); }
     static QColor panel() { return QColor("#242424"); }
     static QColor box() { return QColor("#2a2a2a"); }
     static QColor line() { return QColor("#3a3a3a"); }

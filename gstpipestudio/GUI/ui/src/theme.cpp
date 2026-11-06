@@ -132,6 +132,11 @@ QListWidget::item:hover { background: #2e2e2e; }
 QHeaderView::section { background: @bg@; color: @muted@; border: none; border-bottom: 1px solid @line@; border-right: 1px solid @line@; padding: 5px 8px; }
 QTableCornerButton::section { background: @bg@; border: none; }
 
+QWidget#windowChrome QToolButton { padding: 3px; }
+QFileDialog QToolButton { padding: 3px; min-width: 24px; min-height: 24px; }
+QToolButton#windowClose:hover { background: #a52a36; color: white; }
+QWidget#windowChrome { background: #292c2f; border-bottom: 1px solid @line@; }
+QLabel#windowTitle { color: @muted@; }
 QScrollArea { border: none; background: transparent; }
 QScrollBar:vertical { background: @bg@; width: 12px; margin: 0; }
 QScrollBar::handle:vertical { background: #444; min-height: 24px; border-radius: 5px; margin: 2px; }
@@ -163,6 +168,8 @@ QFrame#separator { background: @line@; max-height: 1px; }
 }
 
 void Theme::apply(QApplication& app) {
+    Q_INIT_RESOURCE(branding);
+    Q_INIT_RESOURCE(appicon);
     WheelGuard::install(app);
     app.setStyle("Fusion");
     app.setFont(QFont("DejaVu Sans", 10));

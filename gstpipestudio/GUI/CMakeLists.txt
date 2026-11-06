@@ -69,3 +69,28 @@ if(GPS_BUNDLE_QT)
 endif()
 
 add_library(GstPipeStudio::GUI ALIAS gps_gui)
+
+set(GPS_BUILD_CHANNEL "Development" CACHE STRING "Application identity: Development or Release")
+set_property(CACHE GPS_BUILD_CHANNEL PROPERTY STRINGS Development Release)
+if(NOT GPS_BUILD_CHANNEL MATCHES "^(Development|Release)$")
+    message(FATAL_ERROR "GPS_BUILD_CHANNEL must be Development or Release")
+endif()
+set(GPS_BUILD_REVISION "" CACHE STRING "Commit identity supplied by CI or container build")
+get_filename_component(GPS_REPOSITORY "${GPS_ROOT}/.." REALPATH)
+set(GPS_REVISION "${GPS_BUILD_REVISION}")
+if(NOT GPS_REVISION)
+    execute_process(COMMAND git -c safe.directory=${GPS_REPOSITORY} rev-parse --short HEAD
+        WORKING_DIRECTORY ${GPS_ROOT} OUTPUT_VARIABLE GPS_REVISION OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+endif()
+if(NOT GPS_REVISION)
+    set(GPS_REVISION "unknown")
+endif()
+target_compile_definitions(gps_gui PUBLIC GPS_APP_VERSION="${PROJECT_VERSION}" GPS_APP_REVISION="${GPS_REVISION}" GPS_APP_CHANNEL="${GPS_BUILD_CHANNEL}")
+qt_add_resources(gps_gui branding PREFIX "/brand" BASE "${GPS_ROOT}/assets/logo"
+    FILES "${GPS_ROOT}/assets/logo/gstpipestudio.svg" "${GPS_ROOT}/assets/logo/animation.gif")
+target_sources(gps_gui PRIVATE ui/widgets/src/windowchrome.cpp ui/widgets/src/aboutdialog.cpp)
+
+target_sources(gps_gui PRIVATE canvas/src/connectionpreview.cpp)
+
+qt_add_resources(gps_gui appicon PREFIX "/brand" BASE "${GPS_ROOT}/packaging/icons/hicolor/64x64/apps"
+    FILES "${GPS_ROOT}/packaging/icons/hicolor/64x64/apps/gstpipestudio.png")

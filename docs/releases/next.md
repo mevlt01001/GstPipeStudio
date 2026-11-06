@@ -18,3 +18,11 @@
 ## Measurement limits
 
 Processing time measures first sink arrival to first src departure, including waiting. Drop Rate requires buffer-unit QoS counters; missing reports appear as unknown. QoS does not identify the exact internal processing stage where a buffer was dropped. NVIDIA/DeepStream hardware validation remains outstanding.
+
+## Desktop experience
+
+- Unified menu and window controls, animated About dialog, and visible version/build identity.
+- Development and release builds use separate settings; support reports include the real build version and commit.
+- Larger pipeline file picker, slightly lighter canvas, animated pad feedback and retracting connection previews.
+- Optional connected-component dragging with one undoable position update.
+- Shorter, visual README and a concise contributor ownership map with shared formatting rules.

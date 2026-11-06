@@ -1,5 +1,6 @@
 // canvasscene.cpp
 #include "canvasscene.h"
+#include "connectionpreview.h"
 
 #include <QGraphicsPathItem>
 #include <QGraphicsSceneContextMenuEvent>
@@ -85,6 +86,7 @@ void CanvasScene::scheduleRebuild() {
 
 void CanvasScene::rebuild() {
     pending_ = false;
+    finishConnectedMove();
     dragWire_ = nullptr;
     if (!hasExplicitSelection_ && !elements_.isEmpty()) {
         const QStringList current = selectedElementNames();
@@ -178,25 +180,15 @@ void CanvasScene::padDragMoved(const PadView& from, const QPointF& scenePos) {
     PadItem* startPad = pad(from.element, from.identity, from.isSrc);
     if (!startPad) return;
     if (!dragWire_) {
-        dragWire_ = new QGraphicsPathItem;
-        QPen pen(Theme::accentHover(), 2.5, Qt::DashLine);
-        dragWire_->setPen(pen);
-        dragWire_->setZValue(3.0);
+        dragWire_ = new ConnectionPreview;
         addItem(dragWire_);
     }
-    QPointF a = startPad->center();
-    QPointF b = scenePos;
-    double dir = from.isSrc ? 1.0 : -1.0;
-    double reach = qBound(30.0, std::abs(b.x() - a.x()) / 2.0, 150.0);
-    QPainterPath path(a);
-    path.cubicTo(a + QPointF(dir * reach, 0), b - QPointF(dir * reach, 0), b);
-    dragWire_->setPath(path);
+    dragWire_->setEndpoints(startPad->center(), scenePos, from.isSrc);
 }
 
 void CanvasScene::padDragEnded() {
     if (dragWire_) {
-        removeItem(dragWire_);
-        delete dragWire_;
+        dragWire_->retract();
         dragWire_ = nullptr;
     }
 }
@@ -268,3 +260,34 @@ void CanvasScene::linkClicked(const QString& srcElement, const QString& srcIdent
 void CanvasScene::linkContext(const QString& srcElement, const QString& srcIdentity, const QPoint& screenPos) {
     if (!locked_) emit linkMenuRequested(srcElement, srcIdentity, screenPos);
 }
+
+void CanvasScene::beginConnectedMove(const QString& name) {
+    finishConnectedMove();
+    if (!connectedMoveEnabled_ || locked_) return;
+    ElementItem* anchor = element(name);
+    if (!anchor) return;
+    movingAnchor_ = name; anchorStart_ = anchor->pos();
+    QSet<QString> component{name};
+    QStringList pending{name};
+    while (!pending.isEmpty()) {
+        const QString current = pending.takeLast();
+        for (const auto& link : pipeline().graph().links) {
+            const QString src = QString::fromStdString(link.srcElement), sink = QString::fromStdString(link.sinkElement);
+            const QString next = src == current ? sink : sink == current ? src : QString();
+            if (!next.isEmpty() && !component.contains(next)) { component.insert(next); pending.append(next); }
+        }
+    }
+    for (const QString& member : component) {
+        auto* item = element(member);
+        if (item && item != anchor && !item->isSelected()) connectedStart_.insert(member, item->pos());
+    }
+}
+void CanvasScene::followConnectedMove(const QString& name, const QPointF& position) {
+    if (movingConnected_ || name != movingAnchor_) return;
+    movingConnected_ = true;
+    const QPointF delta = position-anchorStart_;
+    for (auto it = connectedStart_.cbegin(); it != connectedStart_.cend(); ++it)
+        if (auto* item = element(it.key())) item->setPos(it.value()+delta);
+    movingConnected_ = false;
+}
+void CanvasScene::finishConnectedMove() { movingAnchor_.clear(); connectedStart_.clear(); }

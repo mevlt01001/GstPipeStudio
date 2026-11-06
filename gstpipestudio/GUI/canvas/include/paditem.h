@@ -2,11 +2,12 @@
 //   free src: green ring · linked src: filled green · unknown data: orange ring · free sink: gray ring · linked sink: filled gray
 #pragma once
 
-#include <QGraphicsItem>
+#include <QGraphicsObject>
+#include <QVariantAnimation>
 
 #include "elementview.h"
 
-class PadItem : public QGraphicsItem {
+class PadItem : public QGraphicsObject {
 public:
     PadItem(const PadView& view, QGraphicsItem* parent);
 
@@ -27,4 +28,6 @@ protected:
 private:
     PadView view_;
     bool hover_ = false;
+    double hoverProgress_ = 0;
+    QVariantAnimation hoverAnimation_;
 };

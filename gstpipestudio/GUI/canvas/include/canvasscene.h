@@ -46,6 +46,10 @@ public:
     void linkClicked(const QString& srcElement, const QString& srcIdentity);
     void linkContext(const QString& srcElement, const QString& srcIdentity, const QPoint& screenPos);
     void updateLinks();
+    void setConnectedMoveEnabled(bool enabled) { connectedMoveEnabled_ = enabled; }
+    void beginConnectedMove(const QString& name);
+    void followConnectedMove(const QString& name, const QPointF& position);
+    void finishConnectedMove();
 
 public slots:
     void scheduleRebuild();  // coalesces many changes into one rebuild
@@ -68,6 +72,10 @@ protected:
     void contextMenuEvent(QGraphicsSceneContextMenuEvent* event) override;
 
 private:
+    bool connectedMoveEnabled_ = false, movingConnected_ = false;
+    QString movingAnchor_;
+    QPointF anchorStart_;
+    QHash<QString, QPointF> connectedStart_;
     static QString key(const QString& element, const QString& identity, bool isSrc);
 
     Controller* controller_;
@@ -76,7 +84,7 @@ private:
     QList<LinkItem*> links_;
     QSet<QString> selectedElements_;
     bool hasExplicitSelection_ = false;
-    class QGraphicsPathItem* dragWire_ = nullptr;
+    class ConnectionPreview* dragWire_ = nullptr;
     bool pending_ = false;
     bool locked_ = false;
     bool stale_ = false;

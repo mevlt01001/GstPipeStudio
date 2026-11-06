@@ -196,7 +196,7 @@ private slots:
         };
         QVERIFY(waitFor([&] { return !w.findChild<QLabel*>("environmentLabel")->text().isEmpty(); }));
         verify(&w, "empty window");
-        for (QAction* a : w.menuBar()->actions()) {
+        for (QAction* a : w.findChild<QMenuBar*>("applicationMenu")->actions()) {
             QVERIFY(a->menu());
             for (QAction* item : a->menu()->actions()) QVERIFY2(!turkish.match(item->text() + item->toolTip()).hasMatch(), qPrintable(item->text()));
         }
@@ -610,7 +610,7 @@ private slots:
         QVERIFY(keys("actionRun").size() == 1);
         // Menus have access keys.
         QStringList menus;
-        for (QAction* a : w.menuBar()->actions()) menus << a->text();
+        for (QAction* a : w.findChild<QMenuBar*>("applicationMenu")->actions()) menus << a->text();
         QCOMPARE(menus, QStringList({"&File", "&Pipeline", "&View", "&Help"}));
     }
 
