@@ -157,7 +157,8 @@ public:
 
     // ---- files and runs
     void newPlan();
-    void open(const QString& path);  // asynchronous: the plan is replaced when all its factories are known
+    void open(const QString& path, bool imported = false);  // asynchronous: the plan is replaced when all its factories are known
+    bool importLaunch(const QString& description); // brief native probe, then opens an unsaved canvas graph
     bool save(const QString& path, QString* error);  // path "" saves where the plan was opened or saved
     bool refresh();                  // run the update again
     bool run();

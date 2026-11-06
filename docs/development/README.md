@@ -45,6 +45,8 @@ GPS_DEMO_DIR="$PWD/build/demo/frames" gstpipestudio/scripts/make_demos.sh
 
 The generated clips under `docs/media` come from the running application and a standard GStreamer test source. The two monitoring examples can also be checked with `gps-monitor examples/monitoring/02-slow-stage.conf --timeout-ms 3000`.
 
+The import boundary is `gps::importLaunch` in GstEngine. It reconstructs a Pipeline `Graph` from a `gst_parse_launch` result; GUI calls it through `gps-import` so a short probe cannot block the window. Test the importer with `ctest -R '^engine.import$|^gui.real_tools_test$' --output-on-failure`. It only imports elements and links that exist during the bounded probe. The app does not attempt cross-process pointer access.
+
 ## Build container
 
 `docker/Dockerfile` builds the development image. Once available:

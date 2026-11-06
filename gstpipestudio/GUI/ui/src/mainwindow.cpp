@@ -121,6 +121,16 @@ void MainWindow::buildActions() {
         QString path = QFileDialog::getOpenFileName(this, "Open pipeline", settings.value("lastDir").toString(), "Pipeline (*.conf)");
         if (!path.isEmpty()) openFile(path);
     });
+    auto* import = make("actionImportLaunch", "Import gst-launch pipeline…", {}, [this] {
+        if (!confirmDiscard()) return;
+        bool accepted = false;
+        QString description = QInputDialog::getMultiLineText(this, "Import gst-launch pipeline",
+            "Paste a gst-launch-1.0 command or its pipeline description.\n"
+            "The pipeline runs briefly in the background to discover dynamic pads.", QString(), &accepted);
+        if (!accepted || description.trimmed().isEmpty()) return;
+        fitNext_ = true;
+        controller_->importLaunch(description);
+    });
     auto* save = make("actionSave", "&Save", {QKeySequence::Save}, [this] {
         if (controller_->filePath().isEmpty()) saveAs();
         else saveFile(QString());
@@ -169,7 +179,7 @@ void MainWindow::buildActions() {
     });
 
     QMenu* file = menuBar()->addMenu("&File");
-    file->addActions({newPlan, open, save, saveAs});
+    file->addActions({newPlan, open, import, save, saveAs});
     file->addSeparator();
     file->addAction(quit);
     QMenu* pipeline = menuBar()->addMenu("&Pipeline");
@@ -268,6 +278,7 @@ void MainWindow::refreshState() {
 
     act("actionNew")->setEnabled(!busy && !blocked);
     act("actionOpen")->setEnabled(!busy && !blocked);
+    act("actionImportLaunch")->setEnabled(!busy && !blocked);
     act("actionAddSource")->setEnabled(!editBlocked && !blocked);
     act("actionAddElement")->setEnabled(!editBlocked && !blocked);
     act("actionUndo")->setEnabled(controller_->canUndo());

@@ -1,5 +1,5 @@
 # Engine tests: real GStreamer, label "engine". Each test makes its own fixtures (make_fixtures.sh) in a temp folder.
-foreach(name json inspector update property run nvidia backend)
+foreach(name json inspector update property run import nvidia backend)
     add_executable(${name}_test ${name}_test.cpp)
     target_link_libraries(${name}_test PRIVATE gps_gstengine)
     target_include_directories(${name}_test PRIVATE ${GPS_TEST_DIR} ${CMAKE_CURRENT_SOURCE_DIR})
