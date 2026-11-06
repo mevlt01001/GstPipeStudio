@@ -1,7 +1,7 @@
 ## Pipeline-wide live metrics
 
 - Compare Avg. Processing Time and QoS-reported Drop Rate across all elements on the canvas and in live charts.
-- Source-only elements show the average interval between src output arrivals; the first output has no interval yet.
+- Age is visible on every canvas element, including sources: pipeline running time minus output buffer running time derived from PTS. Missing timing information stays unknown.
 - Inspect pending time, buffer rates, timestamp age and queue occupancy.
 - Try three hardware-free monitoring examples, including a deliberately slow pipeline with reported QoS drops.
 

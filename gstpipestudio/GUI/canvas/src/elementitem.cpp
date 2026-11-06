@@ -58,12 +58,12 @@ ElementItem::ElementItem(const ElementView& view) : view_(view) {
 
 void ElementItem::clearTelemetry() {
     if (telemetry_) prepareGeometryChange();
-    telemetry_ = false; processingMs_ = dropRatePercent_ = -1;
+    telemetry_ = false; processingMs_ = dropRatePercent_ = ageMs_ = -1;
     update();
 }
 
-void ElementItem::mergeTelemetry(double processingMs, double dropRatePercent, bool sourceInterval) {
-    sourceInterval_ = sourceInterval;
+void ElementItem::mergeTelemetry(double processingMs, double dropRatePercent, double ageMs) {
+    ageMs_ = qMax(ageMs_, ageMs);
     if (!telemetry_) prepareGeometryChange();
     telemetry_ = true;
     processingMs_ = qMax(processingMs_, processingMs);
@@ -71,7 +71,7 @@ void ElementItem::mergeTelemetry(double processingMs, double dropRatePercent, bo
     update();
 }
 
-QRectF ElementItem::boundingRect() const { return QRectF(-3, -3, kBoxWidth + 6, view_.height() + (telemetry_ ? 42 : 6)); }
+QRectF ElementItem::boundingRect() const { return QRectF(-3, -3, kBoxWidth + 6, view_.height() + (telemetry_ ? 57 : 6)); }
 
 QPainterPath ElementItem::shape() const {
     QPainterPath path;
@@ -168,16 +168,18 @@ void ElementItem::paint(QPainter* p, const QStyleOptionGraphicsItem*, QWidget*) 
     if (telemetry_) {
         const double top = view_.height() + 6;
         p->setPen(Qt::NoPen); p->setBrush(Theme::panel());
-        p->drawRoundedRect(QRectF(0, top, kBoxWidth, 31), 4, 4);
+        p->drawRoundedRect(QRectF(0, top, kBoxWidth, 46), 4, 4);
         p->setFont(small);
         p->setPen(Theme::text());
         const QString process = processingMs_ >= 0 ? QString::number(processingMs_, 'f', 1) + " ms" : "—";
         const QString drop = dropRatePercent_ >= 0 ? QString::number(dropRatePercent_, 'f', 1) + "%" : "—";
         p->drawText(QRectF(8, top + 2, kBoxWidth - 16, 15), Qt::AlignLeft,
-                    (view_.isCustomGroup ? "Max Avg. Time  " : sourceInterval_ ? "Avg. Source Interval  " : "Avg. Processing Time  ") + process);
+                    (view_.isCustomGroup ? "Max Avg. Processing Time  " : "Avg. Processing Time  ") + process);
         p->setPen(Theme::muted());
         p->drawText(QRectF(8, top + 16, kBoxWidth - 16, 15), Qt::AlignLeft,
                     (view_.isCustomGroup ? "Max Drop Rate  " : "Drop Rate  ") + drop);
+        p->drawText(QRectF(8, top + 31, kBoxWidth - 16, 15), Qt::AlignLeft,
+                    QString(view_.isCustomGroup ? "Max Age  " : "Age  ") + (ageMs_ >= 0 ? QString::number(ageMs_, 'f', 1) + " ms" : "—"));
     }
 }
 

@@ -40,7 +40,6 @@ struct ElementTelemetry {
     std::string element;
     double ageMs = -1;          // live source: pipeline running time minus outgoing buffer running time
     double queueMs = -1;        // queue's current-level-time, when available
-    bool sourceInterval = false; // source-only element: consecutive output arrivals
     double processingMs = -1;   // first sink arrival to first src departure; mean of completed cycles
     double pendingMs = -1;      // first input still waiting for an output
     std::uint64_t processingCycles = 0;

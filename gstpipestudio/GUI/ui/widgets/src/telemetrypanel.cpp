@@ -72,7 +72,7 @@ TelemetryPanel::TelemetryPanel(Controller* controller, QWidget* parent) : QWidge
     controls->addWidget(toggle_); controls->addWidget(new QLabel("Element:", this)); controls->addWidget(element_);
     controls->addWidget(new QLabel("Graph:", this)); controls->addWidget(metric_); controls->addStretch();
     layout->addLayout(controls);
-    auto* note = new QLabel("Processing time is first input to first output; source-only elements show output interval. Drop Rate uses only reported QoS buffer counts; a dash means unknown. Source age needs live PTS. Queue level is buffered media duration.", this);
+    auto* note = new QLabel("Processing time is first input to first output. Drop Rate uses only reported QoS buffer counts; a dash means unknown. Source age needs live PTS. Queue level is buffered media duration.", this);
     note->setWordWrap(true); layout->addWidget(note);
     chart_ = new TrendChart(this); chart_->setObjectName("monitorChart"); layout->addWidget(chart_);
     table_ = new QTableWidget(0, 10, this); table_->setObjectName("monitorTable");
@@ -116,8 +116,7 @@ void TelemetryPanel::receive(const QJsonObject& sample) {
                                    point.drop < 0 ? "—" : QString::number(object.value("qosProcessed").toInteger()),
                                    point.drop < 0 ? "—" : QString::number(object.value("qosDropped").toInteger())};
         for (int col = 0; col < cells.size(); ++col) table_->setItem(row, col, new QTableWidgetItem(cells[col]));
-        table_->item(row, 1)->setToolTip(object.value("timingKind").toString() == "source-interval"
-            ? "Average interval between source output arrivals" : "Average first input to first output time");
+
     }
     redraw();
 }

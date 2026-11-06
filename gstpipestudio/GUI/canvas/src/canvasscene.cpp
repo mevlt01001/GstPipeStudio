@@ -34,7 +34,7 @@ void CanvasScene::applyTelemetry(const QJsonObject& sample) {
     for (const QJsonValue& value : sample.value("elements").toArray()) {
         const QJsonObject object = value.toObject();
         if (ElementItem* item = elements_.value(object.value("element").toString()))
-            item->mergeTelemetry(number(object, "processingMs"), number(object, "dropRatePercent"), object.value("timingKind").toString() == "source-interval");
+            item->mergeTelemetry(number(object, "processingMs"), number(object, "dropRatePercent"), number(object, "ageMs"));
     }
 }
 

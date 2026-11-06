@@ -72,7 +72,7 @@ int main(int argc, char** argv) {
         options.onTelemetry = [&](const gps::TelemetrySample& sample) {
             ++samples;
             for (const auto& e : sample.elements) {
-                if (e.element == "src" && e.ageMs >= 0) { sawAge = true; CHECK(e.sourceInterval); CHECK(e.processingMs > 0); }
+                if (e.element == "src" && e.ageMs >= 0) { sawAge = true; CHECK(e.processingMs < 0); }
                 if (e.element == "queue" && e.queueMs >= 0) sawQueue = true;
                 if (e.element == "slow" && e.processingMs >= 0 && e.processingCycles > 0) sawProcessing = true;
                 if (e.element == "out" && e.inputBuffers > 0) { sawInput = true; CHECK(e.pendingMs < 0); }
