@@ -1,0 +1,29 @@
+name: Hardware / plugin compatibility
+description: Share a working setup or a failure on hardware the maintainer may not own
+title: "[Hardware] "
+body:
+  - type: textarea
+    id: environment
+    attributes:
+      label: Device and software versions
+      description: Board/GPU/camera, driver or SDK, OS/architecture, app and GStreamer versions, installation method.
+    validations:
+      required: true
+  - type: dropdown
+    id: outcome
+    attributes:
+      label: Result
+      options: [Works, Partially works, Fails]
+    validations:
+      required: true
+  - type: textarea
+    id: pipeline
+    attributes:
+      label: Minimal pipeline and reproduction
+      description: Include results outside GstPipeStudio (gst-launch) if available. Remove device credentials.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Validation output, logs or observations

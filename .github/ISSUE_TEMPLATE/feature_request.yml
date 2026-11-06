@@ -1,0 +1,22 @@
+name: Feature request
+description: Describe a task that the application could make easier
+title: "[Feature] "
+body:
+  - type: textarea
+    id: task
+    attributes:
+      label: What are you trying to do?
+      description: Describe the user task and current workaround.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: What would a useful result look like?
+    validations:
+      required: true
+  - type: textarea
+    id: example
+    attributes:
+      label: Example pipeline, plugin or hardware
+      description: Optional. Custom-plugin templates and integrations are welcome contribution topics.

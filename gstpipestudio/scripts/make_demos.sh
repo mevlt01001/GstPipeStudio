@@ -19,3 +19,8 @@ for clip in build-and-arrange live-metrics; do
     ffmpeg -hide_banner -loglevel error -y -i "$OUT/$clip.mp4" -i "$OUT/$clip-palette.png" -filter_complex '[0:v]fps=8,scale=760:-1:flags=lanczos[frames];[frames][1:v]paletteuse=dither=bayer:bayer_scale=5' "$OUT/$clip.gif"
     rm "$OUT/$clip-palette.png"
 done
+
+# A single silent walkthrough for community posts, built only from the actual app captures.
+printf "file '%s/build-and-arrange.mp4'\nfile '%s/live-metrics.mp4'\n" "$OUT" "$OUT" > "$OUT/launch-concat.txt"
+ffmpeg -hide_banner -loglevel error -y -f concat -safe 0 -i "$OUT/launch-concat.txt" -c copy -movflags +faststart "$OUT/launch-demo.mp4"
+rm "$OUT/launch-concat.txt"

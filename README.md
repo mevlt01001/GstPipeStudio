@@ -23,6 +23,8 @@
 
 ## Get started
 
+**New users:** [step-by-step installation and Docker guide](docs/install.md).
+
 1. Download the `.deb` matching your Ubuntu version and processor from [Releases](https://github.com/mevlt01001/GstPipeStudio/releases).
 2. Install it with `sudo apt install ./GstPipeStudio-22.04-x86_64.deb` (replace the filename with your download).
 3. Open **GstPipeStudio**, add a source, then drag from its output pad to connect elements.
@@ -48,5 +50,7 @@ Use **Help → Request support…** to prepare an issue with environment details
 We especially welcome reproducible bugs, hardware results and improvements to element discovery. [Contribution guide](CONTRIBUTING.md) · [Build and test](docs/development/README.md) · [Architecture](docs/architecture/README.md).
 
 Development builds are labelled **Development** and use separate settings from the installed release.
+
+[Support](SUPPORT.md) · [Community conduct](CODE_OF_CONDUCT.md) · [Security](SECURITY.md)
 
 [MIT](LICENSE). GStreamer and Qt remain separately licensed libraries.

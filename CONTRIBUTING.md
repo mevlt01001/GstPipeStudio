@@ -26,3 +26,5 @@ A PR should explain the user-visible problem, resulting behavior, affected contr
 Keep animation state in the visual object that owns it; document edits go through Controller and Pipeline transactions. A new input rule belongs in a shared component, not copied event handlers. Use `.clang-format` and `.editorconfig`; avoid reformatting unrelated files. This applies equally to human and AI-authored changes.
 
 Follow [C++ Core Guidelines](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines) for ownership and RAII, and [Qt object ownership](https://doc.qt.io/qt-6/objecttrees.html) for widgets and animations. Prefer composition; introduce polymorphism when there are interchangeable implementations. Keep factory-specific behavior out of generic widgets.
+
+Useful starting contributions: reproduce an import failure with a camera-free pipeline; improve plugin-load diagnostics; add a focused canvas/input regression; or submit a device compatibility report. Custom-plugin templates are a future community contribution area. Open an issue describing the smallest useful result before starting a large feature.

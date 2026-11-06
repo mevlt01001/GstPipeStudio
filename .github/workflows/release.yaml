@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       release_notes:
-        description: "Release highlights (Markdown): features, fixes and known limitations"
+        description: "Release highlights (Markdown, at least 80 characters): features, fixes and limitations"
         type: string
         required: true
       bump:
@@ -35,6 +35,17 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # the tags are how the last version is found
+
+      - name: Check release summary
+        env:
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+        run: |
+          python3 - <<'PYCODE'
+          import os
+          notes = os.environ['RELEASE_NOTES'].strip()
+          if len(notes) < 80:
+              raise SystemExit('Write useful release highlights (at least 80 characters). Start from docs/releases/next.md.')
+          PYCODE
 
       - name: Next Version
         id: next
@@ -77,42 +88,66 @@ jobs:
           body: |
             ${{ inputs.release_notes }}
 
-            GstPipeStudio builds GStreamer and DeepStream pipelines by clicking, saves them as a `.conf` file, and runs them
-            with `gps-run` or as an element inside `gst-launch`.
+            ## Try it
+            Download the `.deb` matching your Ubuntu version (20.04 / 22.04 / 24.04) and CPU (`x86_64` / `aarch64`), then run `sudo apt install ./downloaded-file.deb`.
+            Qt is bundled; GStreamer plugins for your devices may need separate installation.
 
-            ## Install
+            [Installation, checksums and Docker guide](https://github.com/${{ github.repository }}/blob/main/docs/install.md) · [Hardware-free examples](https://github.com/${{ github.repository }}/tree/main/examples/monitoring) · [Report a problem](https://github.com/${{ github.repository }}/issues)
 
-            Download the file that matches your Ubuntu version and your processor, then:
-
-            ```bash
-            sudo apt install ./GstPipeStudio-22.04-x86_64.deb
-            ```
-
-            | Ubuntu | PC (x86_64) | Jetson, ARM (aarch64) |
-            |---|---|---|
-            | 20.04 | `GstPipeStudio-20.04-x86_64.deb` | `GstPipeStudio-20.04-aarch64.deb` |
-            | 22.04 | `GstPipeStudio-22.04-x86_64.deb` | `GstPipeStudio-22.04-aarch64.deb` |
-            | 24.04 | `GstPipeStudio-24.04-x86_64.deb` | `GstPipeStudio-24.04-aarch64.deb` |
-
-            Use `apt install ./file.deb`, not `dpkg -i`: apt also installs the GStreamer packages that the tool needs.
-            Qt is inside the package, so nothing is built or downloaded on your machine. Start it with `gstpipestudio`.
-
-            Only the basic GStreamer plugins come with it. For more elements install the sets you need:
-            `sudo apt install gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav`.
-
-            Every package was installed on a plain Ubuntu of its own version and started there before this release was made.
-            The ARM packages were tested on ARM machines of GitHub, not yet on Jetson hardware; DeepStream and GPU
-            elements were not tested.
-
-            ## Docker (GitHub Packages)
-
-            You can also run GstPipeStudio directly via Docker without installing anything:
-
-            ```bash
-            docker run -it --rm --net=host -e DISPLAY=$DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix ghcr.io/${{ github.repository }}:latest
-            ```
+            **Early development:** ARM packaging checks do not establish Jetson, DeepStream or camera compatibility. Please share device-specific results.
+            Runtime Docker images are published after a non-draft release job succeeds; the default image is Ubuntu 22.04 / amd64. See the guide for image tags and desktop access.
 
   Docker:
+    if: ${{ !inputs.draft }}
+    needs: [Version, Build, Publish]
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        ubuntu: ['20.04', '22.04', '24.04']
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v8
+        with:
+          name: deb-${{ matrix.ubuntu }}-x86_64
+          path: out
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build, smoke test and publish runtime image
+        env:
+          REPOSITORY: ${{ github.repository }}
+          VERSION: ${{ needs.Version.outputs.version }}
+          UBUNTU: ${{ matrix.ubuntu }}
+        run: |
+          IMAGE="ghcr.io/${REPOSITORY,,}"
+          docker build --build-arg UBUNTU="$UBUNTU" \
+            --build-arg DEB_FILE="out/GstPipeStudio-${UBUNTU}-x86_64.deb" \
+            --label "org.opencontainers.image.source=https://github.com/$REPOSITORY" \
+            -t gps-runtime-check -f docker/Dockerfile.runtime .
+          docker run --rm -e QT_QPA_PLATFORM=offscreen gps-runtime-check --version
+          docker run --rm --entrypoint gps-inspect gps-runtime-check version
+          # A live test source intentionally ends by timeout (gps-run exit 1).
+          docker run --rm --entrypoint gps-run gps-runtime-check /usr/share/gstpipestudio/examples/01-live-baseline.conf --timeout-ms 500 > smoke.json || test "$?" -eq 1
+          python3 -c 'import json; assert json.load(open("smoke.json"))["status"] == "timeout"'
+          docker tag gps-runtime-check "$IMAGE:$VERSION-ubuntu$UBUNTU"
+          docker tag gps-runtime-check "$IMAGE:ubuntu$UBUNTU"
+          docker push "$IMAGE:$VERSION-ubuntu$UBUNTU"
+          docker push "$IMAGE:ubuntu$UBUNTU"
+          if [ "$UBUNTU" = '22.04' ]; then
+            docker tag gps-runtime-check "$IMAGE:$VERSION"
+            docker tag gps-runtime-check "$IMAGE:latest"
+            docker push "$IMAGE:$VERSION"
+            docker push "$IMAGE:latest"
+          fi
+
+  DevDocker:
+    if: ${{ !inputs.draft }}
     needs: [Version, Build, Publish]
     runs-on: ubuntu-24.04
     permissions:
@@ -120,38 +155,19 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/download-artifact@v8
-        with:
-          name: deb-22.04-x86_64
-          path: out
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+      - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and Push Runtime Container
+      - name: Publish development environment (Ubuntu 22.04 / amd64)
+        env:
+          REPOSITORY: ${{ github.repository }}
+          VERSION: ${{ needs.Version.outputs.version }}
         run: |
-          IMAGE_LOWER=$(echo "ghcr.io/${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          VERSION="${{ needs.Version.outputs.version }}"
-          docker build \
-            --build-arg DEB_FILE=out/GstPipeStudio-22.04-x86_64.deb \
-            -t "${IMAGE_LOWER}:latest" \
-            -t "${IMAGE_LOWER}:${VERSION}" \
-            -f docker/Dockerfile.runtime .
-          docker push "${IMAGE_LOWER}:latest"
-          docker push "${IMAGE_LOWER}:${VERSION}"
-
-      - name: Build and Push Dev Container
-        run: |
-          IMAGE_LOWER=$(echo "ghcr.io/${{ github.repository }}-dev" | tr '[:upper:]' '[:lower:]')
-          VERSION="${{ needs.Version.outputs.version }}"
-          docker build \
-            -t "${IMAGE_LOWER}:latest" \
-            -t "${IMAGE_LOWER}:${VERSION}" \
-            -f docker/Dockerfile .
-          docker push "${IMAGE_LOWER}:latest"
-          docker push "${IMAGE_LOWER}:${VERSION}"
+          IMAGE="ghcr.io/${REPOSITORY,,}-dev"
+          docker build --label "org.opencontainers.image.source=https://github.com/$REPOSITORY" -t "$IMAGE:$VERSION" -f docker/Dockerfile .
+          docker run --rm "$IMAGE:$VERSION" bash -lc 'cmake --version && gst-inspect-1.0 --version'
+          docker tag "$IMAGE:$VERSION" "$IMAGE:latest"
+          docker push "$IMAGE:$VERSION"
+          docker push "$IMAGE:latest"

@@ -1,0 +1,11 @@
+**
+!docker/
+!docker/**
+!gstpipestudio/
+!gstpipestudio/scripts/
+!gstpipestudio/scripts/**
+!examples/
+!examples/monitoring/
+!examples/monitoring/**
+!out/
+!out/*.deb

@@ -1,0 +1,29 @@
+name: Bug report
+description: Report one reproducible problem
+title: "[Bug] "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps and minimal pipeline
+      description: Include a small .conf or gst-launch description using test sources when possible. Remove credentials and private media.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: App version and commit (Help → About), OS/architecture, GStreamer version, .deb/Docker/source and Docker image tag if applicable.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or screenshots
+      description: Review logs for private information before sharing.

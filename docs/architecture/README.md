@@ -107,4 +107,4 @@ Canvas bounds expand during panning, resizing and dragging. Negative coordinates
 - Add GUI presentation: read Pipeline/Controller views and emit actions; no GStreamer objects belong in widgets.
 - Change saved data: update `Pipeline/src/conf.cpp` and its round-trip/compatibility tests. Version 1 is unchanged by this migration.
 
-See [development commands](../development/README.md) and the [original proposal](dev-zero.md). This page describes the implementation; the proposal contains future refinements and must not be read as a list of shipped classes.
+See [development commands](../development/README.md) and the [original proposal](../archive/dev-zero-proposal.md). This page describes the implementation; the proposal contains future refinements and must not be read as a list of shipped classes.

@@ -1,6 +1,7 @@
 # GstPipeStudio Runnable Application Container
 # Ubuntu 22.04 + GstPipeStudio + GStreamer Plugins
-FROM ubuntu:22.04
+ARG UBUNTU=22.04
+FROM ubuntu:${UBUNTU}
 
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8
@@ -22,5 +23,8 @@ RUN apt-get update && \
         ca-certificates && \
     rm -rf /var/lib/apt/lists/* /tmp/gstpipestudio.deb
 
+COPY examples/monitoring /usr/share/gstpipestudio/examples
+WORKDIR /work
+ENV QT_QPA_PLATFORM=xcb
 ENTRYPOINT ["gstpipestudio"]
 
