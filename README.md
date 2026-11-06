@@ -6,11 +6,16 @@
   <b>Build GStreamer and DeepStream media pipelines by clicking, then run them as one command or as a single GStreamer element.</b>
 </p>
 
-> **Status: early development.** The `dev-zero` branch reorganizes the application into GUI, Pipeline and GstEngine. Hardware support must be backed by device-specific test results; ARM builds alone do not demonstrate Jetson support.
+> **Status: early development.** The application is organized into GUI, Pipeline and GstEngine. Hardware support must be backed by device-specific test results; ARM builds alone do not demonstrate Jetson support.
 
 ## What it is
 
 You draw a media pipeline instead of writing it. Everything starts at an output (a *src pad*): click a free pad, pick an element that fits, set its properties, and the pipeline is checked right away by really building it with GStreamer. The result is a small `.conf` file.
+
+<p align="center">
+  <a href="docs/media/build-and-arrange.mp4"><img src="docs/media/build-and-arrange.gif" alt="Add and connect elements, then arrange the pipeline on the canvas" width="680"></a><br>
+  <sub>Build a live pipeline and arrange its elements. Click for the short video.</sub>
+</p>
 
 - **No hand-written C and no `gst-launch` strings.** The tools build the pipeline with the GStreamer API.
 - **Nothing is special-cased per element.** Elements, properties, pads and caps all come from GStreamer itself, so the elements your system has (including DeepStream's `nv*` elements) are the elements you get. The one exception is `queue`, which has a shortcut because pipelines need it so often.
@@ -24,6 +29,7 @@ You draw a media pipeline instead of writing it. Everything starts at an output 
 | `gps-inspect` | Lists the elements GStreamer has and describes them (properties, pads, caps) as JSON. |
 | `gps-update` | Builds a pipeline from a `.conf`, runs it just far enough to read every pad's caps, and reports them. |
 | `gps-run` | Runs a finished `.conf`. |
+| `gps-monitor` | Runs a `.conf` and emits live per-element metrics as JSON. |
 | `libgstgpsconf` | A GStreamer plugin: every `.conf` in `GPS_PIPELINE_PATH` becomes an element without pads. |
 
 ## Architecture
@@ -63,6 +69,15 @@ GST_PLUGIN_PATH=build/lib/gstreamer-1.0 GPS_PIPELINE_PATH=. gst-launch-1.0 my_pi
 ## Something wrong?
 
 The window has **Help ▸ Request support…**. It opens a pre-filled issue on GitHub with your system and GStreamer information and the pads that were being linked (home folders and user names are removed). You read it, add what you like and press submit yourself.
+
+## Live pipeline metrics
+
+Open **View → Live metrics** after validating a complete pipeline. Select an element and graph source age, queue buffered time, QoS loss (when reported), or input/output buffer rate. The monitor uses the real running pipeline and does not change the saved graph. Two hardware-free test pipelines are in [examples/monitoring](examples/monitoring/README.md).
+
+<p align="center">
+  <a href="docs/media/live-metrics.mp4"><img src="docs/media/live-metrics.gif" alt="Watch source age rise at a slow stage and inspect buffered time in a queue" width="680"></a><br>
+  <sub>Spot a slow stage and see how much media is buffered. Click for the short video.</sub>
+</p>
 
 ## License
 

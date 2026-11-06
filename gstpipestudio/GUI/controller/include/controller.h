@@ -8,6 +8,8 @@
 #include <QObject>
 #include <QPair>
 #include <QPointF>
+#include <QProcess>
+#include <QJsonObject>
 #include <QSet>
 #include <QTemporaryDir>
 #include <QTimer>
@@ -50,8 +52,9 @@ public:
     const UpdateResult& result() const { return result_; }
     bool updating() const { return updating_; }
     bool running() const { return running_; }
-    bool busy() const { return updating_ || running_ || opening_; }
-    bool editingBlocked() const { return running_ || opening_ || cancelling_; }
+    bool busy() const { return updating_ || running_ || monitoring_ || opening_; }
+    bool editingBlocked() const { return running_ || monitoring_ || opening_ || cancelling_; }
+    bool monitoring() const { return monitoring_; }
     bool dirty() const { return dirty_; }
     QString filePath() const { return path_; }
     bool canSave() const;  // not empty, not busy, validated, last update did not fail
@@ -147,6 +150,7 @@ public:
     bool disconnectBetweenElements(const QStringList& names);
     bool alignElementsHorizontally(const QStringList& names);
     bool alignElementsVertically(const QStringList& names);
+    bool arrangePipeline(); // one undoable presentation action; leaves execution untouched
     gps::Removal previewCut(const QString& element, const QString& pad) const;
     gps::Removal previewReplace(const QString& element, const QString& pad) const;
     gps::Removal previewDeleteSource(const QString& element) const;
@@ -158,6 +162,8 @@ public:
     bool refresh();                  // run the update again
     bool run();
     void stopRun();
+    bool startMonitoring();
+    void stopMonitoring();
 
 signals:
     void changed();                         // anything the views show has changed
@@ -167,6 +173,7 @@ signals:
     void catalogReady();
     void environmentChecked();
     void runFinished(const QString& status);
+    void telemetryReceived(const QJsonObject& sample);
 
 private:
     void log(const QString& line);
@@ -199,6 +206,7 @@ private:
     bool dirty_ = false;
     bool updating_ = false;
     bool running_ = false;
+    bool monitoring_ = false;
     bool opening_ = false;  // a file is being opened: its elements' info is on its way
     int updateTimeoutMs_ = kUpdateBackstopMs;
     QString touched_;  // the element the last edit concerned; the suspect when the helper dies
@@ -214,6 +222,8 @@ private:
     QHash<QString, QList<InfoCallback>> pendingInfo_;
     QHash<QString, QStringList> compatible_;
     HelperClient* runClient_ = nullptr;
+    QProcess* monitorClient_ = nullptr;
+    QByteArray monitorOutput_;
     SlowWatch* watch_;
     bool cancelled_ = false;
     bool cancelling_ = false;

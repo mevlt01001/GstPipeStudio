@@ -10,6 +10,8 @@ The application has three product units. `gstpipestudio/main.cpp` constructs the
 
 The CLI tools and the `gpsconf` plugin are entrypoints into these units. They are not additional editable graph models.
 
+`gps-monitor` is an optional run-scoped telemetry entrypoint. `TelemetrySampler` in GstEngine observes authored pads and emits interval samples to the Qt monitoring panel. Samples never enter Graph or undo history. Source age is computed from buffer PTS after SEGMENT conversion and the pipeline clock only for live sources. Queue level comes from the queue's buffered media duration. Loss percentage is shown only from real QoS processed/dropped counters; a missing QoS report stays unknown. Input/output counts are separate and are never treated as a universal loss ratio.
+
 ## Actual ownership and data flow
 
 ```mermaid

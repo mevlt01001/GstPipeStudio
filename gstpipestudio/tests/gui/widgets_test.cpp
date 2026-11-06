@@ -2,6 +2,8 @@
 #include <QAction>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QClipboard>
+#include <QGuiApplication>
 #include <QDoubleSpinBox>
 #include <QLabel>
 #include <QLineEdit>
@@ -13,6 +15,7 @@
 #include <QSignalSpy>
 #include <QSpinBox>
 #include <QTableWidget>
+#include <QTabWidget>
 #include <QTemporaryDir>
 #include <QWheelEvent>
 
@@ -32,6 +35,7 @@
 #include "propertypage.h"
 #include "testsupport.h"
 #include "theme.h"
+#include "telemetrypanel.h"
 #include "updatepanel.h"
 
 using namespace support;
@@ -144,6 +148,43 @@ private slots:
     }
     void init() { c = makeController(); }
     void cleanup() { c.reset(); }
+
+    void singleElementContextMenuCopiesAndPastes() {
+        MainWindow w(c.get()); w.show();
+        const QString source = addSource(*c, "videotestsrc");
+        w.scene()->rebuild();
+        w.flows()->showElementMenu(source, QPoint(10, 10));
+        choose(&w, "actionCopyElement");
+        gps::Graph copied; std::string error;
+        QVERIFY(gps::Graph::fromConf(QGuiApplication::clipboard()->text().toStdString(), &copied, &error));
+        QCOMPARE(copied.elements.size(), size_t(1));
+        QVERIFY(copied.links.empty());
+        w.flows()->showElementMenu(source, QPoint(10, 10));
+        choose(&w, "actionPasteElement");
+        QCOMPARE(c->plan().elements.size(), size_t(2));
+        QVERIFY(c->undo());
+        QCOMPARE(c->plan().elements.size(), size_t(1));
+    }
+
+    void liveMetricsPanelShowsSamplesAndStops() {
+        MainWindow w(c.get()); w.show();
+        QString source = addSource(*c, "videotestsrc");
+        addAfter(*c, source, "src", "fakesink");
+        QVERIFY(settle(*c));
+        auto* panel = w.findChild<TelemetryPanel*>("telemetryPanel");
+        QVERIFY(panel);
+        w.findChild<QTabWidget*>("bottomTabs")->setCurrentWidget(panel);
+        auto* toggle = panel->findChild<QPushButton*>("monitorToggle");
+        QVERIFY(toggle->isEnabled());
+        QTest::mouseClick(toggle, Qt::LeftButton);
+        QVERIFY(c->monitoring());
+        auto* table = panel->findChild<QTableWidget*>("monitorTable");
+        QVERIFY(QTest::qWaitFor([&] { return table->rowCount() == 1; }, 3000));
+        QVERIFY(table->item(0, 1)->text().toDouble() >= 10.0);
+        QVERIFY(!c->canUndo());
+        QTest::mouseClick(toggle, Qt::LeftButton);
+        QVERIFY(QTest::qWaitFor([&] { return !c->monitoring(); }, 3000));
+    }
 
     // ---- Theme
 
@@ -1084,13 +1125,13 @@ private slots:
         QVERIFY(menu);
         texts.clear();
         for (QAction* a : menu->actions()) texts << a->text();
-        QCOMPARE(texts, QStringList({"Edit properties…", "Delete source"}));  // a source can be deleted
+        QCOMPARE(texts, QStringList({"Edit properties…", "Copy element", "Duplicate element", "Paste", "Delete source"}));
         menu->close();
         w.flows()->showElementMenu(convert, QPoint(200, 200));
         menu = visibleChild<QMenu>(&w);
         texts.clear();
         for (QAction* a : menu->actions()) texts << a->text();
-        QCOMPARE(texts, QStringList({"Edit properties…", "Delete element"}));
+        QCOMPARE(texts, QStringList({"Edit properties…", "Copy element", "Duplicate element", "Paste", "Delete element"}));
         menu->close();
     }
 
@@ -1338,7 +1379,10 @@ private slots:
 
         // 3. Dynamic Pipe Caps formatting and layout rules.
         QString rawCaps = "video/x-raw, format=(string)NV12, width=(int)1920, height=(int)1080";
-        QCOMPARE(LinkItem::formatSingleLine(rawCaps), QString("mediatype=video/x-raw · format=NV12 · width=1920 · height=1080"));
+        const QString compactCaps = LinkItem::formatSingleLine(rawCaps);
+        QVERIFY(compactCaps.size() <= 60);
+        QVERIFY(compactCaps.contains("width=1920"));
+        QVERIFY(compactCaps.endsWith("…"));
         QCOMPARE(LinkItem::formatMultiLine(rawCaps), QString("mediatype=video/x-raw\nformat=NV12\nwidth=1920\nheight=1080"));
         QCOMPARE(LinkItem::decideLayout(250.0, 200.0, 1.0), LinkItem::SingleLine);
         QCOMPARE(LinkItem::decideLayout(120.0, 200.0, 1.0), LinkItem::MultiLine);

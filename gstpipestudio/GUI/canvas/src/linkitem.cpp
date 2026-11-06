@@ -29,11 +29,14 @@ QStringList LinkItem::capsFields(const QString& capsText) {
 }
 
 QString LinkItem::formatSingleLine(const QString& capsText) {
-    return capsFields(capsText).join(" · ");
+    const QString full = capsFields(capsText).join(" · ");
+    return full.size() > 60 ? full.left(57) + "…" : full;
 }
 
 QString LinkItem::formatMultiLine(const QString& capsText) {
-    return capsFields(capsText).join("\n");
+    QStringList fields = capsFields(capsText);
+    if (fields.size() > 5) { fields = fields.mid(0, 5); fields << "…"; }
+    return fields.join("\n");
 }
 
 LinkItem::LabelLayout LinkItem::decideLayout(double pipeLength, double singleLineWidth, double zoomLevel) {

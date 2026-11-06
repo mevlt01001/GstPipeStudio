@@ -18,6 +18,7 @@ class QStackedWidget;
 class QTabWidget;
 class SetupPage;
 class UpdatePanel;
+class TelemetryPanel;
 class ValidationIndicator;
 
 class MainWindow : public QMainWindow {
@@ -79,6 +80,7 @@ private:
     QStackedWidget* centre_;
     SetupPage* setup_;
     UpdatePanel* updates_;
+    TelemetryPanel* telemetry_;
     LogPanel* log_;
     QWidget* propsTab_ = nullptr;
     QWidget* capsTab_ = nullptr;

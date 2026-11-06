@@ -3,19 +3,23 @@
 
 #include "capsparse.h"
 #include "actions.h"
+#include "linkitem.h"
 
 #include <QClipboard>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QFontMetricsF>
 #include <QGuiApplication>
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QRectF>
 #include <QRegularExpression>
 #include <QStandardPaths>
 #include <algorithm>
 #include <memory>
 #include <set>
+#include <csignal>
 
 namespace {
 
@@ -73,6 +77,7 @@ QString Controller::saveBlockedReason() const {
     if (plan().empty()) return "The canvas is empty";
     if (updating_) return "Validation is running";
     if (running_) return "The pipeline is running";
+    if (monitoring_) return "Monitoring is running";
     if (opening_) return "A file is being opened";
     if (cancelled_) return "Validation was cancelled — press Validate";
     if (!result_.valid()) return "The pipeline is not validated yet — press Validate";
@@ -1479,6 +1484,55 @@ bool Controller::alignElementsVertically(const QStringList& names) {
     return true;
 }
 
+bool Controller::arrangePipeline() {
+    if (editingBlocked() || plan().elements.empty()) return false;
+    std::map<std::string, int> indegree, level;
+    std::map<std::string, std::vector<std::string>> next;
+    for (const auto& e : plan().elements) { indegree[e.name] = 0; level[e.name] = 0; }
+    for (const auto& link : plan().links) { ++indegree[link.sinkElement]; next[link.srcElement].push_back(link.sinkElement); }
+    std::vector<std::string> ready;
+    for (const auto& e : plan().elements) if (!indegree[e.name]) ready.push_back(e.name);
+    auto byOldY = [this](const std::string& a, const std::string& b) {
+        const auto* x = plan().find(a), *y = plan().find(b);
+        return x->y == y->y ? a < b : x->y < y->y;
+    };
+    std::sort(ready.begin(), ready.end(), byOldY);
+    size_t visited = 0;
+    while (!ready.empty()) {
+        const auto name = ready.front(); ready.erase(ready.begin()); ++visited;
+        for (const auto& target : next[name]) {
+            level[target] = std::max(level[target], level[name] + 1);
+            if (--indegree[target] == 0) { ready.push_back(target); std::sort(ready.begin(), ready.end(), byOldY); }
+        }
+    }
+    if (visited != plan().elements.size()) return false;
+    std::map<int, std::vector<std::string>> columns;
+    for (const auto& e : plan().elements) columns[level[e.name]].push_back(e.name);
+    // Use the caps text actually rendered by LinkItem when reserving the gap between columns.
+    QFont font; font.setPointSizeF(7.5);
+    QFontMetricsF text(font);
+    std::map<int, double> gap;
+    for (const auto& link : linkViews()) {
+        const int at = level[toStd(link.srcElement)];
+        const double width = text.horizontalAdvance(LinkItem::formatSingleLine(link.negotiatedCaps));
+        gap[at] = std::max(gap[at], std::min(480.0, width + 90.0));
+    }
+    QList<QPair<QString, QPointF>> positions;
+    double x = 80;
+    for (auto& [column, names] : columns) {
+        std::sort(names.begin(), names.end(), byOldY);
+        double y = 80;
+        for (const auto& name : names) {
+            positions.append({fromStd(name), QPointF(x, y)});
+            y += view(fromStd(name)).height() + 110;
+        }
+        x += metrics::kBoxWidth + std::max(260.0, gap[column]);
+    }
+    setPositions(positions);
+    note("Arranged pipeline for readable caps and branches");
+    return true;
+}
+
 gps::Removal Controller::previewCut(const QString& element, const QString& pad) const {
     return plan().previewCut(toStd(element), toStd(pad), traits());
 }
@@ -1672,4 +1726,49 @@ bool Controller::run() {
 
 void Controller::stopRun() {
     if (runClient_) runClient_->interrupt();
+}
+
+bool Controller::startMonitoring() {
+    if (!canRun()) return false;
+    const QString helper = findHelper("gps-monitor");
+    if (helper.isEmpty()) { emit notice("gps-monitor was not found"); return false; }
+    gps::Graph copy = plan();
+    copy.complete = true;
+    const QString file = tmp_.filePath("monitor.conf");
+    std::string error;
+    if (!copy.save(toStd(file), &error)) { emit notice(fromStd(error)); return false; }
+    monitorOutput_.clear();
+    auto* client = new QProcess(this);
+    monitorClient_ = client;
+    monitoring_ = true;
+    connect(client, &QProcess::readyReadStandardOutput, this, [this, client] {
+        monitorOutput_ += client->readAllStandardOutput();
+        int end = 0;
+        while ((end = monitorOutput_.indexOf('\n')) >= 0) {
+            QByteArray line = monitorOutput_.left(end);
+            monitorOutput_.remove(0, end + 1);
+            const QJsonDocument document = QJsonDocument::fromJson(line);
+            if (!document.isObject()) continue;
+            const auto object = document.object();
+            if (object.value("type").toString() == "sample") emit telemetryReceived(object);
+            else if (object.contains("status")) log("Monitor finished: " + object.value("status").toString());
+        }
+    });
+    connect(client, &QProcess::readyReadStandardError, this, [this, client] { log("[gps-monitor] " + QString::fromUtf8(client->readAllStandardError()).trimmed()); });
+    connect(client, &QProcess::errorOccurred, this, [this](QProcess::ProcessError) { emit notice("Monitor could not start or stopped unexpectedly"); });
+    connect(client, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this, [this, client](int, QProcess::ExitStatus) {
+        if (monitorClient_ == client) { monitoring_ = false; monitorClient_ = nullptr; emit changed(); }
+        client->deleteLater();
+    });
+    client->start(helper, {file});
+    emit changed();
+    return true;
+}
+
+void Controller::stopMonitoring() {
+    if (!monitorClient_) return;
+    auto* client = monitorClient_;
+    if (client->state() == QProcess::Running) ::kill(static_cast<pid_t>(client->processId()), SIGINT);
+    else client->terminate();
+    QTimer::singleShot(2000, client, [client] { if (client->state() != QProcess::NotRunning) client->kill(); });
 }

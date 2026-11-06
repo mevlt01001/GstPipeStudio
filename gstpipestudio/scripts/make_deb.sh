@@ -20,7 +20,7 @@ touch "$WORK/debian/control"
 # Every program and every library or plugin of the package. The Qt libraries that we carry belong to no Ubuntu package, so
 # dpkg-shlibdeps would stop at them ("no dependency information found"): --ignore-missing-info lets it go on, and it
 # adds only what the system libraries need.
-FILES=("$PRIVATE"/bin/gstpipestudio "$PRIVATE"/bin/gps-inspect "$PRIVATE"/bin/gps-update "$PRIVATE"/bin/gps-run)
+FILES=("$PRIVATE"/bin/gstpipestudio "$PRIVATE"/bin/gps-inspect "$PRIVATE"/bin/gps-update "$PRIVATE"/bin/gps-run "$PRIVATE"/bin/gps-monitor)
 while IFS= read -r file; do FILES+=("$file"); done < <(find "$STAGE"/usr/lib -type f -name '*.so*')
 DEPENDS="$(cd "$WORK" && dpkg-shlibdeps -O --ignore-missing-info -l"$PRIVATE/lib" "${FILES[@]}" | sed 's/^shlibs:Depends=//')"
 echo "dependencies on system libraries: $DEPENDS"

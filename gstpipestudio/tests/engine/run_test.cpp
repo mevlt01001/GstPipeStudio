@@ -29,6 +29,31 @@ int main(int argc, char** argv) {
     gst_init(&argc, &argv);
     const std::string dir = tempDir();
 
+    std::puts("-- live telemetry samples age and queue without inventing loss");
+    {
+        P p;
+        p.el("src", "videotestsrc", {{"is-live", "true"}, {"num-buffers", "45"}})
+            .el("queue", "queue")
+            .el("slow", "identity", {{"sleep-time", "50000"}})
+            .el("out", "fakesink", {{"sync", "false"}})
+            .link("src", "src", "queue", "sink")
+            .link("queue", "src", "slow", "sink")
+            .link("slow", "src", "out", "sink");
+        gps::RunOptions options;
+        int samples = 0; bool sawAge = false, sawQueue = false, sawInput = false;
+        options.onTelemetry = [&](const gps::TelemetrySample& sample) {
+            ++samples;
+            for (const auto& e : sample.elements) {
+                if (e.element == "src" && e.ageMs >= 0) sawAge = true;
+                if (e.element == "queue" && e.queueMs >= 0) sawQueue = true;
+                if (e.element == "out" && e.inputBuffers > 0) sawInput = true;
+            }
+            CHECK(contains(gps::telemetryJson(sample), "\"lossPercent\":null"));
+        };
+        CHECK_EQ(run(p.plan, {}, options).status, "eos");
+        CHECK(samples >= 2); CHECK(sawAge); CHECK(sawQueue); CHECK(sawInput);
+    }
+
     std::puts("-- run reaches EOS; the plan's own value is used");
     {
         std::string file = dir + "/plain.raw";

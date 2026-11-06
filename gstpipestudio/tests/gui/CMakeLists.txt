@@ -26,6 +26,15 @@ if(TARGET gps-update AND TARGET gps-inspect AND TARGET gps-run)
     set_property(TEST gui.real_tools_test APPEND PROPERTY ENVIRONMENT "GPS_REAL_BIN_DIR=$<TARGET_FILE_DIR:gps-update>")
 endif()
 
+# Maintainer-only capture of a real, hardware-free feature walkthrough. Not a CI test.
+if(TARGET gps-monitor)
+    add_executable(demo_capture demo_capture.cpp)
+    target_link_libraries(demo_capture PRIVATE gps_gui Qt6::Test)
+    target_include_directories(demo_capture PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_compile_definitions(demo_capture PRIVATE GPS_SHOT_DIR="${GPS_SHOT_DIR}")
+    add_dependencies(demo_capture gps-inspect gps-update gps-monitor)
+endif()
+
 # Real tools + real GStreamer (needs GstEngine and tools in the build)
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/integration/CMakeLists.txt)
     add_subdirectory(integration)

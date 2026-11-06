@@ -1,0 +1,25 @@
+#!/usr/bin/env python3
+"""Streaming telemetry transport fixture for the Qt panel."""
+import json
+import signal
+import sys
+import time
+
+running = True
+
+
+def stop(_number, _frame):
+    global running
+    running = False
+
+
+signal.signal(signal.SIGINT, stop)
+for i in range(100):
+    if not running:
+        break
+    print(json.dumps({"type": "sample", "elapsedMs": (i + 1) * 250,
+                      "elements": [{"element": "videotestsrc_0", "ageMs": 10 + i,
+                                    "queueMs": None, "lossPercent": None,
+                                    "inputBuffers": 0, "outputBuffers": 5}]}), flush=True)
+    time.sleep(0.05)
+print(json.dumps({"status": "interrupted" if not running else "eos", "ms": 250}), flush=True)
