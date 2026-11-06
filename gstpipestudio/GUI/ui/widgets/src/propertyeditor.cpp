@@ -9,6 +9,7 @@
 #include <QRegularExpression>
 #include <QRegularExpressionValidator>
 #include <QSpinBox>
+#include <QPushButton>
 #include <QVBoxLayout>
 #include <climits>
 #include <memory>
@@ -72,7 +73,21 @@ PropertyEditor::PropertyEditor(const PropertyInfo& info, const std::optional<QSt
     auto* layout = new QHBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->addWidget(build(current ? *current : info.defaultValue));
+    auto* reset = new QPushButton("Reset", this);
+    reset->setObjectName("resetPropertyButton");
+    reset->setToolTip("Restore the factory default; Save applies the change");
+    layout->addWidget(reset);
+    connect(reset, &QPushButton::clicked, this, &PropertyEditor::resetToDefault);
     setToolTip(info.blurb);
+}
+
+void PropertyEditor::resetToDefault() {
+    auto* row = qobject_cast<QHBoxLayout*>(layout());
+    auto* old = row->takeAt(0);
+    delete old->widget();
+    delete old;
+    row->insertWidget(0, build(info_.defaultValue));
+    touch();
 }
 
 void PropertyEditor::touch() {

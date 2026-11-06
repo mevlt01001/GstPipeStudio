@@ -6,6 +6,10 @@ name: Release
 on:
   workflow_dispatch:
     inputs:
+      release_notes:
+        description: "Release highlights (Markdown): features, fixes and known limitations"
+        type: string
+        required: true
       bump:
         description: "What changed? major = a.0.0, minor = 0.a.0 (new feature), patch = 0.0.a (fix)"
         type: choice
@@ -71,6 +75,8 @@ jobs:
             deb/*.sha256
           fail_on_unmatched_files: true
           body: |
+            ${{ inputs.release_notes }}
+
             GstPipeStudio builds GStreamer and DeepStream pipelines by clicking, saves them as a `.conf` file, and runs them
             with `gps-run` or as an element inside `gst-launch`.
 

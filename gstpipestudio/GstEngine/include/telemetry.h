@@ -29,7 +29,8 @@ private:
         double ageTotal = 0;
         std::uint64_t ageCount = 0;
         gint64 pendingSinceUs = 0;
-        bool hasSourcePad = false;
+        bool hasSourcePad = false, hasSinkPad = false;
+        gint64 lastSourceUs = 0;
         double processingTotalMs = 0;
         std::uint64_t processingCycles = 0;
         std::map<GstObject*, std::pair<std::uint64_t, std::uint64_t>> qosReporters;

@@ -32,6 +32,7 @@ add_library(gps_gui STATIC
     ui/widgets/include/confirmdialog.h ui/widgets/src/confirmdialog.cpp
     ui/widgets/include/factorydelegate.h ui/widgets/src/factorydelegate.cpp
     ui/widgets/include/logpanel.h ui/widgets/src/logpanel.cpp
+    ui/widgets/include/wheelguard.h ui/widgets/src/wheelguard.cpp
     ui/widgets/include/propertyeditor.h ui/widgets/src/propertyeditor.cpp
     ui/widgets/include/spinner.h ui/widgets/src/spinner.cpp
     ui/widgets/include/updatepanel.h ui/widgets/src/updatepanel.cpp

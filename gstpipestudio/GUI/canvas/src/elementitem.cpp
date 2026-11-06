@@ -62,7 +62,8 @@ void ElementItem::clearTelemetry() {
     update();
 }
 
-void ElementItem::mergeTelemetry(double processingMs, double dropRatePercent) {
+void ElementItem::mergeTelemetry(double processingMs, double dropRatePercent, bool sourceInterval) {
+    sourceInterval_ = sourceInterval;
     if (!telemetry_) prepareGeometryChange();
     telemetry_ = true;
     processingMs_ = qMax(processingMs_, processingMs);
@@ -173,7 +174,7 @@ void ElementItem::paint(QPainter* p, const QStyleOptionGraphicsItem*, QWidget*) 
         const QString process = processingMs_ >= 0 ? QString::number(processingMs_, 'f', 1) + " ms" : "—";
         const QString drop = dropRatePercent_ >= 0 ? QString::number(dropRatePercent_, 'f', 1) + "%" : "—";
         p->drawText(QRectF(8, top + 2, kBoxWidth - 16, 15), Qt::AlignLeft,
-                    (view_.isCustomGroup ? "Max Avg. Proc. Time  " : "Avg. Processing Time  ") + process);
+                    (view_.isCustomGroup ? "Max Avg. Time  " : sourceInterval_ ? "Avg. Source Interval  " : "Avg. Processing Time  ") + process);
         p->setPen(Theme::muted());
         p->drawText(QRectF(8, top + 16, kBoxWidth - 16, 15), Qt::AlignLeft,
                     (view_.isCustomGroup ? "Max Drop Rate  " : "Drop Rate  ") + drop);

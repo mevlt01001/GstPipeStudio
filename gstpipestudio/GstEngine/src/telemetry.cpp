@@ -44,6 +44,7 @@ void TelemetrySampler::attach(Node& node, GstPad* pad) {
     probe->id = gst_pad_add_probe(pad, static_cast<GstPadProbeType>(GST_PAD_PROBE_TYPE_BUFFER | GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM), onProbe, probe.get(), nullptr);
     std::lock_guard<std::mutex> lock(mutex_);
     if (probe->source) node.hasSourcePad = true;
+    else node.hasSinkPad = true;
     probes_.push_back(std::move(probe));
 }
 GstPadProbeReturn TelemetrySampler::onProbe(GstPad*, GstPadProbeInfo* info, gpointer data) {
@@ -83,6 +84,14 @@ GstPadProbeReturn TelemetrySampler::onProbe(GstPad*, GstPadProbeInfo* info, gpoi
     std::lock_guard<std::mutex> lock(self.mutex_);
     if (probe.source) {
         ++probe.node->outgoing;
+        if (!probe.node->hasSinkPad) {
+            const gint64 now = g_get_monotonic_time();
+            if (probe.node->lastSourceUs) {
+                probe.node->processingTotalMs += static_cast<double>(now - probe.node->lastSourceUs) / 1000.0;
+                ++probe.node->processingCycles;
+            }
+            probe.node->lastSourceUs = now;
+        }
         if (ageMs >= 0) { probe.node->ageTotal += ageMs; ++probe.node->ageCount; }
         if (probe.node->pendingSinceUs) {
             probe.node->processingTotalMs += static_cast<double>(g_get_monotonic_time() - probe.node->pendingSinceUs) / 1000.0;
@@ -124,6 +133,7 @@ TelemetrySample TelemetrySampler::sample(double elapsedMs) {
         ElementTelemetry item; item.element = node.name;
         {
             std::lock_guard<std::mutex> lock(mutex_);
+            item.sourceInterval = !node.hasSinkPad;
             item.inputBuffers = node.incoming; item.outputBuffers = node.outgoing;
             item.ageMs = node.ageCount ? node.ageTotal / node.ageCount : -1;
             item.processingMs = node.processingCycles ? node.processingTotalMs / node.processingCycles : -1;

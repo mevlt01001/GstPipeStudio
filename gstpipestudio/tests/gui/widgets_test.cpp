@@ -1,5 +1,7 @@
 // widgets_test.cpp – the widgets driven with QTest mouse and keyboard events (offscreen), on top of the fake helpers.
 #include <QAction>
+#include <QEnterEvent>
+#include <QScrollArea>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QClipboard>
@@ -197,6 +199,39 @@ private slots:
     }
 
     // ---- Theme
+
+    void propertyResetRestoresDefaults() {
+        PropertyInfo info; info.name = "gain"; info.kind = "int";
+        info.writable = true; info.defaultValue = "5"; info.min = "0"; info.max = "100";
+        PropertyEditor editor(info, QString("42"));
+        editor.findChild<QPushButton*>("resetPropertyButton")->click();
+        QCOMPARE(editor.text(), QString("5"));
+        QVERIFY(editor.touched());
+        QVERIFY(PropertyEditor::collect({&editor}, {{"gain", "42"}}).empty());
+    }
+
+    void wheelEditsOnlyAfterHoverDwell() {
+        QScrollArea area;
+        auto* content = new QWidget; content->setMinimumSize(200, 1200);
+        auto* spin = new QSpinBox(content); spin->setRange(0, 100); spin->setValue(20);
+        area.setWidget(content); area.resize(250, 200); area.show();
+        QTest::qWait(20);
+        QEvent leave(QEvent::Leave); QApplication::sendEvent(spin, &leave);
+        QEnterEvent enter(QPointF(5, 5), QPointF(5, 5), spin->mapToGlobal(QPoint(5, 5)));
+        QApplication::sendEvent(spin, &enter);
+        auto wheel = [&] {
+            QWheelEvent event(QPointF(5, 5), spin->mapToGlobal(QPoint(5, 5)), QPoint(), QPoint(0, -120),
+                              Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+            QApplication::sendEvent(spin, &event);
+        };
+        wheel();
+        QCOMPARE(spin->value(), 20);
+        QVERIFY(area.verticalScrollBar()->value() > 0);
+        QApplication::sendEvent(spin, &enter);
+        QTest::qWait(550);
+        wheel();
+        QCOMPARE(spin->value(), 19);
+    }
 
     void themeUsesTheColoursOfTheSpec() {
         QCOMPARE(Theme::background().name(), QString("#1b1b1b"));

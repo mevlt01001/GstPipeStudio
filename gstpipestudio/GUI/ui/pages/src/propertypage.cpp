@@ -184,6 +184,12 @@ PropertyPage::PropertyPage(const PropertyPageInput& input, QWidget* parent) : Dr
         buttons->addWidget(del);
         connect(del, &QPushButton::clicked, this, &PropertyPage::deleteRequested);
     }
+    auto* reset = new QPushButton("Reset all properties", this);
+    reset->setObjectName("resetPropertiesButton");
+    buttons->addWidget(reset);
+    connect(reset, &QPushButton::clicked, this, [this] {
+        for (auto* editor : editors_) editor->resetToDefault();
+    });
     buttons->addStretch(1);
     auto* cancel = new QPushButton("Cancel", this);
     cancel->setObjectName("cancelButton");

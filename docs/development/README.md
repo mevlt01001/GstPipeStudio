@@ -75,3 +75,9 @@ gstpipestudio/scripts/make_deb.sh 22.04 x86_64
 The fast workflow runs on dev-zero pushes, pull requests and manual dispatch, and uploads packages/test screenshots. The six-platform matrix remains manual/reusable, including Ubuntu 20.04 for GStreamer 1.16. A release is manual, restricted to main and defaults to a draft. Changes in this branch do not publish a release.
 
 Before merging: inspect the running UI, compare actions with the documented model, and review test evidence and limitations with the maintainer. Publishing remains a separate step after merge.
+
+### Release notes
+
+Open Actions → Release → Run workflow on main. Choose the version bump, paste the reviewed Markdown highlights into the required `release_notes` field, and keep `draft` enabled for review. The current release copy is in `docs/releases/next.md`; update it for each release. The workflow prepends these highlights to installation instructions and GitHub-generated notes. `.github/release.yml` groups merged PRs by label; direct commits may not receive useful prose automatically, so maintainers must include those changes in the highlights.
+
+References: [GitHub generated notes](https://docs.github.com/en/repositories/releasing-projects-on-github/automatically-generated-release-notes) and [manual workflow inputs](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).

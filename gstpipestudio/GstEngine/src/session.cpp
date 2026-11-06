@@ -196,6 +196,7 @@ std::string telemetryJson(const TelemetrySample& sample) {
         w.beginObject().field("element", item.element);
         w.key("ageMs"); item.ageMs < 0 ? w.null() : w.number(item.ageMs);
         w.key("queueMs"); item.queueMs < 0 ? w.null() : w.number(item.queueMs);
+        w.field("timingKind", item.sourceInterval ? "source-interval" : "input-output");
         w.key("processingMs"); item.processingMs < 0 ? w.null() : w.number(item.processingMs);
         w.key("pendingMs"); item.pendingMs < 0 ? w.null() : w.number(item.pendingMs);
         w.key("processingCycles").integer(static_cast<long long>(item.processingCycles));

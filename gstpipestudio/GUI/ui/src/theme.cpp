@@ -1,5 +1,6 @@
 // theme.cpp – NVIDIA-like dark look from colours only (no logos, no images).
 #include "theme.h"
+#include "wheelguard.h"
 
 #include <QApplication>
 #include <QFont>
@@ -162,6 +163,7 @@ QFrame#separator { background: @line@; max-height: 1px; }
 }
 
 void Theme::apply(QApplication& app) {
+    WheelGuard::install(app);
     app.setStyle("Fusion");
     app.setFont(QFont("DejaVu Sans", 10));
     app.setStyleSheet(styleSheet());

@@ -25,6 +25,7 @@ public:
     bool touched() const { return touched_; }
     QString text() const { return read_(); }
     bool isDefault() const;
+    void resetToDefault();
 
 signals:
     void edited();
