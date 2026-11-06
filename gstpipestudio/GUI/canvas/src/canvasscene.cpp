@@ -3,6 +3,7 @@
 
 #include <QGraphicsPathItem>
 #include <QGraphicsSceneContextMenuEvent>
+#include <QJsonArray>
 #include <QPainterPath>
 #include <QPen>
 #include <QTimer>
@@ -14,7 +15,28 @@
 #include "paditem.h"
 #include "theme.h"
 
-CanvasScene::CanvasScene(Controller* controller, QObject* parent) : QGraphicsScene(parent), controller_(controller) { setSceneRect(-2000, -2000, 4000, 4000); }
+CanvasScene::CanvasScene(Controller* controller, QObject* parent) : QGraphicsScene(parent), controller_(controller) {
+    setSceneRect(-2000, -2000, 4000, 4000);
+    connect(controller_, &Controller::telemetryReceived, this, &CanvasScene::applyTelemetry);
+}
+
+void CanvasScene::applyTelemetry(const QJsonObject& sample) {
+    telemetry_ = sample;
+    QSet<ElementItem*> reset;
+    for (ElementItem* item : std::as_const(elements_)) {
+        if (!reset.contains(item)) { reset.insert(item); item->clearTelemetry(); }
+    }
+    if (!controller_->monitoring()) return;
+    auto number = [](const QJsonObject& object, const char* key) {
+        const QJsonValue value = object.value(key);
+        return value.isDouble() ? value.toDouble() : -1.0;
+    };
+    for (const QJsonValue& value : sample.value("elements").toArray()) {
+        const QJsonObject object = value.toObject();
+        if (ElementItem* item = elements_.value(object.value("element").toString()))
+            item->mergeTelemetry(number(object, "processingMs"), number(object, "dropRatePercent"));
+    }
+}
 
 const gps::Pipeline& CanvasScene::pipeline() const { return controller_->pipeline(); }
 
@@ -118,6 +140,8 @@ void CanvasScene::rebuild() {
         addItem(link);
         links_ << link;
     }
+    if (controller_->monitoring()) applyTelemetry(telemetry_);
+    else telemetry_ = {};
     setSceneRect(sceneRect().united(itemsBoundingRect().adjusted(-1000, -1000, 1000, 1000)));
     emit rebuilt();
 }

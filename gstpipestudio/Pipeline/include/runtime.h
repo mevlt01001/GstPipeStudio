@@ -40,7 +40,11 @@ struct ElementTelemetry {
     std::string element;
     double ageMs = -1;          // live source: pipeline running time minus outgoing buffer running time
     double queueMs = -1;        // queue's current-level-time, when available
-    double lossPercent = -1;    // reported QoS processed/dropped units, when available
+    double processingMs = -1;   // first sink arrival to first src departure; mean of completed cycles
+    double pendingMs = -1;      // first input still waiting for an output
+    std::uint64_t processingCycles = 0;
+    double dropRatePercent = -1; // QoS-reported buffer drops / (processed + dropped) in this interval
+    std::uint64_t qosProcessed = 0, qosDropped = 0;
     std::uint64_t inputBuffers = 0, outputBuffers = 0;
 };
 struct TelemetrySample {

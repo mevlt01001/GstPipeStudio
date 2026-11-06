@@ -19,7 +19,17 @@ for i in range(100):
         break
     print(json.dumps({"type": "sample", "elapsedMs": (i + 1) * 250,
                       "elements": [{"element": "videotestsrc_0", "ageMs": 10 + i,
-                                    "queueMs": None, "lossPercent": None,
-                                    "inputBuffers": 0, "outputBuffers": 5}]}), flush=True)
+                                    "queueMs": None, "processingMs": None,
+                                    "pendingMs": None, "dropRatePercent": None,
+                                    "inputBuffers": 0, "outputBuffers": 5},
+                                   {"element": "videoconvert_1", "ageMs": 11 + i,
+                                    "queueMs": None, "processingMs": 12 + i,
+                                    "pendingMs": None, "dropRatePercent": None,
+                                    "inputBuffers": 5, "outputBuffers": 5},
+                                   {"element": "fakesink_2", "ageMs": None,
+                                    "queueMs": None, "processingMs": None,
+                                    "pendingMs": None, "dropRatePercent": 10,
+                                    "qosProcessed": 9, "qosDropped": 1,
+                                    "inputBuffers": 5, "outputBuffers": 0}]}), flush=True)
     time.sleep(0.05)
 print(json.dumps({"status": "interrupted" if not running else "eos", "ms": 250}), flush=True)

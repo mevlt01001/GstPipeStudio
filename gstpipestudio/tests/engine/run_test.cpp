@@ -4,6 +4,7 @@
 #include <thread>
 
 #include "testutil.h"
+#include "telemetry.h"
 
 using namespace gpstest;
 using gps::RunResult;
@@ -29,6 +30,33 @@ int main(int argc, char** argv) {
     gst_init(&argc, &argv);
     const std::string dir = tempDir();
 
+    std::puts("-- reported QoS drops use buffer units and interval deltas");
+    {
+        P p; p.el("filter", "identity");
+        GstElement* pipeline = gst_pipeline_new("qos-test");
+        GstElement* element = gst_element_factory_make("identity", "filter");
+        gst_bin_add(GST_BIN(pipeline), element);
+        {
+            gps::TelemetrySampler sampler(p.plan, pipeline);
+            auto report = [&](GstFormat format, guint64 processed, guint64 dropped) {
+                GstMessage* message = gst_message_new_qos(GST_OBJECT(element), FALSE, 0, 0, 0, 0);
+                gst_message_set_qos_stats(message, format, processed, dropped);
+                sampler.onQos(message);
+                gst_message_unref(message);
+            };
+            report(GST_FORMAT_BUFFERS, 80, 20);
+            auto one = sampler.sample(250).elements.at(0);
+            CHECK_EQ(one.dropRatePercent, 20.0);
+            CHECK_EQ(one.qosDropped, 20u);
+            report(GST_FORMAT_BUFFERS, 90, 30);
+            auto two = sampler.sample(500).elements.at(0);
+            CHECK_EQ(two.dropRatePercent, 50.0);
+            report(GST_FORMAT_DEFAULT, 100, 40);
+            CHECK(sampler.sample(750).elements.at(0).dropRatePercent < 0);
+        }
+        gst_object_unref(pipeline);
+    }
+
     std::puts("-- live telemetry samples age and queue without inventing loss");
     {
         P p;
@@ -40,18 +68,19 @@ int main(int argc, char** argv) {
             .link("queue", "src", "slow", "sink")
             .link("slow", "src", "out", "sink");
         gps::RunOptions options;
-        int samples = 0; bool sawAge = false, sawQueue = false, sawInput = false;
+        int samples = 0; bool sawAge = false, sawQueue = false, sawInput = false, sawProcessing = false;
         options.onTelemetry = [&](const gps::TelemetrySample& sample) {
             ++samples;
             for (const auto& e : sample.elements) {
                 if (e.element == "src" && e.ageMs >= 0) sawAge = true;
                 if (e.element == "queue" && e.queueMs >= 0) sawQueue = true;
-                if (e.element == "out" && e.inputBuffers > 0) sawInput = true;
+                if (e.element == "slow" && e.processingMs >= 0 && e.processingCycles > 0) sawProcessing = true;
+                if (e.element == "out" && e.inputBuffers > 0) { sawInput = true; CHECK(e.pendingMs < 0); }
             }
-            CHECK(contains(gps::telemetryJson(sample), "\"lossPercent\":null"));
+            CHECK(contains(gps::telemetryJson(sample), "\"dropRatePercent\":null"));
         };
         CHECK_EQ(run(p.plan, {}, options).status, "eos");
-        CHECK(samples >= 2); CHECK(sawAge); CHECK(sawQueue); CHECK(sawInput);
+        CHECK(samples >= 2); CHECK(sawAge); CHECK(sawQueue); CHECK(sawInput); CHECK(sawProcessing);
     }
 
     std::puts("-- run reaches EOS; the plan's own value is used");

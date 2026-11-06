@@ -196,7 +196,12 @@ std::string telemetryJson(const TelemetrySample& sample) {
         w.beginObject().field("element", item.element);
         w.key("ageMs"); item.ageMs < 0 ? w.null() : w.number(item.ageMs);
         w.key("queueMs"); item.queueMs < 0 ? w.null() : w.number(item.queueMs);
-        w.key("lossPercent"); item.lossPercent < 0 ? w.null() : w.number(item.lossPercent);
+        w.key("processingMs"); item.processingMs < 0 ? w.null() : w.number(item.processingMs);
+        w.key("pendingMs"); item.pendingMs < 0 ? w.null() : w.number(item.pendingMs);
+        w.key("processingCycles").integer(static_cast<long long>(item.processingCycles));
+        w.key("dropRatePercent"); item.dropRatePercent < 0 ? w.null() : w.number(item.dropRatePercent);
+        w.key("qosProcessed").integer(static_cast<long long>(item.qosProcessed));
+        w.key("qosDropped").integer(static_cast<long long>(item.qosDropped));
         w.key("inputBuffers").integer(static_cast<long long>(item.inputBuffers));
         w.key("outputBuffers").integer(static_cast<long long>(item.outputBuffers));
         w.end();

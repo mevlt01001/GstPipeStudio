@@ -28,7 +28,13 @@ private:
         std::uint64_t incoming = 0, outgoing = 0;
         double ageTotal = 0;
         std::uint64_t ageCount = 0;
-        double lossPercent = -1;
+        gint64 pendingSinceUs = 0;
+        bool hasSourcePad = false;
+        double processingTotalMs = 0;
+        std::uint64_t processingCycles = 0;
+        std::map<GstObject*, std::pair<std::uint64_t, std::uint64_t>> qosReporters;
+        std::uint64_t qosProcessed = 0, qosDropped = 0;
+        bool qosUpdated = false;
     };
     struct Probe {
         TelemetrySampler* owner;

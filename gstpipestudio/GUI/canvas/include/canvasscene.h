@@ -4,6 +4,7 @@
 
 #include <QGraphicsScene>
 #include <QHash>
+#include <QJsonObject>
 #include <QPair>
 #include <QPointF>
 #include <QSet>
@@ -49,6 +50,7 @@ public:
 public slots:
     void scheduleRebuild();  // coalesces many changes into one rebuild
     void rebuild();
+    void applyTelemetry(const QJsonObject& sample);
 
 signals:
     void freeSrcPadClicked(const QString& element, const QString& identity, const QPoint& screenPos);
@@ -78,4 +80,5 @@ private:
     bool pending_ = false;
     bool locked_ = false;
     bool stale_ = false;
+    QJsonObject telemetry_;
 };

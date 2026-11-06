@@ -9,7 +9,7 @@ class QComboBox;
 class QTableWidget;
 class QPushButton;
 
-struct TrendPoint { double age = -1, queue = -1, loss = -1, inputRate = -1, outputRate = -1; };
+struct TrendPoint { double processing = -1, pending = -1, drop = -1, age = -1, queue = -1, inputRate = -1, outputRate = -1; };
 
 class TelemetryPanel : public QWidget {
     Q_OBJECT

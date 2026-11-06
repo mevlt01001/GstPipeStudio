@@ -169,7 +169,8 @@ private slots:
     void liveMetricsPanelShowsSamplesAndStops() {
         MainWindow w(c.get()); w.show();
         QString source = addSource(*c, "videotestsrc");
-        addAfter(*c, source, "src", "fakesink");
+        QString middle = addAfter(*c, source, "src", "videoconvert");
+        addAfter(*c, middle, "src", "fakesink");
         QVERIFY(settle(*c));
         auto* panel = w.findChild<TelemetryPanel*>("telemetryPanel");
         QVERIFY(panel);
@@ -179,8 +180,17 @@ private slots:
         QTest::mouseClick(toggle, Qt::LeftButton);
         QVERIFY(c->monitoring());
         auto* table = panel->findChild<QTableWidget*>("monitorTable");
-        QVERIFY(QTest::qWaitFor([&] { return table->rowCount() == 1; }, 3000));
-        QVERIFY(table->item(0, 1)->text().toDouble() >= 10.0);
+        QVERIFY(QTest::qWaitFor([&] { return table->rowCount() == 3; }, 3000));
+        QCOMPARE(table->item(0, 1)->text(), QString("—"));
+        QVERIFY(table->item(1, 1)->text().toDouble() >= 12.0);
+        QCOMPARE(table->item(1, 3)->text(), QString("—"));
+        QCOMPARE(table->item(2, 3)->text(), QString("10.0"));
+        QCOMPARE(panel->findChild<QComboBox*>("monitorElement")->currentText(), QString("All elements"));
+        QCOMPARE(panel->findChild<QComboBox*>("monitorElement")->count(), 4);
+        QVERIFY(QTest::qWaitFor([&] {
+            ElementItem* item = w.scene()->element(middle);
+            return item && item->boundingRect().height() > item->view().height() + 30;
+        }, 2000));
         QVERIFY(!c->canUndo());
         QTest::mouseClick(toggle, Qt::LeftButton);
         QVERIFY(QTest::qWaitFor([&] { return !c->monitoring(); }, 3000));

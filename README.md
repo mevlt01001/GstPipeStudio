@@ -73,7 +73,7 @@ The window has **Help ▸ Request support…**. It opens a pre-filled issue on G
 
 ## Live pipeline metrics
 
-Open **View → Live metrics** after validating a complete pipeline. Select an element and graph source age, queue buffered time, QoS loss (when reported), or input/output buffer rate. The monitor uses the real running pipeline and does not change the saved graph. Two hardware-free test pipelines are in [examples/monitoring](examples/monitoring/README.md).
+Open **View → Live metrics** after validating a complete pipeline. While monitoring, every element on the canvas shows **Avg. Processing Time** and **Drop Rate** together. The panel compares all elements on one graph by default; choose one for detail. It also shows pending time, source age, queue buffered time, and input/output rates. Drop Rate uses only QoS-reported buffer drops; a dash means unknown, not zero. The monitor does not change the saved graph. Three hardware-free test pipelines are in [examples/monitoring](examples/monitoring/README.md).
 
 <p align="center">
   <a href="docs/media/live-metrics.mp4"><img src="docs/media/live-metrics.gif" alt="Watch source age rise at a slow stage and inspect buffered time in a queue" width="680"></a><br>

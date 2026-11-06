@@ -20,33 +20,42 @@ QString shown(double n, const QString& unit = {}) { return n < 0 ? "—" : QStri
 class TrendChart final : public QWidget {
 public:
     explicit TrendChart(QWidget* parent = nullptr) : QWidget(parent) { setMinimumHeight(140); }
-    QVector<double> points;
+    QMap<QString, QVector<double>> series;
     QString unit;
 protected:
     void paintEvent(QPaintEvent*) override {
         QPainter p(this); p.setRenderHint(QPainter::Antialiasing);
-        const QRectF area = rect().adjusted(55, 14, -12, -27);
+        const QRectF area = rect().adjusted(55, 14, -12, -43);
         p.setPen(Theme::muted());
         p.drawRect(area);
         double maximum = 0;
-        for (double v : points) if (v >= 0 && std::isfinite(v)) maximum = std::max(maximum, v);
+        for (const auto& points : series) for (double v : points) if (v >= 0 && std::isfinite(v)) maximum = std::max(maximum, v);
         if (maximum <= 0) maximum = 1;
         p.drawText(2, 22, QString::number(maximum, 'f', 1) + unit);
         p.drawText(2, height() - 28, "0");
         p.drawText(area.bottomLeft() + QPointF(0, 19), "older");
         p.drawText(area.bottomRight() + QPointF(-28, 19), "now");
-        p.setPen(QPen(Theme::accent(), 2));
-        QPainterPath path;
-        bool open = false, any = false;
-        for (int i = 0; i < points.size(); ++i) {
-            double v = points[i];
-            if (v < 0 || !std::isfinite(v)) { open = false; continue; }
-            const double x = area.left() + (points.size() < 2 ? 1.0 : static_cast<double>(i) / (points.size()-1)) * area.width();
-            const double y = area.bottom() - std::min(v / maximum, 1.0) * area.height();
-            if (!open) path.moveTo(x, y); else path.lineTo(x, y);
-            open = any = true;
+        bool any = false; int line = 0;
+        for (auto it = series.cbegin(); it != series.cend(); ++it, ++line) {
+            const QColor color = QColor::fromHsv((line * 137 + 80) % 360, 185, 230);
+            p.setPen(QPen(color, 2));
+            QPainterPath path; bool open = false;
+            const auto& points = it.value();
+            for (int i = 0; i < points.size(); ++i) {
+                double v = points[i];
+                if (v < 0 || !std::isfinite(v)) { open = false; continue; }
+                const double x = area.left() + (points.size() < 2 ? 1.0 : static_cast<double>(i) / (points.size()-1)) * area.width();
+                const double y = area.bottom() - std::min(v / maximum, 1.0) * area.height();
+                if (!open) path.moveTo(x, y); else path.lineTo(x, y);
+                open = any = true;
+            }
+            p.drawPath(path);
+            if (line < 8) {
+                p.setPen(color);
+                p.drawText(area.left() + (line % 4) * area.width() / 4, height() - 8 - (line / 4) * 14,
+                           p.fontMetrics().elidedText(it.key(), Qt::ElideRight, int(area.width() / 4 - 8)));
+            }
         }
-        p.drawPath(path);
         if (!any) { p.setPen(Theme::muted()); p.drawText(area, Qt::AlignCenter, "No valid samples for this metric"); }
     }
 };
@@ -57,23 +66,23 @@ TelemetryPanel::TelemetryPanel(Controller* controller, QWidget* parent) : QWidge
     auto* layout = new QVBoxLayout(this);
     auto* controls = new QHBoxLayout;
     toggle_ = new QPushButton("Start monitoring", this); toggle_->setObjectName("monitorToggle");
-    element_ = new QComboBox(this); element_->setObjectName("monitorElement");
+    element_ = new QComboBox(this); element_->setObjectName("monitorElement"); element_->addItem("All elements");
     metric_ = new QComboBox(this); metric_->setObjectName("monitorMetric");
-    metric_->addItems({"Source age (ms)", "Queue level (ms)", "QoS loss (%)", "Input buffers/s", "Output buffers/s"});
+    metric_->addItems({"Avg. Processing Time (ms)", "Drop Rate (%)", "Source age (ms)", "Queue level (ms)", "Input buffers/s", "Output buffers/s"});
     controls->addWidget(toggle_); controls->addWidget(new QLabel("Element:", this)); controls->addWidget(element_);
     controls->addWidget(new QLabel("Graph:", this)); controls->addWidget(metric_); controls->addStretch();
     layout->addLayout(controls);
-    auto* note = new QLabel("Source age requires a live source with valid PTS. QoS loss appears only when an element reports it. Queue level is buffered media duration; adding a queue can increase latency.", this);
+    auto* note = new QLabel("Processing time is first input to first output. Drop Rate uses only reported QoS buffer counts; a dash means unknown. Source age needs live PTS. Queue level is buffered media duration.", this);
     note->setWordWrap(true); layout->addWidget(note);
     chart_ = new TrendChart(this); chart_->setObjectName("monitorChart"); layout->addWidget(chart_);
-    table_ = new QTableWidget(0, 6, this); table_->setObjectName("monitorTable");
-    table_->setHorizontalHeaderLabels({"Element", "Age ms", "Queue ms", "QoS loss %", "Input/s", "Output/s"});
+    table_ = new QTableWidget(0, 10, this); table_->setObjectName("monitorTable");
+    table_->setHorizontalHeaderLabels({"Element", "Process ms", "Pending ms", "Drop %", "Age ms", "Queue ms", "Input/s", "Output/s", "QoS processed", "QoS dropped"});
     table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     table_->verticalHeader()->hide(); table_->horizontalHeader()->setStretchLastSection(true);
     layout->addWidget(table_, 1);
     connect(toggle_, &QPushButton::clicked, this, [this] {
         if (controller_->monitoring()) controller_->stopMonitoring();
-        else { history_.clear(); element_->clear(); table_->setRowCount(0); lastElapsed_ = -1; controller_->startMonitoring(); }
+        else { history_.clear(); element_->clear(); element_->addItem("All elements"); table_->setRowCount(0); lastElapsed_ = -1; controller_->startMonitoring(); }
         redraw();
     });
     connect(controller_, &Controller::changed, this, &TelemetryPanel::redraw);
@@ -83,8 +92,6 @@ TelemetryPanel::TelemetryPanel(Controller* controller, QWidget* parent) : QWidge
     redraw();
 }
 void TelemetryPanel::receive(const QJsonObject& sample) {
-    const bool first = history_.isEmpty();
-    QString preferred;
     const double elapsed = value(sample, "elapsedMs");
     const double seconds = lastElapsed_ >= 0 && elapsed > lastElapsed_ ? (elapsed - lastElapsed_) / 1000.0 : -1;
     lastElapsed_ = elapsed;
@@ -96,34 +103,42 @@ void TelemetryPanel::receive(const QJsonObject& sample) {
         if (name.isEmpty()) continue;
         if (element_->findText(name) < 0) element_->addItem(name);
         TrendPoint point;
-        point.age = value(object, "ageMs"); point.queue = value(object, "queueMs"); point.loss = value(object, "lossPercent");
-        if (first && preferred.isEmpty() && point.age >= 0) preferred = name;
+        point.processing = value(object, "processingMs"); point.pending = value(object, "pendingMs");
+        point.drop = value(object, "dropRatePercent"); point.age = value(object, "ageMs"); point.queue = value(object, "queueMs");
         if (seconds > 0) {
             point.inputRate = value(object, "inputBuffers") / seconds;
             point.outputRate = value(object, "outputBuffers") / seconds;
         }
         auto& series = history_[name]; series.push_back(point);
         if (series.size() > 120) series.remove(0, series.size() - 120);
-        const QStringList cells = {name, shown(point.age), shown(point.queue), shown(point.loss), shown(point.inputRate), shown(point.outputRate)};
+        const QStringList cells = {name, shown(point.processing), shown(point.pending), shown(point.drop),
+                                   shown(point.age), shown(point.queue), shown(point.inputRate), shown(point.outputRate),
+                                   point.drop < 0 ? "—" : QString::number(object.value("qosProcessed").toInteger()),
+                                   point.drop < 0 ? "—" : QString::number(object.value("qosDropped").toInteger())};
         for (int col = 0; col < cells.size(); ++col) table_->setItem(row, col, new QTableWidgetItem(cells[col]));
     }
-    if (first && !preferred.isEmpty()) element_->setCurrentText(preferred);
     redraw();
 }
 void TelemetryPanel::redraw() {
     toggle_->setText(controller_->monitoring() ? "Stop monitoring" : "Start monitoring");
     toggle_->setEnabled(controller_->monitoring() || controller_->canRun());
     auto* chart = static_cast<TrendChart*>(chart_);
-    chart->points.clear();
-    chart->unit = metric_->currentIndex() < 2 ? " ms" : metric_->currentIndex() == 2 ? " %" : "/s";
-    for (const TrendPoint& p : history_.value(element_->currentText())) {
-        switch (metric_->currentIndex()) {
-        case 0: chart->points << p.age; break;
-        case 1: chart->points << p.queue; break;
-        case 2: chart->points << p.loss; break;
-        case 3: chart->points << p.inputRate; break;
-        case 4: chart->points << p.outputRate; break;
+    chart->series.clear();
+    chart->unit = metric_->currentIndex() == 1 ? " %" : metric_->currentIndex() >= 4 ? "/s" : " ms";
+    for (auto it = history_.cbegin(); it != history_.cend(); ++it) {
+        if (element_->currentIndex() > 0 && it.key() != element_->currentText()) continue;
+        QVector<double> points;
+        for (const TrendPoint& p : it.value()) {
+            switch (metric_->currentIndex()) {
+            case 0: points << p.processing; break;
+            case 1: points << p.drop; break;
+            case 2: points << p.age; break;
+            case 3: points << p.queue; break;
+            case 4: points << p.inputRate; break;
+            case 5: points << p.outputRate; break;
+            }
         }
+        chart->series.insert(it.key(), points);
     }
     chart->update();
 }

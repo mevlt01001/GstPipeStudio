@@ -21,6 +21,8 @@ public:
     };
     static PadLabel padLabel(const PadView& pad);
     static QString fitNote(const QString& note, const QFont& font);  // the note as drawn: at most kNoteLines lines
+    void clearTelemetry();
+    void mergeTelemetry(double processingMs, double dropRatePercent);
 
     QRectF boundingRect() const override;
     QPainterPath shape() const override;
@@ -38,5 +40,7 @@ private:
     ElementView view_;
     QList<PadItem*> pads_;
     bool hover_ = false;
+    bool telemetry_ = false;
+    double processingMs_ = -1, dropRatePercent_ = -1;
     QPointF pressPos_;
 };

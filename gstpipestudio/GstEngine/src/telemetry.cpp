@@ -43,6 +43,7 @@ void TelemetrySampler::attach(Node& node, GstPad* pad) {
     gst_segment_init(&probe->segment, GST_FORMAT_UNDEFINED);
     probe->id = gst_pad_add_probe(pad, static_cast<GstPadProbeType>(GST_PAD_PROBE_TYPE_BUFFER | GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM), onProbe, probe.get(), nullptr);
     std::lock_guard<std::mutex> lock(mutex_);
+    if (probe->source) node.hasSourcePad = true;
     probes_.push_back(std::move(probe));
 }
 GstPadProbeReturn TelemetrySampler::onProbe(GstPad*, GstPadProbeInfo* info, gpointer data) {
@@ -83,10 +84,19 @@ GstPadProbeReturn TelemetrySampler::onProbe(GstPad*, GstPadProbeInfo* info, gpoi
     if (probe.source) {
         ++probe.node->outgoing;
         if (ageMs >= 0) { probe.node->ageTotal += ageMs; ++probe.node->ageCount; }
-    } else ++probe.node->incoming;
+        if (probe.node->pendingSinceUs) {
+            probe.node->processingTotalMs += static_cast<double>(g_get_monotonic_time() - probe.node->pendingSinceUs) / 1000.0;
+            ++probe.node->processingCycles;
+            probe.node->pendingSinceUs = 0;
+        }
+    } else {
+        ++probe.node->incoming;
+        if (!probe.node->pendingSinceUs) probe.node->pendingSinceUs = g_get_monotonic_time();
+    }
     return GST_PAD_PROBE_OK;
 }
 void TelemetrySampler::onQos(GstMessage* message) {
+    GstObject* reporter = GST_MESSAGE_SRC(message);
     GstObject* current = GST_OBJECT(gst_object_ref(GST_MESSAGE_SRC(message)));
     Node* node = nullptr;
     while (current) {
@@ -99,9 +109,13 @@ void TelemetrySampler::onQos(GstMessage* message) {
     GstFormat format = GST_FORMAT_UNDEFINED;
     guint64 processed = G_MAXUINT64, dropped = G_MAXUINT64;
     gst_message_parse_qos_stats(message, &format, &processed, &dropped);
-    if (format == GST_FORMAT_UNDEFINED || processed == G_MAXUINT64 || dropped == G_MAXUINT64 || processed + dropped == 0) return;
+    if (format != GST_FORMAT_BUFFERS || processed == G_MAXUINT64 || dropped == G_MAXUINT64) return;
     std::lock_guard<std::mutex> lock(mutex_);
-    node->lossPercent = 100.0 * static_cast<double>(dropped) / (static_cast<double>(processed) + dropped);
+    auto& previous = node->qosReporters[reporter];
+    node->qosProcessed += processed >= previous.first ? processed - previous.first : processed;
+    node->qosDropped += dropped >= previous.second ? dropped - previous.second : dropped;
+    previous = {processed, dropped};
+    node->qosUpdated = true;
 }
 TelemetrySample TelemetrySampler::sample(double elapsedMs) {
     TelemetrySample out; out.elapsedMs = elapsedMs;
@@ -112,8 +126,20 @@ TelemetrySample TelemetrySampler::sample(double elapsedMs) {
             std::lock_guard<std::mutex> lock(mutex_);
             item.inputBuffers = node.incoming; item.outputBuffers = node.outgoing;
             item.ageMs = node.ageCount ? node.ageTotal / node.ageCount : -1;
-            item.lossPercent = node.lossPercent;
+            item.processingMs = node.processingCycles ? node.processingTotalMs / node.processingCycles : -1;
+            item.processingCycles = node.processingCycles;
+            item.pendingMs = node.hasSourcePad && node.pendingSinceUs
+                                 ? static_cast<double>(g_get_monotonic_time() - node.pendingSinceUs) / 1000.0 : -1;
+            if (node.qosUpdated) {
+                item.qosProcessed = node.qosProcessed;
+                item.qosDropped = node.qosDropped;
+                const double total = static_cast<double>(item.qosProcessed) + item.qosDropped;
+                if (total > 0) item.dropRatePercent = 100.0 * item.qosDropped / total;
+                node.qosProcessed = node.qosDropped = 0;
+                node.qosUpdated = false;
+            }
             node.incoming = node.outgoing = node.ageCount = 0; node.ageTotal = 0;
+            node.processingCycles = 0; node.processingTotalMs = 0;
         }
         if (g_object_class_find_property(G_OBJECT_GET_CLASS(node.element), "current-level-time")) {
             guint64 level = 0;

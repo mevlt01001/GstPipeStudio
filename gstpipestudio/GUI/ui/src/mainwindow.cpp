@@ -241,10 +241,11 @@ void MainWindow::buildPanels() {
     bottom->setMinimumHeight(180);
     addDockWidget(Qt::BottomDockWidgetArea, bottom);
     resizeDocks({bottom}, {240}, Qt::Vertical);
-    // Properties and Caps are forms: the panel grows so their fields stay usable (never shrinks what the user chose).
+    // Forms and the live overview need room for their controls and table.
     connect(tabs_, &QTabWidget::currentChanged, this, [this, bottom] {
         QWidget* cur = tabs_->currentWidget();
-        if ((cur == propsTab_ || cur == capsTab_) && bottom->height() < 400) resizeDocks({bottom}, {400}, Qt::Vertical);
+        if ((cur == propsTab_ || cur == capsTab_ || cur == telemetry_) && bottom->height() < 400)
+            resizeDocks({bottom}, {400}, Qt::Vertical);
     });
 
     state_ = new QLabel(this);

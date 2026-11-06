@@ -56,7 +56,21 @@ ElementItem::ElementItem(const ElementView& view) : view_(view) {
     }
 }
 
-QRectF ElementItem::boundingRect() const { return QRectF(-3, -3, kBoxWidth + 6, view_.height() + 6); }
+void ElementItem::clearTelemetry() {
+    if (telemetry_) prepareGeometryChange();
+    telemetry_ = false; processingMs_ = dropRatePercent_ = -1;
+    update();
+}
+
+void ElementItem::mergeTelemetry(double processingMs, double dropRatePercent) {
+    if (!telemetry_) prepareGeometryChange();
+    telemetry_ = true;
+    processingMs_ = qMax(processingMs_, processingMs);
+    dropRatePercent_ = qMax(dropRatePercent_, dropRatePercent);
+    update();
+}
+
+QRectF ElementItem::boundingRect() const { return QRectF(-3, -3, kBoxWidth + 6, view_.height() + (telemetry_ ? 42 : 6)); }
 
 QPainterPath ElementItem::shape() const {
     QPainterPath path;
@@ -149,6 +163,20 @@ void ElementItem::paint(QPainter* p, const QStyleOptionGraphicsItem*, QWidget*) 
         p->setPen(view_.isError ? Theme::error() : (view_.isInfo ? Theme::muted() : Theme::warning()));
         p->drawText(QRectF(12, y, kBoxWidth - 24, metrics::kNoteLines * kPropLine),
                     Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap | Qt::TextWrapAnywhere, fitNote(view_.note, small));
+    }
+    if (telemetry_) {
+        const double top = view_.height() + 6;
+        p->setPen(Qt::NoPen); p->setBrush(Theme::panel());
+        p->drawRoundedRect(QRectF(0, top, kBoxWidth, 31), 4, 4);
+        p->setFont(small);
+        p->setPen(Theme::text());
+        const QString process = processingMs_ >= 0 ? QString::number(processingMs_, 'f', 1) + " ms" : "—";
+        const QString drop = dropRatePercent_ >= 0 ? QString::number(dropRatePercent_, 'f', 1) + "%" : "—";
+        p->drawText(QRectF(8, top + 2, kBoxWidth - 16, 15), Qt::AlignLeft,
+                    (view_.isCustomGroup ? "Max Avg. Proc. Time  " : "Avg. Processing Time  ") + process);
+        p->setPen(Theme::muted());
+        p->drawText(QRectF(8, top + 16, kBoxWidth - 16, 15), Qt::AlignLeft,
+                    (view_.isCustomGroup ? "Max Drop Rate  " : "Drop Rate  ") + drop);
     }
 }
 
