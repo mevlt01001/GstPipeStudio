@@ -4,6 +4,7 @@
 //   GPS_REAL_BIN_DIR=/workspace/build/bin GPS_BUILD_DIR=build-gui docker/studio/test.sh gui
 // The GUI depends only on the JSON of SPEC 7, so this is the check that the real tools speak it.
 #include <QDir>
+#include <QAction>
 #include <QTemporaryDir>
 
 #include "canvasscene.h"
@@ -104,6 +105,28 @@ private slots:
         QVERIFY(c->run());
         QVERIFY(waitFor([&] { return ended.count() == 1; }, 30000));
         QCOMPARE(ended[0][0].toString(), QString("eos"));
+    }
+
+    void importsARealLaunchPipelineIntoAnUnsavedCanvas() {
+        c->newPlan();
+        MainWindow window(c.get());
+        window.show();
+        QVERIFY(window.findChild<QAction*>("actionImportLaunch"));
+        QVERIFY(c->importLaunch("videotestsrc num-buffers=5 is-live=true ! queue ! fakesink sync=false"));
+        QVERIFY(waitFor([&] { return c->plan().elements.size() == 3 && !c->busy(); }, 15000));
+        QVERIFY2(c->result().isComplete(), qPrintable(c->result().message));
+        QCOMPARE(c->plan().links.size(), size_t(2));
+        QVERIFY(c->filePath().isEmpty());
+        QVERIFY(c->dirty());
+        window.scene()->rebuild();
+        QVERIFY(window.scene()->items().size() >= 3);
+        window.view()->fitAll();
+        QDir().mkpath(shotDir());
+        QVERIFY(window.grab().save(QString("%1/imported_launch_pipeline.png").arg(shotDir())));
+        QSignalSpy finished(c.get(), &Controller::runFinished);
+        QVERIFY(c->run());
+        QVERIFY(waitFor([&] { return finished.count() == 1; }, 10000));
+        QCOMPARE(finished[0][0].toString(), QString("eos"));
     }
 
     // The same screenshots as with the fakes, but with the real catalog (hundreds of factories) and real caps.

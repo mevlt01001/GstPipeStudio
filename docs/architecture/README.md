@@ -12,6 +12,8 @@ The CLI tools and the `gpsconf` plugin are entrypoints into these units. They ar
 
 `gps-monitor` is an optional run-scoped telemetry entrypoint. `TelemetrySampler` in GstEngine observes authored pads and emits interval samples to the Qt monitoring panel. Samples never enter Graph or undo history. Source age is computed from buffer PTS after SEGMENT conversion and the pipeline clock only for live sources. Queue level comes from the queue's buffered media duration. Loss percentage is shown only from real QoS processed/dropped counters; a missing QoS report stays unknown. Input/output counts are separate and are never treated as a universal loss ratio.
 
+`gps-import` runs in a separate process. GstEngine uses `gst_parse_launch`, optionally probes for dynamic pads, then reads native element factories, nondefault writable properties and pad peers into a `Graph`. Controller installs that graph as a new unsaved Pipeline document and validates it through the usual execution path. The importer has no access to `GstPipeline*` owned by another process; an application must supply a launch description for this path.
+
 ## Actual ownership and data flow
 
 ```mermaid

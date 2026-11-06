@@ -1644,7 +1644,7 @@ void Controller::newPlan() {
     emit changed();
 }
 
-void Controller::open(const QString& path) {
+void Controller::open(const QString& path, bool imported) {
     if (busy()) return;
     auto loaded = std::make_shared<gps::Graph>();
     std::string error;
@@ -1657,7 +1657,7 @@ void Controller::open(const QString& path) {
         if (!factories.contains(fromStd(e.factory))) factories << fromStd(e.factory);
     }
     opening_ = true;
-    fetchInfos(factories, [this, loaded, path](bool ok) {
+    fetchInfos(factories, [this, loaded, path, imported](bool ok) {
         opening_ = false;
         if (!ok) {
             emit notice("Unable to open the file: the plan uses an element this installation does not have.");
@@ -1666,13 +1666,40 @@ void Controller::open(const QString& path) {
         }
         std::string failure;
         if (!pipeline_.reset(*loaded, &failure)) { emit notice(fromStd(failure)); return; }
-        path_ = path;
-        dirty_ = false;
+        path_ = imported ? QString() : path;
+        dirty_ = imported;
         result_ = UpdateResult();
-        note("Opened a plan file");
+        note(imported ? "Imported a gst-launch pipeline" : "Opened a plan file");
         emit changed();
+        if (imported) arrangePipeline();
         startUpdate();
     });
+}
+
+bool Controller::importLaunch(const QString& description) {
+    if (busy() || description.trimmed().isEmpty()) return false;
+    const QString helper = findHelper("gps-import");
+    if (helper.isEmpty()) { emit notice("gps-import was not found"); return false; }
+    const QString path = tmp_.filePath("import.conf");
+    opening_ = true;
+    emit changed();
+    runHelper("gps-import", {"--output", path, "--probe-ms", "1000", description.trimmed()}, 13000,
+              [this, path](const HelperResult& result) {
+        opening_ = false;
+        if (!result.hasJson || result.json.value("status").toString() != "ok") {
+            emit notice("Import failed: " + (result.hasJson ? result.json.value("message").toString() : QString("gps-import did not answer")));
+            emit changed();
+            return;
+        }
+        const QString name = result.json.value("nativeName").toString();
+        const QJsonArray warnings = result.json.value("warnings").toArray();
+        log(QString("Imported native pipeline %1: %2 elements, %3 links")
+            .arg(name).arg(result.json.value("elements").toInt()).arg(result.json.value("links").toInt()));
+        for (const auto& warning : warnings) log("[gps-import] " + warning.toString());
+        if (!warnings.isEmpty()) emit notice("Imported with warnings. Review the Log and validate before running.");
+        open(path, true);
+    });
+    return true;
 }
 
 bool Controller::save(const QString& path, QString* error) {

@@ -30,6 +30,7 @@ You draw a media pipeline instead of writing it. Everything starts at an output 
 | `gps-update` | Builds a pipeline from a `.conf`, runs it just far enough to read every pad's caps, and reports them. |
 | `gps-run` | Runs a finished `.conf`. |
 | `gps-monitor` | Runs a `.conf` and emits live per-element metrics as JSON. |
+| `gps-import` | Reads a `gst-launch` description through GStreamer and saves its elements and links as a `.conf`. |
 | `libgstgpsconf` | A GStreamer plugin: every `.conf` in `GPS_PIPELINE_PATH` becomes an element without pads. |
 
 ## Architecture
@@ -78,6 +79,16 @@ Open **View → Live metrics** after validating a complete pipeline. Select an e
   <a href="docs/media/live-metrics.mp4"><img src="docs/media/live-metrics.gif" alt="Watch source age rise at a slow stage and inspect buffered time in a queue" width="680"></a><br>
   <sub>Spot a slow stage and see how much media is buffered. Click for the short video.</sub>
 </p>
+
+## Bring in an existing pipeline
+
+Use **File → Import gst-launch pipeline…** to paste a pipeline description or a `gst-launch-1.0` command. The importer briefly runs it in a separate process, reads its native element factories, changed properties and linked pads, then draws an **unsaved** pipeline on the canvas. Check the validation result before stopping the original pipeline or running the imported one. You can also import from the command line:
+
+```bash
+gps-import --output imported.conf --probe-ms 1000 'videotestsrc is-live=true ! queue ! fakesink sync=false'
+```
+
+The imported native pipeline name appears in the Log. GStreamer does not expose a general way to attach to a pipeline object in another process by name. To import an application-owned pipeline, supply its launch description; [DOT snapshots](https://gstreamer.freedesktop.org/documentation/gstreamer/running.html) can help inspect topology but cannot guarantee a replayable copy of all runtime properties. A short probe may need the same camera or device as the original, so stop the original first if the device is exclusive. Nested explicit bins and application-only callbacks still need manual work.
 
 ## License
 
