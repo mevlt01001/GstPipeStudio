@@ -1,3 +1,7 @@
+
+
+
+
 <p align="center">
   <img src="gstpipestudio/assets/logo/animation.gif" alt="GstPipeStudio" width="540">
 </p>
@@ -13,9 +17,7 @@
 
 ## From an idea to a running pipeline
 
-<p align="center">
-  <video src="gstpipestudio/assets/logo/GstPipeStudioRTSPDemo.mp4" width="800" controls autoplay loop muted></video>
-</p>
+https://github.com/user-attachments/assets/2ef5ea61-c1c2-4e45-a5fc-c1454a72551e
 
 
 | Build | Understand | Reuse |
