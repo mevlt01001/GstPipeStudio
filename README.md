@@ -14,8 +14,9 @@
 ## From an idea to a running pipeline
 
 <p align="center">
-  <a href="docs/media/build-and-arrange.mp4"><img src="docs/media/build-and-arrange.gif" alt="Add elements, connect pads and arrange a pipeline" width="800"></a>
+  <video src="gstpipestudio/assets/logo/GstPipeStudioRTSPDemo.mp4" width="800" controls autoplay loop muted></video>
 </p>
+
 
 | Build | Understand | Reuse |
 |---|---|---|
