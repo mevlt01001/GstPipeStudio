@@ -307,6 +307,10 @@ void Builder::attachEnd(PadInfo& info) {
     GstElement* typefind = gst_element_factory_make(kTypefindFactory, nullptr);
     GstElement* fakesink = gst_element_factory_make(kFakesinkFactory, nullptr);
     if (!queue || !typefind || !fakesink) {
+        if (queue) gst_object_unref(queue);
+        if (typefind) gst_object_unref(typefind);
+        if (fakesink) gst_object_unref(fakesink);
+        gst_object_unref(bin);
         fail(info.element, "unable to build a temporary end: queue, typefind or fakesink is missing");
         return;
     }
