@@ -115,6 +115,28 @@ bool Graph::wouldCycle(const std::string& srcElement, const std::string& sinkEle
     return false;
 }
 
+std::map<std::string, int> Graph::levels() const {
+    std::map<std::string, int> level, waiting;  // waiting: links into an element not visited yet
+    for (const Element& e : elements) level[e.name] = 0, waiting[e.name] = 0;
+    for (const Connection& l : links) ++waiting[l.sinkElement];
+    std::vector<std::string> ready;
+    for (const Element& e : elements) {
+        if (waiting[e.name] == 0) ready.push_back(e.name);
+    }
+    size_t visited = 0;
+    while (!ready.empty()) {
+        std::string current = ready.back();
+        ready.pop_back();
+        ++visited;
+        for (const Connection& l : links) {
+            if (l.srcElement != current) continue;
+            level[l.sinkElement] = std::max(level[l.sinkElement], level[current] + 1);
+            if (--waiting[l.sinkElement] == 0) ready.push_back(l.sinkElement);
+        }
+    }
+    return visited == elements.size() ? level : std::map<std::string, int>();
+}
+
 std::string Graph::ouroborosMessage(const std::string& srcElement, const std::string& sinkElement) {
     if (srcElement == sinkElement) {
         return "Ouroboros!: You cannot link '" + srcElement + "' back into itself — an element cannot eat its own tail!";
@@ -295,6 +317,14 @@ void Graph::setExposed(const std::vector<ExposedParam>& params) {
     for (const ExposedParam& p : params) {
         if (find(p.element) && !p.name.empty()) exposed.push_back(p);
     }
+}
+
+bool Graph::disconnectBetween(const std::set<std::string>& chosen) {
+    size_t before = links.size();
+    links.erase(std::remove_if(links.begin(), links.end(),
+                               [&](const Connection& l) { return chosen.count(l.srcElement) && chosen.count(l.sinkElement); }),
+                links.end());
+    return links.size() != before;
 }
 
 bool Graph::disconnectLink(const std::string& srcElement, const std::string& srcPad) {

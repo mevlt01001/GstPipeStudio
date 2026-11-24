@@ -78,6 +78,25 @@ private slots:
         QCOMPARE(c->plan().find(toStd(chain.convert))->x, before);
     }
 
+    void aligningIsOneUndoStepOnEitherAxis() {
+        const Chain chain = makeChain();
+        QVERIFY(settle(*c));
+        c->setPositions({{chain.src, QPointF(0, 10)}, {chain.convert, QPointF(50, 100)}, {chain.sink, QPointF(400, 40)}});
+        const QStringList all = {chain.src, chain.convert, chain.sink};
+        auto at = [&](const QString& name) { const auto* e = c->plan().find(toStd(name)); return QPointF(e->x, e->y); };
+        QVERIFY(c->alignElements(all, Qt::Horizontal));
+        QCOMPARE(at(chain.src).y(), 50.0);  // the mean
+        QCOMPARE(at(chain.sink).y(), 50.0);
+        QCOMPARE(at(chain.convert).x(), metrics::kColumn);  // pushed out of the source's way, order kept
+        QCOMPARE(at(chain.sink).x(), 2 * metrics::kColumn);
+        QVERIFY(c->undo());
+        QCOMPARE(at(chain.convert), QPointF(50, 100));
+        QVERIFY(c->alignElements(all, Qt::Vertical));
+        QCOMPARE(at(chain.src).x(), at(chain.sink).x());
+        QVERIFY(at(chain.convert).y() >= at(chain.sink).y() + c->view(chain.sink).height() + metrics::kGap);  // sink was higher up
+        QVERIFY(!c->alignElements({chain.src}, Qt::Vertical));  // one box is no line
+    }
+
     void addSourceRunsAnUpdate() {
         need(*c, "videotestsrc");
         QSignalSpy finished(c.get(), &Controller::updateFinished);

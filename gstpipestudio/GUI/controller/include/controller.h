@@ -21,6 +21,7 @@
 #include "contract.h"
 #include "elementview.h"
 #include "helperclient.h"
+#include "layout.h"
 #include "executionbackend.h"
 #include "factorycatalog.h"
 #include "pipeline.h"
@@ -140,8 +141,7 @@ public:
     QStringList duplicateElements(const QStringList& names);
     bool connectSelectedElements(const QStringList& names);
     bool disconnectBetweenElements(const QStringList& names);
-    bool alignElementsHorizontally(const QStringList& names);
-    bool alignElementsVertically(const QStringList& names);
+    bool alignElements(const QStringList& names, Qt::Orientation orientation);  // a row or a column, one undo step
     bool arrangePipeline(); // one undoable presentation action; leaves execution untouched
     gps::Removal previewCut(const QString& element, const QString& pad) const;
     gps::Removal previewReplace(const QString& element, const QString& pad) const;
@@ -172,6 +172,8 @@ private:
     void note(const QString& action, const QString& linking = QString());  // what the support report says we did
     QString padText(const QString& element, const QString& identity) const;
     std::function<void(const QString&)> logger();  // log() as a callback
+    QList<layout::Box> boxes(const QStringList& names) const;
+    bool move(const layout::Placements& placements);  // one undoable presentation change
     bool beginEdit() const;
     void beginTransaction();
     gps::Graph& editGraph() { return pipeline_.editor().draft(); }

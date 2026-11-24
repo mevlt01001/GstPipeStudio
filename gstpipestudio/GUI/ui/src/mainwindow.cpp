@@ -440,8 +440,8 @@ void MainWindow::showCanvasMenu(const QPoint& screenPos) {
             ->setObjectName("actionCanvasSaveCustom");
         if (sel.size() >= 2) {
             menu->addAction("Connect selected elements", this, [this] { connectSelected(); })->setObjectName("actionCanvasConnectSelected");
-            menu->addAction("Align horizontally", this, [this, sel] { controller_->alignElementsHorizontally(sel); });
-            menu->addAction("Align vertically", this, [this, sel] { controller_->alignElementsVertically(sel); });
+            menu->addAction("Align horizontally", this, [this, sel] { controller_->alignElements(sel, Qt::Horizontal); });
+            menu->addAction("Align vertically", this, [this, sel] { controller_->alignElements(sel, Qt::Vertical); });
         }
         menu->addAction("Duplicate selected", this, [this] { duplicateSelected(); });
         menu->addAction("Copy selected", this, [this] { copySelected(); });
@@ -514,9 +514,9 @@ void MainWindow::showSelectionMenu(const QString& clickedElement, const QPoint& 
             ->setObjectName("actionConnectSelectedMenu");
         menu->addAction("Disconnect links between selected", this, [this, sel] { controller_->disconnectBetweenElements(sel); })
             ->setObjectName("actionDisconnectSelectedMenu");
-        menu->addAction("Align horizontally", this, [this, sel] { controller_->alignElementsHorizontally(sel); })
+        menu->addAction("Align horizontally", this, [this, sel] { controller_->alignElements(sel, Qt::Horizontal); })
             ->setObjectName("actionAlignHorizontally");
-        menu->addAction("Align vertically", this, [this, sel] { controller_->alignElementsVertically(sel); })
+        menu->addAction("Align vertically", this, [this, sel] { controller_->alignElements(sel, Qt::Vertical); })
             ->setObjectName("actionAlignVertically");
     }
     menu->addSeparator();

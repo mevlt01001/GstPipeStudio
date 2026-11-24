@@ -3,13 +3,11 @@
 
 #include "capstext.h"
 #include "actions.h"
-#include "linkitem.h"
 
 #include <QClipboard>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QFontMetricsF>
 #include <QGuiApplication>
 #include <QRectF>
 #include <QRegularExpression>
@@ -1124,11 +1122,18 @@ void Controller::setPositions(const QList<QPair<QString, QPointF>>& positions) {
             }
         } else updates[e->name] = {e->name, pt.x(), pt.y()};
     }
+    layout::Placements moves;
+    for (const auto& entry : updates) moves.append({fromStd(entry.first), QPointF(entry.second.x, entry.second.y)});
+    move(moves);
+}
+
+bool Controller::move(const layout::Placements& placements) {
     std::vector<gps::Placement> moves;
-    for (const auto& entry : updates) moves.push_back(entry.second);
-    if (!pipeline_.editor().execute(gps::MoveElementsAction(std::move(moves)))) return;
+    for (const auto& [element, at] : placements) moves.push_back({toStd(element), at.x(), at.y()});
+    if (moves.empty() || !pipeline_.editor().execute(gps::MoveElementsAction(std::move(moves)))) return false;
     dirty_ = true;
     emit changed();
+    return true;
 }
 
 bool Controller::linkOrderedInternal(const QStringList& expanded, QString* lastTouched) {
@@ -1219,11 +1224,7 @@ bool Controller::disconnectBetweenElements(const QStringList& names) {
     }
 
     beginTransaction();
-    size_t before = plan().links.size();
-    editGraph().links.erase(std::remove_if(editGraph().links.begin(), editGraph().links.end(),
-                                     [&](const gps::Connection& l) { return chosen.count(l.srcElement) && chosen.count(l.sinkElement); }),
-                      editGraph().links.end());
-    if (plan().links.size() == before) {
+    if (!editGraph().disconnectBetween(chosen)) {
         pipeline_.editor().rollback();
         return false;
     }
@@ -1232,122 +1233,31 @@ bool Controller::disconnectBetweenElements(const QStringList& names) {
     return true;
 }
 
-bool Controller::alignElementsHorizontally(const QStringList& names) {
-    if (editingBlocked() || names.size() < 2) return false;
-    QStringList expanded = expandSelectionWithGroups(names);
-    if (expanded.size() < 2) return false;
-    beginTransaction();
-    double sumY = 0;
-    std::vector<gps::Element*> elems;
-    for (const QString& n : expanded) {
-        if (gps::Element* e = editGraph().find(toStd(n))) {
-            elems.push_back(e);
-            sumY += e->y;
-        }
+QList<layout::Box> Controller::boxes(const QStringList& names) const {
+    QList<layout::Box> out;
+    for (const QString& name : names) {
+        if (const gps::Element* e = plan().find(toStd(name))) out.append({name, QPointF(e->x, e->y), view(name).height()});
     }
-    if (elems.size() < 2) {
-        pipeline_.editor().rollback();
-        return false;
-    }
-    double avgY = std::round(sumY / elems.size());
-    std::sort(elems.begin(), elems.end(), [](const gps::Element* a, const gps::Element* b) { return a->x < b->x; });
-    double curX = elems.front()->x;
-    for (size_t i = 0; i < elems.size(); ++i) {
-        elems[i]->y = avgY;
-        if (i > 0 && elems[i]->x < curX + metrics::kColumn) {
-            elems[i]->x = curX + metrics::kColumn;
-        }
-        curX = elems[i]->x;
-    }
-    dirty_ = true;
-    if (!commitTransaction()) return false;
-    note("Aligned selected elements horizontally");
-    emit changed();
-    return true;
+    return out;
 }
 
-bool Controller::alignElementsVertically(const QStringList& names) {
-    if (editingBlocked() || names.size() < 2) return false;
-    QStringList expanded = expandSelectionWithGroups(names);
-    if (expanded.size() < 2) return false;
-    beginTransaction();
-    double sumX = 0;
-    std::vector<gps::Element*> elems;
-    for (const QString& n : expanded) {
-        if (gps::Element* e = editGraph().find(toStd(n))) {
-            elems.push_back(e);
-            sumX += e->x;
-        }
-    }
-    if (elems.size() < 2) {
-        pipeline_.editor().rollback();
-        return false;
-    }
-    double avgX = std::round(sumX / elems.size());
-    std::sort(elems.begin(), elems.end(), [](const gps::Element* a, const gps::Element* b) { return a->y < b->y; });
-    double curY = elems.front()->y;
-    for (size_t i = 0; i < elems.size(); ++i) {
-        elems[i]->x = avgX;
-        if (i > 0) {
-            double prevH = view(fromStd(elems[i - 1]->name)).height();
-            if (elems[i]->y < curY + prevH + metrics::kGap) {
-                elems[i]->y = curY + prevH + metrics::kGap;
-            }
-        }
-        curY = elems[i]->y;
-    }
-    dirty_ = true;
-    if (!commitTransaction()) return false;
-    note("Aligned selected elements vertically");
-    emit changed();
+bool Controller::alignElements(const QStringList& names, Qt::Orientation orientation) {
+    if (editingBlocked()) return false;
+    QList<layout::Box> selected = boxes(expandSelectionWithGroups(names));
+    if (selected.size() < 2 || !move(layout::align(selected, orientation))) return false;
+    note(orientation == Qt::Horizontal ? "Aligned selected elements horizontally" : "Aligned selected elements vertically");
     return true;
 }
 
 bool Controller::arrangePipeline() {
     if (editingBlocked() || plan().elements.empty()) return false;
-    std::map<std::string, int> indegree, level;
-    std::map<std::string, std::vector<std::string>> next;
-    for (const auto& e : plan().elements) { indegree[e.name] = 0; level[e.name] = 0; }
-    for (const auto& link : plan().links) { ++indegree[link.sinkElement]; next[link.srcElement].push_back(link.sinkElement); }
-    std::vector<std::string> ready;
-    for (const auto& e : plan().elements) if (!indegree[e.name]) ready.push_back(e.name);
-    auto byOldY = [this](const std::string& a, const std::string& b) {
-        const auto* x = plan().find(a), *y = plan().find(b);
-        return x->y == y->y ? a < b : x->y < y->y;
-    };
-    std::sort(ready.begin(), ready.end(), byOldY);
-    size_t visited = 0;
-    while (!ready.empty()) {
-        const auto name = ready.front(); ready.erase(ready.begin()); ++visited;
-        for (const auto& target : next[name]) {
-            level[target] = std::max(level[target], level[name] + 1);
-            if (--indegree[target] == 0) { ready.push_back(target); std::sort(ready.begin(), ready.end(), byOldY); }
-        }
-    }
-    if (visited != plan().elements.size()) return false;
-    std::map<int, std::vector<std::string>> columns;
-    for (const auto& e : plan().elements) columns[level[e.name]].push_back(e.name);
-    // Use the caps text actually rendered by LinkItem when reserving the gap between columns.
-    QFont font; font.setPointSizeF(7.5);
-    QFontMetricsF text(font);
-    std::map<int, double> gap;
-    for (const auto& link : linkViews()) {
-        const int at = level[toStd(link.srcElement)];
-        const double width = text.horizontalAdvance(LinkItem::formatSingleLine(link.negotiatedCaps));
-        gap[at] = std::max(gap[at], std::min(480.0, width + 90.0));
-    }
-    QList<QPair<QString, QPointF>> positions;
-    double x = 80;
-    for (auto& [column, names] : columns) {
-        std::sort(names.begin(), names.end(), byOldY);
-        double y = 80;
-        for (const auto& name : names) {
-            positions.append({fromStd(name), QPointF(x, y)});
-            y += view(fromStd(name)).height() + 110;
-        }
-        x += metrics::kBoxWidth + std::max(260.0, gap[column]);
-    }
-    setPositions(positions);
+    const std::map<std::string, int> levels = plan().levels();
+    if (levels.empty()) return false;
+    QStringList names;
+    for (const gps::Element& e : plan().elements) names << fromStd(e.name);
+    QList<QPair<int, QString>> labels;
+    for (const LinkView& link : linkViews()) labels.append({levels.at(toStd(link.srcElement)), link.negotiatedCaps});
+    setPositions(layout::arrange(levels, boxes(names), labels));
     note("Arranged pipeline for readable caps and branches");
     return true;
 }

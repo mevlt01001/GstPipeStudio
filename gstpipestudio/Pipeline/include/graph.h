@@ -4,6 +4,7 @@
 
 #include <functional>
 #include <map>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -110,6 +111,8 @@ public:
     std::vector<int> linksInto(const std::string& sinkElement) const;
     bool sinkPadTaken(const std::string& sinkElement, const std::string& sinkPad) const;  // Always pads only
     bool wouldCycle(const std::string& srcElement, const std::string& sinkElement) const;
+    // Column of every element: the longest chain of links that leads to it (sources are 0). Empty when links form a cycle.
+    std::map<std::string, int> levels() const;
     static std::string ouroborosMessage(const std::string& srcElement, const std::string& sinkElement);
     // Elements reachable from a Source (SRC): an element with an empty sink has an empty src and is not tracked.
     std::vector<std::string> trackedElements(const TraitsFn& traits) const;
@@ -139,6 +142,8 @@ public:
     // ---- free-form edits (no automatic pruning of downstream elements)
     // Disconnects a single link without deleting downstream elements.
     bool disconnectLink(const std::string& srcElement, const std::string& srcPad);
+    // Removes every link whose both ends are among the elements; false when there was none. Nothing else is deleted.
+    bool disconnectBetween(const std::set<std::string>& elements);
     // Deletes one or more elements (subgraph). If autoHeal is true and the subgraph had unambiguously 1 external incoming link
     // and 1 external outgoing link, those two external neighbours are automatically linked together.
     bool deleteElements(const std::vector<std::string>& names, bool autoHeal = true, int exitTotalSrcPads = 1);

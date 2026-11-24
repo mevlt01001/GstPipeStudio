@@ -5,39 +5,13 @@
 #include <QGraphicsSceneMouseEvent>
 #include <QPainter>
 #include <QPainterPathStroker>
-#include <QRegularExpression>
 #include <QStyleOptionGraphicsItem>
 
 #include "canvasmetrics.h"
+#include "capslabel.h"
 #include "canvasscene.h"
 #include "paditem.h"
 #include "theme.h"
-
-QStringList LinkItem::capsFields(const QString& capsText) {
-    QString first = capsText.split(';').first().trimmed();
-    if (first.isEmpty() || first == "ANY" || first == "EMPTY") return {};
-    QStringList parts = first.split(',');
-    QStringList out;
-    out << "mediatype=" + parts[0].trimmed();
-    static const QRegularExpression typeCast("\\([^)]+\\)");
-    for (int i = 1; i < parts.size(); ++i) {
-        QString field = parts[i].trimmed();
-        field.remove(typeCast);
-        if (!field.isEmpty()) out << field;
-    }
-    return out;
-}
-
-QString LinkItem::formatSingleLine(const QString& capsText) {
-    const QString full = capsFields(capsText).join(" · ");
-    return full.size() > 60 ? full.left(57) + "…" : full;
-}
-
-QString LinkItem::formatMultiLine(const QString& capsText) {
-    QStringList fields = capsFields(capsText);
-    if (fields.size() > 5) { fields = fields.mid(0, 5); fields << "…"; }
-    return fields.join("\n");
-}
 
 LinkItem::LabelLayout LinkItem::decideLayout(double pipeLength, double singleLineWidth, double zoomLevel) {
     if (singleLineWidth <= 0.0) return Hidden;
@@ -111,10 +85,9 @@ void LinkItem::paint(QPainter* p, const QStyleOptionGraphicsItem* option, QWidge
     if (!caps.isEmpty()) {
         double lod = option ? QStyleOptionGraphicsItem::levelOfDetailFromTransform(p->worldTransform()) : 1.0;
         if (lod <= 0.0) lod = 1.0;
-        QString single = formatSingleLine(caps);
-        QString multi = formatMultiLine(caps);
-        QFont baseFont = p->font();
-        baseFont.setPointSizeF(7.5);
+        QString single = capslabel::singleLine(caps);
+        QString multi = capslabel::multiLine(caps);
+        QFont baseFont = capslabel::font(p->font());
         QFontMetricsF fm(baseFont);
         double wSingle = fm.horizontalAdvance(single);
         double lPipe = pipeLength();

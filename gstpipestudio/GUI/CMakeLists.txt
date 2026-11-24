@@ -10,10 +10,12 @@ add_library(gps_gui STATIC
     backend/include/startupcheck.h backend/src/startupcheck.cpp
     backend/include/supportreport.h backend/src/supportreport.cpp
     model/include/elementedit.h
+    model/include/capslabel.h model/src/capslabel.cpp
     model/include/contract.h model/src/contract.cpp
     model/include/elementview.h
     controller/include/controller.h controller/src/controller.cpp
     controller/include/flows.h controller/src/flows.cpp
+    controller/include/layout.h controller/src/layout.cpp
     canvas/include/canvasmetrics.h
     canvas/include/canvasscene.h canvas/src/canvasscene.cpp
     canvas/include/canvasview.h canvas/src/canvasview.cpp

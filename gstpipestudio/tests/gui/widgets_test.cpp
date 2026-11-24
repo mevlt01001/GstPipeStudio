@@ -29,6 +29,7 @@
 #include "elementitem.h"
 #include "factorydelegate.h"
 #include "flows.h"
+#include "capslabel.h"
 #include "linkitem.h"
 #include "logpanel.h"
 #include "mainwindow.h"
@@ -1445,11 +1446,11 @@ private slots:
 
         // 3. Dynamic Pipe Caps formatting and layout rules.
         QString rawCaps = "video/x-raw, format=(string)NV12, width=(int)1920, height=(int)1080";
-        const QString compactCaps = LinkItem::formatSingleLine(rawCaps);
+        const QString compactCaps = capslabel::singleLine(rawCaps);
         QVERIFY(compactCaps.size() <= 60);
         QVERIFY(compactCaps.contains("width=1920"));
         QVERIFY(compactCaps.endsWith("…"));
-        QCOMPARE(LinkItem::formatMultiLine(rawCaps), QString("mediatype=video/x-raw\nformat=NV12\nwidth=1920\nheight=1080"));
+        QCOMPARE(capslabel::multiLine(rawCaps), QString("mediatype=video/x-raw\nformat=NV12\nwidth=1920\nheight=1080"));
         QCOMPARE(LinkItem::decideLayout(250.0, 200.0, 1.0), LinkItem::SingleLine);
         QCOMPARE(LinkItem::decideLayout(120.0, 200.0, 1.0), LinkItem::MultiLine);
         QCOMPARE(LinkItem::decideLayout(650.0, 200.0, 1.0), LinkItem::AtPads);

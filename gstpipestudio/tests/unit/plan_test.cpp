@@ -174,6 +174,15 @@ static void linking() {
     CHECK(!p.linkExisting(g, "src", mix, "sink_%u"));
     CHECK(p.wouldCycle(g, g));
     CHECK(!p.wouldCycle(s2, g));
+    {   // levels: the longest chain before each element; a cycle has none
+        Graph chain;
+        std::string a = chain.addSource("src"), b = chain.addElement("f"), c = chain.addElement("f");
+        chain.links = {{a, "src", b, "sink", "", {}}, {b, "src", c, "sink", "", {}}, {a, "src_1", c, "sink_1", "", {}}};
+        CHECK(chain.levels() == (std::map<std::string, int>{{a, 0}, {b, 1}, {c, 2}}));
+        CHECK(chain.disconnectBetween({b, c}) && chain.links.size() == 2 && !chain.disconnectBetween({b, c}));
+        chain.links.push_back({c, "src", a, "sink", "", {}});
+        CHECK(chain.levels().empty());
+    }
     // Unknown elements.
     CHECK(!p.linkExisting("nope", "src", mix, "sink_%u"));
     CHECK(!p.linkExisting(g, "src", "nope", "sink"));
