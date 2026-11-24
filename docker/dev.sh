@@ -21,5 +21,5 @@ TTY=(); [[ -t 0 ]] && TTY=(-it)
 
 docker run --rm "${TTY[@]}" "${GPU[@]}" --user "$(id -u):$(id -g)" \
     --env HOME=/tmp/home --env QT_QPA_PLATFORM=offscreen --env GPS_DS_CACHE="/workspace/$BUILD/ds-cache" \
-    --volume "$DIR:/workspace" --workdir /workspace "$IMAGE" \
-    bash -c 'mkdir -p "$HOME" && eval "$1"' _ "${*:-$DEFAULT}"
+    --volume "$DIR:/workspace" --workdir /workspace --entrypoint bash "$IMAGE" \
+    -c 'mkdir -p "$HOME" && eval "$1"' _ "${*:-$DEFAULT}"
