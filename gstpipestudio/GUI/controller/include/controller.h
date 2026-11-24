@@ -23,6 +23,7 @@
 #include "elementview.h"
 #include "helperclient.h"
 #include "layout.h"
+#include "customelements.h"
 #include "executionbackend.h"
 #include "factorycatalog.h"
 #include "pipeline.h"
@@ -85,10 +86,7 @@ public:
     const FactoryCatalog& catalog() const { return catalog_; }
 
     // ---- custom elements (saved multi-element presets & canvas groups)
-    static QString customElementsDir();
-    void loadCustomElements();
-    const QList<CustomElementInfo>& customElements() const { return customElements_; }
-    const gps::Graph* customElementPlan(const QString& name) const;
+    const QList<CustomElementInfo>& customElements() const { return library_.list(); }
     bool saveCustomElement(const QString& customName, const QStringList& elementNames, const QString& description = QString());
     bool removeCustomElement(const QString& customName);
     QStringList addCustomElement(const QString& customName, double x = std::numeric_limits<double>::quiet_NaN(), double y = std::numeric_limits<double>::quiet_NaN());
@@ -220,8 +218,7 @@ private:
 
     QTemporaryDir tmp_;
     FactoryCatalog catalog_;
-    QList<CustomElementInfo> customElements_;
-    std::map<QString, gps::Graph> customPlans_;
+    CustomElementLibrary library_;
     QSet<QString> expandedGroups_;
     int nextGroupId_ = 1;
     HelperClient* runClient_ = nullptr;

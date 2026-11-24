@@ -11,7 +11,6 @@
 #include <QGuiApplication>
 #include <QRectF>
 #include <QRegularExpression>
-#include <QStandardPaths>
 #include <algorithm>
 #include <memory>
 #include <set>
@@ -51,7 +50,7 @@ Controller::Controller(QObject* parent) : QObject(parent), watch_(new SlowWatch(
     bool ok = false;
     int ms = qEnvironmentVariableIntValue("GPS_UPDATE_TIMEOUT_MS", &ok);
     if (ok && ms > 0) updateTimeoutMs_ = ms;
-    loadCustomElements();
+    library_.load(catalog_);
     updateTimer_.setSingleShot(true);
     updateTimer_.setInterval(35);
     connect(&updateTimer_, &QTimer::timeout, this, &Controller::dispatchUpdate);
@@ -61,7 +60,7 @@ Controller::Controller(QObject* parent) : QObject(parent), watch_(new SlowWatch(
         emit changed();
     });
     connect(&catalog_, &FactoryCatalog::ready, this, [this] {
-        loadCustomElements();
+        library_.load(catalog_);
         emit changed();
     });
     connect(&catalog_, &FactoryCatalog::infoArrived, this, [this](const QString& factory) {
@@ -160,51 +159,6 @@ QString Controller::launchCommand() const {
 
 // ---- custom elements & groups
 
-QString Controller::customElementsDir() {
-    QString env = qEnvironmentVariable("GPS_CUSTOM_ELEMENTS_DIR");
-    if (!env.isEmpty()) return env;
-    return QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) + "/custom_elements";
-}
-
-void Controller::loadCustomElements() {
-    customElements_.clear();
-    customPlans_.clear();
-    QDir dir(customElementsDir());
-    if (!dir.exists()) return;
-    QStringList files = dir.entryList({"*.conf"}, QDir::Files, QDir::Name);
-    for (const QString& f : files) {
-        gps::Graph sub;
-        std::string err;
-        if (!gps::Graph::load(toStd(dir.filePath(f)), &sub, &err) || sub.elements.empty()) continue;
-        CustomElementInfo ci;
-        ci.name = fromStd(sub.name).isEmpty() ? QFileInfo(f).completeBaseName() : fromStd(sub.name);
-        ci.elementCount = static_cast<int>(sub.elements.size());
-        QStringList factories;
-        bool anyFreeSink = false;
-        bool anyFreeSrc = false;
-        for (const gps::Element& e : sub.elements) {
-            QString fac = fromStd(e.factory);
-            factories << fac;
-            const FactoryEntry* entry = catalog_.entry(fac);
-            bool isSrc = entry && entry->isSource, isSnk = entry && entry->isSink;
-            if (!isSrc && sub.linksInto(e.name).empty()) anyFreeSink = true;
-            if (!isSnk && sub.linksFromElement(e.name).empty()) anyFreeSrc = true;
-        }
-        ci.description = factories.join(" → ");
-        ci.hasFreeSink = anyFreeSink;
-        ci.hasFreeSrc = anyFreeSrc;
-        ci.isSource = !anyFreeSink && anyFreeSrc;
-        ci.isSink = anyFreeSink && !anyFreeSrc;
-        customPlans_[ci.name] = sub;
-        customElements_ << ci;
-    }
-}
-
-const gps::Graph* Controller::customElementPlan(const QString& name) const {
-    auto it = customPlans_.find(name);
-    return it == customPlans_.end() ? nullptr : &it->second;
-}
-
 QString Controller::elementGroup(const QString& elementName) const {
     const gps::Element* e = plan().find(toStd(elementName));
     return e ? fromStd(e->group) : QString();
@@ -283,58 +237,31 @@ bool Controller::saveCustomElement(const QString& customName, const QStringList&
     Q_UNUSED(description);
     QString clean = customName.trimmed();
     clean.replace('#', '_');
-    if (clean.isEmpty()) return false;
     QStringList expanded = expandSelectionWithGroups(elementNames);
-    if (expanded.isEmpty()) return false;
-
-    gps::Graph sub = copySubplan(expanded);
-    if (sub.elements.empty()) return false;
-    sub.name = toStd(clean);
-
-    // Normalize relative positions so top-left starts at (0, 0).
-    double minX = sub.elements.front().x;
-    double minY = sub.elements.front().y;
-    for (const gps::Element& e : sub.elements) {
-        minX = std::min(minX, e.x);
-        minY = std::min(minY, e.y);
-    }
-    for (gps::Element& e : sub.elements) {
-        e.x -= minX;
-        e.y -= minY;
-        e.group = toStd(clean + "#0");
-    }
-
-    QDir dir(customElementsDir());
-    if (!dir.exists() && !dir.mkpath(".")) return false;
-    QString safeFile = clean;
-    safeFile.replace(QRegularExpression("[^A-Za-z0-9_.-]"), "_");
-    std::string err;
-    if (!sub.save(toStd(dir.filePath(safeFile + ".conf")), &err)) {
-        emit notice("Unable to save custom element: " + fromStd(err));
+    if (clean.isEmpty() || expanded.isEmpty()) return false;
+    gps::Graph preset = copySubplan(expanded);
+    if (preset.elements.empty()) return false;
+    QString error;
+    if (!library_.save(clean, preset, &error)) {
+        emit notice("Unable to save custom element: " + error);
         return false;
     }
-
-    // Also group the selected elements on the active canvas as a collapsed instance of this custom element.
-    if (!editingBlocked()) {
-        groupSelectedElements(expanded, clean);
-    }
-    loadCustomElements();
+    // The selection on the canvas becomes a collapsed instance of the new custom element.
+    if (!editingBlocked()) groupSelectedElements(expanded, clean);
+    library_.load(catalog_);
     emit changed();
     return true;
 }
 
 bool Controller::removeCustomElement(const QString& customName) {
-    QDir dir(customElementsDir());
-    QString safeFile = customName;
-    safeFile.replace(QRegularExpression("[^A-Za-z0-9_.-]"), "_");
-    bool removed = QFile::remove(dir.filePath(safeFile + ".conf"));
-    loadCustomElements();
+    const bool removed = library_.remove(customName);
+    library_.load(catalog_);
     emit changed();
     return removed;
 }
 
 QStringList Controller::addCustomElement(const QString& customName, double x, double y) {
-    const gps::Graph* tmpl = customElementPlan(customName);
+    const gps::Graph* tmpl = library_.plan(customName);
     if (!tmpl || editingBlocked()) return {};
     gps::Graph copy = *tmpl;
     for (gps::Element& e : copy.elements) e.group = toStd(customName);  // the paste gives the group a fresh id
@@ -343,7 +270,7 @@ QStringList Controller::addCustomElement(const QString& customName, double x, do
 }
 
 QStringList Controller::addCustomElementAfter(const QString& srcElement, const QString& srcPad, const QString& customName) {
-    const gps::Graph* tmpl = customElementPlan(customName);
+    const gps::Graph* tmpl = library_.plan(customName);
     const gps::Element* from = plan().find(toStd(srcElement));
     if (!tmpl || !from || editingBlocked()) return {};
     if (!infosReady(*tmpl, [=] { addCustomElementAfter(srcElement, srcPad, customName); })) return {};
