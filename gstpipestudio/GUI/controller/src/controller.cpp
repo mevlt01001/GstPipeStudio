@@ -11,8 +11,6 @@
 #include <QFileInfo>
 #include <QFontMetricsF>
 #include <QGuiApplication>
-#include <QJsonArray>
-#include <QJsonDocument>
 #include <QRectF>
 #include <QRegularExpression>
 #include <QStandardPaths>
@@ -80,18 +78,18 @@ QString Controller::saveBlockedReason() const {
     if (monitoring_) return "Monitoring is running";
     if (opening_) return "A file is being opened";
     if (cancelled_) return "Validation was cancelled — press Validate";
-    if (!result_.valid()) return "The pipeline is not validated yet — press Validate";
-    if (!result_.ok()) return "The last validation reported a problem (see the Validation tab)";
+    if (!result().valid()) return "The pipeline is not validated yet — press Validate";
+    if (!result().ok()) return "The last validation reported a problem (see the Validation tab)";
     return QString();
 }
 
 QString Controller::runBlockedReason() const {
     QString reason = saveBlockedReason();
-    if (reason.isEmpty() && !result_.isComplete()) return "The pipeline is not complete: link every free src pad";
+    if (reason.isEmpty() && !result().complete()) return "The pipeline is not complete: link every free src pad";
     return reason;
 }
 
-bool Controller::helperStopped() const { return result_.status == "crashed" || result_.status == "stopped"; }
+bool Controller::helperStopped() const { return result().status == "crashed" || result().status == "stopped"; }
 
 void Controller::log(const QString& line) {
     logTail_ << line;
@@ -114,7 +112,7 @@ SupportInfo Controller::supportInfo(const QString& title) const {
     i.title = title;
     i.action = action_;
     i.linking = linking_;
-    if (result_.valid()) i.validation = result_.statusText() + (result_.message.isEmpty() ? "" : " – " + result_.message);
+    if (result().valid()) i.validation = statusText(result()) + (result().message.empty() ? QString() : " – " + fromStd(result().message));
     else if (cancelled_) i.validation = "cancelled";
     i.logTail = logTail_.mid(qMax(0, logTail_.size() - 15));
     const StartupResult& env = startup_->result();
@@ -160,12 +158,12 @@ HelperClient* Controller::runHelper(const QString& name, const QStringList& args
 
 void Controller::loadCatalog() {
     runHelper("gps-inspect", {"list"}, 30000, [this](const HelperResult& r) {
-        if (!r.hasJson) {
+        gps::FactoryList list;
+        if (!r.read(&list)) {
             emit notice("Unable to read the element list: gps-inspect did not run or gave an unusable answer.");
             return;
         }
-        catalog_.clear();
-        for (const QJsonValue& v : r.json["elements"].toArray()) catalog_ << ListEntry::fromJson(v.toObject());
+        catalog_ = std::move(list.elements);
         catalogLoaded_ = true;
         loadCustomElements();
         log(QString("Element list: %1 factories").arg(catalog_.size()));
@@ -179,6 +177,15 @@ const ElementInfo* Controller::info(const QString& factory) const {
     return found == infos_.end() ? nullptr : &found->second;
 }
 
+const FactoryEntry* Controller::factoryEntry(const QString& factory) const {
+    if (const ElementInfo* i = info(factory)) return &i->entry;
+    const std::string name = toStd(factory);
+    for (const FactoryEntry& e : catalog_) {
+        if (e.factory == name) return &e;
+    }
+    return nullptr;
+}
+
 void Controller::fetchInfo(const QString& factory, InfoCallback done) {
     if (const ElementInfo* cached = info(factory)) {
         done(cached);
@@ -188,19 +195,10 @@ void Controller::fetchInfo(const QString& factory, InfoCallback done) {
     if (pendingInfo_[factory].size() > 1) return;  // a call for this factory is already on its way
 
     runHelper("gps-inspect", {"element", factory}, 30000, [this, factory](const HelperResult& r) {
-        if (r.hasJson && r.json["factory"].toString() == factory) {
-            infos_[factory] = ElementInfo::fromJson(r.json);
-            gps::FactoryDefinition definition;
-            definition.isSource = infos_[factory].isSource;
-            for (const auto& t : infos_[factory].padTemplates) {
-                gps::Pad pad;
-                pad.identity = pad.templateName = toStd(t.name);
-                pad.direction = t.isSrc() ? gps::Pad::Direction::Source : gps::Pad::Direction::Sink;
-                pad.presence = t.presence == "always" ? gps::Pad::Presence::Always : t.presence == "request" ? gps::Pad::Presence::Request : gps::Pad::Presence::Sometimes;
-                pad.templateCaps = toStd(t.caps);
-                definition.templates.push_back(std::move(pad));
-            }
-            pipeline_.registerFactory(toStd(factory), std::move(definition));
+        ElementInfo answer;
+        if (r.read(&answer) && answer.entry.factory == toStd(factory)) {
+            infos_[factory] = std::move(answer);
+            pipeline_.registerFactory(toStd(factory), gps::definitionOf(infos_[factory]));
         } else {
             emit notice(QString("Unable to read the information of element '%1'.").arg(factory));
         }
@@ -234,8 +232,9 @@ void Controller::fetchCompatible(const QString& caps, NamesCallback done) {
     if (!caps.isEmpty()) args << "--caps" << caps;
     runHelper("gps-inspect", args, 30000, [this, caps, done](const HelperResult& r) {
         QStringList names;
-        if (r.hasJson) {
-            for (const QJsonValue& v : r.json["factories"].toArray()) names << v.toString();
+        gps::CompatibleFactories answer;
+        if (r.read(&answer)) {
+            names = fromStd(answer.factories);
             compatible_.insert(caps, names);
         }
         done(names);
@@ -246,13 +245,7 @@ gps::TraitsFn Controller::traits() const {
     return [this](const std::string& factory) {
         gps::FactoryTraits t;
         QString name = fromStd(factory);
-        if (const ElementInfo* i = info(name)) {
-            t.isSource = i->isSource;
-        } else {
-            for (const ListEntry& e : catalog_) {
-                if (e.factory == name) t.isSource = e.isSource;
-            }
-        }
+        if (const FactoryEntry* e = factoryEntry(name)) t.isSource = e->isSource;
         return t;
     };
 }
@@ -284,19 +277,8 @@ void Controller::loadCustomElements() {
         for (const gps::Element& e : sub.elements) {
             QString fac = fromStd(e.factory);
             factories << fac;
-            bool isSrc = false, isSnk = false;
-            if (const ElementInfo* inf = info(fac)) {
-                isSrc = inf->isSource;
-                isSnk = inf->isSink;
-            } else {
-                for (const ListEntry& le : catalog_) {
-                    if (le.factory == fac) {
-                        isSrc = le.isSource;
-                        isSnk = le.isSink;
-                        break;
-                    }
-                }
-            }
+            const FactoryEntry* entry = factoryEntry(fac);
+            bool isSrc = entry && entry->isSource, isSnk = entry && entry->isSink;
             if (!isSrc && sub.linksInto(e.name).empty()) anyFreeSink = true;
             if (!isSnk && sub.linksFromElement(e.name).empty()) anyFreeSrc = true;
         }
@@ -532,12 +514,14 @@ QStringList Controller::addCustomElementAfter(const QString& srcElement, const Q
 
 QString Controller::elementNote(const QString& element, bool* isError) const {
     *isError = false;
-    if (result_.valid() && !result_.ok() && result_.errorElement == element) {
+    const UpdateResult& r = result();
+    if (r.valid() && !r.ok() && fromStd(r.errorElement) == element) {
         *isError = true;
-        return result_.message;
+        return fromStd(r.message);
     }
-    for (const QStringList* list : {&result_.refused, &result_.missing}) {
-        for (const QString& entry : *list) {
+    for (const std::vector<std::string>* list : {&r.refused, &r.missing}) {
+        for (const std::string& text : *list) {
+            const QString entry = fromStd(text);
             if (entry.startsWith(element + ".") || entry.startsWith(element + ":")) return entry;
         }
     }
@@ -553,9 +537,7 @@ ElementView Controller::view(const QString& name) const {
     v.factory = fromStd(element->factory);
     v.groupId = fromStd(element->group);
     if (!v.groupId.isEmpty()) v.groupMembers = groupMembers(v.groupId);
-    for (const ListEntry& e : catalog_) {
-        if (e.factory == v.factory) v.nvidia = e.nvidia;
-    }
+    if (const FactoryEntry* e = factoryEntry(v.factory)) v.nvidia = e->nvidia;
 
     // Changed properties, the exposed ones marked.
     QStringList lines;
@@ -576,8 +558,8 @@ ElementView Controller::view(const QString& name) const {
 
     const ElementInfo* inf = info(v.factory);
     if (!inf) return v;
-    v.isSource = inf->isSource;
-    v.isSink = inf->isSink;
+    v.isSource = inf->entry.isSource;
+    v.isSink = inf->entry.isSink;
     v.isTracked = plan().isElementTracked(element->name, traits());
     if (!v.isTracked && v.note.isEmpty()) {
         v.isInfo = true;
@@ -587,26 +569,26 @@ ElementView Controller::view(const QString& name) const {
     // Sink pads: Always ones are fixed, a Request one exists per link or per requestSink count.
     for (const PadTemplateInfo& t : inf->padTemplates) {
         if (t.isSrc()) continue;
-        QString templateMedia = t.structures.isEmpty() ? QString() : t.structures.first().title();
+        QString templateMedia = t.structures.empty() ? QString() : fromStd(gps::structureTitle(t.structures.front()));
         auto make = [&](const QString& identity, int link, int k) {
             PadView p;
             p.element = name;
             p.identity = identity;
-            p.templateName = t.name;
+            p.templateName = fromStd(t.name);
             p.isSrc = false;
             p.link = link;
             p.state = link >= 0 ? PadView::Linked : PadView::Empty;
-            p.label = t.isRequest() ? fillTemplate(t.name, k) : t.name;
+            p.label = t.isRequest() ? fillTemplate(p.templateName, k) : p.templateName;
             p.media = templateMedia;
-            p.tip = t.caps;
+            p.tip = fromStd(t.caps);
             int seen = 0;
-            for (const PadReport& r : result_.pads) {
-                if (r.element != name || r.isSrc || r.templateName != t.name || seen++ != k) continue;
-                p.label = r.pad;
-                if (!r.caps.isEmpty()) {
-                    p.media = mediaOf(r.caps);
-                    p.tip = r.caps;
-                    p.caps = r.caps;
+            for (const PadReport& r : result().pads) {
+                if (r.element != element->name || r.isSrc || r.templateName != t.name || seen++ != k) continue;
+                p.label = fromStd(r.pad);
+                if (!r.caps.empty()) {
+                    p.media = fromStd(gps::mediaOf(r.caps));
+                    p.tip = fromStd(r.caps);
+                    p.caps = fromStd(r.caps);
                 }
             }
             return p;
@@ -614,21 +596,21 @@ ElementView Controller::view(const QString& name) const {
         if (!t.isRequest()) {
             int link = -1;
             for (size_t i = 0; i < plan().links.size(); ++i) {
-                if (plan().links[i].sinkElement == element->name && plan().links[i].sinkPad == toStd(t.name)) link = static_cast<int>(i);
+                if (plan().links[i].sinkElement == element->name && plan().links[i].sinkPad == t.name) link = static_cast<int>(i);
             }
-            v.sinks << make(t.name, link, 0);
+            v.sinks << make(fromStd(t.name), link, 0);
         } else {
             int k = 0;
             for (size_t i = 0; i < plan().links.size(); ++i) {
-                if (plan().links[i].sinkElement == element->name && plan().links[i].sinkPad == toStd(t.name)) {
-                    v.sinks << make(fromStd(gps::padIdentity(toStd(t.name), k)), static_cast<int>(i), k);
+                if (plan().links[i].sinkElement == element->name && plan().links[i].sinkPad == t.name) {
+                    v.sinks << make(fromStd(gps::padIdentity(t.name, k)), static_cast<int>(i), k);
                     ++k;
                 }
             }
-            auto reqCount = element->requestSink.find(toStd(t.name));
+            auto reqCount = element->requestSink.find(t.name);
             int totalWanted = reqCount == element->requestSink.end() ? k : std::max(k, reqCount->second);
             for (; k < totalWanted; ++k) {
-                v.sinks << make(fromStd(gps::padIdentity(toStd(t.name), k)), -1, k);
+                v.sinks << make(fromStd(gps::padIdentity(t.name, k)), -1, k);
             }
         }
     }
@@ -640,10 +622,10 @@ ElementView Controller::view(const QString& name) const {
         auto note = [&](const QString& identity) {
             std::string tmpl;
             int k = 0;
-            if (gps::splitPadIdentity(toStd(identity), &tmpl, &k) && fromStd(tmpl) == t.name) byIndex[k] = identity;
+            if (gps::splitPadIdentity(toStd(identity), &tmpl, &k) && tmpl == t.name) byIndex[k] = identity;
         };
-        for (const PadReport& r : result_.pads) {
-            if (r.element == name && r.isSrc) note(r.identity);
+        for (const PadReport& r : result().pads) {
+            if (r.element == element->name && r.isSrc) note(fromStd(r.identity));
         }
         for (const gps::Connection& l : plan().links) {
             if (l.srcElement == element->name) note(fromStd(l.srcPad));
@@ -651,12 +633,12 @@ ElementView Controller::view(const QString& name) const {
 
         QStringList identities;
         if (t.presence == "always") {
-            identities << t.name;
+            identities << fromStd(t.name);
         } else if (t.isRequest()) {
-            auto count = element->requestSrc.find(toStd(t.name));
+            auto count = element->requestSrc.find(t.name);
             int n = count == element->requestSrc.end() ? 0 : count->second;
             if (!byIndex.empty()) n = std::max(n, byIndex.rbegin()->first + 1);
-            for (int k = 0; k < n; ++k) identities << fromStd(gps::padIdentity(toStd(t.name), k));
+            for (int k = 0; k < n; ++k) identities << fromStd(gps::padIdentity(t.name, k));
         } else {
             for (const auto& entry : byIndex) identities << entry.second;
         }
@@ -665,20 +647,20 @@ ElementView Controller::view(const QString& name) const {
             PadView p;
             p.element = name;
             p.identity = identity;
-            p.templateName = t.name;
+            p.templateName = fromStd(t.name);
             p.isSrc = true;
             std::string tmpl;
             int k = 0;
             gps::splitPadIdentity(toStd(identity), &tmpl, &k);
-            p.label = t.presence == "always" ? t.name : fillTemplate(t.name, k);
+            p.label = t.presence == "always" ? p.templateName : fillTemplate(p.templateName, k);
             p.link = plan().linkFrom(toStd(name), toStd(identity));
-            const PadReport* r = result_.pad(name, identity, true);
+            const PadReport* r = result().pad(element->name, toStd(identity), true);
             if (r) {
-                p.label = r->pad.isEmpty() ? p.label : r->pad;
-                QString caps = r->caps.isEmpty() ? r->allowed : r->caps;
-                p.media = mediaOf(caps);
-                p.tip = caps;
-                p.caps = r->caps;
+                p.label = r->pad.empty() ? p.label : fromStd(r->pad);
+                const std::string& caps = r->caps.empty() ? r->allowed : r->caps;
+                p.media = fromStd(gps::mediaOf(caps));
+                p.tip = fromStd(caps);
+                p.caps = fromStd(r->caps);
             }
             p.state = p.link >= 0 ? PadView::Linked : ((!v.isTracked || (r && r->unknownData)) ? PadView::Unknown : PadView::Free);
             v.srcs << p;
@@ -769,9 +751,9 @@ QList<LinkView> Controller::linkViews() const {
         v.sinkIdentity = linkSinkIdentity(v.index);
         v.badge = l.caps.empty() ? QString() : badgeOf(fromStd(l.caps));
         v.tip = fromStd(l.caps);
-        const PadReport* srcRep = result_.pad(v.srcElement, v.srcIdentity, true);
-        if (srcRep && !srcRep->caps.isEmpty()) {
-            v.negotiatedCaps = srcRep->caps;
+        const PadReport* srcRep = result().pad(l.srcElement, l.srcPad, true);
+        if (srcRep && !srcRep->caps.empty()) {
+            v.negotiatedCaps = fromStd(srcRep->caps);
         } else if (!l.caps.empty()) {
             v.negotiatedCaps = fromStd(l.caps);
         }
@@ -781,14 +763,14 @@ QList<LinkView> Controller::linkViews() const {
     return out;
 }
 
-QList<StructureInfo> Controller::padStructures(const QString& element, const QString& identity) const {
-    const PadReport* r = result_.pad(element, identity, true);
-    return r ? r->allowedStructures : QList<StructureInfo>();
+std::vector<StructureInfo> Controller::padStructures(const QString& element, const QString& identity) const {
+    const PadReport* r = result().pad(toStd(element), toStd(identity), true);
+    return r ? r->allowedStructures : std::vector<StructureInfo>();
 }
 
 QString Controller::padAllowed(const QString& element, const QString& identity) const {
-    const PadReport* r = result_.pad(element, identity, true);
-    return r ? r->allowed : QString();
+    const PadReport* r = result().pad(toStd(element), toStd(identity), true);
+    return r ? fromStd(r->allowed) : QString();
 }
 
 const PadTemplateInfo* Controller::linkSinkTemplate(int link) const {
@@ -796,25 +778,25 @@ const PadTemplateInfo* Controller::linkSinkTemplate(int link) const {
     const gps::Connection& l = plan().links[link];
     const gps::Element* sink = plan().find(l.sinkElement);
     const ElementInfo* inf = sink ? info(fromStd(sink->factory)) : nullptr;
-    return inf ? inf->padTemplate(fromStd(l.sinkPad), "sink") : nullptr;
+    return inf ? inf->padTemplate(l.sinkPad, "sink") : nullptr;
 }
 
 QList<ExistingTarget> Controller::existingTargets(const QString& element, const QString& identity) const {
     QList<ExistingTarget> out;
-    QList<StructureInfo> allowed = padStructures(element, identity);
+    std::vector<StructureInfo> allowed = padStructures(element, identity);
     for (const gps::Element& e : plan().elements) {
         const ElementInfo* inf = info(fromStd(e.factory));
         if (!inf || plan().wouldCycle(toStd(element), e.name)) continue;
         for (const PadTemplateInfo& t : inf->sinkTemplates()) {
-            if (!capsCompatible(allowed, t.structures)) continue;
-            if (!t.isRequest() && plan().sinkPadTaken(e.name, toStd(t.name))) continue;
-            out.append({fromStd(e.name), fromStd(e.factory), t.name, t.isRequest()});
+            if (!gps::structuresMeet(allowed, t.structures)) continue;
+            if (!t.isRequest() && plan().sinkPadTaken(e.name, t.name)) continue;
+            out.append({fromStd(e.name), fromStd(e.factory), fromStd(t.name), t.isRequest()});
         }
     }
     return out;
 }
 
-QList<PadTemplateInfo> Controller::sinkChoices(const ElementInfo& inf, const QString& element, const QString& identity) const {
+std::vector<PadTemplateInfo> Controller::sinkChoices(const ElementInfo& inf, const QString& element, const QString& identity) const {
     return inf.sinkTemplatesFor(padStructures(element, identity));
 }
 
@@ -1202,7 +1184,7 @@ bool Controller::spliceElements(const QStringList& elements, const QString& link
         if (const ElementInfo* inf = info(view(only).factory)) {
             for (const PadTemplateInfo& t : inf->sinkTemplates()) {
                 if (t.isRequest()) {
-                    std::pair<std::string, std::string> cand{toStd(only), toStd(t.name)};
+                    std::pair<std::string, std::string> cand{toStd(only), t.name};
                     if (std::find(freeSinks.begin(), freeSinks.end(), cand) == freeSinks.end()) {
                         freeSinks.push_back(cand);
                     }
@@ -1352,7 +1334,7 @@ bool Controller::linkOrderedInternal(const QStringList& expanded, QString* lastT
             if (const ElementInfo* inf = info(dv.factory)) {
                 for (const PadTemplateInfo& t : inf->sinkTemplates()) {
                     if (t.isRequest()) {
-                        sinkPad = t.name;
+                        sinkPad = fromStd(t.name);
                         break;
                     }
                 }
@@ -1558,19 +1540,9 @@ void Controller::startUpdate() {
 
 void Controller::dispatchUpdate() {
     cancelled_ = false;
-    if (plan().empty()) {
+    if (plan().empty() || plan().trackedSubplan(traits()).empty()) {
         updating_ = false; watch_->stop();
-        result_ = UpdateResult();
-        emit changed();
-        emit updateFinished(true);
-        return;
-    }
-    gps::Graph tracked = plan().trackedSubplan(traits());
-    if (tracked.empty()) {
-        updating_ = false; watch_->stop();
-        result_ = UpdateResult();
-        result_.status = "ok";
-        result_.complete = false;
+        pipeline_.observeIdle();
         emit changed();
         emit updateFinished(true);
         return;
@@ -1579,6 +1551,7 @@ void Controller::dispatchUpdate() {
     watch_->start();
     emit changed();
     backend_.setTimeout(updateTimeoutMs_);
+    backend_.setSuspect(toStd(touched_));
     execution_.start(traits(), [this](const gps::ExecutionResult& result) { finishUpdate(result); });
 }
 
@@ -1614,15 +1587,9 @@ void Controller::finishUpdate(const gps::ExecutionResult& r) {
         emit updateFinished(false);
         return;
     }
-    result_ = UpdateResult::fromCore(pipeline_.observations());
-    if ((result_.status == "crashed" || result_.status == "hung") && result_.errorElement.isEmpty())
-    {
-        result_.errorElement = touched_;
-        if (!touched_.isEmpty()) result_.message = "Element " + touched_ + ": " + result_.message;
-    }
-    log("Validation: " + result_.statusText() + (result_.message.isEmpty() ? "" : " – " + result_.message));
+    log("Validation: " + statusText(result()) + (result().message.empty() ? QString() : " – " + fromStd(result().message)));
     emit changed();
-    emit updateFinished(result_.ok());
+    emit updateFinished(result().ok());
 }
 
 bool Controller::refresh() {
@@ -1637,7 +1604,6 @@ bool Controller::refresh() {
 void Controller::newPlan() {
     if (busy()) return;
     pipeline_.reset();
-    result_ = UpdateResult();
     cancelled_ = false;
     path_.clear();
     dirty_ = false;
@@ -1668,7 +1634,6 @@ void Controller::open(const QString& path, bool imported) {
         if (!pipeline_.reset(*loaded, &failure)) { emit notice(fromStd(failure)); return; }
         path_ = imported ? QString() : path;
         dirty_ = imported;
-        result_ = UpdateResult();
         note(imported ? "Imported a gst-launch pipeline" : "Opened a plan file");
         emit changed();
         if (imported) arrangePipeline();
@@ -1686,17 +1651,17 @@ bool Controller::importLaunch(const QString& description) {
     runHelper("gps-import", {"--output", path, "--probe-ms", "1000", description.trimmed()}, 13000,
               [this, path](const HelperResult& result) {
         opening_ = false;
-        if (!result.hasJson || result.json.value("status").toString() != "ok") {
-            emit notice("Import failed: " + (result.hasJson ? result.json.value("message").toString() : QString("gps-import did not answer")));
+        gps::ImportReply reply;
+        reply.status.clear();
+        const bool answered = result.read(&reply);
+        if (reply.status != "ok") {
+            emit notice("Import failed: " + (answered ? fromStd(reply.message) : QString("gps-import did not answer")));
             emit changed();
             return;
         }
-        const QString name = result.json.value("nativeName").toString();
-        const QJsonArray warnings = result.json.value("warnings").toArray();
-        log(QString("Imported native pipeline %1: %2 elements, %3 links")
-            .arg(name).arg(result.json.value("elements").toInt()).arg(result.json.value("links").toInt()));
-        for (const auto& warning : warnings) log("[gps-import] " + warning.toString());
-        if (!warnings.isEmpty()) emit notice("Imported with warnings. Review the Log and validate before running.");
+        log(QString("Imported native pipeline %1: %2 elements, %3 links").arg(fromStd(reply.nativeName)).arg(reply.elements).arg(reply.links));
+        for (const std::string& warning : reply.warnings) log("[gps-import] " + fromStd(warning));
+        if (!reply.warnings.empty()) emit notice("Imported with warnings. Review the Log and validate before running.");
         open(path, true);
     });
     return true;
@@ -1709,7 +1674,7 @@ bool Controller::save(const QString& path, QString* error) {
         return false;
     }
     gps::Graph saved = plan();
-    saved.complete = result_.isComplete();
+    saved.complete = result().complete();
     saved.name = toStd(QFileInfo(target).completeBaseName());
     std::string failure;
     if (!saved.save(toStd(target), &failure)) {
@@ -1737,12 +1702,15 @@ bool Controller::run() {
     runClient_ = runHelper("gps-run", {file}, 0, [this](const HelperResult& r) {
         running_ = false;
         runClient_ = nullptr;
+        gps::RunResult answer;
+        answer.status.clear();
+        const bool answered = r.read(&answer);
         QString status;
-        if (r.outcome == HelperResult::Finished && r.hasJson) status = r.json["status"].toString();
+        if (r.outcome == HelperResult::Finished && answered) status = fromStd(answer.status);
         else if (r.outcome == HelperResult::Crashed) status = "crashed";
         else if (r.outcome == HelperResult::NotFound) status = "not-found";
         else status = "error";
-        QString message = r.hasJson ? r.json["message"].toString() : QString();
+        QString message = answered ? fromStd(answer.message) : QString();
         log("Run finished: " + status + (message.isEmpty() ? "" : " – " + message));
         emit changed();
         emit runFinished(status);
@@ -1774,11 +1742,12 @@ bool Controller::startMonitoring() {
         while ((end = monitorOutput_.indexOf('\n')) >= 0) {
             QByteArray line = monitorOutput_.left(end);
             monitorOutput_.remove(0, end + 1);
-            const QJsonDocument document = QJsonDocument::fromJson(line);
-            if (!document.isObject()) continue;
-            const auto object = document.object();
-            if (object.value("type").toString() == "sample") emit telemetryReceived(object);
-            else if (object.contains("status")) log("Monitor finished: " + object.value("status").toString());
+            const std::string text = line.toStdString();
+            gps::TelemetrySample sample;
+            gps::RunResult finished;
+            finished.status.clear();
+            if (gps::fromJson(text, &sample)) emit telemetryReceived(sample);
+            else if (gps::fromJson(text, &finished) && !finished.status.empty()) log("Monitor finished: " + fromStd(finished.status));
         }
     });
     connect(client, &QProcess::readyReadStandardError, this, [this, client] { log("[gps-monitor] " + QString::fromUtf8(client->readAllStandardError()).trimmed()); });

@@ -1,7 +1,9 @@
-// json.h – the smallest JSON writer that does the job. No dependency, output is always valid UTF-8 JSON.
+// json.h – the smallest JSON writer and reader that do the job. No dependency; the writer's output is always valid UTF-8.
+// The helper answers themselves are in wire.h.
 #pragma once
 
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace gps {
@@ -38,5 +40,23 @@ private:
 
 // The text as the inside of a JSON string literal (no surrounding quotes). Invalid UTF-8 becomes U+FFFD.
 std::string jsonEscape(const std::string& text);
+
+// One parsed JSON value. A number keeps its text as written as well.
+struct JsonValue {
+    enum class Type { Null, Bool, Number, String, Array, Object };
+    Type type = Type::Null;
+    bool boolean = false;
+    double number = 0;
+    std::string text;                                        // String; Number as written
+    std::vector<JsonValue> items;                            // Array
+    std::vector<std::pair<std::string, JsonValue>> members;  // Object, in the order written
+
+    const JsonValue* find(const std::string& key) const;     // nullptr when the object has no such member
+};
+
+// False when the text is not exactly one JSON value.
+bool parseJson(const std::string& text, JsonValue* out);
+// A JSON number read the same way whatever the process locale is; 0 when the text is no number.
+double jsonNumber(const std::string& text);
 
 }  // namespace gps

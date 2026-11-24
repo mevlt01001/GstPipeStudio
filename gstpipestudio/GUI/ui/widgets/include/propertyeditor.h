@@ -6,7 +6,7 @@
 #include <functional>
 #include <optional>
 
-#include "elementinfo.h"
+#include "contract.h"
 #include "graph.h"
 
 class PropertyEditor : public QWidget {

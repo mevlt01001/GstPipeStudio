@@ -36,10 +36,10 @@ private slots:
     void catalogAndTraits() {
         QVERIFY(c->catalogLoaded());
         auto find = [&](const QString& f) {
-            for (const ListEntry& e : c->catalog()) {
-                if (e.factory == f) return e;
+            for (const FactoryEntry& e : c->catalog()) {
+                if (fromStd(e.factory) == f) return e;
             }
-            return ListEntry();
+            return FactoryEntry();
         };
         QVERIFY(find("videotestsrc").isSource);
         QVERIFY(!find("videotestsrc").nvidia);
@@ -48,7 +48,7 @@ private slots:
         // Traits come from the catalog before the info is fetched, from the info afterwards.
         QVERIFY(c->traits()("videotestsrc").isSource);
         QVERIFY(!c->traits()("tee").isSource);
-        QVERIFY(need(*c, "audiotestsrc")->isSource);
+        QVERIFY(need(*c, "audiotestsrc")->entry.isSource);
         QVERIFY(c->traits()("audiotestsrc").isSource);
     }
 
@@ -92,7 +92,7 @@ private slots:
         QVERIFY(!c->canSave());
         QVERIFY(settle(*c));
         QCOMPARE(finished.count(), 1);
-        QCOMPARE(c->result().status, QString("ok"));
+        QCOMPARE(fromStd(c->result().status), QString("ok"));
         QVERIFY(c->canSave());          // an unfinished pipeline can be saved ...
         QVERIFY(!c->canRun());          // ... but not run (SPEC 8)
         ElementView v = c->view("videotestsrc_0");
@@ -108,7 +108,7 @@ private slots:
     void chainIsCompleteAndRuns() {
         Chain ch = makeChain();
         QVERIFY(!ch.sink.isEmpty());
-        QVERIFY(c->result().isComplete());
+        QVERIFY(c->result().complete());
         QVERIFY(c->canSave());
         QVERIFY(c->canRun());
         QCOMPARE(c->view(ch.convert).sinks.size(), 1);
@@ -215,7 +215,7 @@ private slots:
             QVERIFY2(!q.isEmpty(), "tee branch");
             addAfter(*c, q, "src", "fakesink");
         }
-        QVERIFY(c->result().isComplete());
+        QVERIFY(c->result().complete());
         QList<QRectF> rects;
         for (const gps::Element& e : c->plan().elements) {
             rects << QRectF(e.x, e.y, metrics::kBoxWidth, c->view(text(e.name)).height());
@@ -241,7 +241,7 @@ private slots:
         QCOMPARE(v.srcs[0].media, QString("image/jpeg"));
         QCOMPARE(v.srcs[1].identity, QString("audio_%u#0"));
         QCOMPARE(v.srcs[1].media, QString("audio/x-raw"));
-        QVERIFY(!c->result().complete);
+        QVERIFY(!c->result().complete());
 
         QString dec = addAfter(*c, demux, "video_%u#0", "jpegdec");
         QVERIFY(!dec.isEmpty());
@@ -256,7 +256,7 @@ private slots:
         PadView pad = c->view(file).srcs[0];
         QCOMPARE(pad.state, PadView::Unknown);
         QVERIFY(c->result().ok());
-        QVERIFY(!c->result().isComplete());
+        QVERIFY(!c->result().complete());
     }
 
     void capsChoiceBecomesABadge() {
@@ -265,8 +265,8 @@ private slots:
         QVERIFY(settle(*c));
         QCOMPARE(c->linkViews()[0].badge, QString("caps · 1"));
         QCOMPARE(c->linkViews()[0].tip, QString("video/x-raw, width=(int)640"));
-        QVERIFY(c->result().pad(ch.src, "src", true)->caps.contains("width=(int)640"));
-        QVERIFY(c->result().isComplete());
+        QVERIFY(fromStd(c->result().pad(toStd(ch.src), toStd("src"), true)->caps).contains("width=(int)640"));
+        QVERIFY(c->result().complete());
         // Empty text = Auto again.
         QVERIFY(c->setCaps(ch.src, "src", "", {}));
         QVERIFY(settle(*c));
@@ -277,9 +277,9 @@ private slots:
         QString src = addSource(*c, "videotestsrc");
         QString dec = addAfter(*c, src, "src", "jpegdec");  // raw video into a JPEG decoder
         QVERIFY(!dec.isEmpty());
-        QCOMPARE(c->result().status, QString("ok"));
+        QCOMPARE(fromStd(c->result().status), QString("ok"));
         QCOMPARE(c->result().refused.size(), 1);
-        QVERIFY(!c->result().isComplete());
+        QVERIFY(!c->result().complete());
         QVERIFY(c->canSave());
         QVERIFY(!c->canRun());
         QVERIFY(!c->view(src).note.isEmpty());
@@ -298,14 +298,14 @@ private slots:
         QCOMPARE(c->plan().links.size(), size_t(3));
         QString queue = text(c->plan().elements.back().name);
         QCOMPARE(text(c->plan().find(queue.toStdString())->factory), QString("queue"));
-        QVERIFY(c->result().isComplete());
+        QVERIFY(c->result().complete());
         QCOMPARE(c->plan().links[0].caps, std::string("video/x-raw, width=(int)640"));  // the choice stays on the first link
         QVERIFY(c->removeQueue(queue));
         QVERIFY(settle(*c));
         QCOMPARE(c->plan().elements.size(), size_t(3));
         QCOMPARE(c->plan().links.size(), size_t(2));
         QCOMPARE(c->plan().links[0].caps, std::string("video/x-raw, width=(int)640"));
-        QVERIFY(c->result().isComplete());
+        QVERIFY(c->result().complete());
         QVERIFY(!c->removeQueue(ch.convert));  // only a queue can be removed this way
     }
 
@@ -339,7 +339,7 @@ private slots:
         QVERIFY(!c->plan().find(ch.convert.toStdString()));
         QVERIFY(c->plan().find(ch.sink.toStdString()));
         QVERIFY(c->result().ok());
-        QVERIFY(!c->result().isComplete());  // the queue's output is free now
+        QVERIFY(!c->result().complete());  // the queue's output is free now
     }
 
     void deletingASourceCascades() {
@@ -350,7 +350,7 @@ private slots:
         QVERIFY(c->linkExisting(two, "src", mix, "sink_%u"));
         QVERIFY(settle(*c));
         QString out = addAfter(*c, mix, "src", "fakesink");
-        QVERIFY(c->result().isComplete());
+        QVERIFY(c->result().complete());
 
         // Deleting a source only deletes that source; the compositor and sink remain on the free canvas.
         QCOMPARE(c->previewDeleteSource(one).elements, std::vector<std::string>{one.toStdString()});
@@ -372,8 +372,8 @@ private slots:
         QVERIFY(c->canSave());
         QString sink = addAfter(*c, src, "src", "fakesink", "sink", withProps({{"fake-error", "boom: cannot open"}}));
         QVERIFY(!sink.isEmpty());
-        QCOMPARE(c->result().status, QString("error"));
-        QCOMPARE(c->result().errorElement, sink);
+        QCOMPARE(fromStd(c->result().status), QString("error"));
+        QCOMPARE(fromStd(c->result().errorElement), sink);
         QVERIFY(c->plan().find(sink.toStdString()));   // the change stays
         QVERIFY(c->dirty());
         QVERIFY(!c->canSave());                       // Save closes
@@ -396,16 +396,16 @@ private slots:
 
     void aCrashingHelperIsSurvived() {
         QString src = addSource(*c, "videotestsrc", withProps({{"fake-crash", "1"}}));
-        QCOMPARE(c->result().status, QString("crashed"));
-        QCOMPARE(c->result().errorElement, src);
-        QVERIFY(c->result().message.contains(src));
-        QVERIFY(c->result().message.contains("stop unexpectedly"));
+        QCOMPARE(fromStd(c->result().status), QString("crashed"));
+        QCOMPARE(fromStd(c->result().errorElement), src);
+        QVERIFY(fromStd(c->result().message).contains(src));
+        QVERIFY(fromStd(c->result().message).contains("stop unexpectedly"));
         QVERIFY(!c->canSave());
         QVERIFY(c->view(src).isError);
         // Still alive: fix the element and carry on.
         QVERIFY(c->editElement(src, {}));
         QVERIFY(settle(*c));
-        QCOMPARE(c->result().status, QString("ok"));
+        QCOMPARE(fromStd(c->result().status), QString("ok"));
         QVERIFY(c->canSave());
     }
 
@@ -414,14 +414,14 @@ private slots:
         QElapsedTimer timer;
         timer.start();
         QString src = addSource(*c, "videotestsrc", withProps({{"fake-hang", "1"}}));
-        QCOMPARE(c->result().status, QString("hung"));
-        QVERIFY(c->result().message.contains("did not answer in time"));
+        QCOMPARE(fromStd(c->result().status), QString("hung"));
+        QVERIFY(fromStd(c->result().message).contains("did not answer in time"));
         QVERIFY2(timer.elapsed() >= 2300, "killed before timeout + 2 s");
         QVERIFY2(timer.elapsed() < 6000, "watchdog too slow");
         QVERIFY(!c->canSave());
         QVERIFY(c->editElement(src, {}));
         QVERIFY(settle(*c));
-        QCOMPARE(c->result().status, QString("ok"));
+        QCOMPARE(fromStd(c->result().status), QString("ok"));
     }
 
     void aMissingHelperIsReported() {
@@ -439,8 +439,8 @@ private slots:
         // The element info of the main controller is cached, the update helper is what is missing.
         QVERIFY(c->addSource("videotestsrc", {}));
         QVERIFY(settle(*c));
-        QCOMPARE(c->result().status, QString("error"));
-        QVERIFY(c->result().message.contains("gps-update was not found"));
+        QCOMPARE(fromStd(c->result().status), QString("error"));
+        QVERIFY(fromStd(c->result().message).contains("gps-update was not found"));
     }
 
     void cancelLeavesThePlanAlone() {
@@ -481,7 +481,7 @@ private slots:
         other->open(path);
         QVERIFY(waitFor([&] { return other->result().valid() && !other->busy(); }));
         QCOMPARE(text(other->plan().toConf()), text(persisted.toConf()));
-        QVERIFY(other->result().isComplete());
+        QVERIFY(other->result().complete());
         QVERIFY(!other->dirty());
         QVERIFY(other->canRun());
         QCOMPARE(other->filePath(), path);
@@ -533,7 +533,7 @@ private slots:
         file.close();
         c->open(file.fileName());
         QVERIFY(waitFor([&] { return c->result().valid() && !c->busy(); }));
-        QCOMPARE(c->result().status, QString("pad-missing"));
+        QCOMPARE(fromStd(c->result().status), QString("pad-missing"));
         QCOMPARE(c->result().missing.size(), 1);
         QVERIFY(!c->canSave());
         QVERIFY(!c->canRun());
@@ -623,7 +623,7 @@ private slots:
         QVERIFY(settle(*c));
         QCOMPARE(finished.count(), 1); // superseded completions do not escape
         QCOMPARE(c->plan().find(toStd(source))->props.at("pattern"), std::string("ball"));
-        QCOMPARE(c->result().status, QString("ok"));
+        QCOMPARE(fromStd(c->result().status), QString("ok"));
         QVERIFY(!c->notValidated());
         QVERIFY(c->editElement(source, withProps({{"fake-slow", "1200"}})));
         QTest::qWait(100);
@@ -809,7 +809,7 @@ private slots:
         QVERIFY(settle(*c));
         // Now the pipeline is src -> conv -> scale -> snk (3 links)!
         QCOMPARE(c->plan().links.size(), size_t(3));
-        QVERIFY(c->result().isComplete());
+        QVERIFY(c->result().complete());
 
         // 6. Delete the collapsed Custom Element: auto-heals across both inner elements back to src -> snk!
         QVERIFY(c->deleteElement(conv, true));
@@ -838,7 +838,7 @@ private slots:
         QVERIFY(settle(*c));
         // Both explicitly connected elements were spliced into src -> snk!
         QCOMPARE(c->plan().links.size(), size_t(3));
-        QVERIFY(c->result().isComplete());
+        QVERIFY(c->result().complete());
         // Deleting the multi-selection auto-heals back to src -> snk!
         QVERIFY(c->deleteSelection(inserted, {}, true));
         QVERIFY(settle(*c));

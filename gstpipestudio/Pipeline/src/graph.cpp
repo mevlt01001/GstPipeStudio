@@ -22,6 +22,10 @@ bool splitPadIdentity(const std::string& identity, std::string* templateName, in
     return true;
 }
 
+Pad::Presence presenceOf(const std::string& text) {
+    return text == "always" ? Pad::Presence::Always : text == "request" ? Pad::Presence::Request : Pad::Presence::Sometimes;
+}
+
 bool isTemplateName(const std::string& padName) {
     return padName.find('%') != std::string::npos;
 }

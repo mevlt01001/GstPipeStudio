@@ -11,6 +11,7 @@
 #include <QVBoxLayout>
 
 #include "capspage.h"
+#include "capstext.h"
 #include "confirmdialog.h"
 #include "drawer.h"
 #include "pickerpage.h"
@@ -168,6 +169,14 @@ void Flows::confirmRemoval(const gps::Removal& removal, const QString& verb, std
 
 // ---- Add source / Add element (Right Drawer ONLY presents PickerPage)
 
+std::vector<FactoryEntry> Flows::factories(bool sources) const {
+    std::vector<FactoryEntry> out;
+    for (const FactoryEntry& e : controller_->catalog()) {
+        if (e.isSource == sources) out.push_back(e);
+    }
+    return out;
+}
+
 void Flows::chooseSource() {
     if (controller_->editingBlocked()) return;
     PickerData data;
@@ -175,9 +184,7 @@ void Flows::chooseSource() {
     for (const CustomElementInfo& c : controller_->customElements()) {
         if (c.isSource) data.custom << c;
     }
-    for (const ListEntry& e : controller_->catalog()) {
-        if (e.isSource) data.candidates << e;
-    }
+    data.candidates = factories(true);
     auto* page = new PickerPage(data);
     connect(page, &PickerPage::picked, this, [this](const PickerChoice& choice) {
         if (choice.kind == PickerChoice::CustomElement) {
@@ -220,7 +227,7 @@ void Flows::sourceProperties(const QString& factory) {
         connect(page, &PropertyPage::confirmed, this, [this, page, factory] {
             if (controller_->addElement(factory, page->edit())) closeProperties();
         });
-        QString prefix = info->isSource ? "Add source · " : "Add element · ";
+        QString prefix = info->entry.isSource ? "Add source · " : "Add element · ";
         presentProperties(page, prefix + factory);
     });
 }
@@ -237,9 +244,7 @@ void Flows::fromFreePad(const QString& element, const QString& identity) {
             if (c.hasFreeSink) data.custom << c;
         }
         data.compatible = compatible;
-        for (const ListEntry& e : controller_->catalog()) {
-            if (!e.isSource) data.candidates << e;
-        }
+        data.candidates = factories(false);
         auto* page = new PickerPage(data);
         connect(page, &PickerPage::picked, this, [this, element, identity](const PickerChoice& choice) {
             if (choice.kind == PickerChoice::Existing) {
@@ -256,7 +261,7 @@ void Flows::fromFreePad(const QString& element, const QString& identity) {
                 newElement(Mode::Add, element, identity, choice.factory);
             }
         });
-        drawer_->present(page, "Add after " + element + " · " + identity, allowed.isEmpty() ? QString() : mediaOf(allowed), Drawer::Replace);
+        drawer_->present(page, "Add after " + element + " · " + identity, allowed.isEmpty() ? QString() : fromStd(gps::mediaOf(toStd(allowed))), Drawer::Replace);
     });
 }
 
@@ -267,11 +272,11 @@ void Flows::newElement(Mode mode, const QString& element, const QString& identit
         in.info = *info;
         in.acceptText = mode == Mode::Add ? "Add element" : "Replace";
         in.requestSrc = info->defaultRequestSrc();
-        QList<PadTemplateInfo> choices = controller_->sinkChoices(*info, element, identity);
-        if (choices.isEmpty()) return;
-        for (const PadTemplateInfo& t : choices) in.sinkPads << t.name;
+        std::vector<PadTemplateInfo> choices = controller_->sinkChoices(*info, element, identity);
+        if (choices.empty()) return;
+        for (const PadTemplateInfo& t : choices) in.sinkPads << fromStd(t.name);
         auto* page = new PropertyPage(in);
-        connect(page, &PropertyPage::confirmed, this, [this, mode, page, element, identity, factory, onlyPad = choices.first().name] {
+        connect(page, &PropertyPage::confirmed, this, [this, mode, page, element, identity, factory, onlyPad = fromStd(choices.front().name)] {
             ElementEdit edit = page->edit();
             QString sinkPad = page->sinkPad().isEmpty() ? onlyPad : page->sinkPad();
             editThenCaps(element, identity, [=] {
@@ -309,11 +314,11 @@ void Flows::openCaps(const QString& element, const QString& identity, bool after
     in.skippable = afterEdit;
     if (const PadTemplateInfo* sink = controller_->linkSinkTemplate(link)) {
         for (const PropertyInfo& p : sink->padProperties) {
-            if (PropertyEditor::editable(p)) in.padProperties << p;
+            if (PropertyEditor::editable(p)) in.padProperties.push_back(p);
         }
     }
     in.padProps = l.sinkPadProps;
-    if (afterEdit && in.allowed.isEmpty() && in.padProperties.isEmpty()) {  // nothing to choose
+    if (afterEdit && in.allowed.empty() && in.padProperties.empty()) {  // nothing to choose
         return;
     }
 
@@ -383,9 +388,7 @@ void Flows::replaceBehind(const QString& element, const QString& identity) {
     controller_->fetchCompatible(allowed, [this, element, identity](const QStringList& compatible) {
         PickerData data;
         data.compatible = compatible;
-        for (const ListEntry& e : controller_->catalog()) {
-            if (!e.isSource) data.candidates << e;
-        }
+        data.candidates = factories(false);
         auto* page = new PickerPage(data);
         connect(page, &PickerPage::picked, this, [this, element, identity](const PickerChoice& choice) {
             newElement(Mode::Replace, element, identity, choice.factory);

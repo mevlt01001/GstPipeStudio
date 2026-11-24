@@ -107,12 +107,16 @@ public:
     Change lastChange() const { return change_; }
     bool reset(Graph graph = {}, std::string* error = nullptr);
     ExecutionPlan executionPlan(const TraitsFn&, std::uint64_t run) const;
+    // The last validation of this document: the one owner of that result. status "" = not validated.
     const UpdateResult& observations() const { return observations_; }
     bool apply(const ExecutionResult&, ExecutionTicket expected);
+    // Nothing to execute (no element, or none fed by a source): not validated when empty, else valid but incomplete.
+    void observeIdle();
     static bool validate(const Graph&, std::string* error = nullptr);
 private:
     friend class GraphEditor;
     void install(Graph);
+    void clearObservations();
     void refreshPads();
     std::map<std::string, FactoryDefinition> factories_;
     Graph graph_;

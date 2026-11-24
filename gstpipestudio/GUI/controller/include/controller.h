@@ -9,7 +9,6 @@
 #include <QPair>
 #include <QPointF>
 #include <QProcess>
-#include <QJsonObject>
 #include <QSet>
 #include <QTemporaryDir>
 #include <QTimer>
@@ -19,7 +18,7 @@
 #include <cmath>
 
 #include "elementedit.h"
-#include "elementinfo.h"
+#include "contract.h"
 #include "elementview.h"
 #include "helperclient.h"
 #include "executionbackend.h"
@@ -27,7 +26,6 @@
 #include "slowwatch.h"
 #include "startupcheck.h"
 #include "supportreport.h"
-#include "updateresult.h"
 
 // A place a free src pad can be linked to inside the plan.
 struct ExistingTarget {
@@ -49,7 +47,7 @@ public:
     // ---- state
     const gps::Graph& plan() const { return pipeline_.editor().view(); }
     const gps::Pipeline& pipeline() const { return pipeline_; }
-    const UpdateResult& result() const { return result_; }
+    const UpdateResult& result() const { return pipeline_.observations(); }  // the last validation, owned by Pipeline
     bool updating() const { return updating_; }
     bool running() const { return running_; }
     bool busy() const { return updating_ || running_ || monitoring_ || opening_; }
@@ -84,8 +82,10 @@ public:
     // ---- catalog (gps-inspect)
     void loadCatalog();
     bool catalogLoaded() const { return catalogLoaded_; }
-    const QList<ListEntry>& catalog() const { return catalog_; }
+    const std::vector<FactoryEntry>& catalog() const { return catalog_; }
     const ElementInfo* info(const QString& factory) const;
+    // The factory's row: from its fetched information, else from the catalog; nullptr when neither knows it.
+    const FactoryEntry* factoryEntry(const QString& factory) const;
     void fetchInfo(const QString& factory, InfoCallback done);  // calls done at once when cached; nullptr on failure
     void fetchCompatible(const QString& caps, NamesCallback done);  // ranked factories that can follow these caps
     gps::TraitsFn traits() const;
@@ -112,10 +112,10 @@ public:
     ElementView groupView(const QString& groupId) const;
     QList<LinkView> linkViews() const;
     QString linkSinkIdentity(int link) const;
-    QList<StructureInfo> padStructures(const QString& element, const QString& identity) const;  // allowed by a src pad
+    std::vector<StructureInfo> padStructures(const QString& element, const QString& identity) const;  // allowed by a src pad
     QString padAllowed(const QString& element, const QString& identity) const;
     QList<ExistingTarget> existingTargets(const QString& element, const QString& identity) const;
-    QList<PadTemplateInfo> sinkChoices(const ElementInfo& info, const QString& element, const QString& identity) const;
+    std::vector<PadTemplateInfo> sinkChoices(const ElementInfo& info, const QString& element, const QString& identity) const;
     const PadTemplateInfo* linkSinkTemplate(int link) const;  // template of the sink pad a link ends on
 
     // ---- edits. Each starts an update.
@@ -174,7 +174,7 @@ signals:
     void catalogReady();
     void environmentChecked();
     void runFinished(const QString& status);
-    void telemetryReceived(const QJsonObject& sample);
+    void telemetryReceived(const gps::TelemetrySample& sample);
 
 private:
     void log(const QString& line);
@@ -202,7 +202,6 @@ private:
     HelperExecutionBackend backend_;
     QTimer updateTimer_;
     gps::ExecutionCoordinator execution_{pipeline_, backend_};
-    UpdateResult result_;
     QString path_;
     bool dirty_ = false;
     bool updating_ = false;
@@ -213,7 +212,7 @@ private:
     QString touched_;  // the element the last edit concerned; the suspect when the helper dies
 
     QTemporaryDir tmp_;
-    QList<ListEntry> catalog_;
+    std::vector<FactoryEntry> catalog_;
     bool catalogLoaded_ = false;
     QList<CustomElementInfo> customElements_;
     std::map<QString, gps::Graph> customPlans_;

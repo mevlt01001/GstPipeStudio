@@ -325,7 +325,7 @@ void MainWindow::refreshState() {
     else if (!hasPlan) text = "Empty canvas: choose Add source to start";
     else if (controller_->notValidated()) text = "Validation was cancelled — press Validate. Save and Run are off", colour = Theme::warning().name();
     else if (r.valid() && !r.ok()) text = "Validation reported a problem. Save and Run are off", colour = Theme::error().name();
-    else if (r.valid() && !r.complete) text = "Pipeline is not complete (free src pad). Save is on, Run is off", colour = Theme::warning().name();
+    else if (r.valid() && !r.complete()) text = "Pipeline is not complete (free src pad). Save is on, Run is off", colour = Theme::warning().name();
     else if (r.valid()) text = "Pipeline is complete", colour = Theme::accent().name();
     else text = "Not validated yet — press Validate";
     state_->setText(text);

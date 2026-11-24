@@ -1,6 +1,7 @@
 // capstext.cpp – see capstext.h and SPEC 4.6.
 #include "capstext.h"
 
+#include <algorithm>
 #include <map>
 
 namespace gps {
@@ -48,6 +49,33 @@ std::string CapsChoice::toText() const {
         text += ", " + f.name + "=" + typePrefix(f.type) + (f.type == "gchararray" ? capsString(f.value) : f.value);
     }
     return text;
+}
+
+std::string structureTitle(const StructureInfo& s) {
+    std::string title = s.media;
+    if (s.features.empty()) return title;
+    title += "(";
+    for (size_t i = 0; i < s.features.size(); ++i) title += (i ? ", " : "") + s.features[i];
+    return title + ")";
+}
+
+std::string mediaOf(const std::string& caps) {
+    std::string head = caps.substr(0, caps.find(','));
+    size_t first = head.find_first_not_of(" \t"), last = head.find_last_not_of(" \t");
+    return first == std::string::npos ? "" : head.substr(first, last - first + 1);
+}
+
+bool structuresMeet(const std::vector<StructureInfo>& a, const std::vector<StructureInfo>& b) {
+    if (a.empty() || b.empty()) return true;
+    for (const StructureInfo& x : a) {
+        for (const StructureInfo& y : b) {
+            std::vector<std::string> fx = x.features, fy = y.features;
+            std::sort(fx.begin(), fx.end());
+            std::sort(fy.begin(), fy.end());
+            if (x.media == y.media && fx == fy) return true;
+        }
+    }
+    return false;
 }
 
 }  // namespace gps

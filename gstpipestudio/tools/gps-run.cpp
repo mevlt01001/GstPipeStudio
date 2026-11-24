@@ -27,7 +27,7 @@ int main(int argc, char** argv) {
         gps::RunResult failed;
         failed.status = "error";
         failed.message = path + ": " + error;
-        out.json(gps::runJson(failed));
+        out.json(gps::toJson(failed));
         return 1;
     }
     for (const auto& p : params) {
@@ -40,6 +40,6 @@ int main(int argc, char** argv) {
     options.shouldStop = gps::stopRequested;
 
     gps::RunResult result = gps::run(plan, params, options, gps::logLine);
-    out.json(gps::runJson(result));
+    out.json(gps::toJson(result));
     return result.status == "eos" ? 0 : result.status == "refused" ? 3 : 1;
 }

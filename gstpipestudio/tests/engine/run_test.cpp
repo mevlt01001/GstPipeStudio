@@ -5,6 +5,7 @@
 
 #include "testutil.h"
 #include "telemetry.h"
+#include "wire.h"
 
 using namespace gpstest;
 using gps::RunResult;
@@ -77,7 +78,7 @@ int main(int argc, char** argv) {
                 if (e.element == "slow" && e.processingMs >= 0 && e.processingCycles > 0) sawProcessing = true;
                 if (e.element == "out" && e.inputBuffers > 0) { sawInput = true; CHECK(e.pendingMs < 0); }
             }
-            CHECK(contains(gps::telemetryJson(sample), "\"dropRatePercent\":null"));
+            CHECK(contains(gps::toJson(sample), "\"dropRatePercent\":null"));
         };
         CHECK_EQ(run(p.plan, {}, options).status, "eos");
         CHECK(samples >= 2); CHECK(sawAge); CHECK(sawQueue); CHECK(sawInput); CHECK(sawProcessing);
@@ -203,13 +204,13 @@ int main(int argc, char** argv) {
         CHECK(r.ms >= 600 && r.ms < 3500);
     }
 
-    std::puts("-- runJson");
+    std::puts("-- RunResult JSON");
     {
         RunResult r;
         r.status = "error";
         r.message = "a \"b\"";
         r.ms = 1.5;
-        CHECK_EQ(gps::runJson(r), "{\"status\":\"error\",\"message\":\"a \\\"b\\\"\",\"ms\":1.5}");
+        CHECK_EQ(gps::toJson(r), "{\"status\":\"error\",\"message\":\"a \\\"b\\\"\",\"ms\":1.5}");
     }
     return finish("run_test");
 }

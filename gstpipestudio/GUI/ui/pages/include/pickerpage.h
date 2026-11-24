@@ -10,7 +10,7 @@ struct PickerData {
     QList<ExistingTarget> existing;   // free Always sink pads and Request sink templates of elements in the plan
     QList<CustomElementInfo> custom;  // saved custom multi-element presets
     QStringList compatible;           // factories whose sink meets the pad, ranked
-    QList<ListEntry> candidates;      // every factory that may be offered
+    std::vector<FactoryEntry> candidates; // every factory that may be offered
     bool showFilters = false;         // role and pad presence filter chips
 };
 

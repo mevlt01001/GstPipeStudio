@@ -1,8 +1,9 @@
 #pragma once
 #include <QWidget>
-#include <QJsonObject>
 #include <QMap>
 #include <QVector>
+
+#include "runtime.h"
 
 class Controller;
 class QComboBox;
@@ -15,7 +16,7 @@ class TelemetryPanel : public QWidget {
     Q_OBJECT
 public:
     explicit TelemetryPanel(Controller* controller, QWidget* parent = nullptr);
-    void receive(const QJsonObject& sample);
+    void receive(const gps::TelemetrySample& sample);
 private:
     void redraw();
     Controller* controller_;

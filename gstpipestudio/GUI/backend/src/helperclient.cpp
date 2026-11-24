@@ -4,7 +4,6 @@
 #include <QCoreApplication>
 #include <QFileInfo>
 #include <QStandardPaths>
-#include <QJsonDocument>
 #include <QTimer>
 #include <csignal>
 
@@ -93,8 +92,5 @@ void HelperClient::finish(HelperResult::Outcome outcome, int code) {
     r.outcome = outcome;
     r.exitCode = code;
     if (process_->isOpen()) r.out = process_->readAllStandardOutput();
-    QJsonDocument doc = QJsonDocument::fromJson(r.out);
-    r.hasJson = doc.isObject();
-    if (r.hasJson) r.json = doc.object();
     emit finished(r);
 }

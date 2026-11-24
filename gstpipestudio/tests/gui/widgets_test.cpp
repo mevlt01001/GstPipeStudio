@@ -558,8 +558,8 @@ private slots:
         PickerData data;
         data.existing = {{"mix_1", "compositor", "sink_%u", true}, {"over_2", "textoverlay", "video_sink", false}};
         data.compatible = {"jpegdec", "videoconvert"};
-        for (const ListEntry& e : c->catalog()) {
-            if (!e.isSource) data.candidates << e;
+        for (const FactoryEntry& e : c->catalog()) {
+            if (!e.isSource) data.candidates.push_back(e);
         }
         Drawer drawer;  // Enter and Esc are the drawer's
         drawer.show();
@@ -620,8 +620,8 @@ private slots:
     void pickerDoubleClickAndCancel() {
         PickerData data;
         data.compatible = {"queue"};
-        for (const ListEntry& e : c->catalog()) {
-            if (!e.isSource) data.candidates << e;
+        for (const FactoryEntry& e : c->catalog()) {
+            if (!e.isSource) data.candidates.push_back(e);
         }
         PickerPage first(data);
         first.show();
@@ -1124,7 +1124,7 @@ private slots:
         press(caps, "saveButton");
         QVERIFY(waitFor([&] { return !c->busy() && c->plan().links[2].caps == "video/x-raw, format=(string)NV12"; }, 8000));
         QVERIFY(!w.flows()->capsPage());
-        QVERIFY(c->result().isComplete());
+        QVERIFY(c->result().complete());
         QVERIFY(c->canRun());
     }
 
@@ -1354,7 +1354,7 @@ private slots:
         press(caps, "saveButton");
         QVERIFY(waitFor([&] { return !c->busy() && !c->plan().links[0].caps.empty(); }, 8000));
         QCOMPARE(c->plan().links[0].caps, std::string("video/x-raw, width=(int)1280"));
-        QVERIFY(c->result().isComplete());
+        QVERIFY(c->result().complete());
         // Open it again: the page starts from the choice. Cancel changes nothing.
         w.flows()->editCaps(src, "src");
         caps = pageOf<CapsPage>(w);

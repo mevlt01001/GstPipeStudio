@@ -1,7 +1,6 @@
 // Import a gst-launch pipeline description through GStreamer's parser and pad API.
 #include "common.h"
 #include "importer.h"
-#include "json.h"
 #include <cstdlib>
 
 int main(int argc, char** argv) {
@@ -42,16 +41,15 @@ int main(int argc, char** argv) {
     gps::ImportResult imported;
     bool ok = gps::importLaunch(description, probeMs, &imported, &error);
     if (ok) ok = imported.graph.save(path, &error);
-    gps::JsonWriter json;
-    json.beginObject().field("status", ok ? "ok" : "error").field("message", error);
+    gps::ImportReply reply;
+    reply.status = ok ? "ok" : "error";
+    reply.message = error;
     if (ok) {
-        json.field("nativeName", imported.nativeName).field("elements", static_cast<int>(imported.graph.elements.size()));
-        json.field("links", static_cast<int>(imported.graph.links.size()));
-        json.key("warnings").beginArray();
-        for (const auto& warning : imported.warnings) json.string(warning);
-        json.end();
+        reply.nativeName = imported.nativeName;
+        reply.elements = static_cast<int>(imported.graph.elements.size());
+        reply.links = static_cast<int>(imported.graph.links.size());
+        reply.warnings = imported.warnings;
     }
-    json.end();
-    output.json(json.str());
+    output.json(gps::toJson(reply));
     return ok ? 0 : 1;
 }

@@ -25,11 +25,11 @@ PropertyPage::PropertyPage(const PropertyPageInput& input, QWidget* parent) : Dr
     auto* topBar = new QHBoxLayout;
     auto* titleCol = new QVBoxLayout;
     titleCol->setSpacing(2);
-    auto* heading = new QLabel(input.info.factory + "  —  " + input.info.longName, this);
+    auto* heading = new QLabel(fromStd(input.info.entry.factory + "  —  " + input.info.entry.longName), this);
     heading->setObjectName("heading");
     heading->setWordWrap(true);
     titleCol->addWidget(heading);
-    auto* sub = new QLabel(input.info.klass + (input.info.description.isEmpty() ? "" : "  ·  " + input.info.description), this);
+    auto* sub = new QLabel(fromStd(input.info.entry.klass + (input.info.description.empty() ? "" : "  ·  " + input.info.description)), this);
     sub->setObjectName("muted");
     sub->setWordWrap(true);
     titleCol->addWidget(sub);
@@ -54,29 +54,30 @@ PropertyPage::PropertyPage(const PropertyPageInput& input, QWidget* parent) : Dr
     int shown = 0;
     for (const PropertyInfo& p : input.info.properties) {
         if (!PropertyEditor::editable(p)) continue;
-        auto given = input.props.find(p.name.toStdString());
+        const QString name = fromStd(p.name);
+        auto given = input.props.find(p.name);
         std::optional<QString> current;
-        if (given != input.props.end()) current = QString::fromStdString(given->second);
+        if (given != input.props.end()) current = fromStd(given->second);
 
         auto* row = new QWidget(list);
-        row->setObjectName("row_" + p.name);
+        row->setObjectName("row_" + name);
         auto* line = new QVBoxLayout(row);
         line->setContentsMargins(0, 0, 0, 0);
         line->setSpacing(3);
 
-        auto* label = new QLabel(p.deprecated ? p.name + "  (deprecated)" : p.name, row);
-        label->setToolTip(p.blurb);
+        auto* label = new QLabel(p.deprecated ? name + "  (deprecated)" : name, row);
+        label->setToolTip(fromStd(p.blurb));
         label->setWordWrap(true);
         if (p.deprecated) label->setStyleSheet("color: " + Theme::muted().name() + ";");
         else label->setStyleSheet("font-weight: bold;");
 
         auto* editor = new PropertyEditor(p, current, row);
-        editor->setObjectName("editor_" + p.name);
+        editor->setObjectName("editor_" + name);
 
         auto* expose = new QCheckBox("Expose", row);
         expose->setToolTip("Make this property a parameter of the saved pipeline (name=value on the gst-launch line)");
-        expose->setObjectName("expose_" + p.name);
-        expose->setChecked(std::find(input.exposed.begin(), input.exposed.end(), p.name.toStdString()) != input.exposed.end());
+        expose->setObjectName("expose_" + name);
+        expose->setChecked(std::find(input.exposed.begin(), input.exposed.end(), p.name) != input.exposed.end());
 
         auto* head = new QHBoxLayout;
         head->addWidget(label, 1);
@@ -85,8 +86,8 @@ PropertyPage::PropertyPage(const PropertyPageInput& input, QWidget* parent) : Dr
         line->addWidget(editor);
         rows->addWidget(row);
         editors_ << editor;
-        expose_[p.name] = expose;
-        rows_[p.name] = row;
+        expose_[name] = expose;
+        rows_[name] = row;
         ++shown;
     }
     if (shown == 0) {
@@ -115,17 +116,17 @@ PropertyPage::PropertyPage(const PropertyPageInput& input, QWidget* parent) : Dr
         auto* form = new QVBoxLayout(group);
         for (const PadTemplateInfo& t : requestSrc) {
             auto* line = new QHBoxLayout;
-            line->addWidget(new QLabel(t.name, group));
+            line->addWidget(new QLabel(fromStd(t.name), group));
             auto* spin = new QSpinBox(group);
-            spin->setObjectName("padCount_" + t.name);
-            auto linked = input.linkedSrc.find(t.name.toStdString());
-            auto start = input.requestSrc.find(t.name.toStdString());
+            spin->setObjectName(fromStd("padCount_" + t.name));
+            auto linked = input.linkedSrc.find(t.name);
+            auto start = input.requestSrc.find(t.name);
             spin->setRange(linked == input.linkedSrc.end() ? 0 : linked->second, 32);
             spin->setValue(start == input.requestSrc.end() ? 0 : start->second);
             line->addWidget(spin);
             line->addStretch(1);
             form->addLayout(line);
-            pads_[t.name] = spin;
+            pads_[fromStd(t.name)] = spin;
         }
         sideCol->addWidget(group);
         hasSide = true;
@@ -141,17 +142,17 @@ PropertyPage::PropertyPage(const PropertyPageInput& input, QWidget* parent) : Dr
         auto* form = new QVBoxLayout(group);
         for (const PadTemplateInfo& t : requestSink) {
             auto* line = new QHBoxLayout;
-            line->addWidget(new QLabel(t.name, group));
+            line->addWidget(new QLabel(fromStd(t.name), group));
             auto* spin = new QSpinBox(group);
-            spin->setObjectName("sinkPadCount_" + t.name);
-            auto linked = input.linkedSink.find(t.name.toStdString());
-            auto start = input.requestSink.find(t.name.toStdString());
+            spin->setObjectName(fromStd("sinkPadCount_" + t.name));
+            auto linked = input.linkedSink.find(t.name);
+            auto start = input.requestSink.find(t.name);
             spin->setRange(linked == input.linkedSink.end() ? 0 : linked->second, 32);
             spin->setValue(start == input.requestSink.end() ? 0 : start->second);
             line->addWidget(spin);
             line->addStretch(1);
             form->addLayout(line);
-            sinkPadsCount_[t.name] = spin;
+            sinkPadsCount_[fromStd(t.name)] = spin;
         }
         sideCol->addWidget(group);
         hasSide = true;
@@ -210,10 +211,10 @@ QString PropertyPage::sinkPad() const { return sinkPads_ ? sinkPads_->currentTex
 
 void PropertyPage::filter(const QString& text) {
     for (const PropertyInfo& p : input_.info.properties) {
-        QWidget* row = rows_.value(p.name);
+        QWidget* row = rows_.value(fromStd(p.name));
         if (!row) continue;
-        row->setVisible(text.isEmpty() || p.name.contains(text, Qt::CaseInsensitive) ||
-                        p.nick.contains(text, Qt::CaseInsensitive) || p.blurb.contains(text, Qt::CaseInsensitive));
+        row->setVisible(text.isEmpty() || fromStd(p.name).contains(text, Qt::CaseInsensitive) ||
+                        fromStd(p.nick).contains(text, Qt::CaseInsensitive) || fromStd(p.blurb).contains(text, Qt::CaseInsensitive));
     }
 }
 

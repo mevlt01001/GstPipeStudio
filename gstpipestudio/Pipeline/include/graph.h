@@ -75,6 +75,8 @@ std::string padIdentity(const std::string& templateName, int index);
 bool splitPadIdentity(const std::string& identity, std::string* templateName, int* index);
 // A sink pad name with a number slot is a Request template: any number of links may use it.
 bool isTemplateName(const std::string& padName);
+// "always" | "request" | anything else (sometimes), as GStreamer's presence is written in catalog and reports.
+Pad::Presence presenceOf(const std::string& text);
 
 // What an edit deleted (or would delete, for the preview functions).
 struct Removal {

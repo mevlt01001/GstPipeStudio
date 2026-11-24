@@ -3,7 +3,7 @@
 
 #include "capsparse.h"
 #include "drawer.h"
-#include "elementinfo.h"
+#include "contract.h"
 #include "graph.h"
 #include "propertyeditor.h"
 
@@ -12,9 +12,9 @@ class QStackedWidget;
 class CapsFieldEditor;
 
 struct CapsPageInput {
-    QList<StructureInfo> allowed;            // what the src pad can produce, from the last update
+    std::vector<StructureInfo> allowed;      // what the src pad can produce, from the last update
     QString current;                         // the link's caps text now, "" = Auto
-    QList<PropertyInfo> padProperties;       // of the sink pad this link ends on
+    std::vector<PropertyInfo> padProperties; // of the sink pad this link ends on
     gps::Props padProps;                     // their current values
     bool skippable = false;                  // right after an element was added: Skip keeps Auto caps
 };

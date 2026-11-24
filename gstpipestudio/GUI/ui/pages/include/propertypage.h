@@ -6,7 +6,7 @@
 
 #include "drawer.h"
 #include "elementedit.h"
-#include "elementinfo.h"
+#include "contract.h"
 #include "propertyeditor.h"
 
 class QCheckBox;

@@ -10,9 +10,8 @@ add_library(gps_gui STATIC
     backend/include/supportreport.h backend/src/supportreport.cpp
     model/include/capsparse.h model/src/capsparse.cpp
     model/include/elementedit.h
-    model/include/elementinfo.h model/src/elementinfo.cpp
+    model/include/contract.h model/src/contract.cpp
     model/include/elementview.h
-    model/include/updateresult.h model/src/updateresult.cpp
     controller/include/controller.h controller/src/controller.cpp
     controller/include/flows.h controller/src/flows.cpp
     canvas/include/canvasmetrics.h

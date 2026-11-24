@@ -21,29 +21,6 @@ std::string errorText(const GError* error, const gchar* debug) {
 }
 // ---- update
 
-std::string updateJson(const UpdateResult& r) {
-    JsonWriter w;
-    w.beginObject().field("status", r.status).field("message", r.message).field("errorElement", r.errorElement);
-    w.field("ms", r.ms);
-    w.key("pads").beginArray();
-    for (const PadReport& p : r.pads) {
-        w.beginObject().field("element", p.element).field("pad", p.pad).field("identity", p.identity);
-        w.field("template", p.templateName).field("presence", p.presence).field("isSrc", p.isSrc);
-        w.field("linked", p.linked).field("temporaryEnd", p.temporaryEnd).field("unknownData", p.unknownData);
-        w.field("caps", p.caps).field("allowed", p.allowed);
-        w.key("allowedStructures").beginArray();
-        for (const StructureInfo& s : p.allowedStructures) writeStructure(w, s);
-        w.end().end();
-    }
-    w.end();
-    w.key("missing").beginArray();
-    for (const std::string& m : r.missing) w.string(m);
-    w.end().key("refused").beginArray();
-    for (const std::string& m : r.refused) w.string(m);
-    w.end().field("complete", r.complete()).end();
-    return w.str();
-}
-
 namespace {
 
 // The element of the Graph a message came from, even when a child deep inside it spoke.
@@ -182,33 +159,6 @@ UpdateResult update(const Graph& plan, const UpdateOptions& options, const LogFn
 }
 
 // ---- run
-
-std::string runJson(const RunResult& r) {
-    JsonWriter w;
-    w.beginObject().field("status", r.status).field("message", r.message).field("ms", r.ms).end();
-    return w.str();
-}
-
-std::string telemetryJson(const TelemetrySample& sample) {
-    JsonWriter w;
-    w.beginObject().field("type", "sample").field("elapsedMs", sample.elapsedMs).key("elements").beginArray();
-    for (const auto& item : sample.elements) {
-        w.beginObject().field("element", item.element);
-        w.key("ageMs"); item.ageMs < 0 ? w.null() : w.number(item.ageMs);
-        w.key("queueMs"); item.queueMs < 0 ? w.null() : w.number(item.queueMs);
-        w.key("processingMs"); item.processingMs < 0 ? w.null() : w.number(item.processingMs);
-        w.key("pendingMs"); item.pendingMs < 0 ? w.null() : w.number(item.pendingMs);
-        w.key("processingCycles").integer(static_cast<long long>(item.processingCycles));
-        w.key("dropRatePercent"); item.dropRatePercent < 0 ? w.null() : w.number(item.dropRatePercent);
-        w.key("qosProcessed").integer(static_cast<long long>(item.qosProcessed));
-        w.key("qosDropped").integer(static_cast<long long>(item.qosDropped));
-        w.key("inputBuffers").integer(static_cast<long long>(item.inputBuffers));
-        w.key("outputBuffers").integer(static_cast<long long>(item.outputBuffers));
-        w.end();
-    }
-    w.end().end();
-    return w.str();
-}
 
 RunResult run(const Graph& plan, const std::map<std::string, std::string>& params, const RunOptions& options, const LogFn& log) {
     double begin = nowMs();

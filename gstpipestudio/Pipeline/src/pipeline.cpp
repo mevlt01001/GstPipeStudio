@@ -17,7 +17,7 @@ bool fail(std::string* error, const std::string& message) {
 }
 }
 
-Pipeline::Pipeline(std::string name) : editor_(*this) { graph_.name = std::move(name); observations_.status.clear(); }
+Pipeline::Pipeline(std::string name) : editor_(*this) { graph_.name = std::move(name); clearObservations(); }
 bool Pipeline::validate(const Graph& graph, std::string* error) {
     std::set<std::string> names;
     for (const auto& e : graph.elements) {
@@ -53,7 +53,7 @@ void Pipeline::install(Graph graph) {
     change_.kind = affectsExecution ? ChangeKind::Execution : ChangeKind::Presentation;
     if (affectsExecution) {
         ++change_.executionRevision;
-        observations_ = {}; observations_.status.clear();
+        clearObservations();
     }
     refreshPads();
 }
@@ -63,7 +63,7 @@ bool Pipeline::reset(Graph graph, std::string* error) {
     install(std::move(graph));
     // A new document invalidates every run even if its serialized contents match.
     ++change_.executionRevision;
-    observations_ = {}; observations_.status.clear();
+    clearObservations();
     refreshPads();
     return true;
 }
@@ -78,6 +78,15 @@ bool Pipeline::apply(const ExecutionResult& result, ExecutionTicket expected) {
         [this](const PadReport& p) { return !graph_.find(p.element); }), observations_.pads.end());
     refreshPads();
     return true;
+}
+void Pipeline::clearObservations() {
+    observations_ = {};
+    observations_.status.clear();
+}
+void Pipeline::observeIdle() {
+    clearObservations();
+    if (!graph_.empty()) observations_.status = "ok";  // no pad report: complete() stays false
+    refreshPads();
 }
 void Pipeline::registerFactory(std::string name, FactoryDefinition definition) {
     factories_[std::move(name)] = std::move(definition);
@@ -108,7 +117,7 @@ void Pipeline::refreshPads() {
             auto found = std::find_if(element.pads.begin(),element.pads.end(),[&](const Pad& p){return p.identity==report.identity && p.direction==direction;});
             if (found == element.pads.end()) {
                 Pad pad; pad.identity=report.identity; pad.templateName=report.templateName; pad.direction=direction;
-                pad.presence=report.presence=="always" ? Pad::Presence::Always : report.presence=="request" ? Pad::Presence::Request : Pad::Presence::Sometimes;
+                pad.presence=presenceOf(report.presence);
                 element.pads.push_back(std::move(pad)); found=element.pads.end()-1;
             }
             found->negotiatedCaps=report.caps; found->allowedCaps=report.allowed;

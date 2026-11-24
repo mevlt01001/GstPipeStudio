@@ -2,7 +2,6 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(GST REQUIRED IMPORTED_TARGET GLOBAL gstreamer-1.0>=1.16 gstreamer-base-1.0>=1.16)
 
 add_library(gps_gstengine STATIC
-    src/json.cpp
     src/inspector.cpp
     src/gst_element_creator.cpp
     src/gst_engine.cpp

@@ -33,16 +33,16 @@ CapsPage::CapsPage(const CapsPageInput& input, QWidget* parent) : DrawerPage(par
     pages_ = new QStackedWidget(this);
     pages_->addWidget(new QLabel("No caps are chosen: GStreamer negotiates them.", this));
     for (const StructureInfo& s : input.allowed) {
-        media_->addItem(s.title());
+        media_->addItem(fromStd(gps::structureTitle(s)));
         auto* page = new QWidget(pages_);
         auto* form = new QFormLayout(page);
         form->setContentsMargins(0, 8, 0, 0);
         form->setRowWrapPolicy(QFormLayout::WrapAllRows);
         QList<CapsFieldEditor*> editors;
-        for (const FieldInfo& f : s.fields) {
+        for (const CapsFieldInfo& f : s.fields) {
             auto* editor = new CapsFieldEditor(f, page);
-            editor->setObjectName("field_" + f.name);
-            form->addRow(f.name + "  (" + f.type + ")", editor);
+            editor->setObjectName(fromStd("field_" + f.name));
+            form->addRow(fromStd(f.name + "  (" + f.type + ")"), editor);
             editors << editor;
         }
         fields_ << editors;
@@ -54,7 +54,7 @@ CapsPage::CapsPage(const CapsPageInput& input, QWidget* parent) : DrawerPage(par
     auto* mediaRow = new QFormLayout;
     mediaRow->addRow("Media type", media_);
     leftCol->addLayout(mediaRow);
-    if (input.allowed.isEmpty()) {
+    if (input.allowed.empty()) {
         auto* none = new QLabel("The last validation gave no caps to choose from for this pad.", this);
         none->setObjectName("muted");
         none->setWordWrap(true);
@@ -66,13 +66,13 @@ CapsPage::CapsPage(const CapsPageInput& input, QWidget* parent) : DrawerPage(par
 
     // Prefill from the caps the link already has.
     gps::CapsChoice now = parseCapsChoice(input.current);
-    for (int i = 0; i < input.allowed.size(); ++i) {
+    for (int i = 0; i < static_cast<int>(input.allowed.size()); ++i) {
         const StructureInfo& s = input.allowed[i];
-        if (s.media.toStdString() != now.media) continue;
+        if (s.media != now.media) continue;
         media_->setCurrentIndex(i + 1);
         for (const gps::CapsField& f : now.fields) {
             for (CapsFieldEditor* e : fields_[i]) {
-                if (e->field().name.toStdString() == f.name) e->pin(QString::fromStdString(f.value));
+                if (e->field().name == f.name) e->pin(fromStd(f.value));
             }
         }
         break;
@@ -92,12 +92,12 @@ CapsPage::CapsPage(const CapsPageInput& input, QWidget* parent) : DrawerPage(par
     padLayout->addWidget(padScroll);
     for (const PropertyInfo& p : input.padProperties) {
         if (!PropertyEditor::editable(p)) continue;
-        auto given = input.padProps.find(p.name.toStdString());
+        auto given = input.padProps.find(p.name);
         std::optional<QString> current;
-        if (given != input.padProps.end()) current = QString::fromStdString(given->second);
+        if (given != input.padProps.end()) current = fromStd(given->second);
         auto* editor = new PropertyEditor(p, current, padInner);
-        editor->setObjectName("padEditor_" + p.name);
-        padForm->addRow(p.name, editor);
+        editor->setObjectName(fromStd("padEditor_" + p.name));
+        padForm->addRow(fromStd(p.name), editor);
         padEditors_ << editor;
     }
     padBox->setVisible(!padEditors_.isEmpty());
@@ -132,11 +132,11 @@ QString CapsPage::caps() const {
 
     const StructureInfo& s = input_.allowed[index];
     gps::CapsChoice choice;
-    choice.media = s.media.toStdString();
-    for (const QString& f : s.features) choice.features.push_back(f.toStdString());
+    choice.media = s.media;
+    choice.features = s.features;
     for (const CapsFieldEditor* e : fields_[index]) {
         if (std::optional<QString> value = e->pinned()) {
-            choice.fields.push_back({e->field().name.toStdString(), e->field().type.toStdString(), value->toStdString()});
+            choice.fields.push_back({e->field().name, e->field().type, toStd(*value)});
         }
     }
     return QString::fromStdString(choice.toText());
