@@ -34,9 +34,9 @@ private slots:
     void cleanup() { c.reset(); }
 
     void catalogAndTraits() {
-        QVERIFY(c->catalogLoaded());
+        QVERIFY(c->catalog().loaded());
         auto find = [&](const QString& f) {
-            for (const FactoryEntry& e : c->catalog()) {
+            for (const FactoryEntry& e : c->catalog().entries()) {
                 if (fromStd(e.factory) == f) return e;
             }
             return FactoryEntry();
@@ -46,10 +46,10 @@ private slots:
         QVERIFY(find("nvvideoconvert").nvidia);
         QVERIFY(find("tee").hasRequestSrc);
         // Traits come from the catalog before the info is fetched, from the info afterwards.
-        QVERIFY(c->traits()("videotestsrc").isSource);
-        QVERIFY(!c->traits()("tee").isSource);
+        QVERIFY(c->catalog().traits()("videotestsrc").isSource);
+        QVERIFY(!c->catalog().traits()("tee").isSource);
         QVERIFY(need(*c, "audiotestsrc")->entry.isSource);
-        QVERIFY(c->traits()("audiotestsrc").isSource);
+        QVERIFY(c->catalog().traits()("audiotestsrc").isSource);
     }
 
     void emptyCanvas() {
@@ -433,9 +433,9 @@ private slots:
         qputenv("GPS_BIN_DIR", "/nonexistent-dir");
         Controller lonely;
         QSignalSpy notices(&lonely, &Controller::notice);
-        lonely.loadCatalog();
+        lonely.catalog().load();
         QVERIFY(waitFor([&] { return notices.count() > 0; }));
-        QVERIFY(!lonely.catalogLoaded());
+        QVERIFY(!lonely.catalog().loaded());
         // The element info of the main controller is cached, the update helper is what is missing.
         QVERIFY(c->addSource("videotestsrc", {}));
         QVERIFY(settle(*c));
@@ -452,7 +452,7 @@ private slots:
         c->previewDeleteSource(ch.src);
         need(*c, "tee");
         QStringList compatible;
-        c->fetchCompatible("video/x-raw", [&](const QStringList& l) { compatible = l; });
+        c->catalog().fetchCompatible("video/x-raw", [&](const QStringList& l) { compatible = l; });
         QVERIFY(waitFor([&] { return !compatible.isEmpty(); }));
         QVERIFY(compatible.contains("videoconvert"));
         QVERIFY(!compatible.contains("audiotestsrc"));

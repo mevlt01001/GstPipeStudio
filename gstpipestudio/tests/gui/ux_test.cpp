@@ -278,8 +278,8 @@ private slots:
     void updateGetsTheLargeBackstopTimeout() {
         qunsetenv("GPS_UPDATE_TIMEOUT_MS");
         Controller fresh;
-        fresh.loadCatalog();
-        QVERIFY(waitFor([&] { return fresh.catalogLoaded(); }));
+        fresh.catalog().load();
+        QVERIFY(waitFor([&] { return fresh.catalog().loaded(); }));
         QSignalSpy log(&fresh, &Controller::logLine);
         need(fresh, "videotestsrc");
         QVERIFY(fresh.addSource("videotestsrc", {}));

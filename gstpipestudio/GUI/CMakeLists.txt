@@ -4,6 +4,7 @@ set(CMAKE_AUTOMOC ON)
 
 add_library(gps_gui STATIC
     backend/include/executionbackend.h backend/src/executionbackend.cpp
+    backend/include/factorycatalog.h backend/src/factorycatalog.cpp
     backend/include/helperclient.h backend/src/helperclient.cpp
     backend/include/slowwatch.h backend/src/slowwatch.cpp
     backend/include/startupcheck.h backend/src/startupcheck.cpp

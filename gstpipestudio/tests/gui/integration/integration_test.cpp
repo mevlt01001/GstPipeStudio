@@ -444,8 +444,8 @@ private slots:
         qputenv("GPS_BIN_DIR", goodBin);
         c = std::make_unique<Controller>();
         c->setUpdateTimeoutMs(10000);
-        c->loadCatalog();
-        QVERIFY(waitFor([&] { return c->catalogLoaded(); }, 30000));
+        c->catalog().load();
+        QVERIFY(waitFor([&] { return c->catalog().loaded(); }, 30000));
         w = std::make_unique<MainWindow>(c.get());
         w->show();
     }
@@ -473,7 +473,7 @@ private slots:
     // =================================================================================================================
 
     void realCatalogFillsTheAddSourcePicker() {
-        QVERIFY2(c->catalog().size() > 300, qPrintable(QString::number(c->catalog().size())));
+        QVERIFY2(c->catalog().entries().size() > 300, qPrintable(QString::number(c->catalog().entries().size())));
         w->findChild<QAction*>("actionAddSource")->trigger();
         auto* picker = shown<PickerPage>();
         QVERIFY(picker);
@@ -488,9 +488,9 @@ private slots:
         for (const char* f : {"videotestsrc", "filesrc", "audiotestsrc", "v4l2src"}) QVERIFY2(names.contains(f), f);
         QVERIFY(!names.contains("fakesink"));
         bool deepstream = false;  // a plain Ubuntu has no nv* elements, so no badge is expected there
-        for (const FactoryEntry& e : c->catalog()) deepstream = deepstream || e.nvidia;
+        for (const FactoryEntry& e : c->catalog().entries()) deepstream = deepstream || e.nvidia;
         if (deepstream) QVERIFY2(nvidia > 0, "no NVIDIA badge among the sources");
-        qInfo() << "factories" << c->catalog().size() << "sources" << names.size() << "nvidia sources" << nvidia;
+        qInfo() << "factories" << c->catalog().entries().size() << "sources" << names.size() << "nvidia sources" << nvidia;
         QVERIFY(waitFor([&] { return w->drawer()->width() == Drawer::kWidth; }, 3000));
         QVERIFY(shotOf(w->drawer(), "00_add_source_picker"));
         press(picker, "cancelButton");

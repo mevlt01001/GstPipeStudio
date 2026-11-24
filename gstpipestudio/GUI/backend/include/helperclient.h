@@ -6,6 +6,7 @@
 #include <QObject>
 #include <QProcess>
 #include <QStringList>
+#include <functional>
 
 #include "wire.h"
 
@@ -33,6 +34,11 @@ public:
     static constexpr int kKillAfterTermMs = 2000;
 
     explicit HelperClient(QObject* parent = nullptr);
+
+    // One call of helper `name` (found with findHelper): its stderr lines go to log as "[name] line", the client deletes
+    // itself after done ran. The returned client can be interrupted or cancelled until then.
+    static HelperClient* run(QObject* parent, const QString& name, const QStringList& args, int killAfterMs,
+                             std::function<void(const QString&)> log, std::function<void(const HelperResult&)> done);
 
     // killAfterMs <= 0: no watchdog. An empty program (helper not found) finishes with NotFound.
     void start(const QString& program, const QStringList& args, int killAfterMs);

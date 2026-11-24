@@ -171,7 +171,7 @@ void Flows::confirmRemoval(const gps::Removal& removal, const QString& verb, std
 
 std::vector<FactoryEntry> Flows::factories(bool sources) const {
     std::vector<FactoryEntry> out;
-    for (const FactoryEntry& e : controller_->catalog()) {
+    for (const FactoryEntry& e : controller_->catalog().entries()) {
         if (e.isSource == sources) out.push_back(e);
     }
     return out;
@@ -203,7 +203,7 @@ void Flows::chooseElement() {
     data.newHeader = "Elements";
     data.showFilters = true;
     data.custom = controller_->customElements();
-    data.candidates = controller_->catalog();
+    data.candidates = controller_->catalog().entries();
     auto* page = new PickerPage(data);
     connect(page, &PickerPage::picked, this, [this](const PickerChoice& choice) {
         if (choice.kind == PickerChoice::CustomElement) {
@@ -217,7 +217,7 @@ void Flows::chooseElement() {
 }
 
 void Flows::sourceProperties(const QString& factory) {
-    controller_->fetchInfo(factory, [this, factory](const ElementInfo* info) {
+    controller_->catalog().fetchInfo(factory, [this, factory](const ElementInfo* info) {
         if (!info) return;
         PropertyPageInput in;
         in.info = *info;
@@ -237,7 +237,7 @@ void Flows::sourceProperties(const QString& factory) {
 void Flows::fromFreePad(const QString& element, const QString& identity) {
     if (controller_->editingBlocked()) return;
     QString allowed = controller_->padAllowed(element, identity);
-    controller_->fetchCompatible(allowed, [this, element, identity, allowed](const QStringList& compatible) {
+    controller_->catalog().fetchCompatible(allowed, [this, element, identity, allowed](const QStringList& compatible) {
         PickerData data;
         data.existing = controller_->existingTargets(element, identity);
         for (const CustomElementInfo& c : controller_->customElements()) {
@@ -266,7 +266,7 @@ void Flows::fromFreePad(const QString& element, const QString& identity) {
 }
 
 void Flows::newElement(Mode mode, const QString& element, const QString& identity, const QString& factory) {
-    controller_->fetchInfo(factory, [this, mode, element, identity, factory](const ElementInfo* info) {
+    controller_->catalog().fetchInfo(factory, [this, mode, element, identity, factory](const ElementInfo* info) {
         if (!info) return;
         PropertyPageInput in;
         in.info = *info;
@@ -385,7 +385,7 @@ void Flows::editCaps(const QString& element, const QString& identity) {
 void Flows::replaceBehind(const QString& element, const QString& identity) {
     if (controller_->editingBlocked()) return;
     QString allowed = controller_->padAllowed(element, identity);
-    controller_->fetchCompatible(allowed, [this, element, identity](const QStringList& compatible) {
+    controller_->catalog().fetchCompatible(allowed, [this, element, identity](const QStringList& compatible) {
         PickerData data;
         data.compatible = compatible;
         data.candidates = factories(false);
@@ -409,7 +409,7 @@ void Flows::disconnectLinkOnly(const QString& element, const QString& identity) 
 
 void Flows::addQueue(const QString& element, const QString& identity) {
     if (controller_->editingBlocked()) return;
-    controller_->fetchInfo(gps::kQueueFactory, [this, element, identity](const ElementInfo* info) {
+    controller_->catalog().fetchInfo(gps::kQueueFactory, [this, element, identity](const ElementInfo* info) {
         if (info) controller_->insertQueue(element, identity);
     });
 }
@@ -422,7 +422,7 @@ void Flows::editProperties(const QString& element) {
         return;
     }
     const gps::Element* e = controller_->plan().find(element.toStdString());
-    const ElementInfo* info = e ? controller_->info(fromStd(e->factory)) : nullptr;
+    const ElementInfo* info = e ? controller_->catalog().info(fromStd(e->factory)) : nullptr;
     if (!info) return;
 
     PropertyPageInput in;

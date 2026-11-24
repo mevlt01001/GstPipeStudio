@@ -55,9 +55,18 @@ Controller::Controller(QObject* parent) : QObject(parent), watch_(new SlowWatch(
         log("Validation is taking longer than expected");
         emit changed();
     });
+    connect(&catalog_, &FactoryCatalog::ready, this, [this] {
+        loadCustomElements();
+        emit changed();
+    });
+    connect(&catalog_, &FactoryCatalog::infoArrived, this, [this](const QString& factory) {
+        pipeline_.registerFactory(toStd(factory), gps::definitionOf(*catalog_.info(factory)));
+    });
+    connect(&catalog_, &FactoryCatalog::notice, this, &Controller::notice);
+    connect(&catalog_, &FactoryCatalog::logLine, this, logger());
     connect(startup_, &StartupCheck::finished, this, [this](const StartupResult& r) {
         log(r.state == StartupResult::Ready ? r.statusText() : "GStreamer check: the environment is not ready");
-        if (r.state == StartupResult::Ready && !catalogLoaded_) loadCatalog();
+        if (r.state == StartupResult::Ready && !catalog_.loaded()) catalog_.load();
         emit environmentChecked();
         emit changed();
     });
@@ -90,6 +99,10 @@ QString Controller::runBlockedReason() const {
 }
 
 bool Controller::helperStopped() const { return result().status == "crashed" || result().status == "stopped"; }
+
+std::function<void(const QString&)> Controller::logger() {
+    return [this](const QString& line) { log(line); };
+}
 
 void Controller::log(const QString& line) {
     logTail_ << line;
@@ -140,116 +153,6 @@ QString Controller::launchCommand() const {
     return text;
 }
 
-// ---- helpers
-
-HelperClient* Controller::runHelper(const QString& name, const QStringList& args, int killAfterMs,
-                                    std::function<void(const HelperResult&)> done) {
-    auto* client = new HelperClient(this);
-    connect(client, &HelperClient::stderrLine, this, [this, name](const QString& line) { log("[" + name + "] " + line); });
-    connect(client, &HelperClient::finished, this, [client, done](const HelperResult& r) {
-        client->deleteLater();
-        done(r);
-    });
-    client->start(findHelper(name), args, killAfterMs);
-    return client;
-}
-
-// ---- catalog
-
-void Controller::loadCatalog() {
-    runHelper("gps-inspect", {"list"}, 30000, [this](const HelperResult& r) {
-        gps::FactoryList list;
-        if (!r.read(&list)) {
-            emit notice("Unable to read the element list: gps-inspect did not run or gave an unusable answer.");
-            return;
-        }
-        catalog_ = std::move(list.elements);
-        catalogLoaded_ = true;
-        loadCustomElements();
-        log(QString("Element list: %1 factories").arg(catalog_.size()));
-        emit catalogReady();
-        emit changed();
-    });
-}
-
-const ElementInfo* Controller::info(const QString& factory) const {
-    auto found = infos_.find(factory);
-    return found == infos_.end() ? nullptr : &found->second;
-}
-
-const FactoryEntry* Controller::factoryEntry(const QString& factory) const {
-    if (const ElementInfo* i = info(factory)) return &i->entry;
-    const std::string name = toStd(factory);
-    for (const FactoryEntry& e : catalog_) {
-        if (e.factory == name) return &e;
-    }
-    return nullptr;
-}
-
-void Controller::fetchInfo(const QString& factory, InfoCallback done) {
-    if (const ElementInfo* cached = info(factory)) {
-        done(cached);
-        return;
-    }
-    pendingInfo_[factory].append(done);
-    if (pendingInfo_[factory].size() > 1) return;  // a call for this factory is already on its way
-
-    runHelper("gps-inspect", {"element", factory}, 30000, [this, factory](const HelperResult& r) {
-        ElementInfo answer;
-        if (r.read(&answer) && answer.entry.factory == toStd(factory)) {
-            infos_[factory] = std::move(answer);
-            pipeline_.registerFactory(toStd(factory), gps::definitionOf(infos_[factory]));
-        } else {
-            emit notice(QString("Unable to read the information of element '%1'.").arg(factory));
-        }
-        QList<InfoCallback> waiting = pendingInfo_.take(factory);
-        for (const InfoCallback& cb : waiting) cb(info(factory));
-    });
-}
-
-void Controller::fetchInfos(const QStringList& factories, std::function<void(bool)> done) {
-    auto remaining = std::make_shared<int>(factories.size());
-    auto failed = std::make_shared<bool>(false);
-    if (factories.isEmpty()) {
-        done(true);
-        return;
-    }
-    for (const QString& f : factories) {
-        fetchInfo(f, [remaining, failed, done](const ElementInfo* i) {
-            if (!i) *failed = true;
-            if (--*remaining == 0) done(!*failed);
-        });
-    }
-}
-
-void Controller::fetchCompatible(const QString& caps, NamesCallback done) {
-    auto cached = compatible_.constFind(caps);
-    if (cached != compatible_.constEnd()) {
-        done(cached.value());
-        return;
-    }
-    QStringList args = {"compatible"};
-    if (!caps.isEmpty()) args << "--caps" << caps;
-    runHelper("gps-inspect", args, 30000, [this, caps, done](const HelperResult& r) {
-        QStringList names;
-        gps::CompatibleFactories answer;
-        if (r.read(&answer)) {
-            names = fromStd(answer.factories);
-            compatible_.insert(caps, names);
-        }
-        done(names);
-    });
-}
-
-gps::TraitsFn Controller::traits() const {
-    return [this](const std::string& factory) {
-        gps::FactoryTraits t;
-        QString name = fromStd(factory);
-        if (const FactoryEntry* e = factoryEntry(name)) t.isSource = e->isSource;
-        return t;
-    };
-}
-
 // ---- custom elements & groups
 
 QString Controller::customElementsDir() {
@@ -277,7 +180,7 @@ void Controller::loadCustomElements() {
         for (const gps::Element& e : sub.elements) {
             QString fac = fromStd(e.factory);
             factories << fac;
-            const FactoryEntry* entry = factoryEntry(fac);
+            const FactoryEntry* entry = catalog_.entry(fac);
             bool isSrc = entry && entry->isSource, isSnk = entry && entry->isSink;
             if (!isSrc && sub.linksInto(e.name).empty()) anyFreeSink = true;
             if (!isSnk && sub.linksFromElement(e.name).empty()) anyFreeSrc = true;
@@ -454,10 +357,10 @@ QStringList Controller::addCustomElementAfter(const QString& srcElement, const Q
     QStringList missing;
     for (const gps::Element& e : copy.elements) {
         QString fac = fromStd(e.factory);
-        if (!info(fac) && !missing.contains(fac)) missing << fac;
+        if (!catalog_.info(fac) && !missing.contains(fac)) missing << fac;
     }
     if (!missing.isEmpty()) {
-        fetchInfos(missing, [this, srcElement, srcPad, customName](bool ok) {
+        catalog_.fetchInfos(missing, [this, srcElement, srcPad, customName](bool ok) {
             if (ok) addCustomElementAfter(srcElement, srcPad, customName);
         });
         return {};
@@ -504,7 +407,7 @@ QStringList Controller::addCustomElementAfter(const QString& srcElement, const Q
     note("Added custom element " + customName + " after " + srcElement + "." + srcPad);
     bool anyTracked = false;
     for (const QString& n : createdNames) {
-        if (plan().isElementTracked(toStd(n), traits())) anyTracked = true;
+        if (plan().isElementTracked(toStd(n), catalog_.traits())) anyTracked = true;
     }
     edited(createdNames.value(0), anyTracked);
     return createdNames;
@@ -537,7 +440,7 @@ ElementView Controller::view(const QString& name) const {
     v.factory = fromStd(element->factory);
     v.groupId = fromStd(element->group);
     if (!v.groupId.isEmpty()) v.groupMembers = groupMembers(v.groupId);
-    if (const FactoryEntry* e = factoryEntry(v.factory)) v.nvidia = e->nvidia;
+    if (const FactoryEntry* e = catalog_.entry(v.factory)) v.nvidia = e->nvidia;
 
     // Changed properties, the exposed ones marked.
     QStringList lines;
@@ -556,11 +459,11 @@ ElementView Controller::view(const QString& name) const {
     v.propLines = lines;
     v.note = elementNote(name, &v.isError);
 
-    const ElementInfo* inf = info(v.factory);
+    const ElementInfo* inf = catalog_.info(v.factory);
     if (!inf) return v;
     v.isSource = inf->entry.isSource;
     v.isSink = inf->entry.isSink;
-    v.isTracked = plan().isElementTracked(element->name, traits());
+    v.isTracked = plan().isElementTracked(element->name, catalog_.traits());
     if (!v.isTracked && v.note.isEmpty()) {
         v.isInfo = true;
         v.note = "ℹ Unlinked sink pad — not tracked until fed by a source.";
@@ -711,7 +614,7 @@ const PadTemplateInfo* Controller::linkSinkTemplate(int link) const {
     if (link < 0 || link >= static_cast<int>(plan().links.size())) return nullptr;
     const gps::Connection& l = plan().links[link];
     const gps::Element* sink = plan().find(l.sinkElement);
-    const ElementInfo* inf = sink ? info(fromStd(sink->factory)) : nullptr;
+    const ElementInfo* inf = sink ? catalog_.info(fromStd(sink->factory)) : nullptr;
     return inf ? inf->padTemplate(l.sinkPad, "sink") : nullptr;
 }
 
@@ -719,7 +622,7 @@ QList<ExistingTarget> Controller::existingTargets(const QString& element, const 
     QList<ExistingTarget> out;
     std::vector<StructureInfo> allowed = padStructures(element, identity);
     for (const gps::Element& e : plan().elements) {
-        const ElementInfo* inf = info(fromStd(e.factory));
+        const ElementInfo* inf = catalog_.info(fromStd(e.factory));
         if (!inf || plan().wouldCycle(toStd(element), e.name)) continue;
         for (const PadTemplateInfo& t : inf->sinkTemplates()) {
             if (!gps::structuresMeet(allowed, t.structures)) continue;
@@ -856,10 +759,10 @@ QStringList Controller::pasteSubplan(const gps::Graph& clip, double targetX, dou
     QStringList missing;
     for (const gps::Element& e : clip.elements) {
         QString fac = fromStd(e.factory);
-        if (!info(fac) && !missing.contains(fac)) missing << fac;
+        if (!catalog_.info(fac) && !missing.contains(fac)) missing << fac;
     }
     if (!missing.isEmpty()) {
-        fetchInfos(missing, [this, clip, targetX, targetY](bool ok) {
+        catalog_.fetchInfos(missing, [this, clip, targetX, targetY](bool ok) {
             if (ok) pasteSubplan(clip, targetX, targetY);
         });
         return {};
@@ -912,7 +815,7 @@ QStringList Controller::pasteSubplan(const gps::Graph& clip, double targetX, dou
     }
 
     for (const QString& n : createdNames) {
-        if (plan().isElementTracked(toStd(n), traits())) anyTracked = true;
+        if (plan().isElementTracked(toStd(n), catalog_.traits())) anyTracked = true;
     }
     if (!createdNames.isEmpty()) {
         note(QString("Pasted %1 element(s)").arg(createdNames.size()));
@@ -933,20 +836,20 @@ bool Controller::addSource(const QString& factory, const ElementEdit& edit) {
 }
 
 bool Controller::addElement(const QString& factory, const ElementEdit& edit, double x, double y) {
-    if (editingBlocked() || !info(factory)) return false;
+    if (editingBlocked() || !catalog_.info(factory)) return false;
     beginTransaction();
     QPointF at = (std::isfinite(x) && std::isfinite(y)) ? QPointF(x, y) : freeSpot();
     std::string name = editGraph().addElement(toStd(factory), edit.props, at.x(), at.y());
     note("Added " + factory);
     applyEdit(name, edit);
-    bool isTracked = plan().isElementTracked(name, traits());
+    bool isTracked = plan().isElementTracked(name, catalog_.traits());
     edited(fromStd(name), isTracked);
     return true;
 }
 
 bool Controller::addAfter(const QString& element, const QString& pad, const QString& factory, const QString& sinkPad,
                           const ElementEdit& edit) {
-    if (editingBlocked() || !info(factory)) return false;
+    if (editingBlocked() || !catalog_.info(factory)) return false;
     const gps::Element* from = plan().find(toStd(element));
     if (!from) return false;
     beginTransaction();
@@ -959,7 +862,7 @@ bool Controller::addAfter(const QString& element, const QString& pad, const QStr
     applyEdit(name, edit);
     placeNewElement(name);
     note("Added " + factory + " after " + element + "." + pad, padText(element, pad) + " -> " + padText(fromStd(name), sinkPad));
-    bool isTracked = plan().isElementTracked(name, traits());
+    bool isTracked = plan().isElementTracked(name, catalog_.traits());
     edited(fromStd(name), isTracked);
     return true;
 }
@@ -976,7 +879,7 @@ bool Controller::linkExisting(const QString& element, const QString& pad, const 
         return false;
     }
     note("Linked " + element + "." + pad + " to an existing element", padText(element, pad) + " -> " + padText(sinkElement, sinkPad));
-    bool isTracked = plan().isElementTracked(toStd(element), traits()) || plan().isElementTracked(toStd(sinkElement), traits());
+    bool isTracked = plan().isElementTracked(toStd(element), catalog_.traits()) || plan().isElementTracked(toStd(sinkElement), catalog_.traits());
     edited(sinkElement, isTracked);
     return true;
 }
@@ -988,7 +891,7 @@ bool Controller::editElement(const QString& element, const ElementEdit& edit) {
     applyEdit(toStd(element), edit);
     const gps::Element* e = plan().find(toStd(element));
     note("Edited the properties of " + element + (e ? " (" + fromStd(e->factory) + ")" : QString()));
-    bool isTracked = plan().isElementTracked(toStd(element), traits());
+    bool isTracked = plan().isElementTracked(toStd(element), catalog_.traits());
     edited(element, isTracked);
     return true;
 }
@@ -1007,7 +910,7 @@ bool Controller::cut(const QString& element, const QString& pad) {
     QString linking = padText(element, pad);
     if (editingBlocked()) return false;
     beginTransaction();
-    if (editGraph().cut(toStd(element), toStd(pad), traits()).links == 0) {
+    if (editGraph().cut(toStd(element), toStd(pad), catalog_.traits()).links == 0) {
         pipeline_.editor().rollback();
         return false;
     }
@@ -1018,7 +921,7 @@ bool Controller::cut(const QString& element, const QString& pad) {
 
 bool Controller::disconnectLink(const QString& element, const QString& pad) {
     if (editingBlocked()) return false;
-    const bool wasTracked = plan().isElementTracked(toStd(element), traits());
+    const bool wasTracked = plan().isElementTracked(toStd(element), catalog_.traits());
     const QString linking = padText(element, pad);
     gps::DisconnectAction action(toStd(element), toStd(pad));
     if (!pipeline_.editor().execute(action)) return false;
@@ -1029,17 +932,17 @@ bool Controller::disconnectLink(const QString& element, const QString& pad) {
 
 bool Controller::replace(const QString& element, const QString& pad, const QString& factory, const QString& sinkPad,
                          const ElementEdit& edit) {
-    if (editingBlocked() || !info(factory)) return false;
+    if (editingBlocked() || !catalog_.info(factory)) return false;
     QString linking = padText(element, pad);
     beginTransaction();
-    gps::Addition added = editGraph().replace(toStd(element), toStd(pad), toStd(factory), toStd(sinkPad), edit.props, traits());
+    gps::Addition added = editGraph().replace(toStd(element), toStd(pad), toStd(factory), toStd(sinkPad), edit.props, catalog_.traits());
     if (added.element.empty()) {
         pipeline_.editor().rollback();
         return false;
     }
     note("Replaced the element behind " + element + "." + pad + " with " + factory, linking + " -> " + factory);
     applyEdit(added.element, edit);
-    edited(fromStd(added.element), plan().isElementTracked(added.element, traits()));
+    edited(fromStd(added.element), plan().isElementTracked(added.element, catalog_.traits()));
     return true;
 }
 
@@ -1058,11 +961,11 @@ bool Controller::deleteSelection(const QStringList& elementNames, const QList<QP
 
     bool anyTracked = false;
     for (const QString& n : expanded) {
-        if (plan().isElementTracked(toStd(n), traits())) anyTracked = true;
+        if (plan().isElementTracked(toStd(n), catalog_.traits())) anyTracked = true;
     }
     for (const auto& [srcEl, srcPad] : links) {
         Q_UNUSED(srcPad);
-        if (plan().isElementTracked(toStd(srcEl), traits())) anyTracked = true;
+        if (plan().isElementTracked(toStd(srcEl), catalog_.traits())) anyTracked = true;
     }
 
     int exitTotalSrcPads = 1;
@@ -1115,7 +1018,7 @@ bool Controller::spliceElements(const QStringList& elements, const QString& link
     }
     if (expanded.size() == 1) {
         const QString& only = expanded.first();
-        if (const ElementInfo* inf = info(view(only).factory)) {
+        if (const ElementInfo* inf = catalog_.info(view(only).factory)) {
             for (const PadTemplateInfo& t : inf->sinkTemplates()) {
                 if (t.isRequest()) {
                     std::pair<std::string, std::string> cand{toStd(only), t.name};
@@ -1140,12 +1043,12 @@ bool Controller::spliceElements(const QStringList& elements, const QString& link
         return false;
     }
     note("Spliced " + expanded.join(", ") + " into link from " + linkSrcElement + "." + linkSrcPad);
-    edited(expanded.first(), plan().isElementTracked(toStd(linkSrcElement), traits()));
+    edited(expanded.first(), plan().isElementTracked(toStd(linkSrcElement), catalog_.traits()));
     return true;
 }
 
 bool Controller::insertQueue(const QString& element, const QString& pad) {
-    if (editingBlocked() || !info(fromStd(gps::kQueueFactory))) return false;
+    if (editingBlocked() || !catalog_.info(fromStd(gps::kQueueFactory))) return false;
     beginTransaction();
     std::string name = editGraph().insertQueue(toStd(element), toStd(pad));
     if (name.empty()) {
@@ -1154,7 +1057,7 @@ bool Controller::insertQueue(const QString& element, const QString& pad) {
     }
     makeRoomForQueue(element.toStdString(), name);
     note("Inserted a queue after " + element + "." + pad, padText(element, pad));
-    edited(fromStd(name), plan().isElementTracked(name, traits()));
+    edited(fromStd(name), plan().isElementTracked(name, catalog_.traits()));
     return true;
 }
 
@@ -1187,7 +1090,7 @@ void Controller::makeRoomForQueue(const std::string& source, const std::string& 
 
 bool Controller::removeQueue(const QString& queue) {
     if (editingBlocked()) return false;
-    bool wasTracked = plan().isElementTracked(toStd(queue), traits());
+    bool wasTracked = plan().isElementTracked(toStd(queue), catalog_.traits());
     beginTransaction();
     if (!editGraph().removeQueue(toStd(queue))) {
         pipeline_.editor().rollback();
@@ -1265,7 +1168,7 @@ bool Controller::linkOrderedInternal(const QStringList& expanded, QString* lastT
             }
         }
         if (sinkPad.isEmpty()) {
-            if (const ElementInfo* inf = info(dv.factory)) {
+            if (const ElementInfo* inf = catalog_.info(dv.factory)) {
                 for (const PadTemplateInfo& t : inf->sinkTemplates()) {
                     if (t.isRequest()) {
                         sinkPad = fromStd(t.name);
@@ -1297,7 +1200,7 @@ bool Controller::connectSelectedElements(const QStringList& names) {
     }
     bool anyTracked = false;
     for (const QString& n : expanded) {
-        if (plan().isElementTracked(toStd(n), traits())) anyTracked = true;
+        if (plan().isElementTracked(toStd(n), catalog_.traits())) anyTracked = true;
     }
     note("Connected selected elements");
     edited(lastTouched, anyTracked);
@@ -1312,7 +1215,7 @@ bool Controller::disconnectBetweenElements(const QStringList& names) {
 
     bool anyTracked = false;
     for (const QString& n : expanded) {
-        if (plan().isElementTracked(toStd(n), traits())) anyTracked = true;
+        if (plan().isElementTracked(toStd(n), catalog_.traits())) anyTracked = true;
     }
 
     beginTransaction();
@@ -1450,15 +1353,15 @@ bool Controller::arrangePipeline() {
 }
 
 gps::Removal Controller::previewCut(const QString& element, const QString& pad) const {
-    return plan().previewCut(toStd(element), toStd(pad), traits());
+    return plan().previewCut(toStd(element), toStd(pad), catalog_.traits());
 }
 
 gps::Removal Controller::previewReplace(const QString& element, const QString& pad) const {
-    return plan().previewReplace(toStd(element), toStd(pad), traits());
+    return plan().previewReplace(toStd(element), toStd(pad), catalog_.traits());
 }
 
 gps::Removal Controller::previewDeleteSource(const QString& element) const {
-    return plan().previewDeleteSource(toStd(element), traits());
+    return plan().previewDeleteSource(toStd(element), catalog_.traits());
 }
 
 // ---- update
@@ -1474,7 +1377,7 @@ void Controller::startUpdate() {
 
 void Controller::dispatchUpdate() {
     cancelled_ = false;
-    if (plan().empty() || plan().trackedSubplan(traits()).empty()) {
+    if (plan().empty() || plan().trackedSubplan(catalog_.traits()).empty()) {
         updating_ = false; watch_->stop();
         pipeline_.observeIdle();
         emit changed();
@@ -1486,7 +1389,7 @@ void Controller::dispatchUpdate() {
     emit changed();
     backend_.setTimeout(updateTimeoutMs_);
     backend_.setSuspect(toStd(touched_));
-    execution_.start(traits(), [this](const gps::ExecutionResult& result) { finishUpdate(result); });
+    execution_.start(catalog_.traits(), [this](const gps::ExecutionResult& result) { finishUpdate(result); });
 }
 
 void Controller::cancelUpdate() {
@@ -1557,7 +1460,7 @@ void Controller::open(const QString& path, bool imported) {
         if (!factories.contains(fromStd(e.factory))) factories << fromStd(e.factory);
     }
     opening_ = true;
-    fetchInfos(factories, [this, loaded, path, imported](bool ok) {
+    catalog_.fetchInfos(factories, [this, loaded, path, imported](bool ok) {
         opening_ = false;
         if (!ok) {
             emit notice("Unable to open the file: the plan uses an element this installation does not have.");
@@ -1582,7 +1485,7 @@ bool Controller::importLaunch(const QString& description) {
     const QString path = tmp_.filePath("import.conf");
     opening_ = true;
     emit changed();
-    runHelper("gps-import", {"--output", path, "--probe-ms", "1000", description.trimmed()}, 13000,
+    HelperClient::run(this, "gps-import", {"--output", path, "--probe-ms", "1000", description.trimmed()}, 13000, logger(),
               [this, path](const HelperResult& result) {
         opening_ = false;
         gps::ImportReply reply;
@@ -1633,7 +1536,7 @@ bool Controller::run() {
     }
     running_ = true;
     log("Running…");
-    runClient_ = runHelper("gps-run", {file}, 0, [this](const HelperResult& r) {
+    runClient_ = HelperClient::run(this, "gps-run", {file}, 0, logger(), [this](const HelperResult& r) {
         running_ = false;
         runClient_ = nullptr;
         gps::RunResult answer;

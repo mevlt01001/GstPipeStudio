@@ -1,7 +1,7 @@
 // Controller owns the Pipeline document and coordinates GUI workflows and helper processes.
 // Widgets read views and submit edits; GraphEditor owns transactions and history.
 // Preview updates are coalesced and allow further edits. Playback, opening and cancellation block edits.
-// Call fetchInfo() before edits that refer to a new factory.
+// Call catalog().fetchInfo() before edits that refer to a new factory.
 #pragma once
 
 #include <QHash>
@@ -22,6 +22,7 @@
 #include "elementview.h"
 #include "helperclient.h"
 #include "executionbackend.h"
+#include "factorycatalog.h"
 #include "pipeline.h"
 #include "slowwatch.h"
 #include "startupcheck.h"
@@ -39,8 +40,6 @@ constexpr int kUpdateBackstopMs = 600000;
 class Controller : public QObject {
     Q_OBJECT
 public:
-    using InfoCallback = std::function<void(const ElementInfo*)>;
-    using NamesCallback = std::function<void(const QStringList&)>;
 
     explicit Controller(QObject* parent = nullptr);
 
@@ -79,16 +78,9 @@ public:
     SupportInfo supportInfo(const QString& title) const;
     void requestSupport(const QString& title);  // opens the prefilled issue in the browser
 
-    // ---- catalog (gps-inspect)
-    void loadCatalog();
-    bool catalogLoaded() const { return catalogLoaded_; }
-    const std::vector<FactoryEntry>& catalog() const { return catalog_; }
-    const ElementInfo* info(const QString& factory) const;
-    // The factory's row: from its fetched information, else from the catalog; nullptr when neither knows it.
-    const FactoryEntry* factoryEntry(const QString& factory) const;
-    void fetchInfo(const QString& factory, InfoCallback done);  // calls done at once when cached; nullptr on failure
-    void fetchCompatible(const QString& caps, NamesCallback done);  // ranked factories that can follow these caps
-    gps::TraitsFn traits() const;
+    // ---- what GStreamer offers (gps-inspect); the Controller registers each fetched factory with the Pipeline
+    FactoryCatalog& catalog() { return catalog_; }
+    const FactoryCatalog& catalog() const { return catalog_; }
 
     // ---- custom elements (saved multi-element presets & canvas groups)
     static QString customElementsDir();
@@ -171,7 +163,6 @@ signals:
     void updateFinished(bool ok);
     void logLine(const QString& line);      // helper stderr and events
     void notice(const QString& text);       // something the user must be told (helper missing, open failed ...)
-    void catalogReady();
     void environmentChecked();
     void runFinished(const QString& status);
     void telemetryReceived(const gps::TelemetrySample& sample);
@@ -180,8 +171,7 @@ private:
     void log(const QString& line);
     void note(const QString& action, const QString& linking = QString());  // what the support report says we did
     QString padText(const QString& element, const QString& identity) const;
-    HelperClient* runHelper(const QString& name, const QStringList& args, int killAfterMs, std::function<void(const HelperResult&)> done);
-    void fetchInfos(const QStringList& factories, std::function<void(bool)> done);
+    std::function<void(const QString&)> logger();  // log() as a callback
     bool beginEdit() const;
     void beginTransaction();
     gps::Graph& editGraph() { return pipeline_.editor().draft(); }
@@ -212,15 +202,11 @@ private:
     QString touched_;  // the element the last edit concerned; the suspect when the helper dies
 
     QTemporaryDir tmp_;
-    std::vector<FactoryEntry> catalog_;
-    bool catalogLoaded_ = false;
+    FactoryCatalog catalog_;
     QList<CustomElementInfo> customElements_;
     std::map<QString, gps::Graph> customPlans_;
     QSet<QString> expandedGroups_;
     int nextGroupId_ = 1;
-    std::map<QString, ElementInfo> infos_;  // node based: pointers handed out stay valid
-    QHash<QString, QList<InfoCallback>> pendingInfo_;
-    QHash<QString, QStringList> compatible_;
     HelperClient* runClient_ = nullptr;
     QProcess* monitorClient_ = nullptr;
     QByteArray monitorOutput_;

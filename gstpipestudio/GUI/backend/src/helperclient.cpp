@@ -24,6 +24,18 @@ QString findSystemTool(const QString& name) {
     return qEnvironmentVariableIsSet("GPS_BIN_DIR") ? findHelper(name) : QStandardPaths::findExecutable(name);
 }
 
+HelperClient* HelperClient::run(QObject* parent, const QString& name, const QStringList& args, int killAfterMs,
+                                std::function<void(const QString&)> log, std::function<void(const HelperResult&)> done) {
+    auto* client = new HelperClient(parent);
+    connect(client, &HelperClient::stderrLine, parent, [log, name](const QString& line) { log("[" + name + "] " + line); });
+    connect(client, &HelperClient::finished, parent, [client, done](const HelperResult& r) {
+        client->deleteLater();
+        done(r);
+    });
+    client->start(findHelper(name), args, killAfterMs);
+    return client;
+}
+
 HelperClient::HelperClient(QObject* parent)
     : QObject(parent), process_(new QProcess(this)), watchdog_(new QTimer(this)), escalate_(new QTimer(this)) {
     escalate_->setSingleShot(true);

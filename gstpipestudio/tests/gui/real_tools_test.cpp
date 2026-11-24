@@ -46,17 +46,17 @@ private slots:
     }
 
     void catalogHasTheUsualElementsAndNvidiaBadges() {
-        QVERIFY(c->catalogLoaded());
-        QVERIFY2(c->catalog().size() > 50, qPrintable(QString::number(c->catalog().size())));
+        QVERIFY(c->catalog().loaded());
+        QVERIFY2(c->catalog().entries().size() > 50, qPrintable(QString::number(c->catalog().entries().size())));
         QMap<QString, FactoryEntry> by;
-        for (const FactoryEntry& e : c->catalog()) by[fromStd(e.factory)] = e;
+        for (const FactoryEntry& e : c->catalog().entries()) by[fromStd(e.factory)] = e;
         for (const char* f : {"videotestsrc", "videoconvert", "fakesink", "queue", "tee", "compositor"}) QVERIFY2(by.contains(f), f);
         QVERIFY(by["videotestsrc"].isSource);
         QVERIFY(!by["videoconvert"].isSource);
         QVERIFY(by["tee"].hasRequestSrc);
         int nvidia = 0;
-        for (const FactoryEntry& e : c->catalog()) nvidia += e.nvidia;
-        qInfo() << "factories:" << c->catalog().size() << "nvidia:" << nvidia;
+        for (const FactoryEntry& e : c->catalog().entries()) nvidia += e.nvidia;
+        qInfo() << "factories:" << c->catalog().entries().size() << "nvidia:" << nvidia;
     }
 
     void elementInfoParses() {
@@ -145,11 +145,11 @@ private slots:
         QVERIFY(w.grab().save(QString("%1/ux_30_real_helpers.png").arg(shotDir())));
 
         QStringList compatible;
-        c->fetchCompatible(c->padAllowed(nv, "src"), [&](const QStringList& l) { compatible = l; });
+        c->catalog().fetchCompatible(c->padAllowed(nv, "src"), [&](const QStringList& l) { compatible = l; });
         QVERIFY(waitFor([&] { return !compatible.isEmpty(); }));
         PickerData data;
         data.compatible = compatible;
-        for (const FactoryEntry& e : c->catalog()) {
+        for (const FactoryEntry& e : c->catalog().entries()) {
             if (!e.isSource) data.candidates.push_back(e);
         }
         QElapsedTimer timer;
