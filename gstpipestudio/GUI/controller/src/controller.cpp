@@ -38,6 +38,13 @@ QString badgeOf(const QString& caps) {
     return pinned == 0 ? QString("caps") : QString("caps · %1").arg(pinned);
 }
 
+// At most metrics::kMaxPropLines lines; the last says how many more there are.
+QStringList limitedLines(const QStringList& lines) {
+    if (lines.size() <= metrics::kMaxPropLines) return lines;
+    QStringList shown = lines.mid(0, metrics::kMaxPropLines - 1);
+    return shown << QString("… +%1 more").arg(lines.size() - shown.size());
+}
+
 }  // namespace
 
 Controller::Controller(QObject* parent) : QObject(parent), watch_(new SlowWatch(this)), startup_(new StartupCheck(this)) {
@@ -242,39 +249,34 @@ void Controller::setGroupExpanded(const QString& groupId, bool expanded) {
 }
 
 bool Controller::groupSelectedElements(const QStringList& elementNames, const QString& groupTitle) {
-    if (editingBlocked()) return false;
     QStringList expanded = expandSelectionWithGroups(elementNames);
     if (expanded.isEmpty()) return false;
     QString cleanTitle = groupTitle.trimmed();
     if (cleanTitle.isEmpty()) cleanTitle = "CustomGroup";
     cleanTitle.replace('#', '_');
-    QString groupId = cleanTitle + "#" + QString::number(nextGroupId_++);
-    beginTransaction();
-    for (const QString& n : expanded) {
-        if (gps::Element* e = editGraph().find(toStd(n))) e->group = toStd(groupId);
-    }
-    expandedGroups_.remove(groupId);
-    dirty_ = true;
-    if (!commitTransaction()) return false;
-    note("Grouped elements as " + cleanTitle);
-    emit changed();
-    return true;
+    return transact([&](gps::Graph& g, Edit& edit) {
+        const std::string groupId = toStd(newGroupId(cleanTitle));
+        for (const QString& n : expanded) {
+            if (gps::Element* e = g.find(toStd(n))) e->group = groupId;
+        }
+        edit.action = "Grouped elements as " + cleanTitle;
+        edit.presentation = true;
+        return true;
+    });
 }
 
 bool Controller::ungroupElements(const QString& groupId) {
-    if (editingBlocked() || groupId.isEmpty()) return false;
     QStringList members = groupMembers(groupId);
-    if (members.isEmpty()) return false;
-    beginTransaction();
-    for (const QString& m : members) {
-        if (gps::Element* e = editGraph().find(toStd(m))) e->group.clear();
-    }
-    expandedGroups_.remove(groupId);
-    dirty_ = true;
-    if (!commitTransaction()) return false;
-    note("Ungrouped " + groupId.section('#', 0, 0));
-    emit changed();
-    return true;
+    if (groupId.isEmpty() || members.isEmpty()) return false;
+    return transact([&](gps::Graph& g, Edit& edit) {
+        for (const QString& m : members) {
+            if (gps::Element* e = g.find(toStd(m))) e->group.clear();
+        }
+        expandedGroups_.remove(groupId);
+        edit.action = "Ungrouped " + groupId.section('#', 0, 0);
+        edit.presentation = true;
+        return true;
+    });
 }
 
 bool Controller::saveCustomElement(const QString& customName, const QStringList& elementNames, const QString& description) {
@@ -335,9 +337,7 @@ QStringList Controller::addCustomElement(const QString& customName, double x, do
     const gps::Graph* tmpl = customElementPlan(customName);
     if (!tmpl || editingBlocked()) return {};
     gps::Graph copy = *tmpl;
-    QString groupId = customName + "#" + QString::number(nextGroupId_++);
-    for (gps::Element& e : copy.elements) e.group = toStd(groupId);
-    expandedGroups_.remove(groupId);
+    for (gps::Element& e : copy.elements) e.group = toStd(customName);  // the paste gives the group a fresh id
     QPointF at = (std::isfinite(x) && std::isfinite(y)) ? QPointF(x, y) : freeSpot();
     return pasteSubplan(copy, at.x(), at.y());
 }
@@ -346,69 +346,25 @@ QStringList Controller::addCustomElementAfter(const QString& srcElement, const Q
     const gps::Graph* tmpl = customElementPlan(customName);
     const gps::Element* from = plan().find(toStd(srcElement));
     if (!tmpl || !from || editingBlocked()) return {};
-    gps::Graph copy = *tmpl;
-    QString groupId = customName + "#" + QString::number(nextGroupId_++);
-    for (gps::Element& e : copy.elements) e.group = toStd(groupId);
-    expandedGroups_.remove(groupId);
-
-    // Ensure all factories are cached, then insert and link the entry element.
-    QStringList missing;
-    for (const gps::Element& e : copy.elements) {
-        QString fac = fromStd(e.factory);
-        if (!catalog_.info(fac) && !missing.contains(fac)) missing << fac;
-    }
-    if (!missing.isEmpty()) {
-        catalog_.fetchInfos(missing, [this, srcElement, srcPad, customName](bool ok) {
-            if (ok) addCustomElementAfter(srcElement, srcPad, customName);
-        });
-        return {};
-    }
-    beginTransaction();
-    double baseX = from->x + metrics::kColumn;
-    double baseY = from->y;
-    double minX = copy.elements.front().x;
-    double minY = copy.elements.front().y;
-    for (const gps::Element& e : copy.elements) {
-        minX = std::min(minX, e.x);
-        minY = std::min(minY, e.y);
-    }
-
-    std::map<std::string, std::string> nameMap;
-    QStringList createdNames;
-    for (const gps::Element& e : copy.elements) {
-        std::string created = editGraph().addElement(e.factory, e.props, baseX + (e.x - minX), baseY + (e.y - minY));
-        if (gps::Element* pe = editGraph().find(created)) pe->group = toStd(groupId);
-        ElementEdit edit;
-        edit.props = e.props;
-        edit.requestSrc = e.requestSrc;
-        edit.requestSink = e.requestSink;
-        applyEdit(created, edit);
-        nameMap[e.name] = created;
-        createdNames << fromStd(created);
-    }
-    for (const gps::Connection& l : copy.links) {
-        auto itSrc = nameMap.find(l.srcElement);
-        auto itSnk = nameMap.find(l.sinkElement);
-        if (itSrc != nameMap.end() && itSnk != nameMap.end()) {
-            editGraph().linkExisting(itSrc->second, l.srcPad, itSnk->second, l.sinkPad, l.caps, l.sinkPadProps);
+    if (!infosReady(*tmpl, [=] { addCustomElementAfter(srcElement, srcPad, customName); })) return {};
+    const QString groupId = newGroupId(customName);
+    QStringList created;
+    transact([&](gps::Graph& g, Edit& edit) {
+        const QPointF to(from->x + metrics::kColumn, from->y);
+        for (const auto& entry : insertCopy(g, *tmpl, to - topLeft(*tmpl), groupId)) created << fromStd(entry.second);
+        // srcElement.srcPad feeds the first free sink pad of the new group
+        for (const PadView& p : groupView(groupId).sinks) {
+            if (p.state != PadView::Linked) {
+                g.linkExisting(toStd(srcElement), toStd(srcPad), toStd(p.element), toStd(p.templateName));
+                break;
+            }
         }
-    }
-
-    // Link srcElement.srcPad to the first free sink pad of the custom element group.
-    ElementView gv = groupView(groupId);
-    for (const PadView& p : gv.sinks) {
-        if (p.state != PadView::Linked) {
-            editGraph().linkExisting(toStd(srcElement), toStd(srcPad), toStd(p.element), toStd(p.templateName));
-            break;
-        }
-    }
-    note("Added custom element " + customName + " after " + srcElement + "." + srcPad);
-    bool anyTracked = false;
-    for (const QString& n : createdNames) {
-        if (plan().isElementTracked(toStd(n), catalog_.traits())) anyTracked = true;
-    }
-    edited(createdNames.value(0), anyTracked);
-    return createdNames;
+        edit.action = "Added custom element " + customName + " after " + srcElement + "." + srcPad;
+        edit.touched = created.value(0);
+        edit.validate = anyTracked(created);
+        return true;
+    });
+    return created;
 }
 
 // ---- views
@@ -449,12 +405,7 @@ ElementView Controller::view(const QString& name) const {
                                    [&](const gps::ExposedParam& p) { return p.element == element->name && p.property == key; });
         lines << (exposed ? "↗ " : "") + fromStd(key) + " = " + fromStd(value);
     }
-    if (lines.size() > metrics::kMaxPropLines) {
-        int hidden = lines.size() - (metrics::kMaxPropLines - 1);
-        lines = lines.mid(0, metrics::kMaxPropLines - 1);
-        lines << QString("… +%1 more").arg(hidden);
-    }
-    v.propLines = lines;
+    v.propLines = limitedLines(lines);
     v.note = elementNote(name, &v.isError);
 
     const ElementInfo* inf = catalog_.info(v.factory);
@@ -559,12 +510,7 @@ ElementView Controller::groupView(const QString& groupId) const {
     v.isSource = v.sinks.isEmpty() && !v.srcs.isEmpty();
     v.isSink = !v.sinks.isEmpty() && v.srcs.isEmpty();
     v.factory = QString("custom (%1) · %2").arg(members.size()).arg(factories.join(" → "));
-    if (propSummary.size() > metrics::kMaxPropLines) {
-        int hidden = propSummary.size() - (metrics::kMaxPropLines - 1);
-        propSummary = propSummary.mid(0, metrics::kMaxPropLines - 1);
-        propSummary << QString("… +%1 more").arg(hidden);
-    }
-    v.propLines = propSummary;
+    v.propLines = limitedLines(propSummary);
     if (!v.isTracked && v.note.isEmpty() && !v.isSource) {
         v.isInfo = true;
         v.note = "ℹ Unlinked custom element — not tracked until fed by a source.";
@@ -670,23 +616,21 @@ void Controller::applyEdit(const std::string& element, const ElementEdit& edit) 
     gps::Element* e = editGraph().find(element);
     if (!e) return;
 
-    std::set<std::string> templates;
-    for (const auto& entry : e->requestSrc) templates.insert(entry.first);
-    for (const auto& entry : edit.requestSrc) templates.insert(entry.first);
-    for (const std::string& t : templates) {
-        auto wanted = edit.requestSrc.find(t);
-        int count = wanted == edit.requestSrc.end() ? 0 : wanted->second;
-        if (!editGraph().setRequestSrc(element, t, count)) emit notice(fromStd("Unable to set the pad count of " + t + " to " + std::to_string(count) + ": linked pads need it."));
-    }
-
-    std::set<std::string> sinkTemplates;
-    for (const auto& entry : e->requestSink) sinkTemplates.insert(entry.first);
-    for (const auto& entry : edit.requestSink) sinkTemplates.insert(entry.first);
-    for (const std::string& t : sinkTemplates) {
-        auto wanted = edit.requestSink.find(t);
-        int count = wanted == edit.requestSink.end() ? 0 : wanted->second;
-        if (!editGraph().setRequestSink(element, t, count)) emit notice(fromStd("Unable to set the pad count of " + t + " to " + std::to_string(count) + ": linked pads need it."));
-    }
+    // Request pad counts, src and sink alike: every template the element or the edit names gets the edit's count.
+    auto counts = [&](const std::map<std::string, int>& now, const std::map<std::string, int>& wanted,
+                      bool (gps::Graph::*set)(const std::string&, const std::string&, int)) {
+        std::set<std::string> templates;
+        for (const auto& entry : now) templates.insert(entry.first);
+        for (const auto& entry : wanted) templates.insert(entry.first);
+        for (const std::string& t : templates) {
+            auto found = wanted.find(t);
+            int count = found == wanted.end() ? 0 : found->second;
+            if (!(editGraph().*set)(element, t, count))
+                emit notice(fromStd("Unable to set the pad count of " + t + " to " + std::to_string(count) + ": linked pads need it."));
+        }
+    };
+    counts(e->requestSrc, edit.requestSrc, &gps::Graph::setRequestSrc);
+    counts(e->requestSink, edit.requestSink, &gps::Graph::setRequestSink);
 
     // Exposed parameters of this element: drop the ones no longer ticked, keep the names the others have,
     // give new ones a unique name. Order stays as it was.
@@ -710,7 +654,24 @@ void Controller::applyEdit(const std::string& element, const ElementEdit& edit) 
     editGraph().setExposed(all);
 }
 
-void Controller::beginTransaction() { pipeline_.editor().begin(); }
+bool Controller::transact(const std::function<bool(gps::Graph&, Edit&)>& change) {
+    if (editingBlocked()) return false;
+    pipeline_.editor().begin();
+    Edit edit;
+    if (!change(editGraph(), edit)) {
+        pipeline_.editor().rollback();
+        return false;
+    }
+    note(edit.action, edit.linking);
+    if (edit.presentation) {
+        if (!commitTransaction()) return false;
+        dirty_ = true;
+        emit changed();
+        return true;
+    }
+    edited(edit.touched, edit.validate.value_or(anyTracked({edit.touched})));
+    return true;
+}
 
 bool Controller::commitTransaction() {
     if (!pipeline_.editor().editing()) return true;
@@ -754,72 +715,76 @@ gps::Graph Controller::copySubplan(const QStringList& elementNames) const {
 
 QStringList Controller::pasteSubplan(const gps::Graph& clip, double targetX, double targetY) {
     if (editingBlocked() || clip.elements.empty()) return {};
+    if (!infosReady(clip, [=] { pasteSubplan(clip, targetX, targetY); })) return {};
+    const QPointF at = std::isfinite(targetX) ? QPointF(targetX, targetY) : topLeft(clip) + QPointF(40, 40);
+    QStringList created;
+    transact([&](gps::Graph& g, Edit& edit) {
+        for (const auto& entry : insertCopy(g, clip, at - topLeft(clip))) created << fromStd(entry.second);
+        edit.action = QString("Pasted %1 element(s)").arg(created.size());
+        edit.touched = created.last();
+        edit.validate = anyTracked(created);
+        return true;
+    });
+    return created;
+}
+
+// The clip's factories are known (true), or are asked for and retry runs once they are (false).
+bool Controller::infosReady(const gps::Graph& clip, std::function<void()> retry) {
     QStringList missing;
     for (const gps::Element& e : clip.elements) {
-        QString fac = fromStd(e.factory);
-        if (!catalog_.info(fac) && !missing.contains(fac)) missing << fac;
+        QString factory = fromStd(e.factory);
+        if (!catalog_.info(factory) && !missing.contains(factory)) missing << factory;
     }
-    if (!missing.isEmpty()) {
-        catalog_.fetchInfos(missing, [this, clip, targetX, targetY](bool ok) {
-            if (ok) pasteSubplan(clip, targetX, targetY);
-        });
-        return {};
-    }
+    if (missing.isEmpty()) return true;
+    catalog_.fetchInfos(missing, [retry](bool ok) {
+        if (ok) retry();
+    });
+    return false;
+}
 
-    double minX = clip.elements.front().x;
-    double minY = clip.elements.front().y;
+QPointF Controller::topLeft(const gps::Graph& clip) {
+    QPointF corner(clip.elements.front().x, clip.elements.front().y);
+    for (const gps::Element& e : clip.elements) corner = QPointF(std::min(corner.x(), e.x), std::min(corner.y(), e.y));
+    return corner;
+}
+
+// The clip's elements, links and exposed properties as new elements of the draft, moved by offset. Each group of the
+// clip gets a fresh id, unless group names the one every element joins. Returns old name -> new name.
+std::map<std::string, std::string> Controller::insertCopy(gps::Graph& g, const gps::Graph& clip, QPointF offset, const QString& group) {
+    std::map<std::string, std::string> names, groups;
     for (const gps::Element& e : clip.elements) {
-        minX = std::min(minX, e.x);
-        minY = std::min(minY, e.y);
-    }
-    double offsetX = (std::isfinite(targetX)) ? (targetX - minX) : 40.0;
-    double offsetY = (std::isfinite(targetY)) ? (targetY - minY) : 40.0;
-
-    beginTransaction();
-    std::map<std::string, std::string> nameMap;
-    std::map<std::string, std::string> groupMap;
-    QStringList createdNames;
-    bool anyTracked = false;
-
-    for (const gps::Element& e : clip.elements) {
-        std::string created = editGraph().addElement(e.factory, e.props, e.x + offsetX, e.y + offsetY);
-        if (!e.group.empty()) {
-            auto git = groupMap.find(e.group);
-            if (git == groupMap.end()) {
-                QString baseTitle = fromStd(e.group).section('#', 0, 0);
-                std::string newGrp = toStd(baseTitle + "#" + QString::number(nextGroupId_++));
-                git = groupMap.emplace(e.group, newGrp).first;
-            }
-            if (gps::Element* pe = editGraph().find(created)) pe->group = git->second;
+        const std::string created = g.addElement(e.factory, e.props, e.x + offset.x(), e.y + offset.y());
+        std::string joined = toStd(group);
+        if (joined.empty() && !e.group.empty()) {
+            auto found = groups.find(e.group);
+            if (found == groups.end()) found = groups.emplace(e.group, toStd(newGroupId(fromStd(e.group).section('#', 0, 0)))).first;
+            joined = found->second;
         }
-        ElementEdit edit;
-        edit.props = e.props;
-        edit.requestSrc = e.requestSrc;
-        edit.requestSink = e.requestSink;
-        for (const gps::ExposedParam& ep : clip.exposed) {
-            if (ep.element == e.name) edit.exposed.push_back(ep.property);
+        g.find(created)->group = joined;
+        ElementEdit edit{e.props, e.requestSrc, e.requestSink, {}};
+        for (const gps::ExposedParam& p : clip.exposed) {
+            if (p.element == e.name) edit.exposed.push_back(p.property);
         }
         applyEdit(created, edit);
-        nameMap[e.name] = created;
-        createdNames << fromStd(created);
+        names[e.name] = created;
     }
-
     for (const gps::Connection& l : clip.links) {
-        auto itSrc = nameMap.find(l.srcElement);
-        auto itSnk = nameMap.find(l.sinkElement);
-        if (itSrc != nameMap.end() && itSnk != nameMap.end()) {
-            editGraph().linkExisting(itSrc->second, l.srcPad, itSnk->second, l.sinkPad, l.caps, l.sinkPadProps);
-        }
+        auto src = names.find(l.srcElement), sink = names.find(l.sinkElement);
+        if (src != names.end() && sink != names.end()) g.linkExisting(src->second, l.srcPad, sink->second, l.sinkPad, l.caps, l.sinkPadProps);
     }
+    return names;
+}
 
-    for (const QString& n : createdNames) {
-        if (plan().isElementTracked(toStd(n), catalog_.traits())) anyTracked = true;
-    }
-    if (!createdNames.isEmpty()) {
-        note(QString("Pasted %1 element(s)").arg(createdNames.size()));
-        edited(createdNames.last(), anyTracked);
-    }
-    return createdNames;
+QString Controller::newGroupId(const QString& title) {
+    const QString id = title + "#" + QString::number(nextGroupId_++);
+    expandedGroups_.remove(id);
+    return id;
+}
+
+bool Controller::anyTracked(const QStringList& elements) const {
+    return std::any_of(elements.begin(), elements.end(), [this](const QString& e) {
+        return plan().isElementTracked(toStd(e), catalog_.traits());
+    });
 }
 
 QStringList Controller::duplicateElements(const QStringList& names) {
@@ -834,35 +799,32 @@ bool Controller::addSource(const QString& factory, const ElementEdit& edit) {
 }
 
 bool Controller::addElement(const QString& factory, const ElementEdit& edit, double x, double y) {
-    if (editingBlocked() || !catalog_.info(factory)) return false;
-    beginTransaction();
-    QPointF at = (std::isfinite(x) && std::isfinite(y)) ? QPointF(x, y) : freeSpot();
-    std::string name = editGraph().addElement(toStd(factory), edit.props, at.x(), at.y());
-    note("Added " + factory);
-    applyEdit(name, edit);
-    bool isTracked = plan().isElementTracked(name, catalog_.traits());
-    edited(fromStd(name), isTracked);
-    return true;
+    if (!catalog_.info(factory)) return false;
+    return transact([&](gps::Graph& g, Edit& e) {
+        QPointF at = (std::isfinite(x) && std::isfinite(y)) ? QPointF(x, y) : freeSpot();
+        std::string name = g.addElement(toStd(factory), edit.props, at.x(), at.y());
+        applyEdit(name, edit);
+        e.action = "Added " + factory;
+        e.touched = fromStd(name);
+        return true;
+    });
 }
 
 bool Controller::addAfter(const QString& element, const QString& pad, const QString& factory, const QString& sinkPad,
                           const ElementEdit& edit) {
-    if (editingBlocked() || !catalog_.info(factory)) return false;
     const gps::Element* from = plan().find(toStd(element));
-    if (!from) return false;
-    beginTransaction();
-    std::string name = editGraph().addAfter(toStd(element), toStd(pad), toStd(factory), toStd(sinkPad), edit.props,
+    if (!catalog_.info(factory) || !from) return false;
+    return transact([&](gps::Graph& g, Edit& e) {
+        std::string name = g.addAfter(toStd(element), toStd(pad), toStd(factory), toStd(sinkPad), edit.props,
                                       from->x + metrics::kColumn, from->y);
-    if (name.empty()) {
-        pipeline_.editor().rollback();
-        return false;
-    }
-    applyEdit(name, edit);
-    placeNewElement(name);
-    note("Added " + factory + " after " + element + "." + pad, padText(element, pad) + " -> " + padText(fromStd(name), sinkPad));
-    bool isTracked = plan().isElementTracked(name, catalog_.traits());
-    edited(fromStd(name), isTracked);
-    return true;
+        if (name.empty()) return false;
+        applyEdit(name, edit);
+        placeNewElement(name);
+        e.action = "Added " + factory + " after " + element + "." + pad;
+        e.linking = padText(element, pad) + " -> " + padText(fromStd(name), sinkPad);
+        e.touched = fromStd(name);
+        return true;
+    });
 }
 
 bool Controller::linkExisting(const QString& element, const QString& pad, const QString& sinkElement, const QString& sinkPad) {
@@ -871,50 +833,45 @@ bool Controller::linkExisting(const QString& element, const QString& pad, const 
         emit notice(fromStd(gps::Graph::ouroborosMessage(toStd(element), toStd(sinkElement))));
         return false;
     }
-    beginTransaction();
-    if (!editGraph().linkExisting(toStd(element), toStd(pad), toStd(sinkElement), toStd(sinkPad))) {
-        pipeline_.editor().rollback();
-        return false;
-    }
-    note("Linked " + element + "." + pad + " to an existing element", padText(element, pad) + " -> " + padText(sinkElement, sinkPad));
-    bool isTracked = plan().isElementTracked(toStd(element), catalog_.traits()) || plan().isElementTracked(toStd(sinkElement), catalog_.traits());
-    edited(sinkElement, isTracked);
-    return true;
+    return transact([&](gps::Graph& g, Edit& e) {
+        if (!g.linkExisting(toStd(element), toStd(pad), toStd(sinkElement), toStd(sinkPad))) return false;
+        e.action = "Linked " + element + "." + pad + " to an existing element";
+        e.linking = padText(element, pad) + " -> " + padText(sinkElement, sinkPad);
+        e.touched = sinkElement;
+        e.validate = anyTracked({element, sinkElement});
+        return true;
+    });
 }
 
 bool Controller::editElement(const QString& element, const ElementEdit& edit) {
-    if (editingBlocked() || !plan().find(toStd(element))) return false;
-    beginTransaction();
-    editGraph().setProps(toStd(element), edit.props);
-    applyEdit(toStd(element), edit);
-    const gps::Element* e = plan().find(toStd(element));
-    note("Edited the properties of " + element + (e ? " (" + fromStd(e->factory) + ")" : QString()));
-    bool isTracked = plan().isElementTracked(toStd(element), catalog_.traits());
-    edited(element, isTracked);
-    return true;
+    const gps::Element* found = plan().find(toStd(element));
+    if (!found) return false;
+    const QString factory = fromStd(found->factory);
+    return transact([&](gps::Graph& g, Edit& e) {
+        g.setProps(toStd(element), edit.props);
+        applyEdit(toStd(element), edit);
+        e.action = "Edited the properties of " + element + " (" + factory + ")";
+        e.touched = element;
+        return true;
+    });
 }
 
 bool Controller::setCaps(const QString& element, const QString& pad, const QString& caps, const gps::Props& sinkPadProps) {
-    if (editingBlocked() || plan().linkFrom(toStd(element), toStd(pad)) < 0) return false;
-    beginTransaction();
-    editGraph().setCaps(toStd(element), toStd(pad), toStd(caps));
-    editGraph().setSinkPadProps(toStd(element), toStd(pad), sinkPadProps);
-    note("Changed the caps of " + element + "." + pad, padText(element, pad));
-    edited(element, true);
-    return true;
+    if (plan().linkFrom(toStd(element), toStd(pad)) < 0) return false;
+    return transact([&](gps::Graph& g, Edit& e) {
+        g.setCaps(toStd(element), toStd(pad), toStd(caps));
+        g.setSinkPadProps(toStd(element), toStd(pad), sinkPadProps);
+        e = {"Changed the caps of " + element + "." + pad, padText(element, pad), element, true};
+        return true;
+    });
 }
 
 bool Controller::cut(const QString& element, const QString& pad) {
-    QString linking = padText(element, pad);
-    if (editingBlocked()) return false;
-    beginTransaction();
-    if (editGraph().cut(toStd(element), toStd(pad), catalog_.traits()).links == 0) {
-        pipeline_.editor().rollback();
-        return false;
-    }
-    note("Cut the link at " + element + "." + pad, linking);
-    edited(element, true);
-    return true;
+    const QString linking = padText(element, pad);
+    return transact([&](gps::Graph& g, Edit& e) {
+        e = {"Cut the link at " + element + "." + pad, linking, element, true};
+        return g.cut(toStd(element), toStd(pad), catalog_.traits()).links > 0;
+    });
 }
 
 bool Controller::disconnectLink(const QString& element, const QString& pad) {
@@ -930,18 +887,17 @@ bool Controller::disconnectLink(const QString& element, const QString& pad) {
 
 bool Controller::replace(const QString& element, const QString& pad, const QString& factory, const QString& sinkPad,
                          const ElementEdit& edit) {
-    if (editingBlocked() || !catalog_.info(factory)) return false;
-    QString linking = padText(element, pad);
-    beginTransaction();
-    gps::Addition added = editGraph().replace(toStd(element), toStd(pad), toStd(factory), toStd(sinkPad), edit.props, catalog_.traits());
-    if (added.element.empty()) {
-        pipeline_.editor().rollback();
-        return false;
-    }
-    note("Replaced the element behind " + element + "." + pad + " with " + factory, linking + " -> " + factory);
-    applyEdit(added.element, edit);
-    edited(fromStd(added.element), plan().isElementTracked(added.element, catalog_.traits()));
-    return true;
+    if (!catalog_.info(factory)) return false;
+    const QString linking = padText(element, pad);
+    return transact([&](gps::Graph& g, Edit& e) {
+        gps::Addition added = g.replace(toStd(element), toStd(pad), toStd(factory), toStd(sinkPad), edit.props, catalog_.traits());
+        if (added.element.empty()) return false;
+        applyEdit(added.element, edit);
+        e.action = "Replaced the element behind " + element + "." + pad + " with " + factory;
+        e.linking = linking + " -> " + factory;
+        e.touched = fromStd(added.element);
+        return true;
+    });
 }
 
 bool Controller::deleteSource(const QString& element) {
@@ -953,43 +909,26 @@ bool Controller::deleteElement(const QString& element, bool autoHeal) {
 }
 
 bool Controller::deleteSelection(const QStringList& elementNames, const QList<QPair<QString, QString>>& links, bool autoHeal) {
-    if (editingBlocked()) return false;
     QStringList expanded = expandSelectionWithGroups(elementNames);
     if (expanded.isEmpty() && links.isEmpty()) return false;
+    QStringList touched = expanded;
+    for (const auto& link : links) touched << link.first;
+    const bool tracked = anyTracked(touched);
 
-    bool anyTracked = false;
-    for (const QString& n : expanded) {
-        if (plan().isElementTracked(toStd(n), catalog_.traits())) anyTracked = true;
-    }
-    for (const auto& [srcEl, srcPad] : links) {
-        Q_UNUSED(srcPad);
-        if (plan().isElementTracked(toStd(srcEl), catalog_.traits())) anyTracked = true;
-    }
-
-    int exitTotalSrcPads = 1;
     QList<PadView> extSrcs;
     subgraphExternalPads(expanded, nullptr, &extSrcs);
-    if (!extSrcs.isEmpty()) exitTotalSrcPads = extSrcs.size();
+    const int exitTotalSrcPads = extSrcs.isEmpty() ? 1 : extSrcs.size();
+    std::vector<std::string> names;
+    for (const QString& n : expanded) names.push_back(toStd(n));
 
-    std::vector<std::string> stdNames;
-    for (const QString& n : expanded) stdNames.push_back(toStd(n));
-
-    beginTransaction();
-    bool changedAny = false;
-    for (const auto& [srcEl, srcPad] : links) {
-        if (editGraph().disconnectLink(toStd(srcEl), toStd(srcPad))) changedAny = true;
-    }
-    if (!stdNames.empty()) {
-        if (editGraph().deleteElements(stdNames, autoHeal, exitTotalSrcPads)) changedAny = true;
-    }
-    if (!changedAny) {
-        pipeline_.editor().rollback();
-        return false;
-    }
-    note(expanded.size() == 1 ? ("Deleted element " + expanded.first())
-                              : QString("Deleted selection (%1 elements)").arg(expanded.size()));
-    edited(QString(), anyTracked);
-    return true;
+    return transact([&](gps::Graph& g, Edit& e) {
+        bool changedAny = false;
+        for (const auto& [srcEl, srcPad] : links) changedAny = g.disconnectLink(toStd(srcEl), toStd(srcPad)) || changedAny;
+        if (!names.empty()) changedAny = g.deleteElements(names, autoHeal, exitTotalSrcPads) || changedAny;
+        e.action = expanded.size() == 1 ? "Deleted element " + expanded.first() : QString("Deleted selection (%1 elements)").arg(expanded.size());
+        e.validate = tracked;
+        return changedAny;
+    });
 }
 
 bool Controller::spliceElement(const QString& element, const QString& linkSrcElement, const QString& linkSrcPad) {
@@ -1046,17 +985,14 @@ bool Controller::spliceElements(const QStringList& elements, const QString& link
 }
 
 bool Controller::insertQueue(const QString& element, const QString& pad) {
-    if (editingBlocked() || !catalog_.info(fromStd(gps::kQueueFactory))) return false;
-    beginTransaction();
-    std::string name = editGraph().insertQueue(toStd(element), toStd(pad));
-    if (name.empty()) {
-        pipeline_.editor().rollback();
-        return false;
-    }
-    makeRoomForQueue(element.toStdString(), name);
-    note("Inserted a queue after " + element + "." + pad, padText(element, pad));
-    edited(fromStd(name), plan().isElementTracked(name, catalog_.traits()));
-    return true;
+    if (!catalog_.info(fromStd(gps::kQueueFactory))) return false;
+    return transact([&](gps::Graph& g, Edit& e) {
+        std::string name = g.insertQueue(toStd(element), toStd(pad));
+        if (name.empty()) return false;
+        makeRoomForQueue(toStd(element), name);
+        e = {"Inserted a queue after " + element + "." + pad, padText(element, pad), fromStd(name), std::nullopt};
+        return true;
+    });
 }
 
 // Graph::insertQueue puts the queue half way between its neighbours, on top of both when they are one column apart.
@@ -1087,16 +1023,12 @@ void Controller::makeRoomForQueue(const std::string& source, const std::string& 
 }
 
 bool Controller::removeQueue(const QString& queue) {
-    if (editingBlocked()) return false;
-    bool wasTracked = plan().isElementTracked(toStd(queue), catalog_.traits());
-    beginTransaction();
-    if (!editGraph().removeQueue(toStd(queue))) {
-        pipeline_.editor().rollback();
-        return false;
-    }
-    note("Removed queue " + queue);
-    edited(QString(), wasTracked);
-    return true;
+    const bool tracked = anyTracked({queue});
+    return transact([&](gps::Graph& g, Edit& e) {
+        e.action = "Removed queue " + queue;
+        e.validate = tracked;
+        return g.removeQueue(toStd(queue));
+    });
 }
 
 void Controller::setPosition(const QString& element, double x, double y) {
@@ -1197,40 +1129,25 @@ bool Controller::connectSelectedElements(const QStringList& names) {
     QStringList expanded = expandSelectionWithGroups(names);
     if (expanded.size() < 2) return false;
 
-    beginTransaction();
-    QString lastTouched;
-    if (!linkOrderedInternal(expanded, &lastTouched)) {
-        pipeline_.editor().rollback();
-        return false;
-    }
-    bool anyTracked = false;
-    for (const QString& n : expanded) {
-        if (plan().isElementTracked(toStd(n), catalog_.traits())) anyTracked = true;
-    }
-    note("Connected selected elements");
-    edited(lastTouched, anyTracked);
-    return true;
+    return transact([&](gps::Graph&, Edit& e) {
+        e.action = "Connected selected elements";
+        if (!linkOrderedInternal(expanded, &e.touched)) return false;
+        e.validate = anyTracked(expanded);
+        return true;
+    });
 }
 
 bool Controller::disconnectBetweenElements(const QStringList& names) {
-    if (editingBlocked() || names.size() < 2) return false;
+    if (names.size() < 2) return false;
     QStringList expanded = expandSelectionWithGroups(names);
     std::set<std::string> chosen;
     for (const QString& n : expanded) chosen.insert(toStd(n));
-
-    bool anyTracked = false;
-    for (const QString& n : expanded) {
-        if (plan().isElementTracked(toStd(n), catalog_.traits())) anyTracked = true;
-    }
-
-    beginTransaction();
-    if (!editGraph().disconnectBetween(chosen)) {
-        pipeline_.editor().rollback();
-        return false;
-    }
-    note("Disconnected links between selected elements");
-    edited(QString(), anyTracked);
-    return true;
+    const bool tracked = anyTracked(expanded);
+    return transact([&](gps::Graph& g, Edit& e) {
+        e.action = "Disconnected links between selected elements";
+        e.validate = tracked;
+        return g.disconnectBetween(chosen);
+    });
 }
 
 QList<layout::Box> Controller::boxes(const QStringList& names) const {
@@ -1434,16 +1351,21 @@ bool Controller::save(const QString& path, QString* error) {
     return true;
 }
 
-bool Controller::run() {
-    if (!canRun()) return false;
+// The complete plan in a temporary file for gps-run or gps-monitor; "" (and a notice) when it cannot be written.
+QString Controller::runFile(const QString& name) {
     gps::Graph copy = plan();
     copy.complete = true;
-    QString file = tmp_.filePath("run.conf");
+    const QString file = tmp_.filePath(name);
     std::string error;
-    if (!copy.save(toStd(file), &error)) {
-        emit notice("Unable to write the temporary plan file: " + fromStd(error));
-        return false;
-    }
+    if (copy.save(toStd(file), &error)) return file;
+    emit notice("Unable to write the temporary plan file: " + fromStd(error));
+    return QString();
+}
+
+bool Controller::run() {
+    if (!canRun()) return false;
+    const QString file = runFile("run.conf");
+    if (file.isEmpty()) return false;
     running_ = true;
     log("Running…");
     runClient_ = HelperClient::run(this, "gps-run", {file}, 0, logger(), [this](const HelperResult& r) {
@@ -1474,11 +1396,8 @@ bool Controller::startMonitoring() {
     if (!canRun()) return false;
     const QString helper = findHelper("gps-monitor");
     if (helper.isEmpty()) { emit notice("gps-monitor was not found"); return false; }
-    gps::Graph copy = plan();
-    copy.complete = true;
-    const QString file = tmp_.filePath("monitor.conf");
-    std::string error;
-    if (!copy.save(toStd(file), &error)) { emit notice(fromStd(error)); return false; }
+    const QString file = runFile("monitor.conf");
+    if (file.isEmpty()) return false;
     monitorOutput_.clear();
     auto* client = new QProcess(this);
     monitorClient_ = client;

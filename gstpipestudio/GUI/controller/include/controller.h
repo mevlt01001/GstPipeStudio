@@ -14,6 +14,7 @@
 #include <QTimer>
 #include <functional>
 #include <map>
+#include <optional>
 #include <limits>
 #include <cmath>
 
@@ -174,8 +175,22 @@ private:
     std::function<void(const QString&)> logger();  // log() as a callback
     QList<layout::Box> boxes(const QStringList& names) const;
     bool move(const layout::Placements& placements);  // one undoable presentation change
-    bool beginEdit() const;
-    void beginTransaction();
+    // What one user edit says about itself; its change fills it in.
+    struct Edit {
+        QString action, linking;       // for the support report
+        QString touched;               // the element it concerned: the suspect when the validator dies
+        std::optional<bool> validate;  // default: whether `touched` is fed by a source
+        bool presentation = false;     // groups and positions only: committed without any validation
+    };
+    // The one path of an edit: refused while editing is blocked or when change returns false (nothing happened);
+    // otherwise one undo step, noted, and validated as the Edit says.
+    bool transact(const std::function<bool(gps::Graph&, Edit&)>& change);
+    bool anyTracked(const QStringList& elements) const;  // fed by a source in the plan as it is now
+    bool infosReady(const gps::Graph& clip, std::function<void()> retry);
+    static QPointF topLeft(const gps::Graph& clip);
+    std::map<std::string, std::string> insertCopy(gps::Graph& draft, const gps::Graph& clip, QPointF offset, const QString& group = {});
+    QString newGroupId(const QString& title);
+    QString runFile(const QString& name);
     gps::Graph& editGraph() { return pipeline_.editor().draft(); }
     bool commitTransaction();
     void edited(const QString& touchedElement, bool validate = true);  // dirty + optional update
