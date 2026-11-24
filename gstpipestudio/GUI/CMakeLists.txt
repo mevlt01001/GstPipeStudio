@@ -8,7 +8,6 @@ add_library(gps_gui STATIC
     backend/include/slowwatch.h backend/src/slowwatch.cpp
     backend/include/startupcheck.h backend/src/startupcheck.cpp
     backend/include/supportreport.h backend/src/supportreport.cpp
-    model/include/capsparse.h model/src/capsparse.cpp
     model/include/elementedit.h
     model/include/contract.h model/src/contract.cpp
     model/include/elementview.h

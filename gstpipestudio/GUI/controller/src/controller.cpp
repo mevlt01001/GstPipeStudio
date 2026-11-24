@@ -1,7 +1,7 @@
 // controller.cpp – see controller.h. Rules come from gps_pipeline; this file only sequences them with the helpers.
 #include "controller.h"
 
-#include "capsparse.h"
+#include "capstext.h"
 #include "actions.h"
 #include "linkitem.h"
 
@@ -36,7 +36,7 @@ QString shellQuote(const QString& s) {
 // The chip on a link: "caps" and the number of pinned fields. The full text is the tooltip: the gap between
 // two element boxes is only 40 px wide.
 QString badgeOf(const QString& caps) {
-    size_t pinned = parseCapsChoice(caps).fields.size();
+    size_t pinned = gps::CapsChoice::fromText(toStd(caps)).fields.size();
     return pinned == 0 ? QString("caps") : QString("caps · %1").arg(pinned);
 }
 

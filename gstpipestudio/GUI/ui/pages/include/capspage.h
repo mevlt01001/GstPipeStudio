@@ -1,7 +1,7 @@
 // capspage.h – drawer page 3 (UI_RULES 2): the caps choice of one link plus the settings of its sink pad.
 #pragma once
 
-#include "capsparse.h"
+#include "capstext.h"
 #include "drawer.h"
 #include "contract.h"
 #include "graph.h"

@@ -436,20 +436,6 @@ private slots:
 
     // ---- CapsPage
 
-    void capsTextRoundTrips() {
-        for (const char* t : {"video/x-raw", "video/x-raw, width=(int)640",
-                              "video/x-raw(memory:NVMM), format=(string)NV12, framerate=(fraction)30/1",
-                              "audio/x-raw, layout=(string)\"a\\ b,\\ c\", rate=(gint64)44100, ok=(boolean)true"}) {
-            QString original = QString::fromUtf8(t);
-            QCOMPARE(QString::fromStdString(parseCapsChoice(original).toText()), original);
-        }
-        // The older spelling, with plain spaces inside the quotes, reads as the same value and is written back escaped.
-        QCOMPARE(parseCapsChoice("audio/x-raw, layout=(string)\"a b, c\"").toText(),
-                 std::string("audio/x-raw, layout=(string)\"a\\ b,\\ c\""));
-        QVERIFY(parseCapsChoice("").media.empty());
-        QCOMPARE(parseCapsChoice("video/x-raw(memory:NVMM, memory:DMABuf)").features.size(), size_t(2));
-    }
-
     void capsPageBuildsTheChoice() {
         CapsPageInput input;
         const ElementInfo* src = need(*c, "videotestsrc");

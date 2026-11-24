@@ -22,6 +22,8 @@ struct CapsChoice {
 
     // "video/x-raw(memory:NVMM), width=(int)640", or "" when there is no media type.
     std::string toText() const;
+    // The inverse of toText(), for the texts it writes (and the older spelling with plain spaces inside quotes).
+    static CapsChoice fromText(const std::string& text);
 };
 
 // One string value inside caps text: bare only with [A-Za-z0-9_+-./:], otherwise "..." with \", \\ and a space escaped.

@@ -404,6 +404,18 @@ static void capsText() {
     s.media = "application/x-test";
     s.fields = {{"note", "gchararray", "a b"}};
     CHECK_EQ(s.toText(), std::string("application/x-test, note=(string)\"a\\ b\""));
+
+    // fromText() reads back what toText() writes
+    for (const char* t : {"video/x-raw", "video/x-raw, width=(int)640",
+                          "video/x-raw(memory:NVMM), format=(string)NV12, framerate=(fraction)30/1",
+                          "audio/x-raw, layout=(string)\"a\\ b,\\ c\", rate=(gint64)44100, ok=(boolean)true"}) {
+        CHECK_EQ(CapsChoice::fromText(t).toText(), std::string(t));
+    }
+    // the older spelling, with plain spaces inside the quotes, reads as the same value and is written back escaped
+    CHECK_EQ(CapsChoice::fromText("audio/x-raw, layout=(string)\"a b, c\"").toText(), std::string("audio/x-raw, layout=(string)\"a\\ b,\\ c\""));
+    CHECK(CapsChoice::fromText("").media.empty());
+    CHECK_EQ(CapsChoice::fromText("video/x-raw(memory:NVMM, memory:DMABuf)").features.size(), size_t(2));
+    CHECK_EQ(mediaOf(" video/x-raw(memory:NVMM), width=(int)1"), std::string("video/x-raw(memory:NVMM)"));
 }
 
 static void freeFormAndOopPipeline() {

@@ -12,7 +12,6 @@
 #include <QVBoxLayout>
 
 #include "capsfieldeditor.h"
-#include "capsparse.h"
 
 CapsPage::CapsPage(const CapsPageInput& input, QWidget* parent) : DrawerPage(parent), input_(input) {
     setObjectName("capsPage");
@@ -65,7 +64,7 @@ CapsPage::CapsPage(const CapsPageInput& input, QWidget* parent) : DrawerPage(par
     connect(media_, &QComboBox::currentIndexChanged, pages_, &QStackedWidget::setCurrentIndex);
 
     // Prefill from the caps the link already has.
-    gps::CapsChoice now = parseCapsChoice(input.current);
+    gps::CapsChoice now = gps::CapsChoice::fromText(toStd(input.current));
     for (int i = 0; i < static_cast<int>(input.allowed.size()); ++i) {
         const StructureInfo& s = input.allowed[i];
         if (s.media != now.media) continue;
