@@ -8,6 +8,7 @@ add_library(gps_gstengine STATIC
     src/gst_engine.cpp
     src/builder.cpp
     src/importer.cpp
+    src/nativepad.cpp
     src/telemetry.cpp
     src/session.cpp)
 target_include_directories(gps_gstengine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

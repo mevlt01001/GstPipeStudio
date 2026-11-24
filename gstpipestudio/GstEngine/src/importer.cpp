@@ -1,4 +1,5 @@
 #include "importer.h"
+#include "nativepad.h"
 #include <gst/gst.h>
 #include <algorithm>
 #include <map>
@@ -81,15 +82,6 @@ std::vector<GstPad*> padsOf(GstElement* element, GstPadDirection direction) {
     return pads;
 }
 
-std::string templateOf(GstPad* pad, GstPadPresence* presence) {
-    GstPadTemplate* tmpl = gst_pad_get_pad_template(pad);
-    if (!tmpl) { *presence = GST_PAD_SOMETIMES; return GST_PAD_NAME(pad); }
-    *presence = GST_PAD_TEMPLATE_PRESENCE(tmpl);
-    std::string name = GST_PAD_TEMPLATE_NAME_TEMPLATE(tmpl);
-    gst_object_unref(tmpl);
-    return name;
-}
-
 void probe(GstElement* root, int ms, std::vector<std::string>* warnings) {
     if (ms <= 0) return;
     GstBus* bus = gst_element_get_bus(root);
@@ -149,22 +141,18 @@ bool importLaunch(const std::string& description, int probeMs, ImportResult* out
             Element* authored = result.graph.find(id);
             std::map<std::string, int> ordinals;
             for (GstPad* pad : padsOf(child, GST_PAD_SRC)) {
-                GstPadPresence presence;
-                std::string tmpl = templateOf(pad, &presence);
-                std::string sourceId = presence == GST_PAD_ALWAYS ? std::string(GST_PAD_NAME(pad)) :
-                    padIdentity(tmpl, ordinals[tmpl]++);
-                if (presence == GST_PAD_REQUEST) ++authored->requestSrc[tmpl];
+                const NativePad source(pad);
+                std::string sourceId = source.srcIdentity(ordinals[source.templateName]);
+                if (source.presence == GST_PAD_REQUEST) ++authored->requestSrc[source.templateName];
                 GstPad* peer = gst_pad_get_peer(pad);
                 if (peer) {
                     GstElement* target = gst_pad_get_parent_element(peer);
                     auto found = identities.find(target);
                     if (found != identities.end()) {
-                        GstPadPresence sinkPresence;
-                        std::string sinkTemplate = templateOf(peer, &sinkPresence);
                         Connection link;
                         link.srcElement = id; link.srcPad = sourceId;
                         link.sinkElement = found->second;
-                        link.sinkPad = sinkPresence == GST_PAD_REQUEST ? sinkTemplate : GST_PAD_NAME(peer);
+                        link.sinkPad = NativePad(peer).sinkIdentity();
                         result.graph.links.push_back(std::move(link));
                     } else result.warnings.push_back(id + "." + GST_PAD_NAME(pad) + " links outside the imported graph");
                     if (target) gst_object_unref(target);

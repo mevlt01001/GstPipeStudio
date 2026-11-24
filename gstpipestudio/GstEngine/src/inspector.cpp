@@ -1,6 +1,7 @@
 // inspector.cpp – see inspector.h.
 #include "inspector.h"
 #include "gstcompat.h"
+#include "nativepad.h"
 
 #include <algorithm>
 #include <cfloat>
@@ -122,7 +123,7 @@ PadTemplateInfo templateOf(const GstStaticPadTemplate* stat, GstElementClass* kl
     PadTemplateInfo t;
     t.name = stat->name_template;
     t.direction = stat->direction == GST_PAD_SRC ? "src" : "sink";
-    t.presence = stat->presence == GST_PAD_ALWAYS ? "always" : stat->presence == GST_PAD_SOMETIMES ? "sometimes" : "request";
+    t.presence = presenceName(stat->presence);
     GstPadTemplate* tmpl = gst_element_class_get_pad_template(klass, stat->name_template);
     GstCaps* caps = tmpl ? gst_pad_template_get_caps(tmpl) : gst_static_caps_get(&const_cast<GstStaticPadTemplate*>(stat)->static_caps);
     t.caps = take(gst_caps_to_string(caps));
