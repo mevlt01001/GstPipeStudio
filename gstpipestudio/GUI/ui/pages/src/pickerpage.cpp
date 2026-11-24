@@ -142,16 +142,7 @@ PickerPage::PickerPage(const PickerData& data, QWidget* parent) : DrawerPage(par
         }
     }
 
-    auto* buttons = new QHBoxLayout;
-    buttons->addStretch(1);
-    auto* cancel = new QPushButton("Cancel", this);
-    cancel->setObjectName("cancelButton");
-    primary_ = new QPushButton("Choose", this);
-    primary_->setObjectName("saveButton");
-    buttons->addWidget(cancel);
-    buttons->addWidget(primary_);
-    root->addLayout(buttons);
-    connect(cancel, &QPushButton::clicked, this, &DrawerPage::cancelled);
+    addFooter(root, "Choose");
     connect(primary_, &QPushButton::clicked, this, [this] { choose(); });
 
     connect(search_, &QLineEdit::textChanged, this, &PickerPage::filter);

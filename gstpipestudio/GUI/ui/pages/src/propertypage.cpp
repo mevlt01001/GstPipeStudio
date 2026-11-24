@@ -106,57 +106,38 @@ PropertyPage::PropertyPage(const PropertyPageInput& input, QWidget* parent) : Dr
     sideCol->setSpacing(6);
     bool hasSide = false;
 
-    // Request src pads: how many to ask for before the run.
-    QList<PadTemplateInfo> requestSrc;
-    for (const PadTemplateInfo& t : input.info.srcTemplates()) {
-        if (t.isRequest()) requestSrc << t;
-    }
-    if (!requestSrc.isEmpty()) {
-        auto* group = new QGroupBox("Request src pads", this);
+    // Request pads, src and sink alike: how many to ask for before the run; never fewer than the linked ones.
+    auto requestCounts = [&](const QString& title, const std::vector<PadTemplateInfo>& templates, const std::string& prefix,
+                             const std::map<std::string, int>& linked, const std::map<std::string, int>& start,
+                             QMap<QString, QSpinBox*>& spins) {
+        auto* group = new QGroupBox(title, this);
         auto* form = new QVBoxLayout(group);
-        for (const PadTemplateInfo& t : requestSrc) {
+        auto countOf = [](const std::map<std::string, int>& counts, const std::string& name) {
+            auto found = counts.find(name);
+            return found == counts.end() ? 0 : found->second;
+        };
+        for (const PadTemplateInfo& t : templates) {
+            if (!t.isRequest()) continue;
             auto* line = new QHBoxLayout;
             line->addWidget(new QLabel(fromStd(t.name), group));
             auto* spin = new QSpinBox(group);
-            spin->setObjectName(fromStd("padCount_" + t.name));
-            auto linked = input.linkedSrc.find(t.name);
-            auto start = input.requestSrc.find(t.name);
-            spin->setRange(linked == input.linkedSrc.end() ? 0 : linked->second, 32);
-            spin->setValue(start == input.requestSrc.end() ? 0 : start->second);
+            spin->setObjectName(fromStd(prefix + t.name));
+            spin->setRange(countOf(linked, t.name), 32);
+            spin->setValue(countOf(start, t.name));
             line->addWidget(spin);
             line->addStretch(1);
             form->addLayout(line);
-            pads_[fromStd(t.name)] = spin;
+            spins[fromStd(t.name)] = spin;
+        }
+        if (form->isEmpty()) {
+            delete group;
+            return;
         }
         sideCol->addWidget(group);
         hasSide = true;
-    }
-
-    // Request sink pads: how many to ask for before the run.
-    QList<PadTemplateInfo> requestSink;
-    for (const PadTemplateInfo& t : input.info.sinkTemplates()) {
-        if (t.isRequest()) requestSink << t;
-    }
-    if (!requestSink.isEmpty()) {
-        auto* group = new QGroupBox("Request sink pads", this);
-        auto* form = new QVBoxLayout(group);
-        for (const PadTemplateInfo& t : requestSink) {
-            auto* line = new QHBoxLayout;
-            line->addWidget(new QLabel(fromStd(t.name), group));
-            auto* spin = new QSpinBox(group);
-            spin->setObjectName(fromStd("sinkPadCount_" + t.name));
-            auto linked = input.linkedSink.find(t.name);
-            auto start = input.requestSink.find(t.name);
-            spin->setRange(linked == input.linkedSink.end() ? 0 : linked->second, 32);
-            spin->setValue(start == input.requestSink.end() ? 0 : start->second);
-            line->addWidget(spin);
-            line->addStretch(1);
-            form->addLayout(line);
-            sinkPadsCount_[fromStd(t.name)] = spin;
-        }
-        sideCol->addWidget(group);
-        hasSide = true;
-    }
+    };
+    requestCounts("Request src pads", input.info.srcTemplates(), "padCount_", input.linkedSrc, input.requestSrc, pads_);
+    requestCounts("Request sink pads", input.info.sinkTemplates(), "sinkPadCount_", input.linkedSink, input.requestSink, sinkPadsCount_);
 
     if (input.sinkPads.size() > 1) {
         auto* group = new QGroupBox("Connect to sink pad", this);
@@ -176,30 +157,21 @@ PropertyPage::PropertyPage(const PropertyPageInput& input, QWidget* parent) : Dr
     }
     root->addLayout(contentRow, 1);
 
-    auto* buttons = new QHBoxLayout;
+    QHBoxLayout* buttons = addFooter(root, input.acceptText);
+    auto* reset = new QPushButton("Reset all properties", this);
+    reset->setObjectName("resetPropertiesButton");
+    buttons->insertWidget(0, reset);
+    connect(reset, &QPushButton::clicked, this, [this] {
+        for (auto* editor : editors_) editor->resetToDefault();
+    });
     if (input.canDelete) {
         auto* del = new QPushButton("Delete", this);
         del->setObjectName("deleteElementButton");
         del->setStyleSheet("QPushButton { background: #3b1c1e; border-color: #ff6369; color: #ff6369; font-weight: bold; }"
                            "QPushButton:hover { background: #ff6369; color: #111111; }");
-        buttons->addWidget(del);
+        buttons->insertWidget(0, del);
         connect(del, &QPushButton::clicked, this, &PropertyPage::deleteRequested);
     }
-    auto* reset = new QPushButton("Reset all properties", this);
-    reset->setObjectName("resetPropertiesButton");
-    buttons->addWidget(reset);
-    connect(reset, &QPushButton::clicked, this, [this] {
-        for (auto* editor : editors_) editor->resetToDefault();
-    });
-    buttons->addStretch(1);
-    auto* cancel = new QPushButton("Cancel", this);
-    cancel->setObjectName("cancelButton");
-    primary_ = new QPushButton(input.acceptText, this);
-    primary_->setObjectName("saveButton");
-    buttons->addWidget(cancel);
-    buttons->addWidget(primary_);
-    root->addLayout(buttons);
-    connect(cancel, &QPushButton::clicked, this, &DrawerPage::cancelled);
     connect(primary_, &QPushButton::clicked, this, &PropertyPage::confirmed);
 
     connect(search_, &QLineEdit::textChanged, this, &PropertyPage::filter);
@@ -221,12 +193,13 @@ void PropertyPage::filter(const QString& text) {
 ElementEdit PropertyPage::edit() const {
     ElementEdit e;
     e.props = PropertyEditor::collect(editors_, input_.props);
-    for (auto it = pads_.begin(); it != pads_.end(); ++it) {
-        if (it.value()->value() > 0) e.requestSrc[it.key().toStdString()] = it.value()->value();
-    }
-    for (auto it = sinkPadsCount_.begin(); it != sinkPadsCount_.end(); ++it) {
-        if (it.value()->value() > 0) e.requestSink[it.key().toStdString()] = it.value()->value();
-    }
+    auto counts = [](const QMap<QString, QSpinBox*>& spins, std::map<std::string, int>& out) {
+        for (auto it = spins.begin(); it != spins.end(); ++it) {
+            if (it.value()->value() > 0) out[toStd(it.key())] = it.value()->value();
+        }
+    };
+    counts(pads_, e.requestSrc);
+    counts(sinkPadsCount_, e.requestSink);
     for (auto it = expose_.begin(); it != expose_.end(); ++it) {
         if (it.value()->isChecked()) e.exposed.push_back(it.key().toStdString());
     }

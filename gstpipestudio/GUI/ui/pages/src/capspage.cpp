@@ -103,23 +103,14 @@ CapsPage::CapsPage(const CapsPageInput& input, QWidget* parent) : DrawerPage(par
     contentRow->addWidget(padBox, 2);
     root->addLayout(contentRow, 1);
 
-    auto* buttons = new QHBoxLayout;
-    buttons->addStretch(1);
-    auto* cancel = new QPushButton("Cancel", this);
-    cancel->setObjectName("cancelButton");
-    buttons->addWidget(cancel);
+    QHBoxLayout* buttons = addFooter(root, "Apply");
     if (input.skippable) {
         auto* skip = new QPushButton("Skip", this);
         skip->setObjectName("skipButton");
         skip->setToolTip("Keep Auto caps");
-        buttons->addWidget(skip);
+        buttons->insertWidget(buttons->indexOf(primary_), skip);
         connect(skip, &QPushButton::clicked, this, &CapsPage::skipped);
     }
-    primary_ = new QPushButton("Apply", this);
-    primary_->setObjectName("saveButton");
-    buttons->addWidget(primary_);
-    root->addLayout(buttons);
-    connect(cancel, &QPushButton::clicked, this, &DrawerPage::cancelled);
     connect(primary_, &QPushButton::clicked, this, &CapsPage::applied);
 }
 

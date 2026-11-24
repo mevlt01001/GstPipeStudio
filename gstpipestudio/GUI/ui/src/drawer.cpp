@@ -10,6 +10,20 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
+QHBoxLayout* DrawerPage::addFooter(QBoxLayout* root, const QString& primaryText) {
+    auto* buttons = new QHBoxLayout;
+    buttons->addStretch(1);
+    auto* cancel = new QPushButton("Cancel", this);
+    cancel->setObjectName("cancelButton");
+    primary_ = new QPushButton(primaryText, this);
+    primary_->setObjectName("saveButton");
+    buttons->addWidget(cancel);
+    buttons->addWidget(primary_);
+    root->addLayout(buttons);
+    connect(cancel, &QPushButton::clicked, this, &DrawerPage::cancelled);
+    return buttons;
+}
+
 Drawer::Drawer(QWidget* parent) : QWidget(parent) {
     setObjectName("drawer");
     setAttribute(Qt::WA_StyledBackground);
