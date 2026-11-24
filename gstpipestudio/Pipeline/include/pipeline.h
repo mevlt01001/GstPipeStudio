@@ -118,6 +118,9 @@ private:
     void install(Graph);
     void clearObservations();
     void refreshPads();
+    std::vector<Pad> padsOf(const Element&) const;
+    const PadReport* report(const std::string& element, const Pad&, int ordinal) const;
+    static void observe(Pad&, const PadReport&);
     std::map<std::string, FactoryDefinition> factories_;
     Graph graph_;
     GraphEditor editor_;

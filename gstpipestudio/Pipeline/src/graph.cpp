@@ -68,6 +68,13 @@ int Graph::linkFrom(const std::string& srcElement, const std::string& srcPad) co
     return -1;
 }
 
+int Graph::linkInto(const std::string& sinkElement, const std::string& sinkIdentity) const {
+    for (size_t i = 0; i < links.size(); ++i) {
+        if (links[i].sinkElement == sinkElement && this->sinkIdentity(i) == sinkIdentity) return static_cast<int>(i);
+    }
+    return -1;
+}
+
 std::vector<int> Graph::linksFromElement(const std::string& srcElement) const {
     std::vector<int> found;
     for (size_t i = 0; i < links.size(); ++i) {

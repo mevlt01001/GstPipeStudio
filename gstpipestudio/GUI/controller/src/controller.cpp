@@ -566,104 +566,38 @@ ElementView Controller::view(const QString& name) const {
         v.note = "ℹ Unlinked sink pad — not tracked until fed by a source.";
     }
 
-    // Sink pads: Always ones are fixed, a Request one exists per link or per requestSink count.
-    for (const PadTemplateInfo& t : inf->padTemplates) {
-        if (t.isSrc()) continue;
-        QString templateMedia = t.structures.empty() ? QString() : fromStd(gps::structureTitle(t.structures.front()));
-        auto make = [&](const QString& identity, int link, int k) {
-            PadView p;
-            p.element = name;
-            p.identity = identity;
-            p.templateName = fromStd(t.name);
-            p.isSrc = false;
-            p.link = link;
-            p.state = link >= 0 ? PadView::Linked : PadView::Empty;
-            p.label = t.isRequest() ? fillTemplate(p.templateName, k) : p.templateName;
-            p.media = templateMedia;
-            p.tip = fromStd(t.caps);
-            int seen = 0;
-            for (const PadReport& r : result().pads) {
-                if (r.element != element->name || r.isSrc || r.templateName != t.name || seen++ != k) continue;
-                p.label = fromStd(r.pad);
-                if (!r.caps.empty()) {
-                    p.media = fromStd(gps::mediaOf(r.caps));
-                    p.tip = fromStd(r.caps);
-                    p.caps = fromStd(r.caps);
-                }
-            }
-            return p;
-        };
-        if (!t.isRequest()) {
-            int link = -1;
-            for (size_t i = 0; i < plan().links.size(); ++i) {
-                if (plan().links[i].sinkElement == element->name && plan().links[i].sinkPad == t.name) link = static_cast<int>(i);
-            }
-            v.sinks << make(fromStd(t.name), link, 0);
-        } else {
-            int k = 0;
-            for (size_t i = 0; i < plan().links.size(); ++i) {
-                if (plan().links[i].sinkElement == element->name && plan().links[i].sinkPad == t.name) {
-                    v.sinks << make(fromStd(gps::padIdentity(t.name, k)), static_cast<int>(i), k);
-                    ++k;
-                }
-            }
-            auto reqCount = element->requestSink.find(t.name);
-            int totalWanted = reqCount == element->requestSink.end() ? k : std::max(k, reqCount->second);
-            for (; k < totalWanted; ++k) {
-                v.sinks << make(fromStd(gps::padIdentity(t.name, k)), -1, k);
-            }
-        }
-    }
-
-    // Src pads: Always from the template, Request from requestSrc, Sometimes from the last update and the plan.
-    for (const PadTemplateInfo& t : inf->padTemplates) {
-        if (!t.isSrc()) continue;
-        std::map<int, QString> byIndex;  // k -> identity
-        auto note = [&](const QString& identity) {
-            std::string tmpl;
-            int k = 0;
-            if (gps::splitPadIdentity(toStd(identity), &tmpl, &k) && tmpl == t.name) byIndex[k] = identity;
-        };
-        for (const PadReport& r : result().pads) {
-            if (r.element == element->name && r.isSrc) note(fromStd(r.identity));
-        }
-        for (const gps::Connection& l : plan().links) {
-            if (l.srcElement == element->name) note(fromStd(l.srcPad));
-        }
-
-        QStringList identities;
-        if (t.presence == "always") {
-            identities << fromStd(t.name);
-        } else if (t.isRequest()) {
-            auto count = element->requestSrc.find(t.name);
-            int n = count == element->requestSrc.end() ? 0 : count->second;
-            if (!byIndex.empty()) n = std::max(n, byIndex.rbegin()->first + 1);
-            for (int k = 0; k < n; ++k) identities << fromStd(gps::padIdentity(t.name, k));
-        } else {
-            for (const auto& entry : byIndex) identities << entry.second;
-        }
-
-        for (const QString& identity : identities) {
-            PadView p;
-            p.element = name;
-            p.identity = identity;
-            p.templateName = fromStd(t.name);
-            p.isSrc = true;
-            std::string tmpl;
-            int k = 0;
-            gps::splitPadIdentity(toStd(identity), &tmpl, &k);
-            p.label = t.presence == "always" ? p.templateName : fillTemplate(p.templateName, k);
-            p.link = plan().linkFrom(toStd(name), toStd(identity));
-            const PadReport* r = result().pad(element->name, toStd(identity), true);
-            if (r) {
-                p.label = r->pad.empty() ? p.label : fromStd(r->pad);
-                const std::string& caps = r->caps.empty() ? r->allowed : r->caps;
-                p.media = fromStd(gps::mediaOf(caps));
-                p.tip = fromStd(caps);
-                p.caps = fromStd(r->caps);
-            }
-            p.state = p.link >= 0 ? PadView::Linked : ((!v.isTracked || (r && r->unknownData)) ? PadView::Unknown : PadView::Free);
+    // Pads: the Pipeline owns which exist (Pipeline::padsOf); the view adds what the canvas shows of them.
+    for (const gps::Pad& pad : element->pads) {
+        const bool src = pad.direction == gps::Pad::Direction::Source;
+        const PadTemplateInfo* t = inf->padTemplate(pad.templateName, src ? "src" : "sink");
+        std::string templateName;
+        int k = 0;
+        gps::splitPadIdentity(pad.identity, &templateName, &k);
+        PadView p;
+        p.element = name;
+        p.identity = fromStd(pad.identity);
+        p.templateName = fromStd(pad.templateName);
+        p.isSrc = src;
+        p.label = !pad.nativeName.empty() ? fromStd(pad.nativeName)
+                  : pad.identity == pad.templateName ? p.templateName : fillTemplate(p.templateName, k);
+        if (src) {
+            p.link = plan().linkFrom(element->name, pad.identity);
+            const std::string& caps = pad.negotiatedCaps.empty() ? pad.allowedCaps : pad.negotiatedCaps;
+            p.media = fromStd(gps::mediaOf(caps));
+            p.tip = fromStd(caps);
+            p.caps = fromStd(pad.negotiatedCaps);
+            p.state = p.link >= 0 ? PadView::Linked : (!v.isTracked || pad.unknownData) ? PadView::Unknown : PadView::Free;
             v.srcs << p;
+        } else {
+            p.link = plan().linkInto(element->name, pad.identity);
+            p.media = t && !t->structures.empty() ? fromStd(gps::structureTitle(t->structures.front())) : QString();
+            p.tip = fromStd(pad.templateCaps);
+            if (!pad.negotiatedCaps.empty()) {
+                p.media = fromStd(gps::mediaOf(pad.negotiatedCaps));
+                p.tip = p.caps = fromStd(pad.negotiatedCaps);
+            }
+            p.state = p.link >= 0 ? PadView::Linked : PadView::Empty;
+            v.sinks << p;
         }
     }
     return v;

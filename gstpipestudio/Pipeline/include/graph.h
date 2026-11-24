@@ -33,6 +33,8 @@ struct Pad {
     Direction direction = Direction::Source;
     Presence presence = Presence::Always;
     std::string templateCaps, negotiatedCaps, allowedCaps;
+    std::string nativeName;    // what the last run called it ("video_0"), "" when it did not report the pad
+    bool unknownData = false;  // the last run could not tell what flows out of it
 };
 struct PadAddress {
     std::string element, pad;
@@ -103,6 +105,7 @@ public:
     Element* find(const std::string& name);
     std::string sinkIdentity(size_t link) const;
     int linkFrom(const std::string& srcElement, const std::string& srcPad) const;  // index, or -1 for a free src pad
+    int linkInto(const std::string& sinkElement, const std::string& sinkIdentity) const;  // index, or -1 for a free sink pad
     std::vector<int> linksFromElement(const std::string& srcElement) const;
     std::vector<int> linksInto(const std::string& sinkElement) const;
     bool sinkPadTaken(const std::string& sinkElement, const std::string& sinkPad) const;  // Always pads only
