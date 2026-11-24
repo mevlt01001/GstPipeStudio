@@ -36,7 +36,10 @@ if [ ! -f "$QT_DONE" ]; then
     # -no-sbom: the software bill of materials of Qt needs CMake 3.19, and Ubuntu 20.04 has 3.16
     # -no-icu: otherwise Qt links the ICU of the machine when it finds one, and then Qt differs from system to system (and the
     #          package would need libicu66, libicu70 or libicu74); we show only technical names, no language rules are needed
-    "../qtbase-everywhere-src-$QT_VERSION/configure" -prefix "$QT_PREFIX" -release -nomake examples -nomake tests -no-sbom -no-icu
+    # -no-feature-vulkan: the same reason; a machine with older Vulkan headers (the DeepStream images) even breaks the build,
+    #          and the program draws with QPainter only
+    "../qtbase-everywhere-src-$QT_VERSION/configure" -prefix "$QT_PREFIX" -release -nomake examples -nomake tests -no-sbom -no-icu \
+        -no-feature-vulkan
     cmake --build . --parallel "$(nproc)"
     cmake --install .
     touch "$QT_DONE"
