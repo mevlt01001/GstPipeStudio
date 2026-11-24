@@ -3,18 +3,20 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets)
 set(CMAKE_AUTOMOC ON)
 
 add_library(gps_gui STATIC
+    backend/include/customelements.h backend/src/customelements.cpp
     backend/include/executionbackend.h backend/src/executionbackend.cpp
+    backend/include/factorycatalog.h backend/src/factorycatalog.cpp
     backend/include/helperclient.h backend/src/helperclient.cpp
     backend/include/slowwatch.h backend/src/slowwatch.cpp
     backend/include/startupcheck.h backend/src/startupcheck.cpp
     backend/include/supportreport.h backend/src/supportreport.cpp
-    model/include/capsparse.h model/src/capsparse.cpp
     model/include/elementedit.h
-    model/include/elementinfo.h model/src/elementinfo.cpp
+    model/include/capslabel.h model/src/capslabel.cpp
+    model/include/contract.h model/src/contract.cpp
     model/include/elementview.h
-    model/include/updateresult.h model/src/updateresult.cpp
     controller/include/controller.h controller/src/controller.cpp
     controller/include/flows.h controller/src/flows.cpp
+    controller/include/layout.h controller/src/layout.cpp
     canvas/include/canvasmetrics.h
     canvas/include/canvasscene.h canvas/src/canvasscene.cpp
     canvas/include/canvasview.h canvas/src/canvasview.cpp

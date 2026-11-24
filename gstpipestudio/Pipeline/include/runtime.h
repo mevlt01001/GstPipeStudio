@@ -31,7 +31,18 @@ struct UpdateResult {
     std::vector<std::string> missing;  // "element.identity" the Graph wants and GStreamer never made
     std::vector<std::string> refused;  // "src.pad -> sink.pad: reason"
 
-    bool complete() const;
+    bool valid() const { return !status.empty(); }  // false before the first validation
+    bool ok() const { return status == "ok"; }
+    bool complete() const;  // ok, with pad reports, nothing missing or refused, no free src pad
+    const PadReport* pad(const std::string& element, const std::string& identity, bool isSrc) const;
+    static UpdateResult failure(std::string status, std::string message);
+};
+
+// What gps-run reports when the pipeline stopped.
+struct RunResult {
+    std::string status = "eos";  // eos | error | timeout | interrupted | refused
+    std::string message;
+    double ms = 0;
 };
 
 // Measurements belong to an execution, never to the authored document.

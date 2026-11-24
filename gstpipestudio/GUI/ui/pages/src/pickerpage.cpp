@@ -109,17 +109,17 @@ PickerPage::PickerPage(const PickerData& data, QWidget* parent) : DrawerPage(par
     }
 
     // New elements: the compatible ones first in the helper's rank order, then the rest by rank and name.
-    QList<ListEntry> ordered;
+    QList<FactoryEntry> ordered;
     for (const QString& name : data.compatible) {
-        auto found = std::find_if(data.candidates.begin(), data.candidates.end(), [&](const ListEntry& e) { return e.factory == name; });
+        auto found = std::find_if(data.candidates.begin(), data.candidates.end(), [&](const FactoryEntry& e) { return fromStd(e.factory) == name; });
         if (found != data.candidates.end()) ordered << *found;
     }
     int compatibleCount = ordered.size();
-    QList<ListEntry> rest;
-    for (const ListEntry& e : data.candidates) {
-        if (!data.compatible.contains(e.factory)) rest << e;
+    QList<FactoryEntry> rest;
+    for (const FactoryEntry& e : data.candidates) {
+        if (!data.compatible.contains(fromStd(e.factory))) rest << e;
     }
-    std::sort(rest.begin(), rest.end(), [](const ListEntry& a, const ListEntry& b) {
+    std::sort(rest.begin(), rest.end(), [](const FactoryEntry& a, const FactoryEntry& b) {
         return a.rank != b.rank ? a.rank > b.rank : a.factory < b.factory;
     });
     ordered << rest;
@@ -127,13 +127,13 @@ PickerPage::PickerPage(const PickerData& data, QWidget* parent) : DrawerPage(par
     if (!ordered.isEmpty()) {
         addHeader(data.newHeader);
         for (int i = 0; i < ordered.size(); ++i) {
-            const ListEntry& e = ordered[i];
-            auto* item = new QListWidgetItem(e.factory, list_);
-            item->setData(LongNameRole, e.longName);
+            const FactoryEntry& e = ordered[i];
+            auto* item = new QListWidgetItem(fromStd(e.factory), list_);
+            item->setData(LongNameRole, fromStd(e.longName));
             item->setData(NvidiaRole, e.nvidia);
             item->setData(HintRole, i < compatibleCount ? "compatible" : "");
-            item->setData(SearchRole, (e.factory + " " + e.longName + " " + e.klass).toLower());
-            item->setData(kFactoryRole, e.factory);
+            item->setData(SearchRole, fromStd(e.factory + " " + e.longName + " " + e.klass).toLower());
+            item->setData(kFactoryRole, fromStd(e.factory));
             item->setData(kIsSourceRole, e.isSource);
             item->setData(kIsSinkRole, e.isSink);
             item->setData(kHasAlwaysRole, e.hasAlwaysSrc || e.hasAlwaysSink || (!e.hasSometimesSrc && !e.hasSometimesSink && !e.hasRequestSrc && !e.hasRequestSink));
@@ -142,16 +142,7 @@ PickerPage::PickerPage(const PickerData& data, QWidget* parent) : DrawerPage(par
         }
     }
 
-    auto* buttons = new QHBoxLayout;
-    buttons->addStretch(1);
-    auto* cancel = new QPushButton("Cancel", this);
-    cancel->setObjectName("cancelButton");
-    primary_ = new QPushButton("Choose", this);
-    primary_->setObjectName("saveButton");
-    buttons->addWidget(cancel);
-    buttons->addWidget(primary_);
-    root->addLayout(buttons);
-    connect(cancel, &QPushButton::clicked, this, &DrawerPage::cancelled);
+    addFooter(root, "Choose");
     connect(primary_, &QPushButton::clicked, this, [this] { choose(); });
 
     connect(search_, &QLineEdit::textChanged, this, &PickerPage::filter);

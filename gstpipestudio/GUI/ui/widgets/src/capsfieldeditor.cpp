@@ -12,14 +12,14 @@
 #include <algorithm>
 #include <climits>
 
-CapsFieldEditor::CapsFieldEditor(const FieldInfo& field, QWidget* parent) : QWidget(parent), field_(field) {
+CapsFieldEditor::CapsFieldEditor(const CapsFieldInfo& field, QWidget* parent) : QWidget(parent), field_(field) {
     auto* layout = new QHBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
 
     if (field.kind == "list") {
         combo_ = new QComboBox(this);
         combo_->addItem("Auto", QString());
-        for (const QString& v : field.values) combo_->addItem(v, v);
+        for (const QString& v : fromStd(field.values)) combo_->addItem(v, v);
         layout->addWidget(combo_, 1);
         return;
     }
@@ -29,14 +29,14 @@ CapsFieldEditor::CapsFieldEditor(const FieldInfo& field, QWidget* parent) : QWid
 
     QWidget* input = nullptr;
     if (field.kind == "fixed") {
-        QString value = field.values.value(0);
+        QString value = itemAt(field.values, 0);
         input = new QLabel(value, this);
         read_ = [value] { return value; };
         write_ = [](const QString&) {};
     } else if (field.type == "gint") {
         auto* spin = new QSpinBox(this);
         auto clamped = [](const QString& text) { return static_cast<int>(std::clamp<qlonglong>(text.toLongLong(), INT_MIN, INT_MAX)); };
-        spin->setRange(clamped(field.values.value(0)), clamped(field.values.value(1, "2147483647")));
+        spin->setRange(clamped(itemAt(field.values, 0)), clamped(itemAt(field.values, 1, "2147483647")));
         spin->setMinimumWidth(130);
         input = spin;
         read_ = [spin] { return QString::number(spin->value()); };
@@ -46,7 +46,7 @@ CapsFieldEditor::CapsFieldEditor(const FieldInfo& field, QWidget* parent) : QWid
         bool real = field.type == "gfloat" || field.type == "gdouble";
         auto* spin = new QDoubleSpinBox(this);
         spin->setDecimals(real ? 3 : 0);
-        spin->setRange(qMax(field.values.value(0).toDouble(), -9e15), qMin(field.values.value(1, "9e15").toDouble(), 9e15));
+        spin->setRange(qMax(itemAt(field.values, 0).toDouble(), -9e15), qMin(itemAt(field.values, 1, "9e15").toDouble(), 9e15));
         spin->setMinimumWidth(130);
         input = spin;
         read_ = [spin, real] { return real ? QString::number(spin->value(), 'g', 10) : QString::number(spin->value(), 'f', 0); };
@@ -55,7 +55,7 @@ CapsFieldEditor::CapsFieldEditor(const FieldInfo& field, QWidget* parent) : QWid
         auto* line = new QLineEdit(this);
         if (field.type == "GstFraction") {
             line->setValidator(new QRegularExpressionValidator(QRegularExpression("-?[0-9]+/[0-9]+"), line));
-            line->setText(field.values.value(0));
+            line->setText(itemAt(field.values, 0));
             line->setToolTip("numerator/denominator, for example 30/1");
         }
         input = line;

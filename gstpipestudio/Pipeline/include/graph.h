@@ -4,6 +4,7 @@
 
 #include <functional>
 #include <map>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -33,6 +34,8 @@ struct Pad {
     Direction direction = Direction::Source;
     Presence presence = Presence::Always;
     std::string templateCaps, negotiatedCaps, allowedCaps;
+    std::string nativeName;    // what the last run called it ("video_0"), "" when it did not report the pad
+    bool unknownData = false;  // the last run could not tell what flows out of it
 };
 struct PadAddress {
     std::string element, pad;
@@ -75,6 +78,8 @@ std::string padIdentity(const std::string& templateName, int index);
 bool splitPadIdentity(const std::string& identity, std::string* templateName, int* index);
 // A sink pad name with a number slot is a Request template: any number of links may use it.
 bool isTemplateName(const std::string& padName);
+// "always" | "request" | anything else (sometimes), as GStreamer's presence is written in catalog and reports.
+Pad::Presence presenceOf(const std::string& text);
 
 // What an edit deleted (or would delete, for the preview functions).
 struct Removal {
@@ -101,10 +106,13 @@ public:
     Element* find(const std::string& name);
     std::string sinkIdentity(size_t link) const;
     int linkFrom(const std::string& srcElement, const std::string& srcPad) const;  // index, or -1 for a free src pad
+    int linkInto(const std::string& sinkElement, const std::string& sinkIdentity) const;  // index, or -1 for a free sink pad
     std::vector<int> linksFromElement(const std::string& srcElement) const;
     std::vector<int> linksInto(const std::string& sinkElement) const;
     bool sinkPadTaken(const std::string& sinkElement, const std::string& sinkPad) const;  // Always pads only
     bool wouldCycle(const std::string& srcElement, const std::string& sinkElement) const;
+    // Column of every element: the longest chain of links that leads to it (sources are 0). Empty when links form a cycle.
+    std::map<std::string, int> levels() const;
     static std::string ouroborosMessage(const std::string& srcElement, const std::string& sinkElement);
     // Elements reachable from a Source (SRC): an element with an empty sink has an empty src and is not tracked.
     std::vector<std::string> trackedElements(const TraitsFn& traits) const;
@@ -134,6 +142,8 @@ public:
     // ---- free-form edits (no automatic pruning of downstream elements)
     // Disconnects a single link without deleting downstream elements.
     bool disconnectLink(const std::string& srcElement, const std::string& srcPad);
+    // Removes every link whose both ends are among the elements; false when there was none. Nothing else is deleted.
+    bool disconnectBetween(const std::set<std::string>& elements);
     // Deletes one or more elements (subgraph). If autoHeal is true and the subgraph had unambiguously 1 external incoming link
     // and 1 external outgoing link, those two external neighbours are automatically linked together.
     bool deleteElements(const std::vector<std::string>& names, bool autoHeal = true, int exitTotalSrcPads = 1);

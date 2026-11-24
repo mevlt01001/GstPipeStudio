@@ -29,6 +29,7 @@
 #include "elementitem.h"
 #include "factorydelegate.h"
 #include "flows.h"
+#include "capslabel.h"
 #include "linkitem.h"
 #include "logpanel.h"
 #include "mainwindow.h"
@@ -436,20 +437,6 @@ private slots:
 
     // ---- CapsPage
 
-    void capsTextRoundTrips() {
-        for (const char* t : {"video/x-raw", "video/x-raw, width=(int)640",
-                              "video/x-raw(memory:NVMM), format=(string)NV12, framerate=(fraction)30/1",
-                              "audio/x-raw, layout=(string)\"a\\ b,\\ c\", rate=(gint64)44100, ok=(boolean)true"}) {
-            QString original = QString::fromUtf8(t);
-            QCOMPARE(QString::fromStdString(parseCapsChoice(original).toText()), original);
-        }
-        // The older spelling, with plain spaces inside the quotes, reads as the same value and is written back escaped.
-        QCOMPARE(parseCapsChoice("audio/x-raw, layout=(string)\"a b, c\"").toText(),
-                 std::string("audio/x-raw, layout=(string)\"a\\ b,\\ c\""));
-        QVERIFY(parseCapsChoice("").media.empty());
-        QCOMPARE(parseCapsChoice("video/x-raw(memory:NVMM, memory:DMABuf)").features.size(), size_t(2));
-    }
-
     void capsPageBuildsTheChoice() {
         CapsPageInput input;
         const ElementInfo* src = need(*c, "videotestsrc");
@@ -558,8 +545,8 @@ private slots:
         PickerData data;
         data.existing = {{"mix_1", "compositor", "sink_%u", true}, {"over_2", "textoverlay", "video_sink", false}};
         data.compatible = {"jpegdec", "videoconvert"};
-        for (const ListEntry& e : c->catalog()) {
-            if (!e.isSource) data.candidates << e;
+        for (const FactoryEntry& e : c->catalog().entries()) {
+            if (!e.isSource) data.candidates.push_back(e);
         }
         Drawer drawer;  // Enter and Esc are the drawer's
         drawer.show();
@@ -620,8 +607,8 @@ private slots:
     void pickerDoubleClickAndCancel() {
         PickerData data;
         data.compatible = {"queue"};
-        for (const ListEntry& e : c->catalog()) {
-            if (!e.isSource) data.candidates << e;
+        for (const FactoryEntry& e : c->catalog().entries()) {
+            if (!e.isSource) data.candidates.push_back(e);
         }
         PickerPage first(data);
         first.show();
@@ -1124,7 +1111,7 @@ private slots:
         press(caps, "saveButton");
         QVERIFY(waitFor([&] { return !c->busy() && c->plan().links[2].caps == "video/x-raw, format=(string)NV12"; }, 8000));
         QVERIFY(!w.flows()->capsPage());
-        QVERIFY(c->result().isComplete());
+        QVERIFY(c->result().complete());
         QVERIFY(c->canRun());
     }
 
@@ -1354,7 +1341,7 @@ private slots:
         press(caps, "saveButton");
         QVERIFY(waitFor([&] { return !c->busy() && !c->plan().links[0].caps.empty(); }, 8000));
         QCOMPARE(c->plan().links[0].caps, std::string("video/x-raw, width=(int)1280"));
-        QVERIFY(c->result().isComplete());
+        QVERIFY(c->result().complete());
         // Open it again: the page starts from the choice. Cancel changes nothing.
         w.flows()->editCaps(src, "src");
         caps = pageOf<CapsPage>(w);
@@ -1443,7 +1430,7 @@ private slots:
         picker->setRoleFilter(PickerPage::RoleSrc);
         auto* list = picker->findChild<QListWidget*>("pickerList");
         for (int i = 1; i < list->count(); ++i) {
-            if (!list->item(i)->isHidden()) QVERIFY(c->traits()(list->item(i)->text().toStdString()).isSource);
+            if (!list->item(i)->isHidden()) QVERIFY(c->catalog().traits()(list->item(i)->text().toStdString()).isSource);
         }
         picker->setRoleFilter(PickerPage::RoleAll);
         picker->setPresenceFilter(PickerPage::PresenceRequest);
@@ -1459,11 +1446,11 @@ private slots:
 
         // 3. Dynamic Pipe Caps formatting and layout rules.
         QString rawCaps = "video/x-raw, format=(string)NV12, width=(int)1920, height=(int)1080";
-        const QString compactCaps = LinkItem::formatSingleLine(rawCaps);
+        const QString compactCaps = capslabel::singleLine(rawCaps);
         QVERIFY(compactCaps.size() <= 60);
         QVERIFY(compactCaps.contains("width=1920"));
         QVERIFY(compactCaps.endsWith("…"));
-        QCOMPARE(LinkItem::formatMultiLine(rawCaps), QString("mediatype=video/x-raw\nformat=NV12\nwidth=1920\nheight=1080"));
+        QCOMPARE(capslabel::multiLine(rawCaps), QString("mediatype=video/x-raw\nformat=NV12\nwidth=1920\nheight=1080"));
         QCOMPARE(LinkItem::decideLayout(250.0, 200.0, 1.0), LinkItem::SingleLine);
         QCOMPARE(LinkItem::decideLayout(120.0, 200.0, 1.0), LinkItem::MultiLine);
         QCOMPARE(LinkItem::decideLayout(650.0, 200.0, 1.0), LinkItem::AtPads);

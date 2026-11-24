@@ -30,8 +30,8 @@ inline bool waitFor(const std::function<bool()>& condition, int ms = 10000) { re
 inline std::unique_ptr<Controller> makeController() {
     auto c = std::make_unique<Controller>();
     c->setUpdateTimeoutMs(5000);
-    c->loadCatalog();
-    waitFor([&] { return c->catalogLoaded(); });
+    c->catalog().load();
+    waitFor([&] { return c->catalog().loaded(); });
     return c;
 }
 
@@ -40,7 +40,7 @@ inline bool settle(Controller& c) { return waitFor([&] { return !c.busy(); }); }
 inline const ElementInfo* need(Controller& c, const QString& factory) {
     const ElementInfo* found = nullptr;
     bool done = false;
-    c.fetchInfo(factory, [&](const ElementInfo* i) {
+    c.catalog().fetchInfo(factory, [&](const ElementInfo* i) {
         found = i;
         done = true;
     });

@@ -8,7 +8,7 @@
 #include <functional>
 #include <optional>
 
-#include "elementinfo.h"
+#include "contract.h"
 
 class QCheckBox;
 class QComboBox;
@@ -16,14 +16,14 @@ class QComboBox;
 class CapsFieldEditor : public QWidget {
     Q_OBJECT
 public:
-    CapsFieldEditor(const FieldInfo& field, QWidget* parent = nullptr);
+    CapsFieldEditor(const CapsFieldInfo& field, QWidget* parent = nullptr);
 
-    const FieldInfo& field() const { return field_; }
+    const CapsFieldInfo& field() const { return field_; }
     std::optional<QString> pinned() const;  // none = Auto
     void pin(const QString& value);
 
 private:
-    FieldInfo field_;
+    CapsFieldInfo field_;
     QComboBox* combo_ = nullptr;   // list
     QCheckBox* pin_ = nullptr;     // range and fixed
     std::function<QString()> read_;

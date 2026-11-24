@@ -1,6 +1,7 @@
 // inspector.cpp – see inspector.h.
 #include "inspector.h"
 #include "gstcompat.h"
+#include "nativepad.h"
 
 #include <algorithm>
 #include <cfloat>
@@ -122,7 +123,7 @@ PadTemplateInfo templateOf(const GstStaticPadTemplate* stat, GstElementClass* kl
     PadTemplateInfo t;
     t.name = stat->name_template;
     t.direction = stat->direction == GST_PAD_SRC ? "src" : "sink";
-    t.presence = stat->presence == GST_PAD_ALWAYS ? "always" : stat->presence == GST_PAD_SOMETIMES ? "sometimes" : "request";
+    t.presence = presenceName(stat->presence);
     GstPadTemplate* tmpl = gst_element_class_get_pad_template(klass, stat->name_template);
     GstCaps* caps = tmpl ? gst_pad_template_get_caps(tmpl) : gst_static_caps_get(&const_cast<GstStaticPadTemplate*>(stat)->static_caps);
     t.caps = take(gst_caps_to_string(caps));
@@ -351,119 +352,21 @@ bool parseCaps(const std::string& text, std::string* normalized, std::vector<Str
     return true;
 }
 
-// ---- JSON
-
-namespace {
-
-void writeProperty(JsonWriter& w, const PropertyInfo& p) {
-    w.beginObject();
-    w.field("name", p.name).field("nick", p.nick).field("blurb", p.blurb).field("kind", p.kind);
-    w.field("typeName", p.typeName).field("default", p.defaultValue).field("min", p.min).field("max", p.max);
-    w.key("enumValues").beginArray();
-    for (const EnumValue& v : p.enumValues) {
-        w.beginObject().field("nick", v.nick).field("name", v.name).field("value", v.value).end();
-    }
-    w.end();
-    w.field("readable", p.readable).field("writable", p.writable).field("construct", p.construct);
-    w.field("constructOnly", p.constructOnly).field("deprecated", p.deprecated);
-    w.field("mutableReady", p.mutableReady).field("mutablePaused", p.mutablePaused).field("mutablePlaying", p.mutablePlaying);
-    w.end();
-}
-
-}  // namespace
-
-void writeStructure(JsonWriter& w, const StructureInfo& s) {
-    w.beginObject().field("media", s.media);
-    w.key("features").beginArray();
-    for (const std::string& f : s.features) w.string(f);
-    w.end();
-    w.key("fields").beginArray();
-    for (const CapsFieldInfo& f : s.fields) {
-        w.beginObject().field("name", f.name).field("type", f.type).field("kind", f.kind);
-        w.key("values").beginArray();
-        for (const std::string& v : f.values) w.string(v);
-        w.end().end();
-    }
-    w.end().end();
-}
-
-std::string listJson(const std::vector<FactoryEntry>& entries) {
-    JsonWriter w;
-    w.beginObject().key("elements").beginArray();
-    for (const FactoryEntry& e : entries) {
-        w.beginObject().field("factory", e.factory).field("klass", e.klass).field("longName", e.longName);
-        w.field("rank", e.rank).field("plugin", e.plugin).field("isSource", e.isSource).field("isSink", e.isSink);
-        w.field("hasAlwaysSrc", e.hasAlwaysSrc).field("hasAlwaysSink", e.hasAlwaysSink);
-        w.field("hasSometimesSrc", e.hasSometimesSrc).field("hasSometimesSink", e.hasSometimesSink);
-        w.field("hasRequestSrc", e.hasRequestSrc).field("hasRequestSink", e.hasRequestSink);
-        w.field("nvidia", e.nvidia).end();
-    }
-    w.end().end();
-    return w.str();
-}
-
-std::string elementJson(const ElementInfo& info) {
-    JsonWriter w;
-    w.beginObject();
-    w.field("factory", info.entry.factory).field("longName", info.entry.longName).field("klass", info.entry.klass);
-    w.field("description", info.description).field("author", info.author).field("plugin", info.entry.plugin);
-    w.field("rank", info.entry.rank).field("isSource", info.entry.isSource).field("isSink", info.entry.isSink);
-    w.key("padTemplates").beginArray();
-    for (const PadTemplateInfo& t : info.padTemplates) {
-        w.beginObject().field("name", t.name).field("direction", t.direction).field("presence", t.presence).field("caps", t.caps);
-        w.key("structures").beginArray();
-        for (const StructureInfo& s : t.structures) writeStructure(w, s);
-        w.end();
-        w.key("padProperties").beginArray();
-        for (const PropertyInfo& p : t.padProperties) writeProperty(w, p);
-        w.end().end();
-    }
-    w.end();
-    w.key("properties").beginArray();
-    for (const PropertyInfo& p : info.properties) writeProperty(w, p);
-    w.end().end();
-    return w.str();
-}
-
-std::string versionJson(const std::vector<FactoryEntry>& entries) {
+VersionInfo versionInfo(const std::vector<FactoryEntry>& entries) {
     guint major, minor, micro, nano;
     gst_version(&major, &minor, &micro, &nano);
-    int nvidia = 0;
-    for (const FactoryEntry& e : entries) nvidia += e.nvidia ? 1 : 0;
+    VersionInfo v;
+    v.gstreamer.version = std::to_string(major) + "." + std::to_string(minor) + "." + std::to_string(micro);
+    v.gstreamer.major = static_cast<int>(major);
+    v.gstreamer.minor = static_cast<int>(minor);
+    v.gstreamer.micro = static_cast<int>(micro);
+    for (const FactoryEntry& e : entries) v.nvidia.elements += e.nvidia ? 1 : 0;
+    v.nvidia.present = v.nvidia.elements > 0;
     GList* plugins = gst_registry_get_plugin_list(gst_registry_get());
-    int pluginCount = static_cast<int>(g_list_length(plugins));
+    v.plugins.count = static_cast<int>(g_list_length(plugins));
     gst_plugin_list_free(plugins);
-    JsonWriter w;
-    w.beginObject().key("gstreamer").beginObject();
-    w.field("version", std::to_string(major) + "." + std::to_string(minor) + "." + std::to_string(micro));
-    w.field("major", static_cast<int>(major)).field("minor", static_cast<int>(minor)).field("micro", static_cast<int>(micro)).end();
-    w.key("nvidia").beginObject().field("present", nvidia > 0).field("elements", nvidia).end();
-    w.key("plugins").beginObject().field("count", pluginCount).field("elements", static_cast<int>(entries.size())).end();
-    w.end();
-    return w.str();
-}
-
-std::string compatibleJson(const std::vector<std::string>& factories) {
-    JsonWriter w;
-    w.beginObject().key("factories").beginArray();
-    for (const std::string& f : factories) w.string(f);
-    w.end().end();
-    return w.str();
-}
-
-std::string capsJson(bool ok, const std::string& textOrError, const std::vector<StructureInfo>& structures) {
-    JsonWriter w;
-    w.beginObject().field("ok", ok);
-    if (!ok) {
-        w.field("error", textOrError);
-    } else {
-        w.field("text", textOrError);
-        w.key("structures").beginArray();
-        for (const StructureInfo& s : structures) writeStructure(w, s);
-        w.end();
-    }
-    w.end();
-    return w.str();
+    v.plugins.elements = static_cast<int>(entries.size());
+    return v;
 }
 
 }  // namespace gps

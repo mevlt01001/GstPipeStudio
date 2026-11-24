@@ -4,7 +4,6 @@
 #include <QCoreApplication>
 #include <QFileInfo>
 #include <QStandardPaths>
-#include <QJsonDocument>
 #include <QTimer>
 #include <csignal>
 
@@ -23,6 +22,18 @@ QString findHelper(const QString& name) {
 
 QString findSystemTool(const QString& name) {
     return qEnvironmentVariableIsSet("GPS_BIN_DIR") ? findHelper(name) : QStandardPaths::findExecutable(name);
+}
+
+HelperClient* HelperClient::run(QObject* parent, const QString& name, const QStringList& args, int killAfterMs,
+                                std::function<void(const QString&)> log, std::function<void(const HelperResult&)> done) {
+    auto* client = new HelperClient(parent);
+    connect(client, &HelperClient::stderrLine, parent, [log, name](const QString& line) { log("[" + name + "] " + line); });
+    connect(client, &HelperClient::finished, parent, [client, done](const HelperResult& r) {
+        client->deleteLater();
+        done(r);
+    });
+    client->start(findHelper(name), args, killAfterMs);
+    return client;
 }
 
 HelperClient::HelperClient(QObject* parent)
@@ -93,8 +104,5 @@ void HelperClient::finish(HelperResult::Outcome outcome, int code) {
     r.outcome = outcome;
     r.exitCode = code;
     if (process_->isOpen()) r.out = process_->readAllStandardOutput();
-    QJsonDocument doc = QJsonDocument::fromJson(r.out);
-    r.hasJson = doc.isObject();
-    if (r.hasJson) r.json = doc.object();
     emit finished(r);
 }

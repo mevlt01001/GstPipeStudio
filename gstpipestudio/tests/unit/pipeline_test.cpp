@@ -90,4 +90,33 @@ void results() {
     backend.finish(4);CHECK_EQ(received,2); // callback after coordinator destruction
 }
 }
-int main(){transactions();invariantsAndFragments();results();return finish("pipeline_test");}
+// The Pipeline alone decides which pads exist: templates, Request counts, links and the last run's reports.
+void pads() {
+    Pipeline document;
+    auto pad = [](const char* name, Pad::Direction direction, Pad::Presence presence) {
+        Pad p; p.identity = p.templateName = name; p.direction = direction; p.presence = presence; return p;
+    };
+    using D = Pad::Direction; using P = Pad::Presence;
+    document.registerFactory("tee", {false, {pad("sink", D::Sink, P::Always), pad("src_%u", D::Source, P::Request)}});
+    document.registerFactory("demux", {false, {pad("sink", D::Sink, P::Always), pad("video_%u", D::Source, P::Sometimes)}});
+    document.registerFactory("mux", {false, {pad("sink_%u", D::Sink, P::Request), pad("src", D::Source, P::Always)}});
+    std::string tee, demux, mux;
+    CHECK(document.editor().execute(EditAction([&](Graph& g, std::string*) {
+        tee = g.addElement("tee"); demux = g.addElement("demux"); mux = g.addElement("mux");
+        g.find(tee)->requestSrc["src_%u"] = 1;
+        g.find(mux)->requestSink["sink_%u"] = 1;
+        return g.linkExisting(tee, padIdentity("src_%u", 2), mux, "sink_%u") && g.linkExisting(demux, padIdentity("video_%u", 1), mux, "sink_%u");
+    })));
+    auto identities = [&](const std::string& name) {
+        std::vector<std::string> out;
+        for (const Pad& p : document.graph().find(name)->pads) out.push_back(p.identity);
+        return out;
+    };
+    // a link to src_%u#2 means three Request pads; a Sometimes pad exists once a link names it; two links, two sink pads
+    CHECK(identities(tee) == std::vector<std::string>({"sink", "src_%u#0", "src_%u#1", "src_%u#2"}));
+    CHECK(identities(demux) == std::vector<std::string>({"sink", "video_%u#1"}));
+    CHECK(identities(mux) == std::vector<std::string>({"sink_%u#0", "sink_%u#1", "src"}));
+    CHECK_EQ(document.graph().linkInto(mux, "sink_%u#1"), 1);
+    CHECK(document.peer({mux, "sink_%u#0", D::Sink}).value().element == tee);
+}
+int main(){transactions();invariantsAndFragments();results();pads();return finish("pipeline_test");}

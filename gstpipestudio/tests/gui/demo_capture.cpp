@@ -40,7 +40,7 @@ int main(int argc, char** argv) {
     window.scene()->rebuild(); window.view()->fitAll(); capture(12);
     const QString sink = support::addAfter(*controller, slow, "src", "fakesink", "sink",
                                            support::withProps({{"sync", "true"}, {"qos", "true"}, {"max-lateness", "1000000"}}));
-    if (sink.isEmpty() || !controller->result().isComplete()) return 5;
+    if (sink.isEmpty() || !controller->result().complete()) return 5;
     window.scene()->rebuild(); window.view()->fitAll(); capture(12);
     if (!controller->arrangePipeline()) return 6;
     window.scene()->rebuild(); window.view()->fitAll(); capture(14);

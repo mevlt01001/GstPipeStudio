@@ -18,13 +18,13 @@ int main(int argc, char** argv) {
         gps::UpdateResult failed;  // a bad file is a result, not a crash (SPEC 7: exit 0 when the work is done)
         failed.status = "error";
         failed.message = args[0] + ": " + error;
-        out.json(gps::updateJson(failed));
+        out.json(gps::toJson(failed));
         return 0;
     }
     gps::installStopHandler();
     options.shouldStop = gps::stopRequested;
     gps::GstEngine engine(options, gps::logLine);
     engine.execute(gps::ExecutionPlan(std::move(plan), {0, 1}),
-                   [&](gps::ExecutionResult result) { out.json(gps::updateJson(result.report)); });
+                   [&](gps::ExecutionResult result) { out.json(gps::toJson(result.report)); });
     return 0;
 }

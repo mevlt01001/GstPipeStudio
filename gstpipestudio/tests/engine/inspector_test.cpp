@@ -2,6 +2,7 @@
 #include <algorithm>
 
 #include "inspector.h"
+#include "wire.h"
 #include "testutil.h"
 
 using namespace gps;
@@ -215,8 +216,8 @@ int main(int argc, char** argv) {
     CHECK(!parseCaps("", &text, &structures, &error));
 
     // ---- JSON text (the parse check is in the cli tests)
-    CHECK(gpstest::contains(listJson(all), "\"factory\":\"videotestsrc\""));
-    CHECK(gpstest::contains(capsJson(false, "bad \"caps\"", {}), "\"ok\":false,\"error\":\"bad \\\"caps\\\"\""));
+    CHECK(gpstest::contains(gps::toJson(FactoryList{all}), "\"factory\":\"videotestsrc\""));
+    CHECK(gpstest::contains(gps::toJson(CapsResult{false, "bad \"caps\"", "", {}}), "\"ok\":false,\"error\":\"bad \\\"caps\\\"\""));
 
     // ---- version: numbers from gst_version(), counts from the same list
     {
@@ -224,7 +225,7 @@ int main(int argc, char** argv) {
         gst_version(&major, &minor, &micro, &nano);
         int nvidia = 0;
         for (const FactoryEntry& e : all) nvidia += e.nvidia ? 1 : 0;
-        std::string json = versionJson(all);
+        std::string json = gps::toJson(versionInfo(all));
         std::string want = "{\"gstreamer\":{\"version\":\"" + std::to_string(major) + "." + std::to_string(minor) + "." + std::to_string(micro) +
                            "\",\"major\":" + std::to_string(major) + ",\"minor\":" + std::to_string(minor) + ",\"micro\":" + std::to_string(micro) +
                            "},\"nvidia\":{\"present\":" + (nvidia > 0 ? "true" : "false") + ",\"elements\":" + std::to_string(nvidia) +

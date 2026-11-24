@@ -14,8 +14,8 @@ int main(int argc, char** argv) {
     if (!gps::Graph::load(args[0], &graph, &error)) return gps::usageError(out, error);
     gps::installStopHandler();
     options.shouldStop = gps::stopRequested;
-    options.onTelemetry = [&out](const gps::TelemetrySample& sample) { out.json(gps::telemetryJson(sample)); };
+    options.onTelemetry = [&out](const gps::TelemetrySample& sample) { out.json(gps::toJson(sample)); };
     auto result = gps::run(graph, {}, options, gps::logLine);
-    out.json(gps::runJson(result));
+    out.json(gps::toJson(result));
     return result.status == "eos" || result.status == "interrupted" || result.status == "timeout" ? 0 : 1;
 }

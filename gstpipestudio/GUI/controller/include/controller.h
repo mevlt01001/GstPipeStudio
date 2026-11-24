@@ -1,7 +1,7 @@
 // Controller owns the Pipeline document and coordinates GUI workflows and helper processes.
 // Widgets read views and submit edits; GraphEditor owns transactions and history.
 // Preview updates are coalesced and allow further edits. Playback, opening and cancellation block edits.
-// Call fetchInfo() before edits that refer to a new factory.
+// Call catalog().fetchInfo() before edits that refer to a new factory.
 #pragma once
 
 #include <QHash>
@@ -9,25 +9,27 @@
 #include <QPair>
 #include <QPointF>
 #include <QProcess>
-#include <QJsonObject>
 #include <QSet>
 #include <QTemporaryDir>
 #include <QTimer>
 #include <functional>
 #include <map>
+#include <optional>
 #include <limits>
 #include <cmath>
 
 #include "elementedit.h"
-#include "elementinfo.h"
+#include "contract.h"
 #include "elementview.h"
 #include "helperclient.h"
+#include "layout.h"
+#include "customelements.h"
 #include "executionbackend.h"
+#include "factorycatalog.h"
 #include "pipeline.h"
 #include "slowwatch.h"
 #include "startupcheck.h"
 #include "supportreport.h"
-#include "updateresult.h"
 
 // A place a free src pad can be linked to inside the plan.
 struct ExistingTarget {
@@ -41,15 +43,13 @@ constexpr int kUpdateBackstopMs = 600000;
 class Controller : public QObject {
     Q_OBJECT
 public:
-    using InfoCallback = std::function<void(const ElementInfo*)>;
-    using NamesCallback = std::function<void(const QStringList&)>;
 
     explicit Controller(QObject* parent = nullptr);
 
     // ---- state
     const gps::Graph& plan() const { return pipeline_.editor().view(); }
     const gps::Pipeline& pipeline() const { return pipeline_; }
-    const UpdateResult& result() const { return result_; }
+    const UpdateResult& result() const { return pipeline_.observations(); }  // the last validation, owned by Pipeline
     bool updating() const { return updating_; }
     bool running() const { return running_; }
     bool busy() const { return updating_ || running_ || monitoring_ || opening_; }
@@ -81,20 +81,12 @@ public:
     SupportInfo supportInfo(const QString& title) const;
     void requestSupport(const QString& title);  // opens the prefilled issue in the browser
 
-    // ---- catalog (gps-inspect)
-    void loadCatalog();
-    bool catalogLoaded() const { return catalogLoaded_; }
-    const QList<ListEntry>& catalog() const { return catalog_; }
-    const ElementInfo* info(const QString& factory) const;
-    void fetchInfo(const QString& factory, InfoCallback done);  // calls done at once when cached; nullptr on failure
-    void fetchCompatible(const QString& caps, NamesCallback done);  // ranked factories that can follow these caps
-    gps::TraitsFn traits() const;
+    // ---- what GStreamer offers (gps-inspect); the Controller registers each fetched factory with the Pipeline
+    FactoryCatalog& catalog() { return catalog_; }
+    const FactoryCatalog& catalog() const { return catalog_; }
 
     // ---- custom elements (saved multi-element presets & canvas groups)
-    static QString customElementsDir();
-    void loadCustomElements();
-    const QList<CustomElementInfo>& customElements() const { return customElements_; }
-    const gps::Graph* customElementPlan(const QString& name) const;
+    const QList<CustomElementInfo>& customElements() const { return library_.list(); }
     bool saveCustomElement(const QString& customName, const QStringList& elementNames, const QString& description = QString());
     bool removeCustomElement(const QString& customName);
     QStringList addCustomElement(const QString& customName, double x = std::numeric_limits<double>::quiet_NaN(), double y = std::numeric_limits<double>::quiet_NaN());
@@ -112,10 +104,10 @@ public:
     ElementView groupView(const QString& groupId) const;
     QList<LinkView> linkViews() const;
     QString linkSinkIdentity(int link) const;
-    QList<StructureInfo> padStructures(const QString& element, const QString& identity) const;  // allowed by a src pad
+    std::vector<StructureInfo> padStructures(const QString& element, const QString& identity) const;  // allowed by a src pad
     QString padAllowed(const QString& element, const QString& identity) const;
     QList<ExistingTarget> existingTargets(const QString& element, const QString& identity) const;
-    QList<PadTemplateInfo> sinkChoices(const ElementInfo& info, const QString& element, const QString& identity) const;
+    std::vector<PadTemplateInfo> sinkChoices(const ElementInfo& info, const QString& element, const QString& identity) const;
     const PadTemplateInfo* linkSinkTemplate(int link) const;  // template of the sink pad a link ends on
 
     // ---- edits. Each starts an update.
@@ -148,8 +140,7 @@ public:
     QStringList duplicateElements(const QStringList& names);
     bool connectSelectedElements(const QStringList& names);
     bool disconnectBetweenElements(const QStringList& names);
-    bool alignElementsHorizontally(const QStringList& names);
-    bool alignElementsVertically(const QStringList& names);
+    bool alignElements(const QStringList& names, Qt::Orientation orientation);  // a row or a column, one undo step
     bool arrangePipeline(); // one undoable presentation action; leaves execution untouched
     gps::Removal previewCut(const QString& element, const QString& pad) const;
     gps::Removal previewReplace(const QString& element, const QString& pad) const;
@@ -171,19 +162,33 @@ signals:
     void updateFinished(bool ok);
     void logLine(const QString& line);      // helper stderr and events
     void notice(const QString& text);       // something the user must be told (helper missing, open failed ...)
-    void catalogReady();
     void environmentChecked();
     void runFinished(const QString& status);
-    void telemetryReceived(const QJsonObject& sample);
+    void telemetryReceived(const gps::TelemetrySample& sample);
 
 private:
     void log(const QString& line);
     void note(const QString& action, const QString& linking = QString());  // what the support report says we did
     QString padText(const QString& element, const QString& identity) const;
-    HelperClient* runHelper(const QString& name, const QStringList& args, int killAfterMs, std::function<void(const HelperResult&)> done);
-    void fetchInfos(const QStringList& factories, std::function<void(bool)> done);
-    bool beginEdit() const;
-    void beginTransaction();
+    std::function<void(const QString&)> logger();  // log() as a callback
+    QList<layout::Box> boxes(const QStringList& names) const;
+    bool move(const layout::Placements& placements);  // one undoable presentation change
+    // What one user edit says about itself; its change fills it in.
+    struct Edit {
+        QString action, linking;       // for the support report
+        QString touched;               // the element it concerned: the suspect when the validator dies
+        std::optional<bool> validate;  // default: whether `touched` is fed by a source
+        bool presentation = false;     // groups and positions only: committed without any validation
+    };
+    // The one path of an edit: refused while editing is blocked or when change returns false (nothing happened);
+    // otherwise one undo step, noted, and validated as the Edit says.
+    bool transact(const std::function<bool(gps::Graph&, Edit&)>& change);
+    bool anyTracked(const QStringList& elements) const;  // fed by a source in the plan as it is now
+    bool infosReady(const gps::Graph& clip, std::function<void()> retry);
+    static QPointF topLeft(const gps::Graph& clip);
+    std::map<std::string, std::string> insertCopy(gps::Graph& draft, const gps::Graph& clip, QPointF offset, const QString& group = {});
+    QString newGroupId(const QString& title);
+    QString runFile(const QString& name);
     gps::Graph& editGraph() { return pipeline_.editor().draft(); }
     bool commitTransaction();
     void edited(const QString& touchedElement, bool validate = true);  // dirty + optional update
@@ -202,7 +207,6 @@ private:
     HelperExecutionBackend backend_;
     QTimer updateTimer_;
     gps::ExecutionCoordinator execution_{pipeline_, backend_};
-    UpdateResult result_;
     QString path_;
     bool dirty_ = false;
     bool updating_ = false;
@@ -213,15 +217,10 @@ private:
     QString touched_;  // the element the last edit concerned; the suspect when the helper dies
 
     QTemporaryDir tmp_;
-    QList<ListEntry> catalog_;
-    bool catalogLoaded_ = false;
-    QList<CustomElementInfo> customElements_;
-    std::map<QString, gps::Graph> customPlans_;
+    FactoryCatalog catalog_;
+    CustomElementLibrary library_;
     QSet<QString> expandedGroups_;
     int nextGroupId_ = 1;
-    std::map<QString, ElementInfo> infos_;  // node based: pointers handed out stay valid
-    QHash<QString, QList<InfoCallback>> pendingInfo_;
-    QHash<QString, QStringList> compatible_;
     HelperClient* runClient_ = nullptr;
     QProcess* monitorClient_ = nullptr;
     QByteArray monitorOutput_;

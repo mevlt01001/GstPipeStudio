@@ -98,7 +98,7 @@ private slots:
         MainWindow w(c.get());
         w.show();
         buildRichPipeline();
-        QVERIFY(c->result().isComplete());
+        QVERIFY(c->result().complete());
         settleWindow(w);
         save(&w, "ux_03_finished_pipeline");
         w.view()->resetTransform();
@@ -148,7 +148,7 @@ private slots:
         addSource(*c, "videotestsrc");
         QString bad = addSource(*c, "audiotestsrc", withProps({{"fake-crash", "1"}}));
         settleWindow(w);
-        QCOMPARE(c->result().status, QString("crashed"));
+        QCOMPARE(fromStd(c->result().status), QString("crashed"));
         save(&w, "ux_08_crashed_helper");
     }
 

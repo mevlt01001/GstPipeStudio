@@ -6,6 +6,8 @@
 #include <QObject>
 #include <QString>
 
+#include "catalog.h"
+
 // The oldest GStreamer the app supports: the one place to change it.
 struct GstVersion {
     int major, minor;
@@ -37,7 +39,7 @@ signals:
     void finished(const StartupResult& result);
 
 private:
-    void onVersion(bool usable, const QJsonObject& json, const QString& error);
+    void onVersion(bool usable, const gps::VersionInfo& version, const QString& error);
     void askSystemTool();
     void done(const StartupResult& result);
 

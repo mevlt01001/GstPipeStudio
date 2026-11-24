@@ -4,7 +4,6 @@
 
 #include <QGraphicsPathItem>
 #include <QGraphicsSceneContextMenuEvent>
-#include <QJsonArray>
 #include <QPainterPath>
 #include <QPen>
 #include <QTimer>
@@ -21,21 +20,16 @@ CanvasScene::CanvasScene(Controller* controller, QObject* parent) : QGraphicsSce
     connect(controller_, &Controller::telemetryReceived, this, &CanvasScene::applyTelemetry);
 }
 
-void CanvasScene::applyTelemetry(const QJsonObject& sample) {
+void CanvasScene::applyTelemetry(const gps::TelemetrySample& sample) {
     telemetry_ = sample;
     QSet<ElementItem*> reset;
     for (ElementItem* item : std::as_const(elements_)) {
         if (!reset.contains(item)) { reset.insert(item); item->clearTelemetry(); }
     }
     if (!controller_->monitoring()) return;
-    auto number = [](const QJsonObject& object, const char* key) {
-        const QJsonValue value = object.value(key);
-        return value.isDouble() ? value.toDouble() : -1.0;
-    };
-    for (const QJsonValue& value : sample.value("elements").toArray()) {
-        const QJsonObject object = value.toObject();
-        if (ElementItem* item = elements_.value(object.value("element").toString()))
-            item->mergeTelemetry(number(object, "processingMs"), number(object, "dropRatePercent"), number(object, "ageMs"));
+    for (const gps::ElementTelemetry& t : sample.elements) {
+        if (ElementItem* item = elements_.value(QString::fromStdString(t.element)))
+            item->mergeTelemetry(t.processingMs, t.dropRatePercent, t.ageMs);
     }
 }
 

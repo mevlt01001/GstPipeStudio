@@ -1,5 +1,5 @@
 #include "executionbackend.h"
-#include "updateresult.h"
+#include "contract.h"
 #include <QFile>
 #include <QTimer>
 
@@ -24,20 +24,25 @@ void HelperExecutionBackend::execute(const gps::ExecutionPlan& plan, Completion 
         if (client_ == client) client_ = nullptr;
         client->deleteLater();
         QFile::remove(path);
+        using gps::UpdateResult;
         UpdateResult report;
+        report.status.clear();
         switch (result.outcome) {
-        case HelperResult::Cancelled: report = UpdateResult::failure("cancelled", "Validation cancelled", {}); break;
-        case HelperResult::Crashed: report = UpdateResult::failure("crashed", QString("Validator had to stop unexpectedly (signal %1)").arg(result.exitCode), {}); break;
-        case HelperResult::TimedOut: report = UpdateResult::failure("hung", "Validator did not answer in time", {}); break;
-        case HelperResult::NotFound: report = UpdateResult::failure("error", "gps-update was not found", {}); break;
+        case HelperResult::Cancelled: report = UpdateResult::failure("cancelled", "Validation cancelled"); break;
+        case HelperResult::Crashed: report = UpdateResult::failure("crashed", "Validator had to stop unexpectedly (signal " + std::to_string(result.exitCode) + ")"); break;
+        case HelperResult::TimedOut: report = UpdateResult::failure("hung", "Validator did not answer in time"); break;
+        case HelperResult::NotFound: report = UpdateResult::failure("error", "gps-update was not found"); break;
         default:
-            report = result.hasJson && result.json["status"].isString()
-                ? UpdateResult::fromJson(result.json)
-                : UpdateResult::failure("stopped", QString("Validator stopped unexpectedly (exit code %1)").arg(result.exitCode), {});
+            if (!result.read(&report) || !report.valid())
+                report = UpdateResult::failure("stopped", "Validator stopped unexpectedly (exit code " + std::to_string(result.exitCode) + ")");
             break;
         }
+        if ((report.status == "crashed" || report.status == "hung") && report.errorElement.empty() && !suspect_.empty()) {
+            report.errorElement = suspect_;
+            report.message = "Element " + suspect_ + ": " + report.message;
+        }
         QPointer<HelperExecutionBackend> alive(this);
-        done({ticket, report.toCore()});
+        done({ticket, report});
         if (!alive) return;
         if (pending_) {
             auto next = std::move(*pending_);

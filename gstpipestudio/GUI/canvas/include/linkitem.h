@@ -19,9 +19,6 @@ public:
     QPointF midPoint() const { return path_.pointAtPercent(0.5); }  // where the badge sits
     double pipeLength() const { return path_.length(); }
 
-    static QStringList capsFields(const QString& capsText);
-    static QString formatSingleLine(const QString& capsText);
-    static QString formatMultiLine(const QString& capsText);
     static LabelLayout decideLayout(double pipeLength, double singleLineWidth, double zoomLevel);
 
     QRectF boundingRect() const override;

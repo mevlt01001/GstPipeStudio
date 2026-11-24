@@ -61,6 +61,8 @@ private:
     void editThenCaps(const QString& element, const QString& identity, std::function<bool()> edit);
     void openCaps(const QString& element, const QString& identity, bool afterEdit);
     void abandonPending();
+    // The catalog's sources (true) or everything that is not a source (false), for a picker.
+    std::vector<FactoryEntry> factories(bool sources) const;
 
     Controller* controller_;
     Drawer* drawer_;

@@ -325,7 +325,7 @@ void MainWindow::refreshState() {
     else if (!hasPlan) text = "Empty canvas: choose Add source to start";
     else if (controller_->notValidated()) text = "Validation was cancelled — press Validate. Save and Run are off", colour = Theme::warning().name();
     else if (r.valid() && !r.ok()) text = "Validation reported a problem. Save and Run are off", colour = Theme::error().name();
-    else if (r.valid() && !r.complete) text = "Pipeline is not complete (free src pad). Save is on, Run is off", colour = Theme::warning().name();
+    else if (r.valid() && !r.complete()) text = "Pipeline is not complete (free src pad). Save is on, Run is off", colour = Theme::warning().name();
     else if (r.valid()) text = "Pipeline is complete", colour = Theme::accent().name();
     else text = "Not validated yet — press Validate";
     state_->setText(text);
@@ -440,8 +440,8 @@ void MainWindow::showCanvasMenu(const QPoint& screenPos) {
             ->setObjectName("actionCanvasSaveCustom");
         if (sel.size() >= 2) {
             menu->addAction("Connect selected elements", this, [this] { connectSelected(); })->setObjectName("actionCanvasConnectSelected");
-            menu->addAction("Align horizontally", this, [this, sel] { controller_->alignElementsHorizontally(sel); });
-            menu->addAction("Align vertically", this, [this, sel] { controller_->alignElementsVertically(sel); });
+            menu->addAction("Align horizontally", this, [this, sel] { controller_->alignElements(sel, Qt::Horizontal); });
+            menu->addAction("Align vertically", this, [this, sel] { controller_->alignElements(sel, Qt::Vertical); });
         }
         menu->addAction("Duplicate selected", this, [this] { duplicateSelected(); });
         menu->addAction("Copy selected", this, [this] { copySelected(); });
@@ -514,9 +514,9 @@ void MainWindow::showSelectionMenu(const QString& clickedElement, const QPoint& 
             ->setObjectName("actionConnectSelectedMenu");
         menu->addAction("Disconnect links between selected", this, [this, sel] { controller_->disconnectBetweenElements(sel); })
             ->setObjectName("actionDisconnectSelectedMenu");
-        menu->addAction("Align horizontally", this, [this, sel] { controller_->alignElementsHorizontally(sel); })
+        menu->addAction("Align horizontally", this, [this, sel] { controller_->alignElements(sel, Qt::Horizontal); })
             ->setObjectName("actionAlignHorizontally");
-        menu->addAction("Align vertically", this, [this, sel] { controller_->alignElementsVertically(sel); })
+        menu->addAction("Align vertically", this, [this, sel] { controller_->alignElements(sel, Qt::Vertical); })
             ->setObjectName("actionAlignVertically");
     }
     menu->addSeparator();

@@ -3,10 +3,12 @@
 #pragma once
 
 #include <QByteArray>
-#include <QJsonObject>
 #include <QObject>
 #include <QProcess>
 #include <QStringList>
+#include <functional>
+
+#include "wire.h"
 
 class QTimer;
 
@@ -16,8 +18,9 @@ struct HelperResult {
     Outcome outcome = Finished;
     int exitCode = 0;  // for Crashed: the signal number
     QByteArray out;
-    bool hasJson = false;
-    QJsonObject json;  // the stdout object, when it parsed
+
+    // The stdout answer as one of the wire.h structs; false when there is none or it is another kind of answer.
+    template <class T> bool read(T* answer) const { return gps::fromJson(out.toStdString(), answer); }
 };
 
 // GPS_BIN_DIR when it is set, else the folder of this executable. Empty when the helper is nowhere.
@@ -31,6 +34,11 @@ public:
     static constexpr int kKillAfterTermMs = 2000;
 
     explicit HelperClient(QObject* parent = nullptr);
+
+    // One call of helper `name` (found with findHelper): its stderr lines go to log as "[name] line", the client deletes
+    // itself after done ran. The returned client can be interrupted or cancelled until then.
+    static HelperClient* run(QObject* parent, const QString& name, const QStringList& args, int killAfterMs,
+                             std::function<void(const QString&)> log, std::function<void(const HelperResult&)> done);
 
     // killAfterMs <= 0: no watchdog. An empty program (helper not found) finishes with NotFound.
     void start(const QString& program, const QStringList& args, int killAfterMs);

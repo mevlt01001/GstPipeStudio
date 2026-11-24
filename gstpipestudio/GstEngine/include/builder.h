@@ -30,21 +30,12 @@ struct UpdateOptions {
     std::function<bool()> shouldStop;  // polled; true ends update() at once with status error (gps-update: SIGINT, SIGTERM)
 };
 
-std::string updateJson(const UpdateResult& result);
-
 struct RunOptions {
     int timeoutMs = 0;                  // 0 = no limit
     std::function<bool()> shouldStop;   // polled; true makes run() send EOS (gps-run: SIGINT, SIGTERM)
     std::function<void(const TelemetrySample&)> onTelemetry; // optional, emitted every 250 ms
 };
 
-struct RunResult {
-    std::string status = "eos";  // eos | error | timeout | interrupted | refused
-    std::string message;
-    double ms = 0;
-};
-std::string runJson(const RunResult& result);
-std::string telemetryJson(const TelemetrySample& sample);
 
 struct BuildOptions {
     bool temporaryEnds = false;                  // update(): free src pads get queue ! typefind ! fakesink

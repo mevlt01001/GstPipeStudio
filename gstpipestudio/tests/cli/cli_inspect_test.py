@@ -12,6 +12,13 @@ KINDS = {"boolean", "int", "uint", "int64", "uint64", "float", "double", "string
          "object", "boxed", "pointer", "other"}
 STRUCTURE = {"media": is_str, "features": lambda v: isinstance(v, list) and all(is_str(x) for x in v),
              "fields": lambda v: isinstance(v, list)}
+# One row of "list"; "element" carries the same keys.
+ENTRY = {"factory": is_str, "klass": is_str, "longName": is_str, "rank": is_int, "plugin": is_str,
+         "isSource": is_bool, "isSink": is_bool, "hasAlwaysSrc": is_bool, "hasAlwaysSink": is_bool,
+         "hasSometimesSrc": is_bool, "hasSometimesSink": is_bool, "hasRequestSrc": is_bool, "hasRequestSink": is_bool,
+         "nvidia": is_bool}
+# "caps" has one shape: error is "" when ok, text and structures are empty when not.
+CAPS = {"ok": is_bool, "error": is_str, "text": is_str, "structures": lambda v: isinstance(v, list)}
 FIELD = {"name": is_str, "type": is_str, "kind": lambda v: v in ("fixed", "list", "range"),
          "values": lambda v: isinstance(v, list) and len(v) >= 1 and all(is_str(x) for x in v)}
 
@@ -49,12 +56,7 @@ def main():
         els = d["elements"]
         check(len(els) > 200, f"list: {len(els)} elements")
         for e in els[:5] + els[-5:]:
-            has_types(e, {"factory": is_str, "klass": is_str, "longName": is_str, "rank": is_int, "plugin": is_str,
-                          "isSource": is_bool, "isSink": is_bool,
-                          "hasAlwaysSrc": is_bool, "hasAlwaysSink": is_bool,
-                          "hasSometimesSrc": is_bool, "hasSometimesSink": is_bool,
-                          "hasRequestSrc": is_bool, "hasRequestSink": is_bool,
-                          "nvidia": is_bool}, "list entry")
+            has_types(e, ENTRY, "list entry")
         by = {e["factory"]: e for e in els}
         check(by["videotestsrc"]["isSource"] and not by["videotestsrc"]["nvidia"], "videotestsrc flags")
         check(by["fakesink"]["isSink"], "fakesink isSink")
@@ -86,8 +88,7 @@ def main():
         # ---- element
         code, d, err = t.json("gps-inspect", "element", "compositor")
         check_eq(code, 0, "element exit")
-        has_types(d, {"factory": is_str, "longName": is_str, "klass": is_str, "description": is_str, "author": is_str,
-                      "plugin": is_str, "rank": is_int, "isSource": is_bool, "isSink": is_bool,
+        has_types(d, {**ENTRY, "description": is_str, "author": is_str,  # the factory's list row, flat
                       "padTemplates": lambda v: isinstance(v, list) and len(v) >= 2,
                       "properties": lambda v: isinstance(v, list) and len(v) > 0}, "element")
         check_eq(d["factory"], "compositor", "element factory")
@@ -142,7 +143,7 @@ def main():
         # ---- caps
         code, d, err = t.json("gps-inspect", "caps", "video/x-raw,width=(int)640,framerate=(fraction)[ 0/1, 30/1 ]")
         check_eq(code, 0, "caps exit")
-        has_types(d, {"ok": is_bool, "text": is_str, "structures": lambda v: isinstance(v, list)}, "caps")
+        has_types(d, CAPS, "caps")
         check_eq(d["ok"], True, "caps ok")
         check_eq(d["text"], "video/x-raw, width=(int)640, framerate=(fraction)[ 0/1, 30/1 ]", "caps normalized text")
         for s in d["structures"]:
@@ -151,7 +152,7 @@ def main():
                  [("width", "fixed", "gint"), ("framerate", "range", "GstFraction")], "caps fields")
         code, d, err = t.json("gps-inspect", "caps", "video/x-raw, width=(int")
         check_eq(code, 0, "bad caps exit")
-        has_types(d, {"ok": is_bool, "error": is_str}, "bad caps")
+        has_types(d, CAPS, "bad caps")
         check_eq(d["ok"], False, "bad caps ok flag")
 
         # ---- usage errors: exit 2, stderr has the text, stdout still one JSON line

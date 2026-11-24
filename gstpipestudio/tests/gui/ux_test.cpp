@@ -278,8 +278,8 @@ private slots:
     void updateGetsTheLargeBackstopTimeout() {
         qunsetenv("GPS_UPDATE_TIMEOUT_MS");
         Controller fresh;
-        fresh.loadCatalog();
-        QVERIFY(waitFor([&] { return fresh.catalogLoaded(); }));
+        fresh.catalog().load();
+        QVERIFY(waitFor([&] { return fresh.catalog().loaded(); }));
         QSignalSpy log(&fresh, &Controller::logLine);
         need(fresh, "videotestsrc");
         QVERIFY(fresh.addSource("videotestsrc", {}));
@@ -397,7 +397,7 @@ private slots:
         w.show();
         QString src = addSource(*c, "videotestsrc");
         QString bad = addAfter(*c, src, "src", "fakesink", "sink", withProps({{"fake-crash", "1"}}));
-        QCOMPARE(c->result().status, QString("crashed"));
+        QCOMPARE(fromStd(c->result().status), QString("crashed"));
         auto* ind = w.indicator();
         QVERIFY(ind->isVisible());
         QCOMPARE(ind->mode(), ValidationIndicator::Stopped);

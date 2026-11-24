@@ -4,11 +4,12 @@
 
 #include <QGraphicsScene>
 #include <QHash>
-#include <QJsonObject>
 #include <QPair>
 #include <QPointF>
 #include <QSet>
 #include <QStringList>
+
+#include "runtime.h"
 
 namespace gps { class Pipeline; }
 class Controller;
@@ -54,7 +55,7 @@ public:
 public slots:
     void scheduleRebuild();  // coalesces many changes into one rebuild
     void rebuild();
-    void applyTelemetry(const QJsonObject& sample);
+    void applyTelemetry(const gps::TelemetrySample& sample);
 
 signals:
     void freeSrcPadClicked(const QString& element, const QString& identity, const QPoint& screenPos);
@@ -88,5 +89,5 @@ private:
     bool pending_ = false;
     bool locked_ = false;
     bool stale_ = false;
-    QJsonObject telemetry_;
+    gps::TelemetrySample telemetry_;
 };
