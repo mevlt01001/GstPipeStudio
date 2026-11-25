@@ -6,6 +6,7 @@
 - A project's conf imports a template like a module: one section with its name, revision and parameter values, instead of its elements. The project folder keeps a copy of each template it uses under templates/, so it runs on another machine with gps-run or gstgpsconf; elsewhere GPS_TEMPLATE_PATH lists more template folders.
 - Edit template, from a template's right click on the canvas, a template in the Explorer, or the library (right click a template in Add template), opens it in a tab of its own as "Template: <name>". There Pipeline > Template parameters… chooses its parameters and Save writes its next revision, which the other tabs offer to their copies. The library menu also has Rename…, Export… and Delete…; Import… adds a template file.
 - Changing a copy asks: Update template, Save as new template, Detach or Undo. An update reaches the other copies at once and other projects when they open.
+- One file per template: a name whose file another template already has ("a b" and "a_b") is refused, and a template an earlier version saved under another file name can still be renamed and deleted. A newer revision is offered to a copy once.
 - Add source, Save custom, Combine into group and the Expose checkbox are gone: Add element lists every factory, and parameters belong to templates.
 
 ## Layout
