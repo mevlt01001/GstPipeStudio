@@ -263,7 +263,7 @@ bool Controller::finishTemplate(const QString& id, const QString& name, const st
         edit.presentation = true;
         return true;
     });
-    return services_.library().save(clean, gps::templates::extract(plan(), toStd(id)), error);
+    return wrote(services_.library().save(clean, gps::templates::extract(plan(), toStd(id))), error);
 }
 
 void Controller::cancelTemplate(const QString& id) { detachTemplate(id); }
@@ -771,9 +771,8 @@ bool Controller::commitTemplateEdit(const QString& id) {
         edit.presentation = true;
         return true;
     });
-    QString error;
-    if (!services_.library().save(name, gps::templates::extract(plan(), toStd(id)), &error)) {
-        emit notice(error);
+    if (const SaveResult r = services_.library().save(name, gps::templates::extract(plan(), toStd(id))); !r.ok) {
+        emit notice(r.error);
         return false;
     }
     QStringList others;
@@ -796,7 +795,12 @@ bool Controller::saveTemplateAsNew(const QString& id, const QString& name, QStri
         edit.presentation = true;
         return true;
     });
-    return services_.library().save(clean, gps::templates::extract(plan(), toStd(id)), error);
+    return wrote(services_.library().save(clean, gps::templates::extract(plan(), toStd(id))), error);
+}
+
+bool Controller::wrote(const SaveResult& r, QString* error) {
+    if (!r.ok && error) *error = r.error;
+    return r.ok;
 }
 
 bool Controller::onCanvas(const QString& id, QString* error) const {
@@ -1498,7 +1502,7 @@ bool Controller::save(const QString& path, QString* error) {
     if (!libraryTemplate_.isEmpty() && target == path_) {  // a library template: its next revision
         gps::Graph next = plan();
         next.revision = services_.library().nextRevision(libraryTemplate_, plan().revision);
-        if (!services_.library().save(libraryTemplate_, next, error)) return false;
+        if (!wrote(services_.library().save(libraryTemplate_, next), error)) return false;
         path_ = services_.library().file(libraryTemplate_);  // an older file name is replaced by the current one
         transact([&](gps::Graph& g, Edit& edit) {
             g.revision = next.revision;

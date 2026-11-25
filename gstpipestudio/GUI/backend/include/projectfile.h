@@ -20,6 +20,7 @@ public:
     QMap<QString, int> templates() const;                // every template any conf uses -> the lowest revision held
     // The conf was saved with this content: it is part of the project, using these templates.
     void record(const QString& conf, const gps::Graph& content);
+    QString text() const;  // the INI text save writes
     bool save(QString* error = nullptr) const;
 
 private:

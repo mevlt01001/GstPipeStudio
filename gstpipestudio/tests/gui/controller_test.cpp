@@ -760,7 +760,7 @@ private slots:
         gps::Graph one;
         one.addElement("videotestsrc");
         QString clean, error;
-        QVERIFY2(library.save("a b", one, &error), qPrintable(error));
+        QVERIFY(library.save("a b", one).ok);
         QVERIFY(!library.acceptName("a_b", &clean, &error));  // a_b.conf is taken
         QVERIFY(library.rename("a b", "a_b", &clean, &error));  // the same file, now under the new name
         QVERIFY(library.plan("a_b") && !library.plan("a b"));
@@ -777,10 +777,28 @@ private slots:
         QVERIFY(library.remove("Yüz"));
         QCOMPARE(folder.entryList({"*.conf"}), QStringList{"a_b.conf"});
         older();
-        QVERIFY2(library.save("Yüz", one, &error), qPrintable(error));
+        QVERIFY(library.save("Yüz", one).ok);
         QCOMPARE(folder.entryList({"*.conf"}).size(), 2);  // its older file is gone
         QVERIFY(library.plan("Yüz"));
         useUserDir({});
+    }
+
+    // The manifest is written as text through the one writer and read back by QSettings: odd names survive.
+    void theProjectManifestReadsBackWhatItWrote() {
+        QTemporaryDir dir;
+        gps::Graph uses;
+        gps::TemplateInstance copy;
+        copy.id = "t#0";
+        copy.templateName = "Yüz, \"b\"=c";
+        copy.revision = 3;
+        uses.instances.push_back(copy);
+        ProjectFile project = ProjectFile::load(dir.filePath("p.gpsproj"));
+        project.record(dir.filePath("my door;1.conf"), uses);
+        QVERIFY(project.save());
+        const ProjectFile back = ProjectFile::load(dir.filePath("p.gpsproj"));
+        QCOMPARE(back.confs(), QStringList{"my door;1.conf"});
+        QCOMPARE(back.templates().value("Yüz, \"b\"=c"), 3);
+        QCOMPARE(QDir(dir.path()).entryList(QDir::Files), QStringList{"p.gpsproj"});
     }
 
     void aChangedTemplateCopyAsksThenUpdatesTheLibraryAndTheOtherCopies() {

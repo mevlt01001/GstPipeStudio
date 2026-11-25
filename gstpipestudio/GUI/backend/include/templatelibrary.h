@@ -10,6 +10,7 @@
 
 #include "elementview.h"
 #include "graph.h"
+#include "saveresult.h"
 
 class FactoryCatalog;
 
@@ -33,7 +34,7 @@ public:
     bool acceptName(const QString& wanted, QString* clean, QString* error, const QString& except = QString()) const;
 
     // The writes. Each says changed() when it wrote something.
-    bool save(const QString& name, gps::Graph content, QString* error);  // a new template or its next revision
+    SaveResult save(const QString& name, gps::Graph content);  // a new template or its next revision
     bool rename(const QString& from, const QString& to, QString* clean, QString* error);
     bool remove(const QString& name);  // projects that use it keep their own copy in their templates folder
     bool exportTo(const QString& name, const QString& file, QString* error) const;
@@ -46,7 +47,7 @@ signals:
 private:
     static QString fileFor(const QString& name);  // the file a template of this name is written to
     QString holder(const QString& name, const QString& except) const;  // the other template with this name or file, "" if none
-    bool write(const QString& name, gps::Graph content, QString* error);  // the file and its history, no signal
+    SaveResult write(const QString& name, gps::Graph content);  // the file and its history, no signal
 
     const FactoryCatalog& catalog_;
     QList<TemplateInfo> list_;

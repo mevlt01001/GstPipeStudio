@@ -210,6 +210,7 @@ private:
     void offerNow();
     bool commitTemplateEdit(const QString& id);
     bool onCanvas(const QString& instanceId, QString* error) const;  // false, with the reason, when it is gone
+    static bool wrote(const SaveResult& r, QString* error);  // r.ok; its error in error when it failed
     bool infosReady(const gps::Graph& clip, std::function<void()> retry);
     static QPointF topLeft(const gps::Graph& clip);
     QString runFile(const QString& name);

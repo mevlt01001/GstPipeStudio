@@ -10,18 +10,14 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
-#include <QRegularExpression>
 #include <QVBoxLayout>
 
+#include "files.h"
 #include "settings.h"
 #include "theme.h"
 
 namespace {
-QString safe(const QString& name) {
-    QString out = name.trimmed();
-    out.replace(QRegularExpression("[^A-Za-z0-9_.-]"), "_");
-    return out;
-}
+QString safe(const QString& name) { return QString::fromStdString(gps::files::safeName(name.trimmed().toStdString())); }
 }  // namespace
 
 NewProjectDialog::NewProjectDialog(QWidget* parent) : QDialog(parent), location_(Settings::projectsLocation()) {

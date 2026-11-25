@@ -110,23 +110,20 @@ QString TemplateLibrary::holder(const QString& name, const QString& except) cons
     return QString();
 }
 
-bool TemplateLibrary::write(const QString& name, gps::Graph content, QString* error) {
+SaveResult TemplateLibrary::write(const QString& name, gps::Graph content) {
     content.name = toStd(name);
     const QString target = fileFor(name), read = file(name);
     VersionHistory::keep(target, QByteArray::fromStdString(content.toConf()));  // a template keeps its history too
     std::string failure;
-    if (!content.save(toStd(target), &failure)) {
-        if (error) *error = "Unable to save the template: " + fromStd(failure);
-        return false;
-    }
+    if (!content.save(toStd(target), &failure)) return SaveResult::failed("Unable to save the template: " + fromStd(failure));
     if (read != target) QFile::remove(read);  // read from a file named the older way: one file for it from now on
-    return true;
+    return SaveResult::written(target, content.revision);
 }
 
-bool TemplateLibrary::save(const QString& name, gps::Graph content, QString* error) {
-    if (!write(name, std::move(content), error)) return false;
-    reload();
-    return true;
+SaveResult TemplateLibrary::save(const QString& name, gps::Graph content) {
+    const SaveResult r = write(name, std::move(content));
+    if (r.ok) reload();
+    return r;
 }
 
 bool TemplateLibrary::rename(const QString& from, const QString& to, QString* clean, QString* error) {
@@ -138,7 +135,10 @@ bool TemplateLibrary::rename(const QString& from, const QString& to, QString* cl
     if (!acceptName(to, clean, error, from)) return false;
     if (*clean == from) return true;
     const QString read = file(from);
-    if (!write(*clean, *old, error)) return false;
+    if (const SaveResult r = write(*clean, *old); !r.ok) {
+        if (error) *error = r.error;
+        return false;
+    }
     if (read != fileFor(*clean)) QFile::remove(read);  // "a b" and "a_b" share a file: it now holds the new name
     reload();
     return true;
@@ -167,6 +167,8 @@ QString TemplateLibrary::importFrom(const QString& file, QString* error) {
     }
     QString name;
     const QString wanted = t.name.empty() || t.name == "pipeline" ? QFileInfo(file).completeBaseName() : fromStd(t.name);
-    if (!acceptName(wanted, &name, error) || !save(name, t, error)) return QString();
-    return name;
+    if (!acceptName(wanted, &name, error)) return QString();
+    const SaveResult r = save(name, t);
+    if (!r.ok && error) *error = r.error;
+    return r.ok ? name : QString();
 }

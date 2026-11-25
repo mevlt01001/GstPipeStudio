@@ -5,6 +5,8 @@
 #include <QFile>
 #include <QFileInfo>
 
+#include "files.h"
+
 namespace VersionHistory {
 namespace {
 const char* kStamp = "yyyyMMdd-HHmmss-zzz";
@@ -20,10 +22,8 @@ bool keep(const QString& file, const QByteArray& replacement) {
     if (!current.exists() || !current.open(QIODevice::ReadOnly)) return false;
     const QByteArray content = current.readAll();
     if (content == replacement) return false;
-    QDir().mkpath(folderFor(file));
-    QFile copy(QDir(folderFor(file)).filePath(QDateTime::currentDateTime().toString(kStamp) + ".conf"));
-    if (!copy.open(QIODevice::WriteOnly) || copy.write(content) != content.size()) return false;
-    copy.close();
+    const QString copy = QDir(folderFor(file)).filePath(QDateTime::currentDateTime().toString(kStamp) + ".conf");
+    if (!gps::files::writeAtomic(copy.toStdString(), content.toStdString())) return false;
     const QList<Version> all = versions(file);
     for (int i = kKept; i < all.size(); ++i) QFile::remove(all[i].path);
     return true;

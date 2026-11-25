@@ -6,11 +6,12 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QSettings>
-#include <QTextStream>
 #include <algorithm>
+#include <cctype>
 
 #include "apppaths.h"
 #include "contract.h"
+#include "files.h"
 
 namespace {
 QString registryFile() { return QDir(AppPaths::state()).filePath("projects"); }
@@ -55,24 +56,34 @@ void ProjectFile::record(const QString& conf, const gps::Graph& content) {
     }
 }
 
-bool ProjectFile::save(QString* error) const {
-    QFile::remove(path_);
-    QSettings ini(path_, QSettings::IniFormat);
-    ini.setValue("project/name", QFileInfo(path_).completeBaseName());
-    ini.setValue("project/format", 1);
+// The text QSettings reads back: a key or a section keeps [A-Za-z0-9_.-], other Latin-1 characters are %XX and the rest
+// %UXXXX; a value is quoted.
+QString ProjectFile::text() const {
+    auto key = [](const QString& raw) {
+        QString out;
+        for (const QChar c : raw) {
+            const ushort u = c.unicode();
+            if (u < 128 && (std::isalnum(u) || u == '_' || u == '.' || u == '-')) out += c;
+            else if (u < 256) out += "%" + QString::number(u, 16).rightJustified(2, '0').toUpper();
+            else out += "%U" + QString::number(u, 16).rightJustified(4, '0').toUpper();
+        }
+        return out;
+    };
+    auto quoted = [](QString value) { return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""; };
+    QString out = "[project]\nname=" + quoted(QFileInfo(path_).completeBaseName()) + "\nformat=1\n";
     for (auto conf = confs_.cbegin(); conf != confs_.cend(); ++conf) {
-        ini.beginGroup("conf " + conf.key());
-        ini.setValue("file", conf.key());
+        out += "\n[" + key("conf " + conf.key()) + "]\nfile=" + quoted(conf.key()) + "\n";
         // Template names may hold any character; INI keys may not: they are written in hex.
-        for (auto t = conf.value().cbegin(); t != conf.value().cend(); ++t) ini.setValue(QString(t.key().toUtf8().toHex()), t.value());
-        ini.endGroup();
+        for (auto t = conf.value().cbegin(); t != conf.value().cend(); ++t) out += QString::fromLatin1(t.key().toUtf8().toHex()) + "=" + QString::number(t.value()) + "\n";
     }
-    ini.sync();
-    if (ini.status() != QSettings::NoError) {
-        if (error) *error = "cannot write " + path_;
-        return false;
-    }
-    return true;
+    return out;
+}
+
+bool ProjectFile::save(QString* error) const {
+    std::string failure;
+    if (gps::files::writeAtomic(toStd(path_), toStd(text()), &failure)) return true;
+    if (error) *error = fromStd(failure);
+    return false;
 }
 
 namespace ProjectRegistry {
@@ -82,10 +93,7 @@ void remember(const QString& projectPath) {
     const QString path = QFileInfo(projectPath).absoluteFilePath();
     if (all.contains(path)) return;
     all << path;
-    QFile file(registryFile());
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) return;
-    QTextStream out(&file);
-    for (const QString& p : all) out << p << "\n";
+    gps::files::writeAtomic(toStd(registryFile()), toStd(all.join("\n") + "\n"));
 }
 
 QStringList projects() {
