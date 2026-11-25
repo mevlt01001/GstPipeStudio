@@ -40,7 +40,15 @@ inline AppServices& services() {
     return *shared;
 }
 
-// A Controller over the shared services. The library is read again: the test may have changed GPS_USER_DIR.
+// The application's folders (the template library among them) go below folder, or back to the real ones when it is
+// empty; the shared library reads its new folder at once.
+inline void useUserDir(const QString& folder) {
+    if (folder.isEmpty()) qunsetenv("GPS_USER_DIR");
+    else qputenv("GPS_USER_DIR", folder.toUtf8());
+    services().library().reload();
+}
+
+// A Controller over the shared services. The library is read again, so a test starts from what its folder holds.
 inline std::unique_ptr<Controller> makeController() {
     auto c = std::make_unique<Controller>(services());
     c->setUpdateTimeoutMs(5000);

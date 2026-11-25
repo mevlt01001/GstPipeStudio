@@ -241,7 +241,7 @@ private slots:
 
     void expandedTemplateHasAFrameWithItsPadsOnTheBorder() {
         QTemporaryDir library;
-        qputenv("GPS_USER_DIR", library.path().toUtf8());
+        useUserDir(library.path());
         MainWindow w(c.get());
         w.resize(1400, 900);
         w.show();
@@ -295,7 +295,7 @@ private slots:
     // offered to the copies of the other tab when it comes to the front.
     void editTemplateOpensATabOfItsOwn() {
         QTemporaryDir library;
-        qputenv("GPS_USER_DIR", library.path().toUtf8());
+        useUserDir(library.path());
         MainWindow w(c.get());
         w.show();
         QString src, convert, sink;
@@ -349,7 +349,7 @@ private slots:
         QVERIFY(waitFor([&] { return !asked.isEmpty(); }));
         QVERIFY(asked.contains("Tail: revision 1 → 2"));
         QVERIFY(waitFor([&] { return c->outdatedTemplates().isEmpty(); }));
-        qunsetenv("GPS_USER_DIR");
+        useUserDir({});
     }
 
     // Tabs as editors have them: a dot while a tab has unsaved changes, a file opens once, closing asks to save.
@@ -455,7 +455,7 @@ private slots:
     // The tabs open when the window closed come back the next time, the one in front in front.
     void theTabsComeBackOnTheNextStart() {
         QTemporaryDir root, library;
-        qputenv("GPS_USER_DIR", library.path().toUtf8());
+        useUserDir(library.path());
         const QString a = root.filePath("a.conf"), b = root.filePath("b.conf");
         {
             MainWindow w(c.get());
@@ -479,12 +479,12 @@ private slots:
         for (Document* d : again.documents()) QVERIFY(settle(*d->controller()));
         Settings::setSession({});
         Settings::setWindow({}, {});  // the next windows start at their own size
-        qunsetenv("GPS_USER_DIR");
+        useUserDir({});
     }
 
     void saveAsTemplateDrawsTheBorderThenAsksForNameAndParameters() {
         QTemporaryDir library;
-        qputenv("GPS_USER_DIR", library.path().toUtf8());
+        useUserDir(library.path());
         MainWindow w(c.get());
         w.show();
         QString src, convert, sink;
@@ -540,7 +540,7 @@ private slots:
 
     void cancellingSaveAsTemplateLeavesPlainElements() {
         QTemporaryDir library;
-        qputenv("GPS_USER_DIR", library.path().toUtf8());
+        useUserDir(library.path());
         MainWindow w(c.get());
         w.show();
         QString src, convert, sink;
@@ -563,7 +563,7 @@ private slots:
 
     void addTemplateListsTheLibraryWithAPeekAndInsertsCollapsed() {
         QTemporaryDir library;
-        qputenv("GPS_USER_DIR", library.path().toUtf8());
+        useUserDir(library.path());
         MainWindow w(c.get());
         w.show();
         QString src, convert, sink;
@@ -643,7 +643,7 @@ private slots:
     // The Explorer, left of the canvas: the open project's files, every project, and the template library.
     void theExplorerShowsProjectsFilesAndTemplates() {
         QTemporaryDir root, library;
-        qputenv("GPS_USER_DIR", library.path().toUtf8());
+        useUserDir(library.path());
         Settings::setProjectsLocation(root.path());
         MainWindow w(c.get());
         w.show();
@@ -686,7 +686,7 @@ private slots:
         QCOMPARE(edited.count(), 1);
         QCOMPARE(edited.first().first().toString(), QString("Tail"));
         Settings::setProjectsLocation({});
-        qunsetenv("GPS_USER_DIR");
+        useUserDir({});
     }
 
     // The peek shows the real pipeline: a branch is two rows, not one chain.
@@ -709,7 +709,7 @@ private slots:
 
     void aCollapsedTemplateShowsOnlyItsParametersAsProperties() {
         QTemporaryDir library;
-        qputenv("GPS_USER_DIR", library.path().toUtf8());
+        useUserDir(library.path());
         MainWindow w(c.get());
         w.show();
         QString src, convert, sink;
@@ -747,7 +747,7 @@ private slots:
 
     void changingATemplateAsksWhatNow() {
         QTemporaryDir library;
-        qputenv("GPS_USER_DIR", library.path().toUtf8());
+        useUserDir(library.path());
         MainWindow w(c.get());
         w.show();
         QString src, convert, sink;
@@ -2060,7 +2060,7 @@ private slots:
         // 5. Rubber-band marquee selection mode on CanvasView & collapsed Template rendering on CanvasScene.
         QCOMPARE(w.view()->dragMode(), QGraphicsView::RubberBandDrag);
         QTemporaryDir customDir;
-        qputenv("GPS_USER_DIR", customDir.path().toUtf8());
+        useUserDir(customDir.path());
         QVERIFY(c->saveTemplate("ConvSinkPreset", {convert, sink}));
         scene_rebuild(w);
         // Both convert and sink map to the same collapsed ElementItem on the scene, and only 1 external link is drawn!

@@ -659,7 +659,7 @@ private slots:
 
     void savingKeepsVersionsAndRecordsTheProject() {
         QTemporaryDir state, dir;
-        qputenv("GPS_USER_DIR", state.path().toUtf8());
+        useUserDir(state.path());
         const QString conf = dir.filePath("demo.conf");
         const QString src = addSource(*c, "videotestsrc");
         QString error;
@@ -686,7 +686,7 @@ private slots:
 
     void aProjectKnowsTheTemplatesItUses() {
         QTemporaryDir state, dir;
-        qputenv("GPS_USER_DIR", state.path().toUtf8());
+        useUserDir(state.path());
         const Chain chain = makeChain();
         QVERIFY(settle(*c));
         QVERIFY(c->saveTemplate("Tail", {chain.convert, chain.sink}));
@@ -713,7 +713,7 @@ private slots:
     // exported, imported and deleted.
     void theLibraryEditsRenamesExportsImportsAndDeletes() {
         QTemporaryDir state, dir;
-        qputenv("GPS_USER_DIR", state.path().toUtf8());
+        useUserDir(state.path());
         const Chain chain = makeChain();
         QVERIFY(settle(*c));
         QVERIFY(c->saveTemplate("Tail", {chain.convert, chain.sink}));
@@ -754,9 +754,8 @@ private slots:
     // another file name is deleted, and saved again, by its own file.
     void theLibraryKeepsOneFilePerTemplate() {
         QTemporaryDir state;
-        qputenv("GPS_USER_DIR", state.path().toUtf8());
+        useUserDir(state.path());
         TemplateLibrary& library = c->services().library();
-        library.reload();
         const QDir folder(TemplateLibrary::directory());
         gps::Graph one;
         one.addElement("videotestsrc");
@@ -781,12 +780,12 @@ private slots:
         QVERIFY2(library.save("Yüz", one, &error), qPrintable(error));
         QCOMPARE(folder.entryList({"*.conf"}).size(), 2);  // its older file is gone
         QVERIFY(library.plan("Yüz"));
-        qunsetenv("GPS_USER_DIR");
+        useUserDir({});
     }
 
     void aChangedTemplateCopyAsksThenUpdatesTheLibraryAndTheOtherCopies() {
         QTemporaryDir state, dir;
-        qputenv("GPS_USER_DIR", state.path().toUtf8());
+        useUserDir(state.path());
         const Chain chain = makeChain();
         QVERIFY(settle(*c));
         QVERIFY(c->saveTemplate("Tail", {chain.convert, chain.sink}));
@@ -989,7 +988,7 @@ private slots:
 
     void multiSelectionOperationsAndCustomElements() {
         QTemporaryDir customDir;
-        qputenv("GPS_USER_DIR", customDir.path().toUtf8());
+        useUserDir(customDir.path());
 
         need(*c, "videotestsrc");
         need(*c, "videoconvert");
