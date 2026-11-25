@@ -52,6 +52,7 @@ protected:
 
 private:
     void arrangeAll();  // nice alignment of the whole canvas, then zoom to fit
+    void showVersionHistory();
     void buildActions();
     void buildPanels();
     void refreshState();

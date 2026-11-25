@@ -20,6 +20,11 @@
 #include <QTabWidget>
 #include <QTimer>
 #include <QToolBar>
+#include <QPushButton>
+#include <QLocale>
+#include <QListWidget>
+#include <QDialogButtonBox>
+#include <QDialog>
 #include <tuple>
 #include <QActionGroup>
 
@@ -35,6 +40,7 @@
 #include "propertypage.h"
 #include "setuppage.h"
 #include "theme.h"
+#include "versionhistory.h"
 #include "updatepanel.h"
 #include "telemetrypanel.h"
 #include "validationindicator.h"
@@ -135,6 +141,7 @@ void MainWindow::buildActions() {
         QString path = PipelineFileDialog::choose(this, false, settings.value("lastDir").toString());
         if (!path.isEmpty()) openFile(path);
     });
+    auto* history = make("actionVersionHistory", "Version &history…", {}, [this] { showVersionHistory(); });
     auto* import = make("actionImportLaunch", "Import gst-launch pipeline…", {}, [this] {
         if (!confirmDiscard()) return;
         bool accepted = false;
@@ -192,7 +199,7 @@ void MainWindow::buildActions() {
     });
 
     QMenu* file = menuBar()->addMenu("&File");
-    file->addActions({newPlan, open, import, save, saveAs});
+    file->addActions({newPlan, open, import, save, saveAs, history});
     file->addSeparator();
     file->addAction(quit);
     QMenu* pipeline = menuBar()->addMenu("&Pipeline");
@@ -319,6 +326,8 @@ void MainWindow::refreshState() {
     act("actionRedo")->setEnabled(controller_->canRedo());
     act("actionSave")->setEnabled(controller_->canSave());
     act("actionSaveAs")->setEnabled(controller_->canSave());
+    act("actionVersionHistory")->setEnabled(!busy && !controller_->filePath().isEmpty() &&
+                                            !VersionHistory::versions(controller_->filePath()).isEmpty());
     act("actionUpdate")->setEnabled(!busy && hasPlan);
     act("actionArrange")->setEnabled(!editBlocked && hasPlan);
     act("actionRun")->setText(controller_->running() ? "&Stop" : "&Run");
@@ -635,6 +644,39 @@ void MainWindow::pasteClipboard() {
 void MainWindow::showAbout() {
     AboutDialog dialog(controller_->environment().statusText(), this);
     dialog.exec();
+}
+
+// The earlier versions of the open file, newest first; the chosen one comes back as an unsaved change.
+void MainWindow::showVersionHistory() {
+    const QString file = controller_->filePath();
+    const QList<VersionHistory::Version> versions = VersionHistory::versions(file);
+    if (file.isEmpty() || versions.isEmpty()) return;
+    QDialog dialog(this);
+    dialog.setObjectName("versionHistory");
+    dialog.setWindowTitle("Version history · " + QFileInfo(file).fileName());
+    auto* layout = new QVBoxLayout(&dialog);
+    auto* hint = new QLabel(QString("Every save keeps the file as it was (the newest %1). Restoring one replaces the canvas; "
+                                    "save to keep it.").arg(VersionHistory::kKept), &dialog);
+    hint->setWordWrap(true);
+    layout->addWidget(hint);
+    auto* list = new QListWidget(&dialog);
+    list->setObjectName("versionList");
+    for (const VersionHistory::Version& v : versions) {
+        auto* item = new QListWidgetItem(QLocale().toString(v.saved, QLocale::LongFormat), list);
+        item->setData(Qt::UserRole, v.path);
+    }
+    list->setCurrentRow(0);
+    layout->addWidget(list, 1);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Cancel, &dialog);
+    QPushButton* restore = buttons->addButton("Restore", QDialogButtonBox::AcceptRole);
+    restore->setObjectName("restoreVersion");
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    connect(list, &QListWidget::itemDoubleClicked, &dialog, &QDialog::accept);
+    layout->addWidget(buttons);
+    dialog.resize(460, 380);
+    if (dialog.exec() != QDialog::Accepted || !list->currentItem() || !confirmDiscard()) return;
+    controller_->restoreVersion(list->currentItem()->data(Qt::UserRole).toString());
 }
 
 bool MainWindow::confirmDiscard() {

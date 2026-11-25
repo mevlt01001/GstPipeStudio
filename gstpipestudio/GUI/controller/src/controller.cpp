@@ -3,7 +3,9 @@
 
 #include "capstext.h"
 #include "actions.h"
+#include "projectfile.h"
 #include "templates.h"
+#include "versionhistory.h"
 
 #include <QClipboard>
 #include <QDir>
@@ -1244,10 +1246,20 @@ void Controller::newPlan() {
 }
 
 void Controller::open(const QString& path, bool imported) {
+    load(path, imported ? QString() : path, imported, imported ? "Imported a gst-launch pipeline" : "Opened a plan file");
+    if (!imported && QFile::exists(ProjectFile::pathForConf(path))) ProjectRegistry::remember(ProjectFile::pathForConf(path));
+}
+
+void Controller::restoreVersion(const QString& version) {
+    load(version, path_, true, "Restored an earlier version");
+}
+
+// The plan of source becomes the document at documentPath ("" = untitled), once every factory it uses is known.
+void Controller::load(const QString& source, const QString& documentPath, bool dirty, const QString& action) {
     if (busy()) return;
     auto loaded = std::make_shared<gps::Graph>();
     std::string error;
-    if (!gps::Graph::load(toStd(path), loaded.get(), &error)) {
+    if (!gps::Graph::load(toStd(source), loaded.get(), &error)) {
         emit notice("Unable to open the file: " + fromStd(error));
         return;
     }
@@ -1256,7 +1268,7 @@ void Controller::open(const QString& path, bool imported) {
         if (!factories.contains(fromStd(e.factory))) factories << fromStd(e.factory);
     }
     opening_ = true;
-    catalog_.fetchInfos(factories, [this, loaded, path, imported](bool ok) {
+    catalog_.fetchInfos(factories, [this, loaded, documentPath, dirty, action](bool ok) {
         opening_ = false;
         if (!ok) {
             emit notice("Unable to open the file: the plan uses an element this installation does not have.");
@@ -1265,9 +1277,9 @@ void Controller::open(const QString& path, bool imported) {
         }
         std::string failure;
         if (!pipeline_.reset(*loaded, &failure)) { emit notice(fromStd(failure)); return; }
-        path_ = imported ? QString() : path;
-        dirty_ = imported;
-        note(imported ? "Imported a gst-launch pipeline" : "Opened a plan file");
+        path_ = documentPath;
+        dirty_ = dirty;
+        note(action);
         alignWhenValidated_ = true;
         emit changed();
         startUpdate();
@@ -1309,11 +1321,15 @@ bool Controller::save(const QString& path, QString* error) {
     gps::Graph saved = plan();
     saved.complete = result().complete();
     saved.name = toStd(QFileInfo(target).completeBaseName());
+    VersionHistory::keep(target, QByteArray::fromStdString(saved.toConf()));  // the file as it was stays (File > Version history)
     std::string failure;
     if (!saved.save(toStd(target), &failure)) {
         if (error) *error = fromStd(failure);
         return false;
     }
+    ProjectFile project = ProjectFile::load(ProjectFile::pathForConf(target));
+    project.record(target, saved);
+    if (project.save()) ProjectRegistry::remember(project.path());
     path_ = target;
     dirty_ = false;
     emit changed();

@@ -1,8 +1,11 @@
 // controller_test.cpp – every flow of SPEC 8 driven through the Controller against the fake helpers.
 #include <QSignalSpy>
+#include <QFileInfo>
 #include <QTemporaryDir>
 
+#include "projectfile.h"
 #include "testsupport.h"
+#include "versionhistory.h"
 
 using namespace support;
 
@@ -588,6 +591,48 @@ private slots:
         QVERIFY(c->editElement(tee, three));
         QVERIFY(settle(*c));
         QCOMPARE(c->view(tee).srcs.size(), 3);
+    }
+
+    void savingKeepsVersionsAndRecordsTheProject() {
+        QTemporaryDir state, dir;
+        qputenv("GPS_USER_DIR", state.path().toUtf8());
+        const QString conf = dir.filePath("demo.conf");
+        const QString src = addSource(*c, "videotestsrc");
+        QString error;
+        QVERIFY(c->save(conf, &error));
+        QVERIFY(VersionHistory::versions(conf).isEmpty());  // nothing to keep the first time
+        QVERIFY(!addAfter(*c, src, "src", "fakesink").isEmpty());
+        QVERIFY(c->save(QString(), &error));
+        QCOMPARE(VersionHistory::versions(conf).size(), 1);
+        QVERIFY(c->save(QString(), &error));  // the same text again: no new version
+        QCOMPARE(VersionHistory::versions(conf).size(), 1);
+
+        // The folder is a project: its .gpsproj knows the conf, and the app knows the project.
+        const QString project = ProjectFile::pathForConf(conf);
+        QVERIFY(QFile::exists(project));
+        QCOMPARE(ProjectFile::load(project).confs(), QStringList{"demo.conf"});
+        QVERIFY(ProjectRegistry::projects().contains(QFileInfo(project).absoluteFilePath()));
+
+        // An earlier version comes back as an unsaved change to the same file.
+        c->restoreVersion(VersionHistory::versions(conf).front().path);
+        QVERIFY(waitFor([&] { return !c->busy() && c->plan().elements.size() == 1; }, 10000));
+        QVERIFY(c->dirty());
+        QCOMPARE(c->filePath(), conf);
+    }
+
+    void aProjectKnowsTheTemplatesItUses() {
+        QTemporaryDir state, dir;
+        qputenv("GPS_USER_DIR", state.path().toUtf8());
+        const Chain chain = makeChain();
+        QVERIFY(settle(*c));
+        QVERIFY(c->saveTemplate("Tail", {chain.convert, chain.sink}));
+        QVERIFY(settle(*c));
+        QString error;
+        QVERIFY(c->save(dir.filePath("uses.conf"), &error));
+        const QString project = ProjectFile::pathForConf(dir.filePath("uses.conf"));
+        QCOMPARE(ProjectFile::load(project).templates().value("Tail"), 1);
+        QCOMPARE(ProjectRegistry::usingTemplate("Tail"), QStringList{QFileInfo(project).absoluteFilePath()});
+        QVERIFY(ProjectRegistry::usingTemplate("Other").isEmpty());
     }
 
     void dragMovesTheBoxButSavesNothing() {

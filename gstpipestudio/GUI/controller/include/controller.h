@@ -162,6 +162,7 @@ public:
     // ---- files and runs
     void newPlan();
     void open(const QString& path, bool imported = false);  // asynchronous: the plan is replaced when all its factories are known
+    void restoreVersion(const QString& version);  // an earlier version of the open file, as an unsaved change to it
     bool importLaunch(const QString& description); // brief native probe, then opens an unsaved canvas graph
     bool save(const QString& path, QString* error);  // path "" saves where the plan was opened or saved
     bool refresh();                  // run the update again
@@ -195,6 +196,7 @@ private:
     // The one path of an edit: refused while editing is blocked or when change returns false (nothing happened);
     // otherwise one undo step, noted, and validated as the Edit says.
     bool transact(const std::function<bool(gps::Graph&, Edit&)>& change);
+    void load(const QString& source, const QString& documentPath, bool dirty, const QString& action);
     bool anyTracked(const QStringList& elements) const;  // fed by a source in the plan as it is now
     bool infosReady(const gps::Graph& clip, std::function<void()> retry);
     static QPointF topLeft(const gps::Graph& clip);

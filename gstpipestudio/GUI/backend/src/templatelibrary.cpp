@@ -12,6 +12,7 @@
 #include "contract.h"
 #include "factorycatalog.h"
 #include "templates.h"
+#include "versionhistory.h"
 
 // Until 0.3 the library lived in the config folder as custom_elements/; its files move once.
 QString TemplateLibrary::directory() {
@@ -68,6 +69,7 @@ const gps::Graph* TemplateLibrary::plan(const QString& name) const {
 
 bool TemplateLibrary::save(const QString& name, gps::Graph preset, QString* error) {
     preset.name = toStd(name);
+    VersionHistory::keep(fileFor(name), QByteArray::fromStdString(preset.toConf()));  // a template keeps its history too
     std::string failure;
     if (preset.save(toStd(fileFor(name)), &failure)) return true;
     *error = fromStd(failure);
