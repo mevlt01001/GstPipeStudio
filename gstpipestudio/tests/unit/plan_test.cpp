@@ -1,9 +1,13 @@
 // plan_test.cpp – every rule of SPEC 3 and 4. Factories whose name starts with "src" are sources.
 #include <algorithm>
+#include <filesystem>
+#include <fstream>
+#include <unistd.h>
 #include <iostream>
 
 #include "capstext.h"
 #include "check.h"
+#include "files.h"
 #include "pipeline.h"
 #include "graph.h"
 
@@ -357,6 +361,23 @@ static void confRoundTrip() {
     CHECK_EQ(u.elements.size(), p.elements.size());
 }
 
+// One writer: the folder is made, the file replaced whole, nothing left beside it; one sanitizer for file names.
+static void fileWrites() {
+    const std::filesystem::path folder = std::filesystem::temp_directory_path() / ("gps_files_" + std::to_string(::getpid()));
+    const std::string path = (folder / "new" / "a.conf").string();
+    std::string error;
+    CHECK(files::writeAtomic(path, "one", &error));
+    CHECK(files::writeAtomic(path, "two", &error));
+    std::ifstream in(path);
+    std::string back((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    CHECK_EQ(back, std::string("two"));
+    CHECK_EQ(std::distance(std::filesystem::directory_iterator(folder / "new"), std::filesystem::directory_iterator()), 1L);
+    CHECK(!files::writeAtomic("/proc/no/such.conf", "x", &error));
+    CHECK(error.find("cannot write") == 0);
+    CHECK_EQ(files::safeName("My cam: 2/ü"), std::string("My_cam__2___"));
+    std::filesystem::remove_all(folder);
+}
+
 static void confErrors() {
     Graph out;
     std::string error;
@@ -482,6 +503,7 @@ int main() {
     requestSources();
     edits();
     confRoundTrip();
+    fileWrites();
     confErrors();
     capsText();
     freeFormAndOopPipeline();

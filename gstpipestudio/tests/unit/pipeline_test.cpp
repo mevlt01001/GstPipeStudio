@@ -123,4 +123,19 @@ void pads() {
     CHECK_EQ(document.graph().linkInto(mux, "sink_%u#1"), 1);
     CHECK(document.peer({mux, "sink_%u#0", D::Sink}).value().element == tee);
 }
-int main(){transactions();invariantsAndFragments();results();pads();return finish("pipeline_test");}
+// The editor numbers what is committed: undo back to a number is the same state, a new edit after an undo is not.
+void savePoint() {
+    Pipeline document;
+    auto& editor = document.editor();
+    auto add = [&] { return editor.execute(EditAction([](Graph& g, std::string*) { g.addElement("source"); return true; })); };
+    const auto loaded = editor.state();
+    CHECK(add());
+    const auto saved = editor.state();
+    CHECK(saved != loaded);
+    CHECK(add()); CHECK(editor.state() != saved);
+    CHECK(editor.undo()); CHECK_EQ(editor.state(), saved);
+    CHECK(editor.redo()); CHECK(editor.state() != saved);
+    CHECK(editor.undo()); CHECK(add()); CHECK(editor.state() != saved);  // the same count of steps, another state
+    CHECK(document.reset()); CHECK(editor.state() != saved); CHECK(editor.state() != loaded);
+}
+int main(){transactions();invariantsAndFragments();results();pads();savePoint();return finish("pipeline_test");}

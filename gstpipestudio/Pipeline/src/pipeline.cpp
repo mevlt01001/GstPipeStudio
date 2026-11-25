@@ -81,7 +81,7 @@ void Pipeline::install(Graph graph) {
 }
 bool Pipeline::reset(Graph graph, std::string* error) {
     if (!validate(graph, error)) return false;
-    editor_.rollback(); editor_.undo_.clear(); editor_.redo_.clear();
+    editor_.rollback(); editor_.undo_.clear(); editor_.redo_.clear(); editor_.renumber();
     install(std::move(graph));
     // A new document invalidates every run even if its serialized contents match.
     ++change_.executionRevision;
@@ -223,7 +223,9 @@ bool GraphEditor::commit(std::string* error) {
     if (!Pipeline::validate(*draft_, error)) { rollback(); return false; }
     if (same(*draft_, document_.graph_)) { rollback(); return false; }
     Graph next = std::move(*draft_); rollback();
-    undo_.push_back({document_.graph_, next});
+    const std::uint64_t before = state_;
+    renumber();
+    undo_.push_back({document_.graph_, next, before, state_});
     if (undo_.size() > 64) undo_.erase(undo_.begin());
     redo_.clear();
     document_.install(std::move(next));
@@ -241,11 +243,13 @@ bool GraphEditor::execute(const IAction& action, std::string* error) {
 bool GraphEditor::undo() {
     if (!canUndo()) return false;
     auto entry = std::move(undo_.back()); undo_.pop_back();
+    state_ = entry.beforeState;
     document_.install(entry.before); redo_.push_back(std::move(entry)); return true;
 }
 bool GraphEditor::redo() {
     if (!canRedo()) return false;
     auto entry = std::move(redo_.back()); redo_.pop_back();
+    state_ = entry.afterState;
     document_.install(entry.after); undo_.push_back(std::move(entry)); return true;
 }
 Graph GraphFragment::copy(const Graph& graph) const {

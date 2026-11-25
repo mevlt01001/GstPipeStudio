@@ -75,12 +75,17 @@ public:
     bool redo();
     bool canUndo() const { return !undo_.empty() && !editing(); }
     bool canRedo() const { return !redo_.empty() && !editing(); }
+    // The committed graph's number: every commit and every reset gets a new one, undo and redo bring the old one back.
+    // A document keeps the number it was saved or loaded at: a different number is an unsaved change.
+    std::uint64_t state() const { return state_; }
 private:
     friend class Pipeline;
-    struct Entry { Graph before, after; };
+    struct Entry { Graph before, after; std::uint64_t beforeState = 0, afterState = 0; };
+    void renumber() { state_ = ++lastState_; }
     Pipeline& document_;
     std::optional<Graph> draft_;
     std::vector<Entry> undo_, redo_;
+    std::uint64_t state_ = 0, lastState_ = 0;
 };
 
 // Selection is a set of identities, usable for a single element or a subgraph.

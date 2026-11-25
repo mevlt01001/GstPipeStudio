@@ -8,6 +8,7 @@
 #include <set>
 
 #include "capstext.h"
+#include "files.h"
 
 namespace gps::templates {
 namespace {
@@ -222,13 +223,7 @@ void detach(Graph& g, const std::string& id) {
 
 // ---- references
 
-std::string fileName(const std::string& templateName) {
-    std::string safe = templateName;
-    for (char& c : safe) {
-        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_' && c != '.' && c != '-') c = '_';
-    }
-    return safe + ".conf";
-}
+std::string fileName(const std::string& templateName) { return files::safeName(templateName) + ".conf"; }
 
 std::map<std::string, std::string> placeReference(Graph& g, const std::string& id, const Graph& tmpl,
                                                   const std::map<std::string, std::string>& values) {

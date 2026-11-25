@@ -2,11 +2,11 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
-#include <filesystem>
 #include <fstream>
 #include <set>
 #include <sstream>
 
+#include "files.h"
 #include "graph.h"
 #include "templates.h"
 
@@ -355,31 +355,17 @@ std::string folderOf(const std::string& path) {
     return slash == std::string::npos ? "." : path.substr(0, slash);
 }
 
-bool writeFile(const std::string& path, const std::string& text, std::string* error) {
-    std::ofstream file(path, std::ios::binary | std::ios::trunc);
-    if (file) file << text;
-    file.flush();
-    if (!file && error) *error = "cannot write " + path;
-    return static_cast<bool>(file);
-}
-
 }  // namespace
 
-bool Graph::save(const std::string& path, std::string* error) const { return writeFile(path, toConf(), error); }
+bool Graph::save(const std::string& path, std::string* error) const { return files::writeAtomic(path, toConf(), error); }
 
 bool Graph::saveProject(const std::string& path, std::string* error) const {
     const std::string folder = folderOf(path) + "/templates";
-    bool made = false;
     for (const TemplateInstance& t : instances) {
         if (!t.parent.empty() || templates::modified(*this, t.id)) continue;  // written inline in the conf
-        if (!made) {
-            std::error_code ignored;
-            std::filesystem::create_directories(folder, ignored);
-            made = true;
-        }
-        if (!writeFile(folder + "/" + templates::fileName(t.templateName), templates::extract(*this, t.id).toConf(), error)) return false;
+        if (!files::writeAtomic(folder + "/" + templates::fileName(t.templateName), templates::extract(*this, t.id).toConf(), error)) return false;
     }
-    return writeFile(path, toConf(Form::Reference), error);
+    return files::writeAtomic(path, toConf(Form::Reference), error);
 }
 
 bool Graph::load(const std::string& path, Graph* out, std::string* error, const std::vector<std::string>& libraries) {
