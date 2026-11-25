@@ -40,11 +40,11 @@ TemplatePage::TemplatePage(const TemplatePageInput& input, QWidget* parent) : Dr
     auto* pick = new QHBoxLayout;
     element_ = new QComboBox(this);
     element_->setObjectName("paramElement");
-    QStringList elements;
     for (const gps::ExposedParam& p : input.choices) {
-        if (!elements.contains(fromStd(p.element))) elements << fromStd(p.element);
+        // A choice is named "<element as the user reads it>.<property>"; the combo keeps the unique name underneath.
+        const QString name = fromStd(p.name), property = fromStd(p.property);
+        if (element_->findData(fromStd(p.element)) < 0) element_->addItem(name.left(name.size() - property.size() - 1), fromStd(p.element));
     }
-    element_->addItems(elements);
     property_ = new QComboBox(this);
     property_->setObjectName("paramProperty");
     property_->setMinimumContentsLength(18);
@@ -80,7 +80,7 @@ TemplatePage::TemplatePage(const TemplatePageInput& input, QWidget* parent) : Dr
 
 void TemplatePage::fillProperties() {
     property_->clear();
-    const std::string element = toStd(element_->currentText());
+    const std::string element = toStd(element_->currentData().toString());
     for (size_t i = 0; i < input_.choices.size(); ++i) {
         const gps::ExposedParam& p = input_.choices[i];
         if (p.element == element) property_->addItem(fromStd(p.property), static_cast<int>(i));
@@ -93,7 +93,7 @@ void TemplatePage::add() {
     for (int row = 0; row < added_->count(); ++row) {
         if (added_->item(row)->data(kIndexRole).toInt() == index) return;  // already a parameter
     }
-    auto* item = new QListWidgetItem(fromStd(gps::templates::paramName(input_.choices[static_cast<size_t>(index)])), added_);
+    auto* item = new QListWidgetItem(fromStd(input_.choices[static_cast<size_t>(index)].name), added_);
     item->setData(kIndexRole, index);
 }
 

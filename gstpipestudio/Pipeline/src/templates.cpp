@@ -403,6 +403,10 @@ bool setParam(Graph& g, const ExposedParam& p, const std::string& value) {
     return true;
 }
 
-std::string paramName(const ExposedParam& p) { return p.element + "." + p.property; }
+std::string paramName(const Graph& g, const ExposedParam& p) {
+    const auto names = g.displayNames();
+    const auto it = names.find(p.element);
+    return (it == names.end() ? p.element : it->second) + "." + p.property;
+}
 
 }  // namespace gps::templates

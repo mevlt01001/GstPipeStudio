@@ -24,7 +24,6 @@
 
 namespace {
 
-QString pathText(const QString& element, const QString& identity) { return element + "." + identity; }
 
 QString pluralElements(int n) { return QString("%1 element%2").arg(n).arg(n == 1 ? "" : "s"); }
 
@@ -79,6 +78,10 @@ void Flows::saveAsTemplate(const QStringList& elements) {
         if (!*saved) controller_->cancelTemplate(id);
     });
     presentProperties(page, "Save as template");
+}
+
+QString Flows::path(const QString& element, const QString& identity) const {
+    return controller_->displayName(element) + "." + identity;
 }
 
 void Flows::editTemplateParams(const QString& instanceId) {
@@ -297,7 +300,7 @@ void Flows::fromFreePad(const QString& element, const QString& identity) {
                 newElement(Mode::Add, element, identity, choice.factory);
             }
         });
-        drawer_->present(page, "Add after " + element + " · " + identity, allowed.isEmpty() ? QString() : fromStd(gps::mediaOf(toStd(allowed))), Drawer::Replace);
+        drawer_->present(page, "Add after " + controller_->displayName(element) + " · " + identity, allowed.isEmpty() ? QString() : fromStd(gps::mediaOf(toStd(allowed))), Drawer::Replace);
     });
 }
 
@@ -320,7 +323,7 @@ void Flows::newElement(Mode mode, const QString& element, const QString& identit
                                          : controller_->replace(element, identity, factory, sinkPad, edit);
             });
         });
-        QString title = (mode == Mode::Add ? "Add after " : "Replace after ") + pathText(element, identity) + " · " + factory;
+        QString title = (mode == Mode::Add ? "Add after " : "Replace after ") + path(element, identity) + " · " + factory;
         presentProperties(page, title);
     });
 }
@@ -363,8 +366,8 @@ void Flows::openCaps(const QString& element, const QString& identity, bool after
         controller_->setCaps(element, identity, page->caps(), page->padProps());
         closeCaps();
     });
-    QString title = (afterEdit ? "Caps · " : "Edit caps · ") + pathText(element, identity);
-    QString sub = pathText(element, identity) + "  →  " + pathText(fromStd(l.sinkElement), fromStd(l.sinkPad));
+    QString title = (afterEdit ? "Caps · " : "Edit caps · ") + path(element, identity);
+    QString sub = path(element, identity) + "  →  " + path(fromStd(l.sinkElement), fromStd(l.sinkPad));
     presentCaps(page, title, sub);
 }
 
@@ -429,7 +432,7 @@ void Flows::replaceBehind(const QString& element, const QString& identity) {
         connect(page, &PickerPage::picked, this, [this, element, identity](const PickerChoice& choice) {
             newElement(Mode::Replace, element, identity, choice.factory);
         });
-        drawer_->present(page, "Replace after " + pathText(element, identity), "Choose the element that takes the place of the one behind this pad.", Drawer::Replace);
+        drawer_->present(page, "Replace after " + path(element, identity), "Choose the element that takes the place of the one behind this pad.", Drawer::Replace);
     });
 }
 
@@ -482,7 +485,7 @@ void Flows::editProperties(const QString& element) {
         closeProperties();
         deleteElementOnly(element);
     });
-    presentProperties(page, "Edit properties · " + element);
+    presentProperties(page, "Edit properties · " + controller_->displayName(element));
 }
 
 void Flows::deleteSource(const QString& element) {

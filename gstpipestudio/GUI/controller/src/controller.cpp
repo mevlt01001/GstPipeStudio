@@ -292,7 +292,7 @@ std::vector<gps::ExposedParam> Controller::parameterChoices(const QString& id) c
     std::vector<gps::ExposedParam> out;
     auto offer = [&](const std::string& element, const std::string& property) {
         gps::ExposedParam p{"", element, property};
-        p.name = gps::templates::paramName(p);
+        p.name = gps::templates::paramName(plan(), p);
         out.push_back(p);
     };
     for (const QString& member : templateMembers(id)) {
@@ -412,6 +412,12 @@ QString Controller::elementNote(const QString& element, bool* isError) const {
     return QString();
 }
 
+QString Controller::displayName(const QString& element) const {
+    const auto names = plan().displayNames();
+    const auto it = names.find(toStd(element));
+    return it == names.end() ? element : fromStd(it->second);
+}
+
 ElementView Controller::view(const QString& name) const {
     ElementView v;
     v.name = name;
@@ -419,9 +425,13 @@ ElementView Controller::view(const QString& name) const {
     if (!element) return v;
 
     v.factory = fromStd(element->factory);
+    v.displayTitle = displayName(name);
     v.groupId = fromStd(element->group);
     if (!v.groupId.isEmpty()) v.templateMembers = templateMembers(v.groupId);
-    if (const FactoryEntry* e = catalog_.entry(v.factory)) v.nvidia = e->nvidia;
+    if (const FactoryEntry* e = catalog_.entry(v.factory)) {
+        v.nvidia = e->nvidia;
+        v.longName = fromStd(e->longName);
+    }
 
     // Changed properties, the exposed ones marked.
     QStringList lines;
@@ -526,12 +536,12 @@ ElementView Controller::templateView(const QString& groupId) const {
         if (mv.isTracked) v.isTracked = true;
         if (mv.isError && !mv.note.isEmpty()) {
             v.isError = true;
-            v.note = m + ": " + mv.note;
+            v.note = mv.displayTitle + ": " + mv.note;
         } else if (v.note.isEmpty() && !mv.note.isEmpty() && !mv.isInfo) {
-            v.note = m + ": " + mv.note;
+            v.note = mv.displayTitle + ": " + mv.note;
         }
         for (const QString& pl : mv.propLines) {
-            if (!pl.startsWith("…")) propSummary << (m + "." + pl);
+            if (!pl.startsWith("…")) propSummary << (mv.displayTitle + "." + pl);
         }
     }
     subgraphExternalPads(members, &v.sinks, &v.srcs);

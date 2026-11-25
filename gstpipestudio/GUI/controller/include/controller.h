@@ -118,6 +118,7 @@ public:
     QStringList expandSelection(const QStringList& elementNames) const;
 
     // ---- what the canvas and the drawer show
+    QString displayName(const QString& element) const;  // what the user reads: "filesrc", "filesrc 2"…
     ElementView view(const QString& element) const;
     ElementView templateView(const QString& groupId) const;
     FrameView frameView(const QString& instanceId) const;

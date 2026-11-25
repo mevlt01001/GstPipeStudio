@@ -126,6 +126,16 @@ bool Graph::wouldCycle(const std::string& srcElement, const std::string& sinkEle
     return false;
 }
 
+std::map<std::string, std::string> Graph::displayNames() const {
+    std::map<std::string, std::string> out;
+    std::map<std::string, int> seen;
+    for (const Element& e : elements) {
+        const int n = ++seen[e.factory];
+        out[e.name] = n == 1 ? e.factory : e.factory + " " + std::to_string(n);
+    }
+    return out;
+}
+
 std::map<std::string, int> Graph::levels() const {
     std::map<std::string, int> level, waiting;  // waiting: links into an element not visited yet
     for (const Element& e : elements) level[e.name] = 0, waiting[e.name] = 0;

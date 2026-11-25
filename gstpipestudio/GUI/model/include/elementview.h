@@ -26,6 +26,7 @@ struct PadView {
 struct ElementView {
     QString name, factory;
     QString displayTitle;       // shown as header title when non-empty (e.g. Template name)
+    QString longName;           // the factory's long name, under the title
     QString groupId;            // the template instance it is drawn in
     bool isTemplate = false; // true when this item is a collapsed multi-element Template
     QStringList templateMembers;   // member element names when part of a group

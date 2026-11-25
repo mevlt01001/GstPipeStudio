@@ -303,11 +303,13 @@ private slots:
         auto* element = page->findChild<QComboBox*>("paramElement");
         auto* property = page->findChild<QComboBox*>("paramProperty");
         QCOMPARE(element->count(), 2);
-        element->setCurrentText(convert);
+        const auto shown = c->plan().displayNames();
+        QCOMPARE(element->itemText(0), fromStd(shown.at(toStd(convert))));  // the user reads factories, not unique names
+        element->setCurrentIndex(element->findData(convert));
         QVERIFY(property->findText("caps.width") >= 0);
         property->setCurrentText("caps.width");
         press(page, "addParameter");
-        element->setCurrentText(sink);
+        element->setCurrentIndex(element->findData(sink));
         property->setCurrentText("sync");
         press(page, "addParameter");
         press(page, "addParameter");  // twice is once
@@ -322,8 +324,8 @@ private slots:
         QCOMPARE(c->templates().front().name, QString("Tail"));
         const auto params = c->templateParams(id);
         QCOMPARE(params.size(), size_t(2));
-        QCOMPARE(params[0].name, toStd(convert) + ".caps.width");
-        QCOMPARE(params[1].name, toStd(sink) + ".sync");
+        QCOMPARE(params[0].name, shown.at(toStd(convert)) + ".caps.width");
+        QCOMPARE(params[1].name, shown.at(toStd(sink)) + ".sync");
         QFile file(library.path() + "/data/templates/Tail.conf");
         QVERIFY(file.open(QIODevice::ReadOnly));
         const QString saved = QString::fromUtf8(file.readAll());
@@ -414,7 +416,8 @@ private slots:
         const QString id = c->beginTemplate({convert, sink});
         std::vector<gps::ExposedParam> chosen;
         for (const gps::ExposedParam& p : c->parameterChoices(id)) {
-            if (p.name == toStd(convert) + ".caps.width" || p.name == toStd(sink) + ".sync") chosen.push_back(p);
+            if (p.name == c->plan().displayNames().at(toStd(convert)) + ".caps.width" || p.name == c->plan().displayNames().at(toStd(sink)) + ".sync")
+                chosen.push_back(p);
         }
         QCOMPARE(chosen.size(), size_t(2));
         QString error;
@@ -426,11 +429,11 @@ private slots:
         auto* page = w.propertiesTab()->findChild<TemplateParamsPage*>();
         QVERIFY(page);
         QCOMPARE(w.flows()->propertiesTitle(), QString("Template · Tail"));
-        auto* width = page->findChild<QLineEdit*>("param_" + convert + ".caps.width");
+        auto* width = page->findChild<QLineEdit*>("param_" + c->displayName(convert) + ".caps.width");
         QVERIFY(width);
         QCOMPARE(width->text(), QString("320"));
-        QVERIFY(page->findChild<QWidget*>("param_" + sink + ".sync"));
-        QVERIFY(!page->findChild<QWidget*>("param_" + sink + ".async"));  // not a parameter: stays inside
+        QVERIFY(page->findChild<QWidget*>("param_" + c->displayName(sink) + ".sync"));
+        QVERIFY(!page->findChild<QWidget*>("param_" + c->displayName(sink) + ".async"));  // not a parameter: stays inside
         width->clear();
         QTest::keyClicks(width, "640");
         press(page, "saveButton");
@@ -1321,7 +1324,7 @@ private slots:
         clickFreePad(src);
         auto* picker = pageOf<PickerPage>(w);
         QVERIFY(picker);
-        QCOMPARE(w.drawer()->title(), "Add after " + src + " · src");
+        QCOMPARE(w.drawer()->title(), "Add after " + c->displayName(src) + " · src");
         QCOMPARE(w.drawer()->subtitle(), QString("video/x-raw"));
         QCOMPARE(picker->findChild<QListWidget*>("pickerList")->item(0)->text(), QString("New element"));  // nothing existing yet
         press(picker, "cancelButton");
@@ -1587,7 +1590,7 @@ private slots:
         QVERIFY(page);
         QVERIFY(!w.drawer()->isOpen());
         QCOMPARE(w.bottomTabs()->currentWidget(), w.propertiesTab());
-        QCOMPARE(w.flows()->propertiesTitle(), "Edit properties · " + src);
+        QCOMPARE(w.flows()->propertiesTitle(), "Edit properties · " + c->displayName(src));
         QCOMPARE(page->primary()->text(), QString("Save"));
         in<QComboBox>(*page, "editor_pattern")->setCurrentIndex(1);
         QVERIFY(!page->findChild<QCheckBox*>("expose_num-buffers"));  // parameters belong to templates only

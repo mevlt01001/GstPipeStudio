@@ -57,6 +57,7 @@ public:
     void editTemplateParams(const QString& instanceId);
 
 private:
+    QString path(const QString& element, const QString& identity) const;  // "<element as the user reads it>.<pad>"
     enum class Mode { Add, Replace };
 
     void presentProperties(DrawerPage* page, const QString& title);  // the one way a page enters the Properties tab

@@ -34,7 +34,7 @@ TemplatePeek::TemplatePeek(const gps::Graph& content, QWidget* parent) : QFrame(
     }
     QRectF all;
     for (const QRectF& r : boxes_) all = all.isNull() ? r : all.united(r);
-    for (const gps::ExposedParam& p : content.exposed) params_ << fromStd(gps::templates::paramName(p));
+    for (const gps::ExposedParam& p : content.exposed) params_ << fromStd(p.name.empty() ? gps::templates::paramName(content, p) : p.name);
     canvas_ = QSizeF(std::max(all.right() + kMargin, 220.0), all.bottom() + kMargin + (params_.isEmpty() ? 0 : 20 + params_.size() * kParamLine));
 }
 
@@ -88,6 +88,7 @@ void TemplatePeek::paintEvent(QPaintEvent*) {
     }
     QFont small = font();
     small.setPointSizeF(8);
+    const auto shown = content_.displayNames();
     for (const gps::Element& e : content_.elements) {
         const QRectF r = boxes_.value(fromStd(e.name));
         p.setPen(QPen(e.group.empty() ? Theme::line() : Theme::accentHover(), 1));  // a nested template's members are green-edged
@@ -95,9 +96,7 @@ void TemplatePeek::paintEvent(QPaintEvent*) {
         p.drawRoundedRect(r, 5, 5);
         p.setFont(small);
         p.setPen(Theme::text());
-        p.drawText(r.adjusted(6, 2, -6, -16), Qt::AlignLeft | Qt::AlignVCenter, QFontMetrics(small).elidedText(fromStd(e.factory), Qt::ElideRight, int(r.width() - 12)));
-        p.setPen(Theme::muted());
-        p.drawText(r.adjusted(6, 16, -6, -2), Qt::AlignLeft | Qt::AlignVCenter, QFontMetrics(small).elidedText(fromStd(e.name), Qt::ElideRight, int(r.width() - 12)));
+        p.drawText(r.adjusted(6, 2, -6, -2), Qt::AlignLeft | Qt::AlignVCenter, QFontMetrics(small).elidedText(fromStd(shown.at(e.name)), Qt::ElideRight, int(r.width() - 12)));
     }
     if (!params_.isEmpty()) {
         double y = canvas_.height() - kMargin - params_.size() * kParamLine - 4;
