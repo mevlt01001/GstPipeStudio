@@ -769,7 +769,7 @@ private slots:
 
     void multiSelectionOperationsAndCustomElements() {
         QTemporaryDir customDir;
-        qputenv("GPS_CUSTOM_ELEMENTS_DIR", customDir.path().toUtf8());
+        qputenv("GPS_USER_DIR", customDir.path().toUtf8());
 
         need(*c, "videotestsrc");
         need(*c, "videoconvert");

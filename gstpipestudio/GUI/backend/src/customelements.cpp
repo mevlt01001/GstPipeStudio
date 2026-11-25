@@ -8,13 +8,19 @@
 #include <QStandardPaths>
 #include <algorithm>
 
+#include "apppaths.h"
 #include "contract.h"
 #include "factorycatalog.h"
 
+// Until 0.3 the library lived in the config folder as custom_elements/; its files move once.
 QString CustomElementLibrary::directory() {
-    QString env = qEnvironmentVariable("GPS_CUSTOM_ELEMENTS_DIR");
-    if (!env.isEmpty()) return env;
-    return QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) + "/custom_elements";
+    const QString library = AppPaths::templates();
+    QDir old(QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) + "/custom_elements");
+    if (qEnvironmentVariableIsEmpty("GPS_USER_DIR") && old.exists()) {
+        for (const QString& f : old.entryList({"*.conf"}, QDir::Files)) QFile::rename(old.filePath(f), QDir(library).filePath(f));
+        old.rmdir(".");
+    }
+    return library;
 }
 
 QString CustomElementLibrary::fileFor(const QString& name) {
@@ -63,10 +69,6 @@ bool CustomElementLibrary::save(const QString& name, gps::Graph preset, QString*
         e.x -= left;
         e.y -= top;
         e.group = toStd(name + "#0");
-    }
-    if (!QDir(directory()).mkpath(".")) {
-        *error = "cannot create " + directory();
-        return false;
     }
     std::string failure;
     if (preset.save(toStd(fileFor(name)), &failure)) return true;

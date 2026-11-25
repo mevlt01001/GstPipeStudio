@@ -12,7 +12,7 @@ class FactoryCatalog;
 
 class CustomElementLibrary {
 public:
-    static QString directory();  // GPS_CUSTOM_ELEMENTS_DIR, else the app's config folder
+    static QString directory();  // AppPaths::templates()
 
     void load(const FactoryCatalog& catalog);  // every preset; the catalog tells which ends are sources and sinks
     const QList<CustomElementInfo>& list() const { return list_; }

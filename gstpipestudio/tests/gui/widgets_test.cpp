@@ -1466,7 +1466,7 @@ private slots:
         // 5. Rubber-band marquee selection mode on CanvasView & collapsed Custom Element rendering on CanvasScene.
         QCOMPARE(w.view()->dragMode(), QGraphicsView::RubberBandDrag);
         QTemporaryDir customDir;
-        qputenv("GPS_CUSTOM_ELEMENTS_DIR", customDir.path().toUtf8());
+        qputenv("GPS_USER_DIR", customDir.path().toUtf8());
         QVERIFY(c->saveCustomElement("ConvSinkPreset", {convert, sink}));
         scene_rebuild(w);
         // Both convert and sink map to the same collapsed ElementItem on the scene, and only 1 external link is drawn!

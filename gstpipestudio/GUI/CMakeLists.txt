@@ -3,6 +3,7 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets)
 set(CMAKE_AUTOMOC ON)
 
 add_library(gps_gui STATIC
+    backend/include/apppaths.h backend/src/apppaths.cpp
     backend/include/customelements.h backend/src/customelements.cpp
     backend/include/executionbackend.h backend/src/executionbackend.cpp
     backend/include/factorycatalog.h backend/src/factorycatalog.cpp
