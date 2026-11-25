@@ -149,7 +149,6 @@ void TemplateFrameItem::collapseIfIdle() {
 }
 
 QRectF TemplateFrameItem::button() const { return headerbutton::at(rect_.right() - 10, rect_.top() + 8, 0); }
-QRectF TemplateFrameItem::editButton() const { return headerbutton::at(rect_.right() - 10, rect_.top() + 8, 1); }
 
 QRectF TemplateFrameItem::boundingRect() const { return rect_.adjusted(-kBand, -kBand, kBand, kBand); }
 
@@ -181,11 +180,10 @@ void TemplateFrameItem::paint(QPainter* p, const QStyleOptionGraphicsItem*, QWid
     title.setBold(true);
     p->setFont(title);
     p->setPen(Theme::accent());
-    const double titleWidth = editButton().left() - 4 - (r.left() + 16);
+    const double titleWidth = button().left() - 4 - (r.left() + 16);
     p->drawText(QRectF(r.left() + 16, r.top() + 8, titleWidth, 20), Qt::AlignLeft | Qt::AlignVCenter,
                 QFontMetrics(title).elidedText(view_.title, Qt::ElideRight, int(titleWidth)));
     headerbutton::paint(p, button(), headerbutton::Glyph::Minus, Theme::accent());
-    headerbutton::paint(p, editButton(), headerbutton::Glyph::Pencil, Theme::accent());
     // A short connector from every border pad to the pad it stands for inside.
     QPen connector(Theme::accent(), 1.4, Qt::DashLine);
     p->setPen(connector);
@@ -214,7 +212,7 @@ void TemplateFrameItem::mousePressEvent(QGraphicsSceneMouseEvent* event) {
 }
 
 void TemplateFrameItem::mouseMoveEvent(QGraphicsSceneMouseEvent* event) {
-    if (!(event->buttons() & Qt::LeftButton) || onButton(dragFrom_) || canvas_->locked()) return;
+    if (!(event->buttons() & Qt::LeftButton) || button().contains(dragFrom_) || canvas_->locked()) return;
     const QPointF delta = event->scenePos() - dragFrom_;
     if (!dragging_ && delta.manhattanLength() < 3) return;
     dragging_ = true;
@@ -237,13 +235,11 @@ void TemplateFrameItem::mouseReleaseEvent(QGraphicsSceneMouseEvent* event) {
         if (ElementItem* first = canvas_->element(view_.members.value(0))) canvas_->elementDragged(first->view().name, first->pos());
     } else if (button().contains(event->scenePos())) {
         canvas_->frameMinimized(view_.id);
-    } else if (editButton().contains(event->scenePos())) {
-        canvas_->frameEdit(view_.id);
     }
     dragging_ = false;
     event->accept();
 }
 
 void TemplateFrameItem::mouseDoubleClickEvent(QGraphicsSceneMouseEvent* event) {
-    if (!onButton(event->scenePos())) canvas_->frameActivated(view_.id);
+    if (!button().contains(event->scenePos())) canvas_->frameActivated(view_.id);
 }

@@ -35,7 +35,10 @@
 #include "confirmdialog.h"
 #include "drawer.h"
 #include "elementitem.h"
+#include "document.h"
 #include "explorer.h"
+#include "tabclosebutton.h"
+#include <QTabBar>
 #include <QTreeWidget>
 #include <QPointer>
 #include "newprojectdialog.h"
@@ -288,8 +291,9 @@ private slots:
         QCOMPARE(w.scene()->element(convert), w.scene()->element(sink));  // one box again
     }
 
-    // A template's ✎ opens it in a window of its own; what that window saves reaches this canvas as a newer version.
-    void thePencilEditsTheTemplateInItsOwnWindow() {
+    // Edit template, from a copy's right click, opens the library template in a tab of its own; what that tab saves is
+    // offered to the copies of the other tab when it comes to the front.
+    void editTemplateOpensATabOfItsOwn() {
         QTemporaryDir library;
         qputenv("GPS_USER_DIR", library.path().toUtf8());
         MainWindow w(c.get());
@@ -299,42 +303,140 @@ private slots:
         QVERIFY(c->saveTemplate("Tail", {convert, sink}));
         QVERIFY(settle(*c));
         scene_rebuild(w);
-        ElementItem* box = w.scene()->element(convert);
-        QVERIFY(box && box->view().isTemplate);
-        QVERIFY(w.grab().save(shotDir() + "/template_pencil.png"));
+        Document* project = w.document();
 
-        QSignalSpy asked(w.scene(), &CanvasScene::templateEditRequested);
-        w.scene()->frameEdit(c->templateBox(convert));
-        QCOMPARE(asked.count(), 1);
-        QCOMPARE(asked.first().first().toString(), QString("Tail"));
-        MainWindow* edit = nullptr;
-        QVERIFY(waitFor([&] {
-            for (QWidget* top : QApplication::topLevelWidgets())
-                if (top->objectName() == "templateWindow" && top->isVisible()) edit = qobject_cast<MainWindow*>(top);
-            return edit != nullptr;
-        }));
-        QVERIFY(edit->width() < w.width() || edit->height() < w.height());
-        auto* other = edit->findChild<Controller*>();
-        QVERIFY(other && other != c.get());
+        w.scene()->elementContext(convert, QPoint(20, 20));
+        QVERIFY(waitFor([&] { return visibleChild<QMenu>(&w) != nullptr; }));
+        choose(&w, "actionEditTemplate");
+        QCOMPARE(w.documents().size(), 2);
+        QCOMPARE(w.tabs()->count(), 2);
+        QCOMPARE(w.tabs()->tabText(1), QString("Template: Tail"));
+        QCOMPARE(w.tabs()->currentIndex(), 1);
+        Controller* other = w.document()->controller();
+        QVERIFY(other != c.get());
         QSignalSpy laidOut(&other->canvasLayout(), &CanvasLayout::aligned);  // an opened file is laid out once
         QVERIFY(waitFor([&] { return other->libraryTemplate() == "Tail" && other->plan().elements.size() == 2; }, 30000));
         QVERIFY(settle(*other));
-        QVERIFY(edit->windowTitle().contains("Template: Tail"));
         QVERIFY(laidOut.count() || laidOut.wait(30000));
         QVERIFY(waitFor([&] { return !other->canvasLayout().applying(); }));
-        QVERIFY(other->plan().elements[0].x != other->plan().elements[1].x);  // side by side, not on top of each other
-        scene_rebuild(*edit);
-        QVERIFY(edit->grab().save(shotDir() + "/template_window.png"));
+        QVERIFY(w.windowTitle().contains("Template: Tail"));
+        scene_rebuild(w);
+        QVERIFY(w.grab().save(shotDir() + "/template_tab.png"));
+        // Asking for it again brings the same tab to the front.
+        w.activate(project);
+        Document* again = w.openTemplate("Tail");
+        QCOMPARE(again, w.document());
+        QCOMPARE(w.tabs()->currentIndex(), 1);
+        QCOMPARE(w.documents().size(), 2);
 
-        QObject::disconnect(c.get(), &Controller::templatesOutdated, &w, nullptr);  // no dialog in a test
+        // Saved there, the first tab is asked about the newer version once it is in front again.
         QSignalSpy outdated(c.get(), &Controller::templatesOutdated);
         QString error;
         QVERIFY2(other->save(QString(), &error), qPrintable(error));
-        QVERIFY(outdated.wait(5000));
-        QCOMPARE(outdated.first().first().toStringList(), QStringList{c->templateBox(convert)});
-        QPointer<MainWindow> closing(edit);
-        edit->close();
-        QVERIFY(waitFor([&] { return closing.isNull(); }));
+        QVERIFY(outdated.count() || outdated.wait(5000));
+        QString asked;
+        auto* poll = new QTimer(&w);
+        poll->setInterval(20);
+        connect(poll, &QTimer::timeout, [poll, &asked] {
+            auto* box = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+            if (!box) return;
+            poll->stop();
+            asked = box->text();
+            box->button(QMessageBox::Yes)->click();
+        });
+        poll->start();
+        w.activate(project);
+        QVERIFY(waitFor([&] { return !asked.isEmpty(); }));
+        QVERIFY(asked.contains("Tail: revision 1 → 2"));
+        QVERIFY(waitFor([&] { return c->outdatedTemplates().isEmpty(); }));
+        qunsetenv("GPS_USER_DIR");
+    }
+
+    // Tabs as editors have them: a dot while a tab has unsaved changes, a file opens once, closing asks to save.
+    void tabsMarkUnsavedChangesAndAskBeforeClosing() {
+        QTemporaryDir root;
+        MainWindow w(c.get());
+        w.show();
+        const QString src = addSource(*c, "videotestsrc");
+        QVERIFY(!src.isEmpty());
+        auto dot = [&](int i) { return qobject_cast<TabCloseButton*>(w.tabs()->tabButton(i, QTabBar::RightSide)); };
+        QVERIFY(dot(0)->dirty());
+        QCOMPARE(dot(0)->text(), QString("●"));
+        const QString conf = root.filePath("one.conf");
+        QVERIFY(w.saveFile(conf));
+        QVERIFY(!dot(0)->dirty());
+        QCOMPARE(dot(0)->text(), QString("×"));
+        QCOMPARE(w.tabs()->tabText(0), QString("one.conf"));
+
+        // A new tab; the file already open comes to the front instead of opening twice.
+        w.findChild<QAction*>("actionNew")->trigger();
+        QCOMPARE(w.tabs()->count(), 2);
+        QCOMPARE(w.tabs()->tabText(1), QString("untitled"));
+        w.findChild<QAction*>("actionNew")->trigger();  // an untouched untitled tab is reused
+        QCOMPARE(w.tabs()->count(), 2);
+        w.openFile(conf);
+        QCOMPARE(w.tabs()->count(), 2);
+        QCOMPARE(w.tabs()->currentIndex(), 0);
+        w.findChild<QAction*>("actionNextTab")->trigger();
+        QCOMPARE(w.tabs()->currentIndex(), 1);
+        QVERIFY(w.scene() != w.documents().front()->scene());  // the menus act on the tab in front
+
+        // An unsaved tab asks: Cancel keeps it, Don't save closes it.
+        Document* second = w.document();
+        QVERIFY(waitFor([&] { return second->controller()->catalog().loaded(); }, 30000));
+        QVERIFY(addSource(*second->controller(), "videotestsrc").size());
+        QVERIFY(dot(1)->dirty());
+        auto answer = [&w](const char* button) {
+            auto* poll = new QTimer(&w);
+            poll->setInterval(20);
+            connect(poll, &QTimer::timeout, [poll, button] {
+                auto* box = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+                if (!box) return;
+                poll->stop();
+                if (QPushButton* named = box->findChild<QPushButton*>(button)) named->click();
+                else box->button(QMessageBox::Cancel)->click();
+            });
+            poll->start();
+        };
+        answer("cancel");
+        w.findChild<QAction*>("actionCloseTab")->trigger();
+        QCOMPARE(w.tabs()->count(), 2);
+        answer("saveChangesDiscard");
+        w.findChild<QAction*>("actionCloseTab")->trigger();
+        QCOMPARE(w.tabs()->count(), 1);
+        QCOMPARE(w.document(), w.documents().front());
+        // The last tab closed leaves an untitled one: the window always has a canvas.
+        QVERIFY(w.closeDocument(w.document()));
+        QCOMPARE(w.tabs()->count(), 1);
+        QCOMPARE(w.tabs()->tabText(0), QString("untitled"));
+    }
+
+    // The tabs open when the window closed come back the next time, the one in front in front.
+    void theTabsComeBackOnTheNextStart() {
+        QTemporaryDir root, library;
+        qputenv("GPS_USER_DIR", library.path().toUtf8());
+        const QString a = root.filePath("a.conf"), b = root.filePath("b.conf");
+        {
+            MainWindow w(c.get());
+            w.show();
+            QVERIFY(!addSource(*c, "videotestsrc").isEmpty());
+            QVERIFY(w.saveFile(a));
+            QVERIFY(QFile::copy(a, b));
+            w.openFile(b);
+            QVERIFY(waitFor([&] { return w.document()->controller()->filePath() == b; }, 30000));
+            QVERIFY(settle(*w.document()->controller()));
+            w.activate(w.documents().front());
+            QVERIFY(w.close());
+        }
+        auto fresh = makeController();
+        MainWindow again(fresh.get());
+        again.show();
+        again.restoreSession();
+        QCOMPARE(again.tabs()->count(), 2);
+        QVERIFY(waitFor([&] { return again.tabs()->tabText(0) == "a.conf" && again.tabs()->tabText(1) == "b.conf"; }, 30000));
+        QCOMPARE(again.tabs()->currentIndex(), 0);
+        for (Document* d : again.documents()) QVERIFY(settle(*d->controller()));
+        QSettings().remove("session");
         qunsetenv("GPS_USER_DIR");
     }
 
@@ -532,8 +634,10 @@ private slots:
         QSignalSpy opened(w.explorer(), &Explorer::openRequested), edited(w.explorer(), &Explorer::templateRequested);
         emit tree->itemActivated(tree->topLevelItem(1)->child(1), 0);
         QCOMPARE(opened.count(), 1);
-        QVERIFY(waitFor([&] { return c->filePath() == root.filePath("yard/yard.conf"); }));
-        QVERIFY(settle(*c));
+        QCOMPARE(w.tabs()->count(), 2);  // a tab of its own
+        Controller* yard = w.document()->controller();
+        QVERIFY(waitFor([&] { return yard->filePath() == root.filePath("yard/yard.conf"); }, 30000));
+        QVERIFY(settle(*yard));
         QVERIFY(waitFor([&] { return tree->topLevelItem(0)->text(0) == "Project · yard"; }));
         QObject::disconnect(w.explorer(), &Explorer::templateRequested, &w, nullptr);  // the window is tested on its own
         emit tree->itemActivated(tree->topLevelItem(2)->child(0), 0);

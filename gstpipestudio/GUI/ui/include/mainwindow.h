@@ -1,5 +1,6 @@
-// mainwindow.h – toolbar, menus, canvas with the left drawer, log and validation panels, status bar (UI_RULES 2).
-// It only connects widgets to the Controller and to Flows; it holds no pipeline logic.
+// mainwindow.h – toolbar, menus, the document tabs over the canvas, the Explorer and the panels, status bar (UI_RULES 2).
+// Every open file is a Document, a tab; the menus and panels act on the one in front. It only connects widgets to the
+// Controllers and to Flows; it holds no pipeline logic.
 #pragma once
 
 #include <QMainWindow>
@@ -9,14 +10,16 @@
 class CanvasScene;
 class CanvasView;
 class Controller;
+class Document;
 class Drawer;
 class Explorer;
 class Flows;
 class LogPanel;
 class QAction;
 class QLabel;
+class QMenu;
 class QStackedWidget;
-class QTabWidget;
+class QTabBar;
 class Panels;
 class SetupPage;
 class UpdatePanel;
@@ -26,9 +29,8 @@ class ValidationIndicator;
 class MainWindow : public QMainWindow {
     Q_OBJECT
 public:
-    // Template: a smaller window of its own that edits one library template (the ✎ of a template).
-    enum class Role { Pipeline, Template };
-    explicit MainWindow(Controller* controller, QWidget* parent = nullptr, Role role = Role::Pipeline);
+    // The first tab shows the caller's controller; tabs opened later make their own.
+    explicit MainWindow(Controller* controller, QWidget* parent = nullptr);
     ~MainWindow() override;
 
     CanvasScene* scene() const { return scene_; }
@@ -45,9 +47,19 @@ public:
     ValidationIndicator* indicator() const { return indicator_; }
     bool showingSetup() const;
 
+    // ---- the tabs: one Document each, the one in front is what the menus and panels act on
+    QTabBar* tabs() const { return tabs_; }
+    Document* document() const { return doc_; }
+    QList<Document*> documents() const { return docs_; }
+    Document* newDocument();                    // an untitled tab, in front
+    bool closeDocument(Document* document);     // asks to save unsaved changes; false when the user cancels
+    void activate(Document* document);          // brings its tab to the front
+    void restoreSession();                      // the tabs open when the window last closed
+
+    // A file opens in a tab of its own; a file already open comes to the front.
     void openFile(const QString& path);
-    // A Template window with its own Controller; the library it writes reaches this window's canvas.
-    MainWindow* openTemplateWindow(const QString& name);
+    // A library template on a canvas tab of its own: Save writes its next revision, the other tabs are offered it.
+    Document* openTemplate(const QString& name);
     bool saveFile(const QString& path);  // "" = where the plan lives now
     void openPropertiesTab(const QString& element);
     void resetPropertiesTab();
@@ -56,18 +68,25 @@ public:
 
 protected:
     void closeEvent(QCloseEvent* event) override;
+    bool eventFilter(QObject* watched, QEvent* event) override;  // a middle click closes a tab
 
 private:
-    QString settingsKey(const QString& key) const;  // the Template window keeps its own size and docks
+    Document* addDocument(Controller* controller);
+    void wire(Document* document);
+    void refreshTab(Document* document);
+    Document* docAt(int index) const;
+    int indexOf(Document* document) const;
+    Document* target();                 // where a file opens: the front tab when it is pristine, else a new one
+    bool confirmClose(Document* document);  // Save, Don't save or Cancel, as editors ask
+    bool save();                        // Save of the front tab; a never saved canvas becomes a project first
+    void saveSession();
 
-private:
     void showVersionHistory();
     void askTemplateChange(const QString& id);
     void askTemplatesOutdated(const QStringList& ids);
     void buildActions();
     void buildPanels();
     void refreshState();
-    void onRebuilt();
     void onEnvironment();
     bool confirmDiscard();  // true when it is fine to drop the plan on screen
     void saveAs();
@@ -78,6 +97,7 @@ private:
     void onElementMenuRequested(const QString& element, const QPoint& screenPos);
     void showTemplateMenu(const QString& instanceId, const QPoint& screenPos);  // right click on an expanded template's border
     void showSelectionMenu(const QString& clickedElement, const QPoint& screenPos);
+    void addEditTemplate(QMenu* menu, const QString& instanceId);
     void saveSelectedAsTemplate();
     void connectSelected();
     void deleteSelected();
@@ -88,8 +108,8 @@ private:
     void pasteClipboard();
     void setReason(QAction* action, const QString& text, const QString& reason);
 
-    Controller* controller_;
-    Role role_;
+    // The front document's parts: the menus, panels and status bar act on these.
+    Controller* controller_ = nullptr;
     Flows* flows_;
     CanvasScene* scene_;
     CanvasView* view_;
@@ -107,6 +127,10 @@ private:
     QLabel* environment_;
     QLabel* command_;
     ValidationIndicator* indicator_;
-    QStringList lastNames_;  // element names at the last rebuild: the view refits when they change
-    bool fitNext_ = false;
+
+    QTabBar* tabs_;
+    QStackedWidget* pages_;
+    QList<Document*> docs_;
+    Document* doc_ = nullptr;
+    bool built_ = false;  // menus and actions exist: the state can be shown
 };

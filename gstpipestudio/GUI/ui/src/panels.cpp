@@ -4,6 +4,7 @@
 #include <QAction>
 #include <QDockWidget>
 #include <QMainWindow>
+#include <QStackedWidget>
 
 Panels::Panels(QMainWindow* window) : QObject(window), window_(window) {
     window->setTabPosition(Qt::AllDockWidgetAreas, QTabWidget::North);  // tabs on top, as the row looked before
@@ -11,10 +12,16 @@ Panels::Panels(QMainWindow* window) : QObject(window), window_(window) {
 }
 
 void Panels::add(QWidget* panel, const QString& title, int room, Qt::DockWidgetArea side) {
+    if (QDockWidget* made = titled(title)) {
+        static_cast<QStackedWidget*>(made->widget())->addWidget(panel);
+        return;
+    }
     auto* dock = new QDockWidget(title, window_);
     QString name = title;
     dock->setObjectName("panel" + name.remove(' '));  // what the remembered layout knows it by
-    dock->setWidget(panel);
+    auto* pages = new QStackedWidget(dock);
+    pages->addWidget(panel);
+    dock->setWidget(pages);
     dock->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable | QDockWidget::DockWidgetClosable);
     dock->toggleViewAction()->setObjectName("actionPanel" + name);
     window_->addDockWidget(side, dock);
@@ -31,16 +38,28 @@ QDockWidget* Panels::firstOn(Qt::DockWidgetArea side) const {
     return nullptr;
 }
 
-QDockWidget* Panels::dock(QWidget* panel) const {
+QDockWidget* Panels::titled(const QString& title) const {
     for (QDockWidget* d : docks_) {
-        if (d->widget() == panel) return d;
+        if (d->windowTitle() == title) return d;
     }
     return nullptr;
+}
+
+QDockWidget* Panels::dock(QWidget* panel) const {
+    for (QDockWidget* d : docks_) {
+        if (static_cast<QStackedWidget*>(d->widget())->indexOf(panel) >= 0) return d;
+    }
+    return nullptr;
+}
+
+void Panels::bring(QWidget* panel) {
+    if (QDockWidget* d = dock(panel)) static_cast<QStackedWidget*>(d->widget())->setCurrentWidget(panel);
 }
 
 void Panels::show(QWidget* panel) {
     QDockWidget* d = dock(panel);
     if (!d) return;
+    bring(panel);
     d->show();
     d->raise();
     const int room = room_.value(d);

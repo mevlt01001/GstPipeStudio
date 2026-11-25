@@ -113,7 +113,12 @@ void Explorer::fillFolder(QTreeWidgetItem* parent, const QString& dir, int depth
             QTreeWidgetItem* sub = leaf(parent, entry.fileName() + "/", QString(), entry.absoluteFilePath());
             if (depth < 3) fillFolder(sub, entry.absoluteFilePath(), depth + 1);
         } else {
-            leaf(parent, entry.fileName(), entry.suffix() == "conf" ? kConf : QString(), entry.absoluteFilePath());
+            QTreeWidgetItem* file = leaf(parent, entry.fileName(), entry.suffix() == "conf" ? kConf : QString(), entry.absoluteFilePath());
+            if (entry.absoluteFilePath() == QFileInfo(conf_).absoluteFilePath()) {  // the file in front
+                QFont bold = file->font(0);
+                bold.setBold(true);
+                file->setFont(0, bold);
+            }
         }
     }
 }

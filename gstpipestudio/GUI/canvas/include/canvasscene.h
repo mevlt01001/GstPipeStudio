@@ -59,7 +59,6 @@ public:
     void frameActivated(const QString& instanceId);
     void frameMinimized(const QString& instanceId);
     void frameExpanded(const QString& instanceId);
-    void frameEdit(const QString& instanceId);  // its "✎": the template opens in its own window
     void peekTemplate(const QString& instanceId);  // a quick look inside a collapsed template, near the pointer
     void updateLinks();
     void setConnectedMoveEnabled(bool enabled) { connectedMoveEnabled_ = enabled; }
@@ -84,7 +83,6 @@ signals:
     void elementSpliced(const QString& element, const QString& linkSrcElement, const QString& linkSrcPad);
     void templateMenuRequested(const QString& instanceId, const QPoint& screenPos);
     void templateActivated(const QString& instanceId);
-    void templateEditRequested(const QString& templateName);
     void rebuilt();
 
 protected:

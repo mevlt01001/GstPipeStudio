@@ -82,6 +82,9 @@ QTabWidget::pane { border: 1px solid @line@; background: @panel@; top: -1px; }
 QTabBar::tab { background: @bg@; border: 1px solid @line@; border-bottom: none; padding: 6px 16px; margin-right: 2px; color: @muted@; }
 QTabBar::tab:selected { background: @panel@; color: @text@; border-top: 2px solid @accent@; }
 QTabBar::tab:hover { color: @text@; }
+QToolButton#tabClose { padding: 0px; border: none; border-radius: 3px; color: @muted@; font-size: 11pt; }
+QToolButton#tabClose:hover { color: @text@; background: @line@; }
+QTabBar#documentTabs::tab { padding: 6px 8px 6px 14px; }
 
 QPushButton { background: #303030; border: 1px solid @line@; border-radius: 3px; padding: 6px 18px; min-width: 64px; }
 QPushButton:hover { border-color: @accent@; }

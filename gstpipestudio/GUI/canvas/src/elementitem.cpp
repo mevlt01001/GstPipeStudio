@@ -123,12 +123,11 @@ void ElementItem::paint(QPainter* p, const QStyleOptionGraphicsItem*, QWidget*) 
 
     if (view_.isTemplate) {
         headerbutton::paint(p, expandButton(), headerbutton::Glyph::Plus, Theme::accentHover());
-        headerbutton::paint(p, editButton(), headerbutton::Glyph::Pencil, Theme::accentHover());
     }
     QString headerTitle = view_.displayTitle.isEmpty() ? view_.name : view_.displayTitle;
     p->setFont(bold);
     p->setPen(view_.isTemplate ? Theme::accentHover() : Theme::text());
-    const double titleWidth = (view_.isTemplate ? editButton().left() - 4 : kBoxWidth - 12) - 12;
+    const double titleWidth = (view_.isTemplate ? expandButton().left() - 4 : kBoxWidth - 12) - 12;
     p->drawText(QRectF(12, 5, titleWidth, 20), Qt::AlignLeft | Qt::AlignVCenter,
                 QFontMetrics(bold).elidedText(headerTitle, Qt::ElideRight, int(titleWidth)));
     p->setFont(small);
@@ -220,18 +219,12 @@ void ElementItem::hoverLeaveEvent(QGraphicsSceneHoverEvent*) {
 }
 
 QRectF ElementItem::expandButton() const { return headerbutton::at(kBoxWidth - 10, 10, 0); }
-QRectF ElementItem::editButton() const { return headerbutton::at(kBoxWidth - 10, 10, 1); }
 
 void ElementItem::mousePressEvent(QGraphicsSceneMouseEvent* event) {
     peek_.stop();
     TemplatePeek::hide();
     if (view_.isTemplate && event->button() == Qt::LeftButton && expandButton().contains(event->pos())) {
         if (auto* canvas = qobject_cast<CanvasScene*>(scene())) canvas->frameExpanded(view_.groupId);
-        event->accept();
-        return;
-    }
-    if (view_.isTemplate && event->button() == Qt::LeftButton && editButton().contains(event->pos())) {
-        if (auto* canvas = qobject_cast<CanvasScene*>(scene())) canvas->frameEdit(view_.groupId);
         event->accept();
         return;
     }

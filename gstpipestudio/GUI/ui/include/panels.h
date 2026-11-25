@@ -1,5 +1,6 @@
 // panels.h – the window's panels as dock widgets: Log, Validation, Live metrics, Properties and Caps under the canvas,
-// the Explorer left of it. The standard way: the user moves, tabs, splits, floats and closes them, and View > Panels
+// the Explorer left of it. Every open document has its own page in a panel; the panel shows the front document's
+// page. The standard way: the user moves, tabs, splits, floats and closes them, and View > Panels
 // brings each one back. The window remembers where they are; Reset layout puts each back on its own side, tabbed with
 // the others there. The one owner of showing a panel: flows and menus ask it, nobody touches a dock or a tab directly.
 #pragma once
@@ -19,10 +20,11 @@ class Panels : public QObject {
 public:
     explicit Panels(QMainWindow* window);
 
-    // The next tab on its side (under the canvas, or left of it). A panel that holds a form asks for room: shown, it is
-    // at least that tall.
+    // A page of the panel called title. The first page makes the panel: the next tab on its side (under the canvas, or
+    // left of it). A panel that holds a form asks for room: shown, it is at least that tall.
     void add(QWidget* panel, const QString& title, int room = 0, Qt::DockWidgetArea side = Qt::BottomDockWidgetArea);
-    void show(QWidget* panel);                 // open, in front of its tab group, with its room
+    void bring(QWidget* panel);                // its page is the one its panel shows (another document came to the front)
+    void show(QWidget* panel);                 // that, and the panel open, in front of its tab group, with its room
     bool showing(QWidget* panel) const;        // open and in front
     QList<QAction*> toggles() const;           // one checkable action per panel, for View > Panels
     void reset(QWidget* front);                // every panel docked on its side, tabbed there, front in front
@@ -34,4 +36,5 @@ private:
     QHash<QDockWidget*, int> room_;
     QHash<QDockWidget*, Qt::DockWidgetArea> side_;
     QDockWidget* firstOn(Qt::DockWidgetArea side) const;
+    QDockWidget* titled(const QString& title) const;
 };

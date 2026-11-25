@@ -64,9 +64,7 @@ protected:
     void mouseDoubleClickEvent(QGraphicsSceneMouseEvent* event) override;
 
 private:
-    QRectF button() const;      // the minimize button, top right
-    QRectF editButton() const;  // "✎", left of it
-    bool onButton(const QPointF& at) const { return button().contains(at) || editButton().contains(at); }
+    QRectF button() const;  // the minimize button, top right
     void collapseIfIdle();
 
     FrameView view_;

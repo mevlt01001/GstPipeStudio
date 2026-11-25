@@ -22,6 +22,7 @@ int main(int argc, char** argv) {
     Controller controller;
     MainWindow window(&controller);  // checks GStreamer first; the catalog loads when it is fine
     window.show();
+    window.restoreSession();  // the tabs open when it last closed, then the file asked for
     if (!parser.positionalArguments().isEmpty()) window.openFile(parser.positionalArguments().first());
     return app.exec();
 }

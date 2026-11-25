@@ -1,5 +1,5 @@
-// headerbutton.h – the small buttons in a template's title: "+" opens a collapsed box, "−" closes its frame and
-// "✎" edits the template in its own window. Both template items place and draw them with these.
+// headerbutton.h – the small buttons in a template's title: "+" opens a collapsed box, "−" closes its frame. Both
+// template items place and draw them with these.
 #pragma once
 
 #include <QColor>
@@ -9,7 +9,7 @@ class QPainter;
 
 namespace headerbutton {
 
-enum class Glyph { Plus, Minus, Pencil };
+enum class Glyph { Plus, Minus };
 
 // The slot-th button from the right, its right edge `right` and its top `top`.
 QRectF at(double right, double top, int slot);
