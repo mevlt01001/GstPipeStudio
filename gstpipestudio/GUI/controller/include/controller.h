@@ -23,7 +23,7 @@
 #include "elementview.h"
 #include "helperclient.h"
 #include "layout.h"
-#include "customelements.h"
+#include "templatelibrary.h"
 #include "executionbackend.h"
 #include "factorycatalog.h"
 #include "pipeline.h"
@@ -85,23 +85,23 @@ public:
     FactoryCatalog& catalog() { return catalog_; }
     const FactoryCatalog& catalog() const { return catalog_; }
 
-    // ---- custom elements (saved multi-element presets & canvas groups)
-    const QList<CustomElementInfo>& customElements() const { return library_.list(); }
-    bool saveCustomElement(const QString& customName, const QStringList& elementNames, const QString& description = QString());
-    bool removeCustomElement(const QString& customName);
-    QStringList addCustomElement(const QString& customName, double x = std::numeric_limits<double>::quiet_NaN(), double y = std::numeric_limits<double>::quiet_NaN());
-    QStringList addCustomElementAfter(const QString& srcElement, const QString& srcPad, const QString& customName);
+    // ---- templates (saved multi-element presets & canvas groups)
+    const QList<TemplateInfo>& templates() const { return library_.list(); }
+    bool saveTemplate(const QString& templateName, const QStringList& elementNames, const QString& description = QString());
+    bool removeTemplate(const QString& templateName);
+    QStringList addTemplate(const QString& templateName, double x = std::numeric_limits<double>::quiet_NaN(), double y = std::numeric_limits<double>::quiet_NaN());
+    QStringList addTemplateAfter(const QString& srcElement, const QString& srcPad, const QString& templateName);
     bool groupSelectedElements(const QStringList& elementNames, const QString& groupTitle);
-    bool ungroupElements(const QString& groupId);
-    bool isGroupExpanded(const QString& groupId) const { return expandedGroups_.contains(groupId); }
-    void setGroupExpanded(const QString& groupId, bool expanded);
-    QStringList groupMembers(const QString& groupId) const;
-    QString elementGroup(const QString& elementName) const;  // the collapsed instance it is drawn in, "" when none
-    QStringList expandSelectionWithGroups(const QStringList& elementNames) const;
+    bool detachTemplate(const QString& groupId);
+    bool isTemplateExpanded(const QString& groupId) const { return expandedTemplates_.contains(groupId); }
+    void setTemplateExpanded(const QString& groupId, bool expanded);
+    QStringList templateMembers(const QString& groupId) const;
+    QString templateBox(const QString& elementName) const;  // the collapsed instance it is drawn in, "" when none
+    QStringList expandSelection(const QStringList& elementNames) const;
 
     // ---- what the canvas and the drawer show
     ElementView view(const QString& element) const;
-    ElementView groupView(const QString& groupId) const;
+    ElementView templateView(const QString& groupId) const;
     QList<LinkView> linkViews() const;
     QString linkSinkIdentity(int link) const;
     std::vector<StructureInfo> padStructures(const QString& element, const QString& identity) const;  // allowed by a src pad
@@ -216,8 +216,8 @@ private:
 
     QTemporaryDir tmp_;
     FactoryCatalog catalog_;
-    CustomElementLibrary library_;
-    QSet<QString> expandedGroups_;
+    TemplateLibrary library_;
+    QSet<QString> expandedTemplates_;
     HelperClient* runClient_ = nullptr;
     QProcess* monitorClient_ = nullptr;
     QByteArray monitorOutput_;

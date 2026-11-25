@@ -1,5 +1,5 @@
-// customelements.cpp – see customelements.h.
-#include "customelements.h"
+// templatelibrary.cpp – see templatelibrary.h.
+#include "templatelibrary.h"
 
 #include <QDir>
 #include <QFile>
@@ -14,7 +14,7 @@
 #include "templates.h"
 
 // Until 0.3 the library lived in the config folder as custom_elements/; its files move once.
-QString CustomElementLibrary::directory() {
+QString TemplateLibrary::directory() {
     const QString library = AppPaths::templates();
     QDir old(QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) + "/custom_elements");
     if (qEnvironmentVariableIsEmpty("GPS_USER_DIR") && old.exists()) {
@@ -24,13 +24,13 @@ QString CustomElementLibrary::directory() {
     return library;
 }
 
-QString CustomElementLibrary::fileFor(const QString& name) {
+QString TemplateLibrary::fileFor(const QString& name) {
     QString safe = name;
     safe.replace(QRegularExpression("[^A-Za-z0-9_.-]"), "_");
     return QDir(directory()).filePath(safe + ".conf");
 }
 
-void CustomElementLibrary::load(const FactoryCatalog& catalog) {
+void TemplateLibrary::load(const FactoryCatalog& catalog) {
     list_.clear();
     plans_.clear();
     QDir dir(directory());
@@ -43,7 +43,7 @@ void CustomElementLibrary::load(const FactoryCatalog& catalog) {
         for (const gps::TemplateInstance& t : std::vector<gps::TemplateInstance>(sub.instances)) {
             if (t.parent.empty() && t.templateName == sub.name) gps::templates::detach(sub, t.id);
         }
-        CustomElementInfo ci;
+        TemplateInfo ci;
         ci.name = sub.name.empty() ? QFileInfo(f).completeBaseName() : fromStd(sub.name);
         ci.elementCount = static_cast<int>(sub.elements.size());
         QStringList factories;
@@ -61,12 +61,12 @@ void CustomElementLibrary::load(const FactoryCatalog& catalog) {
     }
 }
 
-const gps::Graph* CustomElementLibrary::plan(const QString& name) const {
+const gps::Graph* TemplateLibrary::plan(const QString& name) const {
     auto it = plans_.find(name);
     return it == plans_.end() ? nullptr : &it->second;
 }
 
-bool CustomElementLibrary::save(const QString& name, gps::Graph preset, QString* error) {
+bool TemplateLibrary::save(const QString& name, gps::Graph preset, QString* error) {
     preset.name = toStd(name);
     double left = preset.elements.front().x, top = preset.elements.front().y;
     for (const gps::Element& e : preset.elements) left = std::min(left, e.x), top = std::min(top, e.y);
@@ -80,4 +80,4 @@ bool CustomElementLibrary::save(const QString& name, gps::Graph preset, QString*
     return false;
 }
 
-bool CustomElementLibrary::remove(const QString& name) { return QFile::remove(fileFor(name)); }
+bool TemplateLibrary::remove(const QString& name) { return QFile::remove(fileFor(name)); }

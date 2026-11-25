@@ -48,8 +48,8 @@ QStringList CanvasScene::selectedElementNames() const {
     QSet<QString> seen;
     for (QGraphicsItem* item : selectedItems()) {
         if (auto* el = dynamic_cast<ElementItem*>(item)) {
-            if (el->view().isCustomGroup && !el->view().groupMembers.isEmpty()) {
-                for (const QString& m : el->view().groupMembers) {
+            if (el->view().isTemplate && !el->view().templateMembers.isEmpty()) {
+                for (const QString& m : el->view().templateMembers) {
                     if (!seen.contains(m)) {
                         seen.insert(m);
                         names << m;
@@ -96,18 +96,18 @@ void CanvasScene::rebuild() {
     QSet<QString> builtCollapsedGroups;
     for (const gps::Element& e : pipeline().graph().elements) {
         QString name = QString::fromStdString(e.name);
-        QString grp = controller_->elementGroup(name);
+        QString grp = controller_->templateBox(name);
         if (!grp.isEmpty()) {
             if (builtCollapsedGroups.contains(grp)) continue;
             builtCollapsedGroups.insert(grp);
-            ElementView gv = controller_->groupView(grp);
+            ElementView gv = controller_->templateView(grp);
             auto* item = new ElementItem(gv);
             item->setPos(e.x, e.y);
             item->setFlag(QGraphicsItem::ItemIsMovable, !locked_);
             item->setOpacity(stale_ ? 0.5 : 1.0);
             addItem(item);
             bool anySelected = false;
-            for (const QString& m : gv.groupMembers) {
+            for (const QString& m : gv.templateMembers) {
                 elements_.insert(m, item);
                 if (selectedElements_.contains(m)) anySelected = true;
             }
@@ -126,7 +126,7 @@ void CanvasScene::rebuild() {
     }
     for (const LinkView& l : controller_->linkViews()) {
         if (elements_.value(l.srcElement) && elements_.value(l.srcElement) == elements_.value(l.sinkElement)) {
-            continue;  // internal link inside a collapsed custom element
+            continue;  // internal link inside a collapsed template
         }
         PadItem* from = pad(l.srcElement, l.srcIdentity, true);
         PadItem* to = pad(l.sinkElement, l.sinkIdentity, false);
@@ -226,7 +226,7 @@ void CanvasScene::elementDragged(const QString& element, const QPointF& pos) {
     emit elementsMoved(positions);
     if (this->element(element)) {
         QStringList selNames = selectedElementNames();
-        if (!selNames.contains(element)) selNames = controller_->expandSelectionWithGroups({element});
+        if (!selNames.contains(element)) selNames = controller_->expandSelection({element});
         QSet<QString> draggedSet(selNames.begin(), selNames.end());
         QList<ElementItem*> draggedItems;
         for (const QString& n : selNames) {

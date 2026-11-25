@@ -158,18 +158,18 @@ QString Controller::launchCommand() const {
     return text;
 }
 
-// ---- custom elements & groups
+// ---- templates & groups
 
 // The box an element is drawn in: the outermost collapsed instance around it, "" when every one around it is expanded.
-QString Controller::elementGroup(const QString& elementName) const {
+QString Controller::templateBox(const QString& elementName) const {
     const std::vector<std::string> around = gps::templates::chain(plan(), toStd(elementName));
     for (auto up = around.rbegin(); up != around.rend(); ++up) {
-        if (!isGroupExpanded(fromStd(*up))) return fromStd(*up);
+        if (!isTemplateExpanded(fromStd(*up))) return fromStd(*up);
     }
     return QString();
 }
 
-QStringList Controller::groupMembers(const QString& groupId) const {
+QStringList Controller::templateMembers(const QString& groupId) const {
     QStringList out;
     if (!groupId.isEmpty()) {
         for (const std::string& m : gps::templates::members(plan(), toStd(groupId))) out << fromStd(m);
@@ -177,14 +177,14 @@ QStringList Controller::groupMembers(const QString& groupId) const {
     return out;
 }
 
-QStringList Controller::expandSelectionWithGroups(const QStringList& elementNames) const {
+QStringList Controller::expandSelection(const QStringList& elementNames) const {
     QStringList out;
     QSet<QString> seen;
     for (const QString& n : elementNames) {
         if (!plan().find(toStd(n))) continue;
-        QString grp = elementGroup(n);
+        QString grp = templateBox(n);
         if (!grp.isEmpty()) {
-            for (const QString& m : groupMembers(grp)) {
+            for (const QString& m : templateMembers(grp)) {
                 if (!seen.contains(m)) {
                     seen.insert(m);
                     out << m;
@@ -198,53 +198,53 @@ QStringList Controller::expandSelectionWithGroups(const QStringList& elementName
     return out;
 }
 
-void Controller::setGroupExpanded(const QString& groupId, bool expanded) {
+void Controller::setTemplateExpanded(const QString& groupId, bool expanded) {
     if (groupId.isEmpty()) return;
-    if (expanded) expandedGroups_.insert(groupId);
-    else expandedGroups_.remove(groupId);
+    if (expanded) expandedTemplates_.insert(groupId);
+    else expandedTemplates_.remove(groupId);
     emit changed();
 }
 
 bool Controller::groupSelectedElements(const QStringList& elementNames, const QString& groupTitle) {
-    QStringList expanded = expandSelectionWithGroups(elementNames);
+    QStringList expanded = expandSelection(elementNames);
     if (expanded.isEmpty()) return false;
     QString cleanTitle = groupTitle.trimmed();
-    if (cleanTitle.isEmpty()) cleanTitle = "CustomGroup";
+    if (cleanTitle.isEmpty()) cleanTitle = "Template";
     cleanTitle.replace('#', '_');
     return transact([&](gps::Graph& g, Edit& edit) {
         std::vector<std::string> names;
         for (const QString& n : expanded) names.push_back(toStd(n));
-        expandedGroups_.remove(fromStd(gps::templates::wrap(g, names, toStd(cleanTitle), {})));
+        expandedTemplates_.remove(fromStd(gps::templates::wrap(g, names, toStd(cleanTitle), {})));
         edit.action = "Grouped elements as " + cleanTitle;
         edit.presentation = true;
         return true;
     });
 }
 
-bool Controller::ungroupElements(const QString& groupId) {
-    QStringList members = groupMembers(groupId);
+bool Controller::detachTemplate(const QString& groupId) {
+    QStringList members = templateMembers(groupId);
     if (groupId.isEmpty() || members.isEmpty()) return false;
     return transact([&](gps::Graph& g, Edit& edit) {
         gps::templates::detach(g, toStd(groupId));
-        expandedGroups_.remove(groupId);
+        expandedTemplates_.remove(groupId);
         edit.action = "Ungrouped " + groupId.section('#', 0, 0);
         edit.presentation = true;
         return true;
     });
 }
 
-bool Controller::saveCustomElement(const QString& customName, const QStringList& elementNames, const QString& description) {
+bool Controller::saveTemplate(const QString& templateName, const QStringList& elementNames, const QString& description) {
     Q_UNUSED(description);
-    QString clean = customName.trimmed();
+    QString clean = templateName.trimmed();
     clean.replace('#', '_');
-    QStringList expanded = expandSelectionWithGroups(elementNames);
+    QStringList expanded = expandSelection(elementNames);
     if (clean.isEmpty() || expanded.isEmpty() || editingBlocked()) return false;
     // The selection on the canvas becomes a collapsed instance of the new template, and the library gets its content.
     if (!groupSelectedElements(expanded, clean)) return false;
-    const QString id = elementGroup(expanded.first());
+    const QString id = templateBox(expanded.first());
     QString error;
     if (!library_.save(clean, gps::templates::extract(plan(), toStd(id)), &error)) {
-        emit notice("Unable to save custom element: " + error);
+        emit notice("Unable to save template: " + error);
         return false;
     }
     library_.load(catalog_);
@@ -252,24 +252,24 @@ bool Controller::saveCustomElement(const QString& customName, const QStringList&
     return true;
 }
 
-bool Controller::removeCustomElement(const QString& customName) {
-    const bool removed = library_.remove(customName);
+bool Controller::removeTemplate(const QString& templateName) {
+    const bool removed = library_.remove(templateName);
     library_.load(catalog_);
     emit changed();
     return removed;
 }
 
-QStringList Controller::addCustomElement(const QString& customName, double x, double y) {
-    const gps::Graph* tmpl = library_.plan(customName);
+QStringList Controller::addTemplate(const QString& templateName, double x, double y) {
+    const gps::Graph* tmpl = library_.plan(templateName);
     if (!tmpl || tmpl->elements.empty() || editingBlocked()) return {};
-    if (!infosReady(*tmpl, [=] { addCustomElement(customName, x, y); })) return {};
+    if (!infosReady(*tmpl, [=] { addTemplate(templateName, x, y); })) return {};
     const QPointF at = (std::isfinite(x) && std::isfinite(y)) ? QPointF(x, y) : freeSpot();
     QStringList created;
     transact([&](gps::Graph& g, Edit& edit) {
         const QPointF offset = at - topLeft(*tmpl);
         const std::string id = gps::templates::insertTemplate(g, *tmpl, offset.x(), offset.y());
         for (const std::string& m : gps::templates::members(g, id)) created << fromStd(m);
-        edit.action = "Added custom element " + customName;
+        edit.action = "Added template " + templateName;
         edit.touched = created.value(0);
         edit.validate = anyTracked(created);
         return true;
@@ -277,24 +277,24 @@ QStringList Controller::addCustomElement(const QString& customName, double x, do
     return created;
 }
 
-QStringList Controller::addCustomElementAfter(const QString& srcElement, const QString& srcPad, const QString& customName) {
-    const gps::Graph* tmpl = library_.plan(customName);
+QStringList Controller::addTemplateAfter(const QString& srcElement, const QString& srcPad, const QString& templateName) {
+    const gps::Graph* tmpl = library_.plan(templateName);
     const gps::Element* from = plan().find(toStd(srcElement));
     if (!tmpl || !from || editingBlocked()) return {};
-    if (!infosReady(*tmpl, [=] { addCustomElementAfter(srcElement, srcPad, customName); })) return {};
+    if (!infosReady(*tmpl, [=] { addTemplateAfter(srcElement, srcPad, templateName); })) return {};
     QStringList created;
     transact([&](gps::Graph& g, Edit& edit) {
         const QPointF offset = QPointF(from->x + metrics::kColumn, from->y) - topLeft(*tmpl);
         const QString groupId = fromStd(gps::templates::insertTemplate(g, *tmpl, offset.x(), offset.y()));
         for (const std::string& m : gps::templates::members(g, toStd(groupId))) created << fromStd(m);
         // srcElement.srcPad feeds the first free sink pad of the new group
-        for (const PadView& p : groupView(groupId).sinks) {
+        for (const PadView& p : templateView(groupId).sinks) {
             if (p.state != PadView::Linked) {
                 g.linkExisting(toStd(srcElement), toStd(srcPad), toStd(p.element), toStd(p.templateName));
                 break;
             }
         }
-        edit.action = "Added custom element " + customName + " after " + srcElement + "." + srcPad;
+        edit.action = "Added template " + templateName + " after " + srcElement + "." + srcPad;
         edit.touched = created.value(0);
         edit.validate = anyTracked(created);
         return true;
@@ -328,7 +328,7 @@ ElementView Controller::view(const QString& name) const {
 
     v.factory = fromStd(element->factory);
     v.groupId = fromStd(element->group);
-    if (!v.groupId.isEmpty()) v.groupMembers = groupMembers(v.groupId);
+    if (!v.groupId.isEmpty()) v.templateMembers = templateMembers(v.groupId);
     if (const FactoryEntry* e = catalog_.entry(v.factory)) v.nvidia = e->nvidia;
 
     // Changed properties, the exposed ones marked.
@@ -411,17 +411,17 @@ void Controller::subgraphExternalPads(const QStringList& members, QList<PadView>
     }
 }
 
-ElementView Controller::groupView(const QString& groupId) const {
+ElementView Controller::templateView(const QString& groupId) const {
     ElementView v;
-    QStringList members = groupMembers(groupId);
+    QStringList members = templateMembers(groupId);
     if (members.isEmpty()) return v;
 
     QString title = groupId.section('#', 0, 0);
     v.name = members.first();
     v.displayTitle = title.isEmpty() ? groupId : title;
     v.groupId = groupId;
-    v.isCustomGroup = true;
-    v.groupMembers = members;
+    v.isTemplate = true;
+    v.templateMembers = members;
     v.isTracked = false;
 
     QStringList factories;
@@ -444,11 +444,11 @@ ElementView Controller::groupView(const QString& groupId) const {
     subgraphExternalPads(members, &v.sinks, &v.srcs);
     v.isSource = v.sinks.isEmpty() && !v.srcs.isEmpty();
     v.isSink = !v.sinks.isEmpty() && v.srcs.isEmpty();
-    v.factory = QString("custom (%1) · %2").arg(members.size()).arg(factories.join(" → "));
+    v.factory = QString("template (%1) · %2").arg(members.size()).arg(factories.join(" → "));
     v.propLines = limitedLines(propSummary);
     if (!v.isTracked && v.note.isEmpty() && !v.isSource) {
         v.isInfo = true;
-        v.note = "ℹ Unlinked custom element — not tracked until fed by a source.";
+        v.note = "ℹ Unlinked template — not tracked until fed by a source.";
     }
     return v;
 }
@@ -644,7 +644,7 @@ bool Controller::redo() {
 
 gps::Graph Controller::copySubplan(const QStringList& elementNames) const {
     std::vector<std::string> ids;
-    for (const auto& name : expandSelectionWithGroups(elementNames)) ids.push_back(toStd(name));
+    for (const auto& name : expandSelection(elementNames)) ids.push_back(toStd(name));
     return gps::GraphFragment(std::move(ids)).copy(plan());
 }
 
@@ -814,7 +814,7 @@ bool Controller::deleteElement(const QString& element, bool autoHeal) {
 }
 
 bool Controller::deleteSelection(const QStringList& elementNames, const QList<QPair<QString, QString>>& links, bool autoHeal) {
-    QStringList expanded = expandSelectionWithGroups(elementNames);
+    QStringList expanded = expandSelection(elementNames);
     if (expanded.isEmpty() && links.isEmpty()) return false;
     QStringList touched = expanded;
     for (const auto& link : links) touched << link.first;
@@ -842,7 +842,7 @@ bool Controller::spliceElement(const QString& element, const QString& linkSrcEle
 
 bool Controller::spliceElements(const QStringList& elements, const QString& linkSrcElement, const QString& linkSrcPad) {
     if (editingBlocked() || elements.isEmpty()) return false;
-    QStringList expanded = expandSelectionWithGroups(elements);
+    QStringList expanded = expandSelection(elements);
     if (expanded.isEmpty()) return false;
 
     std::vector<std::string> fragmentIds;
@@ -949,11 +949,11 @@ void Controller::setPositions(const QList<QPair<QString, QPointF>>& positions) {
         if (!e) continue;
         const double dx = pt.x() - e->x, dy = pt.y() - e->y;
         if (std::abs(dx) < 0.01 && std::abs(dy) < 0.01) continue;
-        const QString group = elementGroup(element);
+        const QString group = templateBox(element);
         if (!group.isEmpty()) {
             if (handledGroups.contains(group)) continue;
             handledGroups.insert(group);
-            for (const auto& member : groupMembers(group)) {
+            for (const auto& member : templateMembers(group)) {
                 const auto* other = plan().find(toStd(member));
                 updates[other->name] = {other->name, other->x + dx, other->y + dy};
             }
@@ -1031,7 +1031,7 @@ bool Controller::linkOrderedInternal(const QStringList& expanded, QString* lastT
 
 bool Controller::connectSelectedElements(const QStringList& names) {
     if (editingBlocked() || names.size() < 2) return false;
-    QStringList expanded = expandSelectionWithGroups(names);
+    QStringList expanded = expandSelection(names);
     if (expanded.size() < 2) return false;
 
     return transact([&](gps::Graph&, Edit& e) {
@@ -1044,7 +1044,7 @@ bool Controller::connectSelectedElements(const QStringList& names) {
 
 bool Controller::disconnectBetweenElements(const QStringList& names) {
     if (names.size() < 2) return false;
-    QStringList expanded = expandSelectionWithGroups(names);
+    QStringList expanded = expandSelection(names);
     std::set<std::string> chosen;
     for (const QString& n : expanded) chosen.insert(toStd(n));
     const bool tracked = anyTracked(expanded);
@@ -1065,7 +1065,7 @@ QList<layout::Box> Controller::boxes(const QStringList& names) const {
 
 bool Controller::alignElements(const QStringList& names, Qt::Orientation orientation) {
     if (editingBlocked()) return false;
-    QList<layout::Box> selected = boxes(expandSelectionWithGroups(names));
+    QList<layout::Box> selected = boxes(expandSelection(names));
     if (selected.size() < 2 || !move(layout::align(selected, orientation))) return false;
     note(orientation == Qt::Horizontal ? "Aligned selected elements horizontally" : "Aligned selected elements vertically");
     return true;

@@ -181,14 +181,14 @@ void Flows::chooseSource() {
     if (controller_->editingBlocked()) return;
     PickerData data;
     data.newHeader = "Sources";
-    for (const CustomElementInfo& c : controller_->customElements()) {
-        if (c.isSource) data.custom << c;
+    for (const TemplateInfo& c : controller_->templates()) {
+        if (c.isSource) data.templates << c;
     }
     data.candidates = factories(true);
     auto* page = new PickerPage(data);
     connect(page, &PickerPage::picked, this, [this](const PickerChoice& choice) {
-        if (choice.kind == PickerChoice::CustomElement) {
-            controller_->addCustomElement(choice.factory);
+        if (choice.kind == PickerChoice::Template) {
+            controller_->addTemplate(choice.factory);
             drawer_->dismiss();
         } else {
             sourceProperties(choice.factory);
@@ -202,12 +202,12 @@ void Flows::chooseElement() {
     PickerData data;
     data.newHeader = "Elements";
     data.showFilters = true;
-    data.custom = controller_->customElements();
+    data.templates = controller_->templates();
     data.candidates = controller_->catalog().entries();
     auto* page = new PickerPage(data);
     connect(page, &PickerPage::picked, this, [this](const PickerChoice& choice) {
-        if (choice.kind == PickerChoice::CustomElement) {
-            controller_->addCustomElement(choice.factory);
+        if (choice.kind == PickerChoice::Template) {
+            controller_->addTemplate(choice.factory);
             drawer_->dismiss();
         } else {
             sourceProperties(choice.factory);
@@ -240,8 +240,8 @@ void Flows::fromFreePad(const QString& element, const QString& identity) {
     controller_->catalog().fetchCompatible(allowed, [this, element, identity, allowed](const QStringList& compatible) {
         PickerData data;
         data.existing = controller_->existingTargets(element, identity);
-        for (const CustomElementInfo& c : controller_->customElements()) {
-            if (c.hasFreeSink) data.custom << c;
+        for (const TemplateInfo& c : controller_->templates()) {
+            if (c.hasFreeSink) data.templates << c;
         }
         data.compatible = compatible;
         data.candidates = factories(false);
@@ -252,10 +252,10 @@ void Flows::fromFreePad(const QString& element, const QString& identity) {
                 editThenCaps(element, identity, [=] {
                     return controller_->linkExisting(element, identity, choice.existing.element, choice.existing.sinkPad);
                 });
-            } else if (choice.kind == PickerChoice::CustomElement) {
+            } else if (choice.kind == PickerChoice::Template) {
                 drawer_->dismiss();
                 editThenCaps(element, identity, [=] {
-                    return !controller_->addCustomElementAfter(element, identity, choice.factory).isEmpty();
+                    return !controller_->addTemplateAfter(element, identity, choice.factory).isEmpty();
                 });
             } else {
                 newElement(Mode::Add, element, identity, choice.factory);
@@ -416,9 +416,9 @@ void Flows::addQueue(const QString& element, const QString& identity) {
 
 void Flows::editProperties(const QString& element) {
     if (controller_->editingBlocked()) return;
-    QString grp = controller_->elementGroup(element);
-    if (!grp.isEmpty() && !controller_->isGroupExpanded(grp)) {
-        controller_->setGroupExpanded(grp, true);
+    QString grp = controller_->templateBox(element);
+    if (!grp.isEmpty() && !controller_->isTemplateExpanded(grp)) {
+        controller_->setTemplateExpanded(grp, true);
         return;
     }
     const gps::Element* e = controller_->plan().find(element.toStdString());

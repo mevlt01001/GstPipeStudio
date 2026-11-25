@@ -797,27 +797,27 @@ private slots:
         QCOMPARE(c->plan().elements.size(), size_t(2));
         QCOMPARE(c->plan().links.size(), size_t(1));
 
-        // 4. Save the connected pair (conv -> scale) as a reusable Custom Element ("ScaleConvert").
-        QVERIFY(c->saveCustomElement("ScaleConvert", {conv, scale}));
-        QCOMPARE(c->customElements().size(), 1);
-        QCOMPARE(c->customElements().first().name, QString("ScaleConvert"));
-        QCOMPARE(c->customElements().first().elementCount, 2);
-        QVERIFY(c->customElements().first().hasFreeSink);
-        QVERIFY(c->customElements().first().hasFreeSrc);
+        // 4. Save the connected pair (conv -> scale) as a reusable Template ("ScaleConvert").
+        QVERIFY(c->saveTemplate("ScaleConvert", {conv, scale}));
+        QCOMPARE(c->templates().size(), 1);
+        QCOMPARE(c->templates().first().name, QString("ScaleConvert"));
+        QCOMPARE(c->templates().first().elementCount, 2);
+        QVERIFY(c->templates().first().hasFreeSink);
+        QVERIFY(c->templates().first().hasFreeSrc);
 
-        // The pair on canvas is now grouped as a collapsed Custom Element with 1 external sink and 1 external src!
-        QString grp = c->elementGroup(conv);
+        // The pair on canvas is now grouped as a collapsed Template with 1 external sink and 1 external src!
+        QString grp = c->templateBox(conv);
         QVERIFY(!grp.isEmpty());
-        QVERIFY(!c->isGroupExpanded(grp));
-        ElementView gv = c->groupView(grp);
-        QVERIFY(gv.isCustomGroup);
+        QVERIFY(!c->isTemplateExpanded(grp));
+        ElementView gv = c->templateView(grp);
+        QVERIFY(gv.isTemplate);
         QCOMPARE(gv.displayTitle, QString("ScaleConvert"));
         QCOMPARE(gv.sinks.size(), 1);
         QCOMPARE(gv.srcs.size(), 1);
         QCOMPARE(gv.sinks.first().element, conv);
         QCOMPARE(gv.srcs.first().element, scale);
 
-        // 5. Add a connected pipeline src -> snk, then splice the entire 2-element Custom Element onto that wire!
+        // 5. Add a connected pipeline src -> snk, then splice the entire 2-element Template onto that wire!
         QString src = addSource(*c, "videotestsrc");
         QVERIFY(c->addElement("fakesink", {}, 700, 100));
         QString snk = text(c->plan().elements.back().name);
@@ -830,7 +830,7 @@ private slots:
         QCOMPARE(c->plan().links.size(), size_t(3));
         QVERIFY(c->result().complete());
 
-        // 6. Delete the collapsed Custom Element: auto-heals across both inner elements back to src -> snk!
+        // 6. Delete the collapsed Template: auto-heals across both inner elements back to src -> snk!
         QVERIFY(c->deleteElement(conv, true));
         QVERIFY(settle(*c));
         QCOMPARE(c->plan().elements.size(), size_t(2));
@@ -838,15 +838,15 @@ private slots:
         QCOMPARE(text(c->plan().links[0].srcElement), src);
         QCOMPARE(text(c->plan().links[0].sinkElement), snk);
 
-        // 7. Re-insert the saved Custom Element from catalog via addCustomElement.
-        QStringList inserted = c->addCustomElement("ScaleConvert", 250, 250);
+        // 7. Re-insert the saved Template from catalog via addTemplate.
+        QStringList inserted = c->addTemplate("ScaleConvert", 250, 250);
         QCOMPARE(inserted.size(), 2);
         QCOMPARE(c->plan().elements.size(), size_t(4));
         QCOMPARE(c->plan().links.size(), size_t(2));
 
         // 8. Ungroup the inserted pair, disconnect them, then splice the multi-selection directly onto src -> snk!
-        QString insGrp = c->elementGroup(inserted.first());
-        QVERIFY(c->ungroupElements(insGrp));
+        QString insGrp = c->templateBox(inserted.first());
+        QVERIFY(c->detachTemplate(insGrp));
         QVERIFY(c->disconnectBetweenElements(inserted));
         QCOMPARE(c->plan().links.size(), size_t(1));  // only src -> snk
         const auto beforeRejectedSplice = c->plan().toConf();

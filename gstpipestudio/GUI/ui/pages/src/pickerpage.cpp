@@ -22,7 +22,7 @@ constexpr int kIsSinkRole = Qt::UserRole + 23;
 constexpr int kHasAlwaysRole = Qt::UserRole + 24;
 constexpr int kHasSometimesRole = Qt::UserRole + 25;
 constexpr int kHasRequestRole = Qt::UserRole + 26;
-constexpr int kCustomRole = Qt::UserRole + 27;    // name of a saved custom element
+constexpr int kTemplateRole = Qt::UserRole + 27;    // name of a saved template
 }  // namespace
 
 PickerPage::PickerPage(const PickerData& data, QWidget* parent) : DrawerPage(parent), data_(data) {
@@ -94,14 +94,14 @@ PickerPage::PickerPage(const PickerData& data, QWidget* parent) : DrawerPage(par
         }
     }
 
-    if (!data.custom.isEmpty()) {
-        addHeader("Custom elements");
-        for (const CustomElementInfo& c : data.custom) {
+    if (!data.templates.isEmpty()) {
+        addHeader("Templates");
+        for (const TemplateInfo& c : data.templates) {
             auto* item = new QListWidgetItem(c.name, list_);
             item->setData(LongNameRole, c.description);
-            item->setData(HintRole, QString("custom · %1").arg(c.elementCount));
-            item->setData(SearchRole, (c.name + " " + c.description + " custom").toLower());
-            item->setData(kCustomRole, c.name);
+            item->setData(HintRole, QString("template · %1").arg(c.elementCount));
+            item->setData(SearchRole, (c.name + " " + c.description + " template").toLower());
+            item->setData(kTemplateRole, c.name);
             item->setData(kIsSourceRole, c.isSource);
             item->setData(kIsSinkRole, c.isSink);
             item->setData(kHasAlwaysRole, true);
@@ -192,7 +192,7 @@ void PickerPage::filter(const QString& text) {
             continue;
         }
         bool match = needle.isEmpty() || item->data(SearchRole).toString().contains(needle);
-        if (match && (item->data(kFactoryRole).isValid() || item->data(kCustomRole).isValid())) {
+        if (match && (item->data(kFactoryRole).isValid() || item->data(kTemplateRole).isValid())) {
             bool isSrc = item->data(kIsSourceRole).toBool();
             bool isSnk = item->data(kIsSinkRole).toBool();
             if (roleFilter_ == RoleSrc && !isSrc) match = false;
@@ -222,9 +222,9 @@ PickerChoice PickerPage::choice() const {
     if (item->data(kExistingRole).isValid()) {
         c.kind = PickerChoice::Existing;
         c.existing = data_.existing[item->data(kExistingRole).toInt()];
-    } else if (item->data(kCustomRole).isValid()) {
-        c.kind = PickerChoice::CustomElement;
-        c.factory = item->data(kCustomRole).toString();
+    } else if (item->data(kTemplateRole).isValid()) {
+        c.kind = PickerChoice::Template;
+        c.factory = item->data(kTemplateRole).toString();
     } else {
         c.kind = PickerChoice::NewElement;
         c.factory = item->data(kFactoryRole).toString();

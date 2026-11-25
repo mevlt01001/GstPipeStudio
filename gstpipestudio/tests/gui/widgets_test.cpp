@@ -1463,21 +1463,21 @@ private slots:
         QCOMPARE(w.bottomTabs()->tabText(w.bottomTabs()->currentIndex()), QString("Caps"));
         QVERIFY(w.bottomTabs()->currentWidget()->findChild<CapsPage*>());
 
-        // 5. Rubber-band marquee selection mode on CanvasView & collapsed Custom Element rendering on CanvasScene.
+        // 5. Rubber-band marquee selection mode on CanvasView & collapsed Template rendering on CanvasScene.
         QCOMPARE(w.view()->dragMode(), QGraphicsView::RubberBandDrag);
         QTemporaryDir customDir;
         qputenv("GPS_USER_DIR", customDir.path().toUtf8());
-        QVERIFY(c->saveCustomElement("ConvSinkPreset", {convert, sink}));
+        QVERIFY(c->saveTemplate("ConvSinkPreset", {convert, sink}));
         scene_rebuild(w);
         // Both convert and sink map to the same collapsed ElementItem on the scene, and only 1 external link is drawn!
         QVERIFY(w.scene()->element(convert) != nullptr);
         QCOMPARE(w.scene()->element(convert), w.scene()->element(sink));
-        QVERIFY(w.scene()->element(convert)->view().isCustomGroup);
+        QVERIFY(w.scene()->element(convert)->view().isTemplate);
         QCOMPARE(w.scene()->links().size(), 1);
 
-        // Expanding the custom element shows individual ElementItems and all 2 links.
-        QString grp = c->elementGroup(convert);
-        c->setGroupExpanded(grp, true);
+        // Expanding the template shows individual ElementItems and all 2 links.
+        QString grp = c->templateBox(convert);
+        c->setTemplateExpanded(grp, true);
         scene_rebuild(w);
         QVERIFY(w.scene()->element(convert) != w.scene()->element(sink));
         QCOMPARE(w.scene()->links().size(), 2);

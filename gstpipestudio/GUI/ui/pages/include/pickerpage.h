@@ -8,14 +8,14 @@
 struct PickerData {
     QString newHeader = "New element";
     QList<ExistingTarget> existing;   // free Always sink pads and Request sink templates of elements in the plan
-    QList<CustomElementInfo> custom;  // saved custom multi-element presets
+    QList<TemplateInfo> templates;  // saved templates
     QStringList compatible;           // factories whose sink meets the pad, ranked
     std::vector<FactoryEntry> candidates; // every factory that may be offered
     bool showFilters = false;         // role and pad presence filter chips
 };
 
 struct PickerChoice {
-    enum Kind { None, Existing, CustomElement, NewElement };
+    enum Kind { None, Existing, Template, NewElement };
     Kind kind = None;
     ExistingTarget existing;
     QString factory;

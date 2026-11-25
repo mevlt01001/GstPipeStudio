@@ -24,10 +24,10 @@ struct PadView {
 
 struct ElementView {
     QString name, factory;
-    QString displayTitle;       // shown as header title when non-empty (e.g. Custom Element name)
-    QString groupId;            // "<CustomTitle>#<id>" when part of a custom element/group
-    bool isCustomGroup = false; // true when this item is a collapsed multi-element Custom Element
-    QStringList groupMembers;   // member element names when part of a group
+    QString displayTitle;       // shown as header title when non-empty (e.g. Template name)
+    QString groupId;            // the template instance it is drawn in
+    bool isTemplate = false; // true when this item is a collapsed multi-element Template
+    QStringList templateMembers;   // member element names when part of a group
     bool isSource = false;
     bool isSink = false;
     bool isTracked = true;
@@ -43,8 +43,8 @@ struct ElementView {
     }
 };
 
-struct CustomElementInfo {
-    QString name;         // custom element name, e.g. "MyDecoder"
+struct TemplateInfo {
+    QString name;         // template name, e.g. "MyDecoder"
     QString description;  // summary, e.g. "videoconvert → videoscale"
     bool isSource = false;
     bool isSink = false;

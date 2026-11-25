@@ -62,7 +62,7 @@ private:
     void showCanvasMenu(const QPoint& screenPos);
     void onElementMenuRequested(const QString& element, const QPoint& screenPos);
     void showSelectionMenu(const QString& clickedElement, const QPoint& screenPos);
-    void saveSelectedAsCustomElement();
+    void saveSelectedAsTemplate();
     void connectSelected();
     void deleteSelected();
     void duplicateSelected();

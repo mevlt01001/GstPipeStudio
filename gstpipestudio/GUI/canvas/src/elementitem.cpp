@@ -100,11 +100,11 @@ void ElementItem::paint(QPainter* p, const QStyleOptionGraphicsItem*, QWidget*) 
     p->drawRoundedRect(box, 6, 6);
     p->save();
     p->setClipPath(shape());
-    p->fillRect(QRectF(0, 0, kBoxWidth, kHeader), view_.isCustomGroup ? QColor("#263526") : QColor("#333333"));
+    p->fillRect(QRectF(0, 0, kBoxWidth, kHeader), view_.isTemplate ? QColor("#263526") : QColor("#333333"));
     p->restore();
     p->setPen(Theme::line());
     p->drawLine(QPointF(1, kHeader), QPointF(kBoxWidth - 1, kHeader));
-    if (view_.isCustomGroup) p->fillRect(QRectF(1, 6, 4, kHeader - 12), Theme::accentHover());
+    if (view_.isTemplate) p->fillRect(QRectF(1, 6, 4, kHeader - 12), Theme::accentHover());
     else if (view_.nvidia) p->fillRect(QRectF(1, 8, 3, kHeader - 16), Theme::accent());
     p->setPen(QPen(border, borderWidth));
     p->setBrush(Qt::NoBrush);
@@ -118,13 +118,13 @@ void ElementItem::paint(QPainter* p, const QStyleOptionGraphicsItem*, QWidget*) 
 
     QString headerTitle = view_.displayTitle.isEmpty() ? view_.name : view_.displayTitle;
     p->setFont(bold);
-    p->setPen(view_.isCustomGroup ? Theme::accentHover() : Theme::text());
+    p->setPen(view_.isTemplate ? Theme::accentHover() : Theme::text());
     p->drawText(QRectF(12, 5, kBoxWidth - 24, 20), Qt::AlignLeft | Qt::AlignVCenter,
                 QFontMetrics(bold).elidedText(headerTitle, Qt::ElideRight, int(kBoxWidth - 24)));
     p->setFont(small);
     p->setPen(Theme::muted());
     QString subTitle = view_.factory;
-    if (!view_.isCustomGroup && !view_.groupId.isEmpty()) {
+    if (!view_.isTemplate && !view_.groupId.isEmpty()) {
         subTitle += "  [" + view_.groupId.section('#', 0, 0) + "]";
     }
     p->drawText(QRectF(12, 24, kBoxWidth - 24, 16), Qt::AlignLeft | Qt::AlignVCenter,
@@ -178,12 +178,12 @@ void ElementItem::paint(QPainter* p, const QStyleOptionGraphicsItem*, QWidget*) 
         const QString process = processingMs_ >= 0 ? QString::number(processingMs_, 'f', 1) + " ms" : "—";
         const QString drop = dropRatePercent_ >= 0 ? QString::number(dropRatePercent_, 'f', 1) + "%" : "—";
         p->drawText(QRectF(8, top + 2, kBoxWidth - 16, 15), Qt::AlignLeft,
-                    (view_.isCustomGroup ? "Max Avg. Processing Time  " : "Avg. Processing Time  ") + process);
+                    (view_.isTemplate ? "Max Avg. Processing Time  " : "Avg. Processing Time  ") + process);
         p->setPen(Theme::muted());
         p->drawText(QRectF(8, top + 16, kBoxWidth - 16, 15), Qt::AlignLeft,
-                    (view_.isCustomGroup ? "Max Drop Rate  " : "Drop Rate  ") + drop);
+                    (view_.isTemplate ? "Max Drop Rate  " : "Drop Rate  ") + drop);
         p->drawText(QRectF(8, top + 31, kBoxWidth - 16, 15), Qt::AlignLeft,
-                    QString(view_.isCustomGroup ? "Max Age  " : "Age  ") + (ageMs_ >= 0 ? QString::number(ageMs_, 'f', 1) + " ms" : "—"));
+                    QString(view_.isTemplate ? "Max Age  " : "Age  ") + (ageMs_ >= 0 ? QString::number(ageMs_, 'f', 1) + " ms" : "—"));
     }
 }
 
@@ -237,7 +237,7 @@ void ElementItem::mouseReleaseEvent(QGraphicsSceneMouseEvent* event) {
         if (auto* canvas = qobject_cast<CanvasScene*>(scene())) canvas->elementDragged(view_.name, pos());
     } else if (event->button() == Qt::LeftButton && event->modifiers() == Qt::NoModifier) {
         if (auto* canvas = qobject_cast<CanvasScene*>(scene())) {
-            if (canvas->selectedElementNames().size() <= 1 && !view_.isCustomGroup) {
+            if (canvas->selectedElementNames().size() <= 1 && !view_.isTemplate) {
                 canvas->elementDoubleClicked(view_.name);
             }
         }

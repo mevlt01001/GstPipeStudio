@@ -162,8 +162,8 @@ void MainWindow::buildActions() {
     auto* cutAct = make("actionCut", "Cu&t", {QKeySequence::Cut}, [this] { cutSelected(); });
     auto* pasteAct = make("actionPaste", "&Paste", {QKeySequence::Paste}, [this] { pasteClipboard(); });
     auto* connectSelAct = make("actionConnectSelected", "Connect &selected", {QKeySequence(Qt::CTRL | Qt::Key_L)}, [this] { connectSelected(); });
-    auto* saveCustomAct = make("actionSaveCustomElement", "Save as &custom element…", {QKeySequence(Qt::CTRL | Qt::Key_G)}, [this] { saveSelectedAsCustomElement(); });
-    saveCustomAct->setIconText("Save custom");
+    auto* saveCustomAct = make("actionSaveTemplateElement", "Save as &template…", {QKeySequence(Qt::CTRL | Qt::Key_G)}, [this] { saveSelectedAsTemplate(); });
+    saveCustomAct->setIconText("Save as template");
     auto* find = make("actionFind", "&Find element", {QKeySequence::Find}, [this] {
         if (drawer_->isOpen()) drawer_->focusSearch();
         else if (flows_->propertyPage()) flows_->propertyPage()->focusFirst();
@@ -424,11 +424,11 @@ void MainWindow::showCanvasMenu(const QPoint& screenPos) {
     menu->setAttribute(Qt::WA_DeleteOnClose);
     menu->addAction("Add element…", this, [this] { flows_->chooseElement(); })->setObjectName("actionCanvasAddElement");
     menu->addAction("Add source…", this, [this] { flows_->chooseSource(); })->setObjectName("actionCanvasAddSource");
-    if (!controller_->customElements().isEmpty()) {
-        QMenu* customSub = menu->addMenu("Add custom element");
-        for (const CustomElementInfo& c : controller_->customElements()) {
+    if (!controller_->templates().isEmpty()) {
+        QMenu* customSub = menu->addMenu("Add template");
+        for (const TemplateInfo& c : controller_->templates()) {
             customSub->addAction(c.name + "  (" + c.description + ")", this, [this, name = c.name] {
-                QStringList created = controller_->addCustomElement(name);
+                QStringList created = controller_->addTemplate(name);
                 if (!created.isEmpty()) scene_->setSelectedElements(created);
             });
         }
@@ -436,7 +436,7 @@ void MainWindow::showCanvasMenu(const QPoint& screenPos) {
     QStringList sel = scene_->selectedElementNames();
     if (!sel.isEmpty()) {
         menu->addSeparator();
-        menu->addAction(QString("Save selection (%1) as custom element…").arg(sel.size()), this, [this] { saveSelectedAsCustomElement(); })
+        menu->addAction(QString("Save selection (%1) as template…").arg(sel.size()), this, [this] { saveSelectedAsTemplate(); })
             ->setObjectName("actionCanvasSaveCustom");
         if (sel.size() >= 2) {
             menu->addAction("Connect selected elements", this, [this] { connectSelected(); })->setObjectName("actionCanvasConnectSelected");
@@ -469,7 +469,7 @@ void MainWindow::showCanvasMenu(const QPoint& screenPos) {
 void MainWindow::onElementMenuRequested(const QString& element, const QPoint& screenPos) {
     if (controller_->editingBlocked()) return;
     QStringList sel = scene_->selectedElementNames();
-    QString grp = controller_->elementGroup(element);
+    QString grp = controller_->templateBox(element);
     if (sel.size() > 1 || !grp.isEmpty()) {
         showSelectionMenu(element, screenPos);
     } else {
@@ -481,31 +481,31 @@ void MainWindow::showSelectionMenu(const QString& clickedElement, const QPoint& 
     if (controller_->editingBlocked()) return;
     QStringList sel = scene_->selectedElementNames();
     if (!sel.contains(clickedElement)) sel << clickedElement;
-    sel = controller_->expandSelectionWithGroups(sel);
+    sel = controller_->expandSelection(sel);
 
     auto* menu = new QMenu(this);
     menu->setObjectName("selectionMenu");
     menu->setAttribute(Qt::WA_DeleteOnClose);
 
-    QString grp = controller_->elementGroup(clickedElement);
+    QString grp = controller_->templateBox(clickedElement);
     if (!grp.isEmpty()) {
         QString title = grp.section('#', 0, 0);
-        bool expanded = controller_->isGroupExpanded(grp);
-        menu->addAction(expanded ? ("Collapse '" + title + "' to single element") : ("Expand '" + title + "' (" + QString::number(controller_->groupMembers(grp).size()) + " elements)"),
-                        this, [this, grp, expanded] { controller_->setGroupExpanded(grp, !expanded); })
+        bool expanded = controller_->isTemplateExpanded(grp);
+        menu->addAction(expanded ? ("Collapse '" + title + "' to single element") : ("Expand '" + title + "' (" + QString::number(controller_->templateMembers(grp).size()) + " elements)"),
+                        this, [this, grp, expanded] { controller_->setTemplateExpanded(grp, !expanded); })
             ->setObjectName("actionToggleGroupExpand");
-        menu->addAction("Ungroup '" + title + "'", this, [this, grp] { controller_->ungroupElements(grp); })->setObjectName("actionUngroup");
+        menu->addAction("Ungroup '" + title + "'", this, [this, grp] { controller_->detachTemplate(grp); })->setObjectName("actionUngroup");
         if (expanded) {
             menu->addAction("Edit properties of " + clickedElement + "…", this, [this, clickedElement] { flows_->editProperties(clickedElement); });
         }
         menu->addSeparator();
     }
 
-    menu->addAction(QString("Save as custom element (%1)…").arg(sel.size()), this, [this] { saveSelectedAsCustomElement(); })
-        ->setObjectName("actionSaveCustomElementMenu");
+    menu->addAction(QString("Save as template (%1)…").arg(sel.size()), this, [this] { saveSelectedAsTemplate(); })
+        ->setObjectName("actionSaveTemplateMenu");
     if (grp.isEmpty() && sel.size() >= 2) {
         menu->addAction("Combine into single group on canvas", this, [this, sel] {
-            controller_->groupSelectedElements(sel, "CustomChain");
+            controller_->groupSelectedElements(sel, "Template");
         })->setObjectName("actionGroupSelected");
     }
     if (sel.size() >= 2) {
@@ -527,11 +527,11 @@ void MainWindow::showSelectionMenu(const QString& clickedElement, const QPoint& 
     menu->popup(screenPos);
 }
 
-void MainWindow::saveSelectedAsCustomElement() {
+void MainWindow::saveSelectedAsTemplate() {
     if (controller_->editingBlocked()) return;
     QStringList sel = scene_->selectedElementNames();
     if (sel.isEmpty()) {
-        statusBar()->showMessage("Select one or more elements on the canvas first to save as a custom element.", 6000);
+        statusBar()->showMessage("Select one or more elements on the canvas first to save as a template.", 6000);
         return;
     }
     QStringList factories;
@@ -543,12 +543,12 @@ void MainWindow::saveSelectedAsCustomElement() {
     QString suggested = factories.join("_");
     if (suggested.size() > 28) suggested = suggested.left(28);
     bool ok = false;
-    QString name = QInputDialog::getText(this, "Save as Custom Element",
-                                         QString("Save %1 selected element(s) as a reusable Custom Element:\n(%2)").arg(sel.size()).arg(factories.join(" → ")),
+    QString name = QInputDialog::getText(this, "Save as Template",
+                                         QString("Save %1 selected element(s) as a reusable Template:\n(%2)").arg(sel.size()).arg(factories.join(" → ")),
                                          QLineEdit::Normal, suggested, &ok);
     if (!ok || name.trimmed().isEmpty()) return;
-    if (controller_->saveCustomElement(name.trimmed(), sel)) {
-        statusBar()->showMessage(QString("Saved custom element '%1' (%2 elements). Available in Add Element.").arg(name.trimmed()).arg(sel.size()), 8000);
+    if (controller_->saveTemplate(name.trimmed(), sel)) {
+        statusBar()->showMessage(QString("Saved template '%1' (%2 elements). Available in Add Element.").arg(name.trimmed()).arg(sel.size()), 8000);
     }
 }
 
@@ -568,7 +568,7 @@ void MainWindow::deleteSelected() {
     }
     if (selectedElements.size() == 1 && selectedLinks.isEmpty()) {
         const QString& only = selectedElements.first();
-        if (controller_->elementGroup(only).isEmpty() && controller_->view(only).isSource) {
+        if (controller_->templateBox(only).isEmpty() && controller_->view(only).isSource) {
             flows_->deleteSource(only);
             return;
         }
