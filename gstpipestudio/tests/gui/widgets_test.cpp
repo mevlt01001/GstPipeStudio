@@ -349,7 +349,6 @@ private slots:
         QTest::keyClicks(in<QLineEdit>(d, "editor_p-uint64"), "18446744073709551615");
         QTest::keyClicks(in<QLineEdit>(d, "editor_p-int64"), "-5");
         QTest::keyClicks(in<QLineEdit>(d, "editor_p-fraction"), "x");  // rejected by the validator
-        d.findChild<QCheckBox*>("expose_p-int")->click();
         QSignalSpy confirmed(&d, &PropertyPage::confirmed);
         press(&d, "saveButton");
         QCOMPARE(confirmed.count(), 1);
@@ -366,7 +365,6 @@ private slots:
         QCOMPARE(e.props.at("fake-unknown"), std::string("keep-me"));
         QVERIFY(e.props.find("p-fraction") == e.props.end());  // the "x" never got in, nothing changed
         QVERIFY(e.props.find("p-uint") == e.props.end());
-        QCOMPARE(e.exposed, std::vector<std::string>{"p-int"});
 
         // Putting a value back to its default removes it from the plan.
         in<QSpinBox>(d, "editor_p-int")->setValue(5);
@@ -378,17 +376,13 @@ private slots:
         const ElementInfo* info = need(*c, "propdemo");
         PropertyPageInput input = inputFor(info);
         input.props = {{"p-int", "77"}, {"p-enum", "3"}, {"p-flags", "b+c"}, {"p-bool", "true"}};
-        input.exposed = {"p-string"};
         PropertyPage d(input);
         QCOMPARE(in<QSpinBox>(d, "editor_p-int")->value(), 77);
         QCOMPARE(in<QComboBox>(d, "editor_p-enum")->currentData().toString(), QString("three"));  // number -> nick
         QVERIFY(in<QCheckBox>(d, "editor_p-bool")->isChecked());
         auto boxes = d.findChild<QWidget*>("editor_p-flags")->findChildren<QCheckBox*>();
         QVERIFY(!boxes[0]->isChecked() && boxes[1]->isChecked() && boxes[2]->isChecked());
-        QVERIFY(d.findChild<QCheckBox*>("expose_p-string")->isChecked());
-        QVERIFY(!d.findChild<QCheckBox*>("expose_p-int")->isChecked());
         QCOMPARE(d.edit().props.at("p-flags"), std::string("b+c"));  // untouched values are kept as written
-        QCOMPARE(d.edit().exposed, std::vector<std::string>{"p-string"});
     }
 
     void propertyPageSearchHidesRows() {
@@ -1297,7 +1291,7 @@ private slots:
         QVERIFY(c->plan().find(sink.toStdString()));
     }
 
-    void editPropertiesByDoubleClickAndExpose() {
+    void editPropertiesByDoubleClick() {
         MainWindow w(c.get());
         w.show();
         QString src = addSource(*c, "videotestsrc");
@@ -1312,12 +1306,11 @@ private slots:
         QCOMPARE(w.flows()->propertiesTitle(), "Edit properties · " + src);
         QCOMPARE(page->primary()->text(), QString("Save"));
         in<QComboBox>(*page, "editor_pattern")->setCurrentIndex(1);
-        page->findChild<QCheckBox*>("expose_num-buffers")->click();
+        QVERIFY(!page->findChild<QCheckBox*>("expose_num-buffers"));  // parameters belong to templates only
         press(page, "saveButton");
-        QVERIFY(waitFor([&] { return !c->busy() && c->plan().exposed.size() == 1; }, 8000));
+        QVERIFY(waitFor([&] { return !c->busy() && c->plan().find(src.toStdString())->props.count("pattern"); }, 8000));
         QCOMPARE(c->plan().find(src.toStdString())->props.at("pattern"), std::string("snow"));
-        QCOMPARE(c->plan().exposed[0].property, std::string("num-buffers"));
-        QCOMPARE(c->plan().exposed[0].name, std::string("num-buffers"));
+        QVERIFY(c->plan().exposed.empty());
         QVERIFY(!w.flows()->propertyPage());
     }
 

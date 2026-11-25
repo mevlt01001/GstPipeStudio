@@ -438,9 +438,6 @@ void Flows::editProperties(const QString& element) {
         if (l.srcElement == e->name && gps::splitPadIdentity(l.srcPad, &templateName, &k)) ++in.linkedSrc[templateName];
         if (l.sinkElement == e->name) ++in.linkedSink[l.sinkPad];
     }
-    for (const gps::ExposedParam& p : controller_->plan().exposed) {
-        if (p.element == e->name) in.exposed.push_back(p.property);
-    }
     auto* page = new PropertyPage(in);
     connect(page, &PropertyPage::confirmed, this, [this, page, element] {
         if (controller_->editElement(element, page->edit())) closeProperties();

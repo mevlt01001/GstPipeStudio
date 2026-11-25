@@ -277,11 +277,6 @@ class IntegrationTest : public QObject {
         QVERIFY2(i >= 0, qPrintable(property + "=" + nick));
         combo->setCurrentIndex(i);
     }
-    static void expose(PropertyPage* d, const QString& property) {
-        auto* box = d->findChild<QCheckBox*>("expose_" + property);
-        QVERIFY2(box, qPrintable(property));
-        box->click();
-    }
 
     static void selectMedia(CapsPage* d, const QString& media) {
         auto* combo = d->findChild<QComboBox*>("mediaCombo");
@@ -921,19 +916,16 @@ private slots:
     }
 
     // =================================================================================================================
-    // 7. exposed parameter, caps choice on a file output, Run through the GUI, gps-run with a parameter
+    // 7. caps choice on a file output, Run through the GUI, gps-run with a parameter of the saved conf
     // =================================================================================================================
 
-    void exposedParameterAndRunFromTheSavedConf() {
+    void runFromTheSavedConf() {
         QString out = work.filePath("out.raw");
         QFile::remove(out);
         QString src = addSource("videotestsrc", [&](PropertyPage* d) {
             setNumber(d, "num-buffers", 5);
-            expose(d, "num-buffers");
         });
         QVERIFY(!src.isEmpty());
-        QCOMPARE(c->plan().exposed.size(), size_t(1));
-        QVERIFY(c->view(src).propLines.join("\n").contains("↗ num-buffers = 5"));
         QString sink = addBehind(src, "src", "filesink", [&](PropertyPage* d) { setText(d, "location", out); }, [&](CapsPage* d) {
             selectMedia(d, "video/x-raw");
             pinField(d, "format", "I420");
@@ -947,11 +939,11 @@ private slots:
         QString conf = work.filePath("expose.conf");
         QVERIFY(w->saveFile(conf));
         QString launch = w->findChild<QLabel*>("commandLabel")->text();
-        QVERIFY2(launch.contains("gst-launch-1.0 expose") && launch.contains("num-buffers=VALUE"), qPrintable(launch));
+        QVERIFY2(launch.contains("gst-launch-1.0 expose"), qPrintable(launch));
         QFile f(conf);
         QVERIFY(f.open(QIODevice::ReadOnly));
         QString saved = QString::fromUtf8(f.readAll());
-        QVERIFY(saved.contains("[expose:num-buffers]"));
+        f.close();
         QVERIFY(saved.contains("complete=1"));
         QVERIFY(saved.contains("name=expose"));
 
@@ -965,8 +957,11 @@ private slots:
         QCOMPARE(QFileInfo(out).size(), qint64(5 * 160 * 120 * 3 / 2));  // 5 raw I420 frames, so the caps choice reached the real pipeline
         QVERIFY(shot("16_ran"));
 
-        // the exposed name reaches the pipeline from the command line
+        // a parameter of the conf (a template's, or one written by hand) reaches the pipeline from the command line
         QFile::remove(out);
+        QVERIFY(f.open(QIODevice::Append));
+        f.write(QString("\n[expose:num-buffers]\ntarget=%1.num-buffers\n").arg(src).toUtf8());
+        f.close();
         QProcess run;
         run.start(QString::fromUtf8(goodBin) + "/gps-run", {conf, "num-buffers=2"});
         QVERIFY(run.waitForFinished(30000));

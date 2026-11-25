@@ -563,37 +563,6 @@ private slots:
         QVERIFY(drawn);
     }
 
-    void exposingParameters() {
-        ElementEdit edit;
-        edit.props = {{"num-buffers", "100"}};
-        edit.exposed = {"num-buffers"};
-        QString one = addSource(*c, "videotestsrc", edit);
-        QCOMPARE(c->plan().exposed.size(), size_t(1));
-        QCOMPARE(c->plan().exposed[0].name, std::string("num-buffers"));
-        QCOMPARE(c->plan().exposed[0].element, one.toStdString());
-        QCOMPARE(c->view(one).propLines, QStringList{"↗ num-buffers = 100"});
-
-        QString two = addSource(*c, "videotestsrc", edit);
-        QCOMPARE(c->plan().exposed.size(), size_t(2));
-        QCOMPARE(c->plan().exposed[1].name, std::string("num-buffers_2"));  // unique
-
-        // Editing keeps the name an exposure already has.
-        QVERIFY(c->editElement(one, edit));
-        QVERIFY(settle(*c));
-        QCOMPARE(c->plan().exposed[1].name, std::string("num-buffers_2"));
-        QCOMPARE(c->plan().exposed.size(), size_t(2));
-        QVERIFY(text(c->plan().toConf()).contains("[expose:num-buffers_2]"));
-
-        QVERIFY(c->editElement(two, withProps({{"num-buffers", "100"}})));  // no longer exposed
-        QVERIFY(settle(*c));
-        QCOMPARE(c->plan().exposed.size(), size_t(1));
-
-        QTemporaryDir dir;
-        QString error;
-        QVERIFY(c->save(dir.filePath("p.conf"), &error));
-        QVERIFY(c->launchCommand().endsWith("gst-launch-1.0 p num-buffers=VALUE"));
-    }
-
     void requestSrcCounts() {
         QString src = addSource(*c, "videotestsrc");
         ElementEdit two;

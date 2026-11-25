@@ -53,7 +53,6 @@ class ScreensTest : public QObject {
     void buildRichPipeline() {
         ElementEdit expose;
         expose.props = {{"pattern", "ball"}, {"num-buffers", "300"}};
-        expose.exposed = {"num-buffers"};
         QString cam = addSource(*c, "videotestsrc", expose);
         ElementEdit three;
         three.requestSrc["src_%u"] = 2;

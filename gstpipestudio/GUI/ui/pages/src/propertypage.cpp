@@ -74,19 +74,10 @@ PropertyPage::PropertyPage(const PropertyPageInput& input, QWidget* parent) : Dr
         auto* editor = new PropertyEditor(p, current, row);
         editor->setObjectName("editor_" + name);
 
-        auto* expose = new QCheckBox("Expose", row);
-        expose->setToolTip("Make this property a parameter of the saved pipeline (name=value on the gst-launch line)");
-        expose->setObjectName("expose_" + name);
-        expose->setChecked(std::find(input.exposed.begin(), input.exposed.end(), p.name) != input.exposed.end());
-
-        auto* head = new QHBoxLayout;
-        head->addWidget(label, 1);
-        head->addWidget(expose, 0, Qt::AlignRight);
-        line->addLayout(head);
+        line->addWidget(label);
         line->addWidget(editor);
         rows->addWidget(row);
         editors_ << editor;
-        expose_[name] = expose;
         rows_[name] = row;
         ++shown;
     }
@@ -200,8 +191,5 @@ ElementEdit PropertyPage::edit() const {
     };
     counts(pads_, e.requestSrc);
     counts(sinkPadsCount_, e.requestSink);
-    for (auto it = expose_.begin(); it != expose_.end(); ++it) {
-        if (it.value()->isChecked()) e.exposed.push_back(it.key().toStdString());
-    }
     return e;
 }

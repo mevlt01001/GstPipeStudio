@@ -566,27 +566,6 @@ void Controller::applyEdit(const std::string& element, const ElementEdit& edit) 
     };
     counts(e->requestSrc, edit.requestSrc, &gps::Graph::setRequestSrc);
     counts(e->requestSink, edit.requestSink, &gps::Graph::setRequestSink);
-
-    // Exposed parameters of this element: drop the ones no longer ticked, keep the names the others have,
-    // give new ones a unique name. Order stays as it was.
-    auto isExposed = [&](const std::vector<gps::ExposedParam>& list, const std::string& property) {
-        return std::any_of(list.begin(), list.end(), [&](const gps::ExposedParam& p) { return p.element == element && p.property == property; });
-    };
-    std::vector<gps::ExposedParam> all;
-    for (const gps::ExposedParam& p : plan().exposed) {
-        bool wanted = std::find(edit.exposed.begin(), edit.exposed.end(), p.property) != edit.exposed.end();
-        if (p.element != element || wanted) all.push_back(p);
-    }
-    for (const std::string& property : edit.exposed) {
-        if (isExposed(all, property)) continue;
-        std::string name = property;
-        auto taken = [&](const std::string& n) {
-            return std::any_of(all.begin(), all.end(), [&](const gps::ExposedParam& p) { return p.name == n; });
-        };
-        for (int n = 2; taken(name); ++n) name = property + "_" + std::to_string(n);
-        all.push_back({name, element, property});
-    }
-    editGraph().setExposed(all);
 }
 
 bool Controller::transact(const std::function<bool(gps::Graph&, Edit&)>& change) {
