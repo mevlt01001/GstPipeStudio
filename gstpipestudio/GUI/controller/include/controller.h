@@ -176,6 +176,7 @@ public:
     void open(const QString& path, bool imported = false);  // imported: an unsaved change of this document
     void restoreVersion(const QString& version);  // an earlier version of the document, as one undoable change to it
     void revert();                                // the target's file again, unmodified
+    bool canRevert() const;                       // modified, not busy, and the target's file is on disk
     bool importLaunch(const QString& description); // brief native probe, then opens an unsaved canvas graph
     SaveResult save();                                     // to the target
     SaveResult saveAs(std::unique_ptr<SaveTarget> target); // there; written, the document is bound to it

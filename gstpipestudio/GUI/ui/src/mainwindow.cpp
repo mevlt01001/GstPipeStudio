@@ -517,7 +517,7 @@ void MainWindow::refreshState() {
     act("actionSave")->setEnabled(controller_->canSave());
     act("actionSaveAs")->setEnabled(controller_->canSave());
     showSaveAll();
-    act("actionRevert")->setEnabled(!busy && controller_->modified() && !doc_->path().isEmpty());
+    act("actionRevert")->setEnabled(controller_->canRevert());
     act("actionVersionHistory")->setEnabled(!busy && !doc_->path().isEmpty() && !VersionHistory::versions(doc_->path()).isEmpty());
     act("actionUpdate")->setEnabled(!busy && hasPlan);
     act("actionArrange")->setEnabled(!editBlocked && hasPlan);

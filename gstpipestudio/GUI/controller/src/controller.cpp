@@ -1421,8 +1421,11 @@ void Controller::open(const QString& path, bool imported) {
 void Controller::restoreVersion(const QString& version) { load(version, nullptr, Load::Replace, "Restored an earlier version"); }
 
 void Controller::revert() {
-    if (!target_->path().isEmpty()) load(target_->path(), nullptr, Load::Open, "Reverted to the saved file");
+    if (canRevert()) load(target_->path(), nullptr, Load::Open, "Reverted to the saved file");
 }
+
+// A new project has its path before its first save writes the file: there is nothing to go back to yet.
+bool Controller::canRevert() const { return !busy() && modified() && QFileInfo::exists(target_->path()); }
 
 void Controller::load(const QString& source, std::shared_ptr<SaveTarget> target, Load how, const QString& action) {
     if (busy()) return;

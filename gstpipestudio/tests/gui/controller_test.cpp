@@ -689,9 +689,13 @@ private slots:
     // and Revert reads the file again.
     void undoBackToTheSavePointIsNotModified() {
         QTemporaryDir dir;
+        c->newPlan(std::make_unique<ProjectConfTarget>(dir.filePath("p.conf")));  // New project: no file before Save
         const QString src = addSource(*c, "videotestsrc");
-        QVERIFY(saved(saveAs(*c, dir.filePath("p.conf"))));
+        QVERIFY(c->modified());
+        QVERIFY(!c->canRevert());
+        QVERIFY(saved(c->save()));
         QVERIFY(!c->modified());
+        QVERIFY(!c->canRevert());
         QVERIFY(!addAfter(*c, src, "src", "fakesink").isEmpty());
         QVERIFY(c->hasUnsavedWork());
         QVERIFY(c->undo());
@@ -699,6 +703,7 @@ private slots:
         QVERIFY(c->redo());
         QVERIFY(c->modified());
         QVERIFY(settle(*c));
+        QVERIFY(c->canRevert());
         c->revert();
         QVERIFY(waitFor([&] { return !c->busy() && c->plan().elements.size() == 1; }));
         QVERIFY(!c->modified());
