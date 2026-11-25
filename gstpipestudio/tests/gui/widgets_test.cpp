@@ -392,6 +392,7 @@ private slots:
         QMouseEvent move(QEvent::MouseMove, row, list->viewport()->mapToGlobal(row), Qt::NoButton, Qt::NoButton, Qt::NoModifier);
         QApplication::sendEvent(list->viewport(), &move);
         QVERIFY(waitFor([&] { return TemplatePeek::current() != nullptr; }, 2000));
+        QVERIFY(waitFor([&] { return TemplatePeek::current() && TemplatePeek::current()->laidOut(); }, 30000));
         QVERIFY(TemplatePeek::current()->grab().save(shotDir() + "/template_peek.png"));
         QLabel tipped("tipped");  // no tooltip covers an open peek
         tipped.setToolTip("a tooltip");
@@ -412,6 +413,24 @@ private slots:
         const QString placed = fromStd(c->plan().instances.back().id);
         QVERIFY(!c->isTemplateExpanded(placed));
         QCOMPARE(c->templateMembers(placed).size(), 2);
+    }
+
+    // The peek shows the real pipeline: a branch is two rows, not one chain.
+    void thePeekLaysOutTheRealPipeline() {
+        gps::Graph content;
+        content.name = "Split";
+        const std::string src = content.addElement("videotestsrc"), tee = content.addElement("tee");
+        const std::string a = content.addElement("fakesink"), b = content.addElement("autovideosink");
+        content.linkExisting(src, "src", tee, "sink");
+        content.linkExisting(tee, "src_%u#0", a, "sink");
+        content.linkExisting(tee, "src_%u#1", b, "sink");
+        const layout::Node tree = TemplatePeek::tree(content);
+        QCOMPARE(tree.children.size(), 4);
+        QCOMPARE(tree.edges.size(), 3);
+        TemplatePeek peek(content);
+        QVERIFY(waitFor([&] { return peek.laidOut(); }, 30000));
+        QVERIFY(peek.width() > 300);
+        QVERIFY(peek.grab().save(shotDir() + "/template_peek_branch.png"));
     }
 
     void aCollapsedTemplateShowsOnlyItsParametersAsProperties() {

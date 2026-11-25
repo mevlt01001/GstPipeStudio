@@ -1,7 +1,7 @@
 ## Templates
 
 - Save a selection as a template: its border is traced around it from one corner along both arms (and erased the same way when it is cancelled, detached or deleted), then give it a name and Add parameter (an element, then one of its properties or a field of its fixed caps).
-- Add template opens the library in the right drawer; hover a template, or a collapsed one on the canvas, for a peek inside.
+- Add template opens the library in the right drawer; hover a template, or a collapsed one on the canvas, for a peek inside: a small canvas of its real pipeline, laid out like the canvas, branches and all.
 - A collapsed template is one element whose Properties are its parameters. + expands it into a green frame with its pads on the border; − (or five idle seconds) collapses it. Templates nest.
 - A project's conf imports a template like a module: one section with its name, revision and parameter values, instead of its elements. The project folder keeps a copy of each template it uses under templates/, so it runs on another machine with gps-run or gstgpsconf; elsewhere GPS_TEMPLATE_PATH lists more template folders.
 - Changing a copy asks: Update template, Save as new template, Detach or Undo. An update reaches the other copies at once and other projects when they open.
