@@ -18,8 +18,12 @@
 
 ## Projects and history
 
-- File > New project… asks a name and makes its folder under ~/workspace/GstPipeStudio (Change… picks another place, remembered). Save of a canvas never saved does the same, so Ctrl+S always lands in a project folder; Save as… still chooses any file.
-- A saved conf's folder gets a .gpsproj listing its confs and the templates they use. File > Version history restores one of the last 50 saves.
+- File > New project… asks a name; its folder under ~/workspace/GstPipeStudio (Change… picks another place, remembered) is made by its first save. Save of a canvas never saved asks the same, so Ctrl+S always lands in a project folder; Save as… still chooses any file.
+- Save always writes, validated or not: validation gates Run and Monitor only. A file saved before it was validated is marked incomplete.
+- A tab is modified when it differs from its last save: undo back to it clears the ●, moving boxes does not set it, and opening a file never does. New tabs are Untitled-1, Untitled-2…
+- File > Save all (Ctrl+Alt+S) saves every unsaved tab; File > Revert file reads the file again. Closing the window with several unsaved tabs asks once, listing them: Save all, Don't save or Cancel.
+- Files are written whole or not at all (a temporary file beside it, then renamed).
+- A saved conf's folder gets a .gpsproj listing its confs and the templates they use. File > Version history restores one of the last 50 saves as one undoable change; a library template's restored version stays that template.
 - User folders follow the XDG base directories; the template library moves from custom_elements once.
 
 ## Pipeline-wide live metrics
@@ -45,12 +49,12 @@ Processing time measures first sink arrival to first src departure, including wa
 
 ## Desktop experience
 
-- Menus in the usual order: File (New, Open, Open recent, Save, Save as…), Edit (Undo, Redo, Cut, Copy, Paste, Duplicate, Delete, Select all, Find), View, Pipeline, Help.
+- Menus in the usual order: File (New, Open, Open recent, Save, Save as…, Save all, Revert file), Edit (Undo, Redo, Cut, Copy, Paste, Duplicate, Delete, Select all, Find), View, Pipeline, Help.
 - Log, Validation, Live metrics, Properties and Caps are dock panels: move, tab, split, float or close them; View > Panels brings one back, Reset layout restores the row under the canvas, and the window remembers the layout.
 - Every open file is a tab over the canvas, as in code editors: ● marks unsaved changes (× on hover closes), a file already open comes to the front, closing an unsaved tab asks Save / Don't save / Cancel, middle click or Ctrl+W closes, Ctrl+Tab and Ctrl+PgDn/PgUp switch. The panels and menus follow the tab in front, and the open tabs come back on the next start.
 - The Explorer, left of the canvas: the open project's files, every project in the projects folder and the template library. Double click a project or a .conf to open it in a tab, a template to edit it.
 - A new tab opens at once: every tab shares one GStreamer check, one element list and one template library, so a template saved in one tab is offered to the copies in all the others. The View menu's link style, auto alignment and connected move apply to every tab.
-- Validation follows what runs: adding or changing an element no source feeds keeps the last result (Save stays available); a change to the fed part is validated again.
+- Validation follows what runs: adding or changing an element no source feeds keeps the last result; a change to the fed part is validated again.
 - Unified menu and window controls, animated About dialog, and visible version/build identity.
 - Development and release builds use separate settings; support reports include the real build version and commit.
 - Larger pipeline file picker, slightly lighter canvas, animated pad feedback and retracting connection previews.
