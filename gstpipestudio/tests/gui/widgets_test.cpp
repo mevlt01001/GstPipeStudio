@@ -434,6 +434,24 @@ private slots:
         QCOMPARE(listed.count(), 0);
     }
 
+    // The View menu sets one preference for every tab, the menu shows it however it was set, and the link style is
+    // remembered.
+    void theViewMenuSetsOnePreferenceForEveryTab() {
+        MainWindow w(c.get());
+        w.show();
+        ViewPreferences& view = c->services().view();
+        auto* rightAngles = w.findChild<QAction*>("actionLinkRightAngles");
+        rightAngles->trigger();
+        QCOMPARE(view.routing(), layout::Routing::RightAngles);
+        QCOMPARE(Settings::linkRouting(), layout::Routing::RightAngles);
+        view.setConnectedMove(true);
+        QVERIFY(w.findChild<QAction*>("actionConnectedMove")->isChecked());
+        view.setConnectedMove(false);
+        w.findChild<QAction*>("actionLinkCurves")->trigger();
+        QVERIFY(!rightAngles->isChecked());
+        QCOMPARE(view.routing(), layout::Routing::Curves);
+    }
+
     // The tabs open when the window closed come back the next time, the one in front in front.
     void theTabsComeBackOnTheNextStart() {
         QTemporaryDir root, library;

@@ -236,8 +236,8 @@ void MainWindow::buildActions() {
     automatic->setObjectName("actionAutoAlignment");
     automatic->setCheckable(true);
     automatic->setToolTip("Align the whole canvas after every edit; a dragged box slides back into place");
-    connect(automatic, &QAction::triggered, this, [this, &preferences](bool on) {
-        preferences.setAutoAlign(on);
+    connect(automatic, &QAction::triggered, this, [this](bool on) {
+        services_.view().setAutoAlign(on);
         if (on) controller_->niceAlign();
     });
     // Link style: the next nice alignment routes links as curves or right-angle lines.
@@ -249,8 +249,8 @@ void MainWindow::buildActions() {
         style->setObjectName(name);
         style->setCheckable(true);
         styles->addAction(style);
-        connect(style, &QAction::triggered, this, [this, &preferences, routing = routing] {
-            preferences.setRouting(routing);
+        connect(style, &QAction::triggered, this, [this, routing = routing] {
+            services_.view().setRouting(routing);
             controller_->niceAlign();
         });
     }
