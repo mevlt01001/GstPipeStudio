@@ -34,6 +34,7 @@
 #include "controller.h"
 #include "drawer.h"
 #include "elementitem.h"
+#include "explorer.h"
 #include "flows.h"
 #include "linkitem.h"
 #include "logpanel.h"
@@ -323,7 +324,15 @@ void MainWindow::buildPanels() {
     panels_->add(telemetry_, "Live metrics", 400);
     panels_->add(propsTab_, "Properties", 400);
     panels_->add(capsTab_, "Caps", 400);
+    explorer_ = new Explorer(this);
+    panels_->add(explorer_, "Explorer", 0, Qt::LeftDockWidgetArea);
+    connect(explorer_, &Explorer::openRequested, this, [this](const QString& path) {
+        if (path != controller_->filePath() && confirmDiscard()) openFile(path);
+    });
+    connect(explorer_, &Explorer::templateRequested, this, &MainWindow::openTemplateWindow);
+    connect(explorer_, &Explorer::templateMenuRequested, flows_, &Flows::templateMenu);
     resizeDocks({panels_->dock(log_)}, {240}, Qt::Vertical);
+    resizeDocks({panels_->dock(explorer_)}, {260}, Qt::Horizontal);
     panels_->show(updates_);
     flows_->setBottomPanels(panels_, propsTab_, capsTab_, updates_);
 
@@ -351,6 +360,9 @@ void MainWindow::setReason(QAction* action, const QString& text, const QString& 
 
 void MainWindow::refreshState() {
     auto act = [this](const char* name) { return findChild<QAction*>(name); };
+    QStringList templates;
+    for (const TemplateInfo& t : controller_->templates()) templates << t.name;
+    explorer_->present(controller_->libraryTemplate().isEmpty() ? controller_->filePath() : QString(), templates);
     bool blocked = controller_->environmentBlocked();
     bool busy = controller_->busy();
     bool editBlocked = controller_->editingBlocked();

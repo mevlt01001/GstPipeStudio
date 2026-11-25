@@ -4,7 +4,7 @@
 - Add template opens the library in the right drawer; hover a template, or a collapsed one on the canvas, for a peek inside: a small canvas of its real pipeline, laid out like the canvas, branches and all.
 - A collapsed template is one element whose Properties are its parameters. + expands it into a green frame with its pads on the border; − (or five idle seconds) collapses it. Templates nest.
 - A project's conf imports a template like a module: one section with its name, revision and parameter values, instead of its elements. The project folder keeps a copy of each template it uses under templates/, so it runs on another machine with gps-run or gstgpsconf; elsewhere GPS_TEMPLATE_PATH lists more template folders.
-- The library, from Add template (right click a template): Edit template opens it on the canvas as "Template: <name>", where Pipeline > Template parameters… chooses its parameters and Save writes its next revision; Rename…, Export… and Delete…; Import… adds a template file.
+- The ✎ on a template (collapsed or open), a template in the Explorer, or Edit template in the library (right click a template in Add template) opens it in a smaller window of its own as "Template: <name>". There Pipeline > Template parameters… chooses its parameters and Save writes its next revision, which the main window offers to its copies. The library menu also has Rename…, Export… and Delete…; Import… adds a template file.
 - Changing a copy asks: Update template, Save as new template, Detach or Undo. An update reaches the other copies at once and other projects when they open.
 - Add source, Save custom, Combine into group and the Expose checkbox are gone: Add element lists every factory, and parameters belong to templates.
 
@@ -46,6 +46,8 @@ Processing time measures first sink arrival to first src departure, including wa
 
 - Menus in the usual order: File (New, Open, Open recent, Save, Save as…), Edit (Undo, Redo, Cut, Copy, Paste, Duplicate, Delete, Select all, Find), View, Pipeline, Help.
 - Log, Validation, Live metrics, Properties and Caps are dock panels: move, tab, split, float or close them; View > Panels brings one back, Reset layout restores the row under the canvas, and the window remembers the layout.
+- The Explorer, left of the canvas: the open project's files, every project in the projects folder and the template library. Double click a project or a .conf to open it, a template to edit it.
+- Validation follows what runs: adding or changing an element no source feeds keeps the last result (Save stays available); a change to the fed part is validated again.
 - Unified menu and window controls, animated About dialog, and visible version/build identity.
 - Development and release builds use separate settings; support reports include the real build version and commit.
 - Larger pipeline file picker, slightly lighter canvas, animated pad feedback and retracting connection previews.

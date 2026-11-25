@@ -10,6 +10,7 @@ class CanvasScene;
 class CanvasView;
 class Controller;
 class Drawer;
+class Explorer;
 class Flows;
 class LogPanel;
 class QAction;
@@ -37,6 +38,7 @@ public:
     UpdatePanel* updatePanel() const { return updates_; }
     LogPanel* logPanel() const { return log_; }
     Panels* panels() const { return panels_; }
+    Explorer* explorer() const { return explorer_; }
     QWidget* propertiesTab() const { return propsTab_; }
     QWidget* capsTab() const { return capsTab_; }
     SetupPage* setupPage() const { return setup_; }
@@ -96,6 +98,7 @@ private:
     SetupPage* setup_;
     UpdatePanel* updates_;
     TelemetryPanel* telemetry_;
+    Explorer* explorer_;
     LogPanel* log_;
     QWidget* propsTab_ = nullptr;
     QWidget* capsTab_ = nullptr;

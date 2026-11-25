@@ -35,6 +35,8 @@
 #include "confirmdialog.h"
 #include "drawer.h"
 #include "elementitem.h"
+#include "explorer.h"
+#include <QTreeWidget>
 #include <QPointer>
 #include "newprojectdialog.h"
 #include "panels.h"
@@ -492,6 +494,53 @@ private slots:
         c->newProject(root.filePath("back/back.conf"));
         QCOMPARE(c->filePath(), root.filePath("back/back.conf"));
         QVERIFY(c->plan().empty());
+    }
+
+    // The Explorer, left of the canvas: the open project's files, every project, and the template library.
+    void theExplorerShowsProjectsFilesAndTemplates() {
+        QTemporaryDir root, library;
+        qputenv("GPS_USER_DIR", library.path().toUtf8());
+        QSettings().setValue("projects/location", root.path());
+        MainWindow w(c.get());
+        w.show();
+        QString src, convert, sink;
+        buildChain(w, &src, &convert, &sink);
+        QVERIFY(c->saveTemplate("Tail", {convert, sink}));
+        QVERIFY(settle(*c));
+        const QString conf = root.filePath("door/door.conf");
+        QVERIFY(QDir().mkpath(root.filePath("door")));
+        QVERIFY(w.saveFile(conf));
+        QVERIFY(QDir().mkpath(root.filePath("yard")));
+        QVERIFY(QFile::copy(conf, root.filePath("yard/yard.conf")));
+
+        QCOMPARE(w.panels()->dock(w.explorer())->windowTitle(), QString("Explorer"));
+        QCOMPARE(w.dockWidgetArea(w.panels()->dock(w.explorer())), Qt::LeftDockWidgetArea);
+        QTreeWidget* tree = w.explorer()->tree();
+        auto childTexts = [](QTreeWidgetItem* section) {
+            QStringList out;
+            for (int i = 0; i < section->childCount(); ++i) out << section->child(i)->text(0);
+            return out;
+        };
+        QVERIFY(waitFor([&] { return childTexts(tree->topLevelItem(1)) == QStringList({"door", "yard"}); }));  // the folder is watched
+        QCOMPARE(tree->topLevelItem(0)->text(0), QString("Project · door"));
+        QCOMPARE(childTexts(tree->topLevelItem(0)), QStringList({"templates/", "door.conf", "door.gpsproj"}));
+        QCOMPARE(childTexts(tree->topLevelItem(0)->child(0)), QStringList({"Tail.conf"}));
+        QCOMPARE(childTexts(tree->topLevelItem(2)), QStringList({"Tail"}));
+        QVERIFY(w.grab().save(shotDir() + "/explorer.png"));
+
+        // A project opens with a double click; a template opens in its own window, and its right click is the library menu.
+        QSignalSpy opened(w.explorer(), &Explorer::openRequested), edited(w.explorer(), &Explorer::templateRequested);
+        emit tree->itemActivated(tree->topLevelItem(1)->child(1), 0);
+        QCOMPARE(opened.count(), 1);
+        QVERIFY(waitFor([&] { return c->filePath() == root.filePath("yard/yard.conf"); }));
+        QVERIFY(settle(*c));
+        QVERIFY(waitFor([&] { return tree->topLevelItem(0)->text(0) == "Project · yard"; }));
+        QObject::disconnect(w.explorer(), &Explorer::templateRequested, &w, nullptr);  // the window is tested on its own
+        emit tree->itemActivated(tree->topLevelItem(2)->child(0), 0);
+        QCOMPARE(edited.count(), 1);
+        QCOMPARE(edited.first().first().toString(), QString("Tail"));
+        QSettings().remove("projects/location");
+        qunsetenv("GPS_USER_DIR");
     }
 
     // The peek shows the real pipeline: a branch is two rows, not one chain.

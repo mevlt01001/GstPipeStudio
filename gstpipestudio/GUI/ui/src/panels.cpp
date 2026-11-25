@@ -10,17 +10,25 @@ Panels::Panels(QMainWindow* window) : QObject(window), window_(window) {
     window->setDockOptions(QMainWindow::AnimatedDocks | QMainWindow::AllowTabbedDocks | QMainWindow::AllowNestedDocks);
 }
 
-void Panels::add(QWidget* panel, const QString& title, int room) {
+void Panels::add(QWidget* panel, const QString& title, int room, Qt::DockWidgetArea side) {
     auto* dock = new QDockWidget(title, window_);
     QString name = title;
     dock->setObjectName("panel" + name.remove(' '));  // what the remembered layout knows it by
     dock->setWidget(panel);
     dock->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable | QDockWidget::DockWidgetClosable);
     dock->toggleViewAction()->setObjectName("actionPanel" + name);
-    window_->addDockWidget(Qt::BottomDockWidgetArea, dock);
-    if (!docks_.isEmpty()) window_->tabifyDockWidget(docks_.front(), dock);
+    window_->addDockWidget(side, dock);
+    if (QDockWidget* first = firstOn(side)) window_->tabifyDockWidget(first, dock);
     docks_ << dock;
     room_[dock] = room;
+    side_[dock] = side;
+}
+
+QDockWidget* Panels::firstOn(Qt::DockWidgetArea side) const {
+    for (QDockWidget* d : docks_) {
+        if (side_.value(d) == side) return d;
+    }
+    return nullptr;
 }
 
 QDockWidget* Panels::dock(QWidget* panel) const {
@@ -55,10 +63,14 @@ QList<QAction*> Panels::toggles() const {
 void Panels::reset(QWidget* front) {
     for (QDockWidget* d : docks_) {
         d->setFloating(false);
-        window_->addDockWidget(Qt::BottomDockWidgetArea, d);
+        window_->addDockWidget(side_.value(d), d);
         d->show();
     }
-    for (int i = 1; i < docks_.size(); ++i) window_->tabifyDockWidget(docks_.front(), docks_[i]);
-    if (!docks_.isEmpty()) window_->resizeDocks({docks_.front()}, {240}, Qt::Vertical);
+    for (QDockWidget* d : docks_) {
+        QDockWidget* first = firstOn(side_.value(d));
+        if (first != d) window_->tabifyDockWidget(first, d);
+    }
+    if (QDockWidget* bottom = firstOn(Qt::BottomDockWidgetArea)) window_->resizeDocks({bottom}, {240}, Qt::Vertical);
+    if (QDockWidget* left = firstOn(Qt::LeftDockWidgetArea)) window_->resizeDocks({left}, {260}, Qt::Horizontal);
     show(front);
 }
