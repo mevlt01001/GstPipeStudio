@@ -3,6 +3,7 @@
 #pragma once
 
 #include <QGraphicsScene>
+#include <QElapsedTimer>
 #include <QPointer>
 #include <QVariantAnimation>
 #include <QHash>
@@ -32,6 +33,7 @@ public:
     ElementItem* element(const QString& name) const { return elements_.value(name); }
     TemplateFrameItem* frame(const QString& instanceId) const { return frames_.value(instanceId); }
     QList<TemplateFrameItem*> frames() const { return frames_.values(); }
+    QList<FrameGhost*> ghosts() const;  // frames on their way out
     PadItem* pad(const QString& element, const QString& identity, bool isSrc) const;
     const QList<LinkItem*>& links() const { return links_; }
     QStringList selectedElementNames() const;
@@ -98,7 +100,9 @@ private:
     QHash<QString, ElementItem*> elements_;
     QHash<QString, PadItem*> pads_;
     QHash<QString, TemplateFrameItem*> frames_;
-    QSet<QString> shownFrames_;  // frames of the last rebuild: a frame not among them grows in
+    QSet<QString> shownFrames_;  // frames of the last rebuild
+    QSet<QString> knownInstances_;  // templates of the last rebuild: a frame of one not among them is traced
+    QHash<QString, QElapsedTimer> traceStarted_;  // template -> since when its border is being traced
     QList<QPointer<FrameGhost>> ghosts_;  // frames that just closed, shrinking: they outlive a rebuild
     QList<LinkItem*> links_;
     QSet<QString> selectedElements_;

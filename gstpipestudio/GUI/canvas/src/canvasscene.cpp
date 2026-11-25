@@ -120,6 +120,14 @@ void CanvasScene::setSelectedElements(const QStringList& names) {
     }
 }
 
+QList<FrameGhost*> CanvasScene::ghosts() const {
+    QList<FrameGhost*> out;
+    for (const QPointer<FrameGhost>& g : ghosts_) {
+        if (g && !g->done()) out << g;
+    }
+    return out;
+}
+
 void CanvasScene::scheduleRebuild() {
     if (pending_) return;
     pending_ = true;
@@ -210,18 +218,22 @@ void CanvasScene::rebuild() {
             pads_.insert(k, p);
         }
         frame->updateGeometry();
-        if (!shownFrames_.contains(fv.id)) frame->appear();
+        if (!knownInstances_.contains(fv.id)) traceStarted_[fv.id].start();  // a template just made, not one just opened
+        if (traceStarted_.contains(fv.id)) frame->trace(traceStarted_[fv.id].elapsed());
         if (selectedElements_.contains(fv.members.value(0)) && fv.members.size() > 1 &&
             std::all_of(fv.members.begin(), fv.members.end(), [&](const QString& m) { return selectedElements_.contains(m); }))
             frame->setSelected(true);
     }
     shownFrames_ = nowShown;
+    traceStarted_.removeIf([](const auto& it) { return it.value().elapsed() > TemplateFrameItem::kTraceMs; });
+    knownInstances_.clear();
+    for (const gps::TemplateInstance& t : pipeline().graph().instances) knownInstances_.insert(QString::fromStdString(t.id));
     for (const QPointer<FrameGhost>& g : std::as_const(ghosts_)) addItem(g);
     for (auto it = closing.cbegin(); it != closing.cend(); ++it) {
         if (nowShown.contains(it.key())) continue;
         ElementItem* box = elements_.value(controller_->templateMembers(it.key()).value(0));
-        if (!box || !box->view().isTemplate) continue;  // deleted or detached: nothing to shrink into
-        auto* ghost = new FrameGhost(it.value(), box->sceneBoundingRect());
+        const bool closed = box && box->view().isTemplate && box->view().groupId == it.key();  // else deleted, detached
+        auto* ghost = new FrameGhost(it.value(), closed ? box->sceneBoundingRect() : it.value(), closed ? FrameGhost::Shrink : FrameGhost::Untrace);
         addItem(ghost);
         ghosts_ << ghost;
     }

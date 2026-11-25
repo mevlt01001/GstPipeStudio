@@ -2,6 +2,7 @@
 #include "templateframeitem.h"
 
 #include <QGraphicsSceneMouseEvent>
+#include <cmath>
 #include <QPainter>
 #include <QPainterPathStroker>
 #include <QSet>
@@ -15,30 +16,64 @@
 namespace {
 constexpr double kRadius = 14;
 constexpr double kBand = 14;  // how wide the border is for the mouse
+constexpr int kTraceMs = TemplateFrameItem::kTraceMs;
+
+// The border of r as far as it is drawn: from its top left corner along both arms at once, each arm reaching half of
+// `share` of the way round, so at 1 the two arms meet at the bottom right and the border is whole.
+QPainterPath traced(const QRectF& r, double share) {
+    QPainterPath whole;
+    whole.addRoundedRect(r, kRadius, kRadius);
+    QPainterPath out;
+    if (share <= 0) return out;
+    if (share >= 1) return whole;
+    constexpr int kSteps = 160;
+    const double start = whole.percentAtLength(kRadius * 0.6);  // the corner arc of the top left corner
+    for (int arm : {1, -1}) {
+        for (int i = 0; i <= kSteps; ++i) {
+            double at = start + arm * share / 2 * i / kSteps;
+            at -= std::floor(at);
+            const QPointF point = whole.pointAtPercent(at);
+            if (i == 0) out.moveTo(point);
+            else out.lineTo(point);
+        }
+    }
+    return out;
+}
+
+void run(QVariantAnimation& animation, int ms, double from, double to, QEasingCurve curve) {
+    animation.stop();
+    animation.setDuration(ms);
+    animation.setEasingCurve(curve);
+    animation.setStartValue(from);
+    animation.setEndValue(to);
+    animation.start();
+}
+
 }  // namespace
 
-FrameGhost::FrameGhost(const QRectF& from, const QRectF& to) : from_(from), to_(to) {
+FrameGhost::FrameGhost(const QRectF& from, const QRectF& to, Kind kind) : from_(from), to_(to), kind_(kind) {
     setZValue(0.5);
     setAcceptedMouseButtons(Qt::NoButton);
-    animation_.setDuration(260);
-    animation_.setEasingCurve(QEasingCurve::OutCubic);
-    animation_.setStartValue(0.0);
-    animation_.setEndValue(1.0);
     connect(&animation_, &QVariantAnimation::valueChanged, this, [this](const QVariant& v) {
         t_ = v.toDouble();
         update();
     });
-    animation_.start();
+    if (kind == Shrink) run(animation_, 260, 0, 1, QEasingCurve::OutCubic);
+    else run(animation_, kTraceMs, 0, 1, QEasingCurve::InOutCubic);
 }
 
 void FrameGhost::paint(QPainter* p, const QStyleOptionGraphicsItem*, QWidget*) {
+    p->setRenderHint(QPainter::Antialiasing);
+    p->setPen(QPen(Theme::accent(), 2));
+    p->setBrush(Qt::NoBrush);
+    if (kind_ == Untrace) {  // the border goes back the way it came: both arms withdraw to the corner they started at
+        p->drawPath(traced(from_, 1 - t_));
+        return;
+    }
     auto mix = [this](double a, double b) { return a + (b - a) * t_; };
     const QRectF r(QPointF(mix(from_.left(), to_.left()), mix(from_.top(), to_.top())),
                    QPointF(mix(from_.right(), to_.right()), mix(from_.bottom(), to_.bottom())));
-    p->setRenderHint(QPainter::Antialiasing);
     p->setOpacity(1 - t_);
-    p->setPen(QPen(Theme::accent(), 2));
-    p->setBrush(Qt::NoBrush);
     p->drawRoundedRect(r, kRadius, kRadius);
 }
 
@@ -52,10 +87,8 @@ TemplateFrameItem::TemplateFrameItem(const FrameView& view, CanvasScene* canvas)
     collapse_.setInterval(kCollapseAfterMs);
     connect(&collapse_, &QTimer::timeout, this, [this] { collapseIfIdle(); });
     collapse_.start();
-    growth_.setDuration(320);
-    growth_.setEasingCurve(QEasingCurve::OutCubic);
-    connect(&growth_, &QVariantAnimation::valueChanged, this, [this](const QVariant& v) {
-        grow_ = v.toDouble();
+    connect(&trace_, &QVariantAnimation::valueChanged, this, [this](const QVariant& v) {
+        drawn_ = v.toDouble();
         update();
     });
 }
@@ -94,11 +127,10 @@ void TemplateFrameItem::updateGeometry() {
     update();
 }
 
-void TemplateFrameItem::appear() {
-    growth_.stop();
-    growth_.setStartValue(0.15);
-    growth_.setEndValue(1.0);
-    growth_.start();
+void TemplateFrameItem::trace(qint64 elapsed) {
+    if (elapsed >= kTraceMs) return;
+    drawn_ = double(elapsed) / kTraceMs;
+    run(trace_, int(kTraceMs - elapsed), drawn_, 1, QEasingCurve::OutCubic);
 }
 
 void TemplateFrameItem::pointer(const QPointF& scenePos) {
@@ -117,12 +149,6 @@ void TemplateFrameItem::collapseIfIdle() {
 
 QRectF TemplateFrameItem::button() const { return QRectF(rect_.right() - 34, rect_.top() + 8, 24, 20); }
 
-QRectF TemplateFrameItem::shown() const {
-    if (grow_ >= 1) return rect_;
-    const QPointF c = rect_.center();
-    return QRectF(c - QPointF(rect_.width(), rect_.height()) * grow_ / 2, rect_.size() * grow_);
-}
-
 QRectF TemplateFrameItem::boundingRect() const { return rect_.adjusted(-kBand, -kBand, kBand, kBand); }
 
 QPainterPath TemplateFrameItem::shape() const {
@@ -137,14 +163,17 @@ QPainterPath TemplateFrameItem::shape() const {
 
 void TemplateFrameItem::paint(QPainter* p, const QStyleOptionGraphicsItem*, QWidget*) {
     p->setRenderHint(QPainter::Antialiasing);
-    const QRectF r = shown();
-    p->setOpacity(grow_);
+    const QRectF r = rect_;
+    p->setPen(QPen(Theme::accent(), isSelected() ? 3 : 2));
+    if (drawn_ < 1) {  // being traced: the border only, as far as it is drawn
+        p->setBrush(Qt::NoBrush);
+        p->drawPath(traced(r, drawn_));
+        return;
+    }
     QColor fill = Theme::accent();
     fill.setAlpha(isSelected() ? 26 : 12);
-    p->setPen(QPen(Theme::accent(), isSelected() ? 3 : 2));
     p->setBrush(fill);
     p->drawRoundedRect(r, kRadius, kRadius);
-    if (grow_ < 1) return;
 
     QFont title = p->font();
     title.setBold(true);

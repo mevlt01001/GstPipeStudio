@@ -15,16 +15,20 @@
 class CanvasScene;
 class PadItem;
 
-// A frame that just closed: its border shrinks into the box the template became, and fades.
+// A frame that just went away. Closed, its border shrinks into the box the template became and fades; gone (deleted,
+// detached, cancelled), its border is erased the way it was drawn.
 class FrameGhost : public QGraphicsObject {
 public:
-    FrameGhost(const QRectF& from, const QRectF& to);
+    enum Kind { Shrink, Untrace };
+    FrameGhost(const QRectF& from, const QRectF& to, Kind kind);
     QRectF boundingRect() const override { return from_.united(to_).adjusted(-4, -4, 4, 4); }
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
     bool done() const { return animation_.state() == QAbstractAnimation::Stopped; }
+    Kind kind() const { return kind_; }
 
 private:
     QRectF from_, to_;
+    Kind kind_;
     double t_ = 0;
     QVariantAnimation animation_;
 };
@@ -41,9 +45,13 @@ public:
     QRectF frameRect() const { return rect_; }
     void setInner(PadItem* border, PadItem* inner) { inner_[border] = inner; }  // what a border pad stands for inside
     void updateGeometry();  // after boxes moved: around the members, pads on the border
-    void appear();          // a new frame grows from its centre
+    // A new template: its border is drawn from one corner along both arms, then it fills. A frame built again while
+    // that goes on carries on from where the last one was (`elapsed` ms into it).
+    void trace(qint64 elapsed = 0);
+    static constexpr int kTraceMs = 650;
     void pointer(const QPointF& scenePos);  // the mouse moved on the canvas: inside, the collapse waits
     bool collapsePending() const { return collapse_.isActive(); }
+    bool tracing() const { return trace_.state() == QAbstractAnimation::Running; }
 
     QRectF boundingRect() const override;
     QPainterPath shape() const override;
@@ -57,7 +65,6 @@ protected:
 
 private:
     QRectF button() const;  // the minimize button, top right
-    QRectF shown() const;   // the rect as drawn: while appearing, scaled about its centre
     void collapseIfIdle();
 
     FrameView view_;
@@ -66,8 +73,8 @@ private:
     QHash<PadItem*, PadItem*> inner_;
     QRectF rect_;
     QTimer collapse_;
-    double grow_ = 1;
-    QVariantAnimation growth_;
+    double drawn_ = 1;  // how much of the border is drawn
+    QVariantAnimation trace_;
     QPointF dragFrom_;
     bool dragging_ = false;
 };

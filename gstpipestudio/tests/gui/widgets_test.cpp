@@ -349,8 +349,13 @@ private slots:
         auto* page = pageOf<TemplatePage>(w);
         QVERIFY(page);
         QCOMPARE(c->plan().instances.size(), size_t(1));
+        // A new template's border is drawn from one corner along both arms; cancelled, it is erased the same way.
+        QVERIFY(waitFor([&] { return w.scene()->frames().size() == 1; }));
+        QVERIFY(w.scene()->frames().front()->tracing());
         press(page, "cancelButton");
         QVERIFY(waitFor([&] { return c->plan().instances.empty(); }));
+        QVERIFY(waitFor([&] { return !w.scene()->ghosts().isEmpty(); }));
+        QCOMPARE(w.scene()->ghosts().front()->kind(), FrameGhost::Untrace);
         QVERIFY(c->templates().isEmpty());
         QVERIFY(c->plan().find(toStd(convert))->group.empty());
     }
