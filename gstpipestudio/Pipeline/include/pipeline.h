@@ -75,7 +75,8 @@ public:
     bool redo();
     bool canUndo() const { return !undo_.empty() && !editing(); }
     bool canRedo() const { return !redo_.empty() && !editing(); }
-    // The committed graph's number: every commit and every reset gets a new one, undo and redo bring the old one back.
+    // The number of what the committed graph would write to its file: a commit that changes the conf text and every
+    // reset get a new one (moving boxes does not: positions are not saved), undo and redo bring the old one back.
     // A document keeps the number it was saved or loaded at: a different number is an unsaved change.
     std::uint64_t state() const { return state_; }
 private:

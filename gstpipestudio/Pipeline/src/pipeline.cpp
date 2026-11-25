@@ -224,7 +224,7 @@ bool GraphEditor::commit(std::string* error) {
     if (same(*draft_, document_.graph_)) { rollback(); return false; }
     Graph next = std::move(*draft_); rollback();
     const std::uint64_t before = state_;
-    renumber();
+    if (next.toConf() != document_.graph_.toConf()) renumber();
     undo_.push_back({document_.graph_, next, before, state_});
     if (undo_.size() > 64) undo_.erase(undo_.begin());
     redo_.clear();

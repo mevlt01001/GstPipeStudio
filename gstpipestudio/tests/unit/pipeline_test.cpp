@@ -136,6 +136,10 @@ void savePoint() {
     CHECK(editor.undo()); CHECK_EQ(editor.state(), saved);
     CHECK(editor.redo()); CHECK(editor.state() != saved);
     CHECK(editor.undo()); CHECK(add()); CHECK(editor.state() != saved);  // the same count of steps, another state
+    // Moving a box changes nothing the file holds: the number stays.
+    const auto before = editor.state();
+    CHECK(editor.execute(EditAction([](Graph& g, std::string*) { g.elements.front().x += 50; return true; })));
+    CHECK_EQ(editor.state(), before);
     CHECK(document.reset()); CHECK(editor.state() != saved); CHECK(editor.state() != loaded);
 }
 int main(){transactions();invariantsAndFragments();results();pads();savePoint();return finish("pipeline_test");}
