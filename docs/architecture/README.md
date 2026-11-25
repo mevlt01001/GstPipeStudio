@@ -7,6 +7,7 @@ The application has three product units. `gstpipestudio/main.cpp` constructs the
 | `gstpipestudio/Pipeline` | `GstPipeStudio::Pipeline` / `gps_pipeline` | Authored graph, pad descriptors, transactions, history, discovery and execution contracts. No Qt or GStreamer. |
 | `gstpipestudio/GUI` | `GstPipeStudio::GUI` / `gps_gui` | Canvas, interaction, catalog/property panels and process transport. Depends on Pipeline and Qt. |
 | `gstpipestudio/GstEngine` | `GstPipeStudio::GstEngine` / `gps_gstengine` | Native factory inspection, graph construction, pad binding, preview and execution. Depends on Pipeline and GStreamer. |
+| `gstpipestudio/third_party` | `gps_quickjs`, a resource | QuickJS (MIT) and elkjs (EPL-2.0), vendored unchanged, for the layout engine. |
 
 The CLI tools and the `gpsconf` plugin are entrypoints into these units. They are not additional editable graph models.
 
@@ -100,11 +101,20 @@ An explicit capsfilter remains an authored element. A connection's caps choice i
 
 Canvas bounds expand during panning, resizing and dragging. Negative coordinates are supported. Preview completion never rearranges authored positions; automatic add-after placement moves only the newly added element. Qt coordinates remain finite.
 
+## Templates
+
+A template instance is a `TemplateInstance` record of the Graph: template name, library revision, parent (templates nest), parameters (`ExposedParam`, also `caps.<field>` and `<pad>.caps.<field>`), the names its members have inside the template, and a content fingerprint. Members are ordinary elements whose `Element::group` names their innermost instance, so the engine never sees templates. `Pipeline/templates.h` owns every rule about them: placing a library template, copying instances with a paste, wrapping a selection, detaching, extracting what a copy would save to the library, `modified` (fingerprint without parameter values and positions), `sync`, and `replaceContent` for a newer revision. The library is a folder of template confs (`AppPaths::templates()`); a template's parameters are its conf's `exposed` list.
+
+A conf holds no positions. `CanvasLayout` turns the canvas into a `layout::Node` tree (Composite: a box per element or collapsed template, a frame per expanded template with its free and outward pads as border ports) and asks a `layout::Engine` on its own thread (`layout::Runner`). `ElkEngine` runs ELK Layered in QuickJS. The answer lands as one undoable move; link routes and frame borders are drawn from it while nothing has moved since.
+
+Projects: a folder with saved confs gets `<folder>.gpsproj` (its confs and the template revisions they hold); `ProjectRegistry` keeps every project path in the state folder; `VersionHistory` keeps the last 50 versions of a conf or library template in `.gpsstudio/history` next to it. The per-user folders come from `AppPaths` (QStandardPaths: XDG on Linux).
+
 ## Extension points
 
 - Add an action: implement `IAction` or compose `EditAction`; use GraphEditor and add an atomicity/history test. Wire the existing Controller/Qt action entrypoint to it.
 - Add a native capability: inspect registry metadata or specialize a GstEngine policy; preserve the Pipeline execution contract.
 - Add GUI presentation: read Pipeline/Controller views and emit actions; no GStreamer objects belong in widgets.
+- Add a layout engine: implement `layout::Engine` and hand its factory to `layout::Runner`.
 - Change saved data: update `Pipeline/src/conf.cpp` and its round-trip/compatibility tests. Version 1 is unchanged by this migration.
 
 See [development commands](../development/README.md) and the [original proposal](../archive/dev-zero-proposal.md). This page describes the implementation; the proposal contains future refinements and must not be read as a list of shipped classes.

@@ -1,3 +1,21 @@
+## Templates
+
+- Save a selection as a template: its border is drawn at once, then give it a name and Add parameter (an element, then one of its properties or a field of its fixed caps).
+- Add template opens the library in the right drawer; hover a template, or a collapsed one on the canvas, for a peek inside.
+- A collapsed template is one element whose Properties are its parameters. + expands it into a green frame with its pads on the border; − (or five idle seconds) collapses it. Templates nest.
+- Changing a copy asks: Update template, Save as new template, Detach or Undo. An update reaches the other copies at once and other projects when they open.
+- Add source, Save custom, Combine into group and the Expose checkbox are gone: Add element lists every factory, and parameters belong to templates.
+
+## Layout
+
+- Nice alignment (ELK in QuickJS, on its own thread) places the canvas when a file opens, when a template expands or collapses, and on Arrange pipeline or Auto align. Links avoid boxes and crossings; each link's caps text gets room.
+- View > Link style: curves or right-angle lines. A conf no longer stores positions.
+
+## Projects and history
+
+- A saved conf's folder gets a .gpsproj listing its confs and the templates they use. File > Version history restores one of the last 50 saves.
+- User folders follow the XDG base directories; the template library moves from custom_elements once.
+
 ## Pipeline-wide live metrics
 
 - Compare Avg. Processing Time and QoS-reported Drop Rate across all elements on the canvas and in live charts.

@@ -22,6 +22,8 @@ cmake --build build --parallel 4
 (cd build && ctest --output-on-failure)
 ```
 
+`GPS_USER_DIR` replaces the per-user config, data (template library) and state (project list) folders with subfolders of one directory: tests use it, and so can a portable setup.
+
 `GPS_DIRS` can select `Pipeline;GstEngine;tools;plugin;GUI;packaging;tests`; invalid directory names fail configuration. `GPS_TEST_DIRS` selects test groups. `GPS_SWEEP_ALL=ON` opts into the long all-factory survey. Test screenshots/logs go under the build directory, so a read-only source checkout is supported.
 
 | Change | Relevant checks |

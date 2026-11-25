@@ -15,7 +15,7 @@
 
    Replace both filenames with your download. Stop if the checksum fails.
 4. Open **GstPipeStudio** from the application menu or run `gstpipestudio`.
-5. Choose **Add source → videotestsrc**, then add `videoconvert` and `fakesink`. Validate, then Run. No camera or GPU is required.
+5. Choose **Add element → videotestsrc** (the SRC chip narrows the list to sources), then add `videoconvert` and `fakesink`. Validate, then Run. No camera or GPU is required.
 
 For live charts, download/clone the [repository](https://github.com/mevlt01001/GstPipeStudio) and open `examples/monitoring/02-slow-stage.conf`, then **View → Live metrics → Start monitoring**. The third example deliberately triggers QoS-reported drops.
 
