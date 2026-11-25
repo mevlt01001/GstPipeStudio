@@ -109,6 +109,9 @@ QSpinBox::up-button, QDoubleSpinBox::up-button { subcontrol-origin: border; subc
 QSpinBox::down-button, QDoubleSpinBox::down-button { subcontrol-origin: border; subcontrol-position: bottom right; width: 20px; border-left: 1px solid @line@; background: #303030; }
 QSpinBox::up-arrow, QDoubleSpinBox::up-arrow { image: url(@arrowUp@); width: 10px; height: 6px; }
 QSpinBox::down-arrow, QDoubleSpinBox::down-arrow { image: url(@arrowDown@); width: 10px; height: 6px; }
+/* A plain drop-down list (not the native popup over the current item, which this style sheet sizes wrong): every
+   item is reachable, the list scrolls past maxVisibleItems. */
+QComboBox { combobox-popup: 0; }
 QComboBox::drop-down { border: none; width: 24px; }
 QComboBox::down-arrow { image: url(@arrowDown@); width: 10px; height: 6px; }
 QComboBox QAbstractItemView { background: @panel@; border: 1px solid @line@; selection-background-color: @accent@; selection-color: @onAccent@; outline: none; padding: 4px; }

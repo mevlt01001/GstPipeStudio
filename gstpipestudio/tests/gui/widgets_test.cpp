@@ -534,6 +534,30 @@ private slots:
         QCOMPARE(QApplication::font().pointSize(), 10);
     }
 
+    // Every item of an open combo popup can be reached: each visible row is whole, and the list scrolls for the rest.
+    void comboPopupsShowEveryItem() {
+        for (int count : {3, 9, 40}) {
+            QWidget window;
+            window.resize(420, 260);
+            auto* combo = new QComboBox(&window);
+            for (int i = 0; i < count; ++i) combo->addItem(QString("item %1").arg(i));
+            combo->setCurrentIndex(count - 1);
+            window.show();
+            QVERIFY(QTest::qWaitForWindowExposed(&window));
+            combo->showPopup();
+            QAbstractItemView* list = combo->view();
+            QTRY_VERIFY(list->isVisible());
+            const QRect inside = list->viewport()->rect();
+            int whole = 0;
+            for (int i = 0; i < count; ++i) {
+                const QRect row = list->visualRect(combo->model()->index(i, 0));
+                whole += row.top() >= inside.top() && row.bottom() <= inside.bottom();
+            }
+            QCOMPARE(whole, qMin(count, combo->maxVisibleItems()));
+            combo->hidePopup();
+        }
+    }
+
     // ---- PropertyPage
 
     void propertyPageMakesTheRightEditor() {
