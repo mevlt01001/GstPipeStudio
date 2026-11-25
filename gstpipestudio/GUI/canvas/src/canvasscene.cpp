@@ -383,6 +383,10 @@ void CanvasScene::frameMinimized(const QString& instanceId) {
 void CanvasScene::frameExpanded(const QString& instanceId) {
     if (!locked_) controller_->setTemplateExpanded(instanceId, true);
 }
+void CanvasScene::frameEdit(const QString& instanceId) {
+    const gps::TemplateInstance* t = pipeline().graph().instance(instanceId.toStdString());
+    if (!locked_ && t) emit templateEditRequested(QString::fromStdString(t->templateName));
+}
 
 void CanvasScene::peekTemplate(const QString& instanceId) {
     if (locked_ || views().isEmpty() || !pipeline().graph().instance(instanceId.toStdString())) return;

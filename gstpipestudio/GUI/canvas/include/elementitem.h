@@ -40,6 +40,7 @@ protected:
 
 private:
     QRectF expandButton() const;  // a collapsed template's "+" in its header
+    QRectF editButton() const;    // and its "✎", left of it
 
     ElementView view_;
     QList<PadItem*> pads_;

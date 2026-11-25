@@ -272,7 +272,7 @@ bool Controller::finishTemplate(const QString& id, const QString& name, const st
     });
     QString failure;
     if (!library_.save(clean, gps::templates::extract(plan(), toStd(id)), &failure)) return refuse("Unable to save the template: " + failure);
-    library_.load(catalog_);
+    libraryWritten();
     emit changed();
     return true;
 }
@@ -294,7 +294,7 @@ bool Controller::renameTemplate(const QString& from, const QString& to, QString*
     QString failure;
     if (!library_.save(clean, *old, &failure)) return refuse("Unable to save the template: " + failure);
     library_.remove(from);
-    library_.load(catalog_);
+    libraryWritten();
     transact([&](gps::Graph& g, Edit& edit) {
         bool any = false;
         for (gps::TemplateInstance& t : g.instances) {
@@ -310,7 +310,7 @@ bool Controller::renameTemplate(const QString& from, const QString& to, QString*
 
 bool Controller::deleteTemplate(const QString& name) {
     if (!library_.remove(name)) return false;
-    library_.load(catalog_);
+    libraryWritten();
     emit changed();
     return true;
 }
@@ -341,7 +341,7 @@ QString Controller::importTemplate(const QString& file, QString* error) {
         if (error) *error = saveError;
         return QString();
     }
-    library_.load(catalog_);
+    libraryWritten();
     emit changed();
     return name;
 }
@@ -434,7 +434,7 @@ gps::Graph Controller::templateContent(const QString& name) const {
 
 bool Controller::removeTemplate(const QString& templateName) {
     const bool removed = library_.remove(templateName);
-    library_.load(catalog_);
+    libraryWritten();
     emit changed();
     return removed;
 }
@@ -851,7 +851,7 @@ bool Controller::commitTemplateEdit(const QString& id) {
         emit notice("Unable to update the template: " + error);
         return false;
     }
-    library_.load(catalog_);
+    libraryWritten();
     QStringList others;
     for (const gps::TemplateInstance& other : plan().instances) {
         if (fromStd(other.id) != id && fromStd(other.templateName) == name && !gps::templates::modified(plan(), other.id)) others << fromStd(other.id);
@@ -881,12 +881,28 @@ bool Controller::saveTemplateAsNew(const QString& id, const QString& name, QStri
     });
     QString failure;
     if (!library_.save(clean, gps::templates::extract(plan(), toStd(id)), &failure)) return refuse("Unable to save the template: " + failure);
-    library_.load(catalog_);
+    libraryWritten();
     emit changed();
     return true;
 }
 
 QStringList Controller::projectsUsing(const QString& templateName) const { return ProjectRegistry::usingTemplate(templateName); }
+
+void Controller::libraryWritten() {
+    library_.load(catalog_);
+    emit libraryChanged();
+}
+
+void Controller::reloadLibrary() {
+    library_.load(catalog_);
+    emit changed();
+    offerNewerTemplates();
+}
+
+void Controller::offerNewerTemplates() {
+    const QStringList outdated = outdatedTemplates();
+    if (!outdated.isEmpty()) QTimer::singleShot(0, this, [this, outdated] { emit templatesOutdated(outdated); });
+}
 
 QStringList Controller::outdatedTemplates() const {
     QStringList out;
@@ -1525,8 +1541,7 @@ void Controller::load(const QString& source, const QString& documentPath, bool d
         checkTemplates(false);
         emit changed();
         startUpdate();
-        const QStringList outdated = outdatedTemplates();
-        if (!outdated.isEmpty()) QTimer::singleShot(0, this, [this, outdated] { emit templatesOutdated(outdated); });
+        offerNewerTemplates();
     });
 }
 
@@ -1571,7 +1586,7 @@ bool Controller::save(const QString& path, QString* error) {
             if (error) *error = "Unable to save the template: " + failure;
             return false;
         }
-        library_.load(catalog_);
+        libraryWritten();
         transact([&](gps::Graph& g, Edit& edit) {
             g.revision = next.revision;
             edit.action = QString("Saved template %1, revision %2").arg(libraryTemplate_).arg(next.revision);

@@ -1,5 +1,6 @@
 // elementitem.cpp
 #include "elementitem.h"
+#include "headerbutton.h"
 
 #include <QApplication>
 #include <QGraphicsSceneMouseEvent>
@@ -121,18 +122,13 @@ void ElementItem::paint(QPainter* p, const QStyleOptionGraphicsItem*, QWidget*) 
     small.setPointSizeF(8);
 
     if (view_.isTemplate) {
-        // "+": expand the template into its frame.
-        const QRectF b = expandButton();
-        p->setPen(QPen(Theme::accentHover(), 1.5));
-        p->setBrush(Theme::background());
-        p->drawRoundedRect(b, 4, 4);
-        p->drawLine(QPointF(b.left() + 7, b.center().y()), QPointF(b.right() - 7, b.center().y()));
-        p->drawLine(QPointF(b.center().x(), b.top() + 5), QPointF(b.center().x(), b.bottom() - 5));
+        headerbutton::paint(p, expandButton(), headerbutton::Glyph::Plus, Theme::accentHover());
+        headerbutton::paint(p, editButton(), headerbutton::Glyph::Pencil, Theme::accentHover());
     }
     QString headerTitle = view_.displayTitle.isEmpty() ? view_.name : view_.displayTitle;
     p->setFont(bold);
     p->setPen(view_.isTemplate ? Theme::accentHover() : Theme::text());
-    const double titleWidth = kBoxWidth - (view_.isTemplate ? 52 : 24);
+    const double titleWidth = (view_.isTemplate ? editButton().left() - 4 : kBoxWidth - 12) - 12;
     p->drawText(QRectF(12, 5, titleWidth, 20), Qt::AlignLeft | Qt::AlignVCenter,
                 QFontMetrics(bold).elidedText(headerTitle, Qt::ElideRight, int(titleWidth)));
     p->setFont(small);
@@ -141,8 +137,8 @@ void ElementItem::paint(QPainter* p, const QStyleOptionGraphicsItem*, QWidget*) 
     if (!view_.isTemplate && !view_.groupId.isEmpty()) {
         subTitle += "  [" + view_.groupId.section('#', 0, 0) + "]";
     }
-    p->drawText(QRectF(12, 24, kBoxWidth - 24, 16), Qt::AlignLeft | Qt::AlignVCenter,
-                QFontMetrics(small).elidedText(subTitle, Qt::ElideRight, int(kBoxWidth - 24)));
+    p->drawText(QRectF(12, 24, titleWidth, 16), Qt::AlignLeft | Qt::AlignVCenter,
+                QFontMetrics(small).elidedText(subTitle, Qt::ElideRight, int(titleWidth)));
 
     // Pad labels: name, then the media type. Sinks on the left half, srcs on the right half.
     QFontMetrics sm(small);
@@ -223,13 +219,19 @@ void ElementItem::hoverLeaveEvent(QGraphicsSceneHoverEvent*) {
     hoverAnimation_.stop(); hoverAnimation_.setStartValue(hoverProgress_); hoverAnimation_.setEndValue(0.0); hoverAnimation_.start();
 }
 
-QRectF ElementItem::expandButton() const { return QRectF(kBoxWidth - 34, 10, 24, 20); }
+QRectF ElementItem::expandButton() const { return headerbutton::at(kBoxWidth - 10, 10, 0); }
+QRectF ElementItem::editButton() const { return headerbutton::at(kBoxWidth - 10, 10, 1); }
 
 void ElementItem::mousePressEvent(QGraphicsSceneMouseEvent* event) {
     peek_.stop();
     TemplatePeek::hide();
     if (view_.isTemplate && event->button() == Qt::LeftButton && expandButton().contains(event->pos())) {
         if (auto* canvas = qobject_cast<CanvasScene*>(scene())) canvas->frameExpanded(view_.groupId);
+        event->accept();
+        return;
+    }
+    if (view_.isTemplate && event->button() == Qt::LeftButton && editButton().contains(event->pos())) {
+        if (auto* canvas = qobject_cast<CanvasScene*>(scene())) canvas->frameEdit(view_.groupId);
         event->accept();
         return;
     }

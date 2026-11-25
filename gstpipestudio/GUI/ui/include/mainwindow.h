@@ -25,7 +25,9 @@ class ValidationIndicator;
 class MainWindow : public QMainWindow {
     Q_OBJECT
 public:
-    explicit MainWindow(Controller* controller, QWidget* parent = nullptr);
+    // Template: a smaller window of its own that edits one library template (the ✎ of a template).
+    enum class Role { Pipeline, Template };
+    explicit MainWindow(Controller* controller, QWidget* parent = nullptr, Role role = Role::Pipeline);
     ~MainWindow() override;
 
     CanvasScene* scene() const { return scene_; }
@@ -42,6 +44,8 @@ public:
     bool showingSetup() const;
 
     void openFile(const QString& path);
+    // A Template window with its own Controller; the library it writes reaches this window's canvas.
+    MainWindow* openTemplateWindow(const QString& name);
     bool saveFile(const QString& path);  // "" = where the plan lives now
     void openPropertiesTab(const QString& element);
     void resetPropertiesTab();
@@ -50,6 +54,9 @@ public:
 
 protected:
     void closeEvent(QCloseEvent* event) override;
+
+private:
+    QString settingsKey(const QString& key) const;  // the Template window keeps its own size and docks
 
 private:
     void showVersionHistory();
@@ -80,6 +87,7 @@ private:
     void setReason(QAction* action, const QString& text, const QString& reason);
 
     Controller* controller_;
+    Role role_;
     Flows* flows_;
     CanvasScene* scene_;
     CanvasView* view_;

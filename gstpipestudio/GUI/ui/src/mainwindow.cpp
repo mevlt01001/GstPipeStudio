@@ -54,12 +54,12 @@
 #include <QVBoxLayout>
 #include <set>
 
-MainWindow::MainWindow(Controller* controller, QWidget* parent) : QMainWindow(parent), controller_(controller) {
-    setObjectName("mainWindow");
+MainWindow::MainWindow(Controller* controller, QWidget* parent, Role role) : QMainWindow(parent), controller_(controller), role_(role) {
+    setObjectName(role == Role::Template ? "templateWindow" : "mainWindow");
     setWindowFlag(Qt::FramelessWindowHint);
     setWindowIcon(QIcon(":/brand/gstpipestudio.png"));
-    setMinimumSize(960, 600);
-    resize(1360, 860);
+    setMinimumSize(role == Role::Template ? QSize(720, 480) : QSize(960, 600));
+    resize(role == Role::Template ? QSize(1000, 680) : QSize(1360, 860));
 
     drawer_ = new Drawer(this);
     flows_ = new Flows(controller, drawer_, this);
@@ -93,9 +93,8 @@ MainWindow::MainWindow(Controller* controller, QWidget* parent) : QMainWindow(pa
     connect(scene_, &CanvasScene::elementMenuRequested, this, &MainWindow::onElementMenuRequested, Qt::QueuedConnection);
     connect(scene_, &CanvasScene::templateMenuRequested, this, &MainWindow::showTemplateMenu, Qt::QueuedConnection);
     connect(scene_, &CanvasScene::templateActivated, flows_, &Flows::editTemplateParams);
-    connect(flows_, &Flows::editTemplateRequested, this, [this](const QString& name) {
-        if (confirmDiscard()) controller_->editLibraryTemplate(name);
-    });
+    connect(flows_, &Flows::editTemplateRequested, this, &MainWindow::openTemplateWindow);
+    connect(scene_, &CanvasScene::templateEditRequested, this, &MainWindow::openTemplateWindow, Qt::QueuedConnection);
     connect(controller_, &Controller::templateChanged, this, &MainWindow::askTemplateChange, Qt::QueuedConnection);
     connect(controller_, &Controller::templatesOutdated, this, &MainWindow::askTemplatesOutdated, Qt::QueuedConnection);
     connect(scene_, &QGraphicsScene::selectionChanged, this, &MainWindow::refreshState);
@@ -124,8 +123,8 @@ MainWindow::MainWindow(Controller* controller, QWidget* parent) : QMainWindow(pa
     });
 
     QSettings settings;
-    restoreGeometry(settings.value("window/geometry").toByteArray());
-    restoreState(settings.value("window/state").toByteArray());
+    restoreGeometry(settings.value(settingsKey("geometry")).toByteArray());
+    restoreState(settings.value(settingsKey("state")).toByteArray());
     refreshState();
     controller_->checkEnvironment();
 }
@@ -802,7 +801,28 @@ void MainWindow::closeEvent(QCloseEvent* event) {
         return;
     }
     QSettings settings;
-    settings.setValue("window/geometry", saveGeometry());
-    settings.setValue("window/state", saveState());
+    settings.setValue(settingsKey("geometry"), saveGeometry());
+    settings.setValue(settingsKey("state"), saveState());
     event->accept();
+}
+
+QString MainWindow::settingsKey(const QString& key) const {
+    return (role_ == Role::Template ? "templateWindow/" : "window/") + key;
+}
+
+MainWindow* MainWindow::openTemplateWindow(const QString& name) {
+    if (controller_->templateContent(name).empty()) {
+        statusBar()->showMessage("Template " + name + " is not in the library", 10000);
+        return nullptr;
+    }
+    auto* controller = new Controller;
+    auto* window = new MainWindow(controller, nullptr, Role::Template);
+    controller->setParent(window);
+    window->setAttribute(Qt::WA_DeleteOnClose);
+    // Each side reads the library again when the other one writes it.
+    connect(controller, &Controller::libraryChanged, controller_, &Controller::reloadLibrary);
+    connect(controller_, &Controller::libraryChanged, controller, &Controller::reloadLibrary);
+    window->show();
+    controller->editLibraryTemplate(name);
+    return window;
 }

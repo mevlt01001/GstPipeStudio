@@ -1,5 +1,6 @@
 // templateframeitem.cpp – see templateframeitem.h.
 #include "templateframeitem.h"
+#include "headerbutton.h"
 
 #include <QGraphicsSceneMouseEvent>
 #include <cmath>
@@ -147,7 +148,8 @@ void TemplateFrameItem::collapseIfIdle() {
     else canvas_->frameMinimized(view_.id);
 }
 
-QRectF TemplateFrameItem::button() const { return QRectF(rect_.right() - 34, rect_.top() + 8, 24, 20); }
+QRectF TemplateFrameItem::button() const { return headerbutton::at(rect_.right() - 10, rect_.top() + 8, 0); }
+QRectF TemplateFrameItem::editButton() const { return headerbutton::at(rect_.right() - 10, rect_.top() + 8, 1); }
 
 QRectF TemplateFrameItem::boundingRect() const { return rect_.adjusted(-kBand, -kBand, kBand, kBand); }
 
@@ -179,14 +181,11 @@ void TemplateFrameItem::paint(QPainter* p, const QStyleOptionGraphicsItem*, QWid
     title.setBold(true);
     p->setFont(title);
     p->setPen(Theme::accent());
-    p->drawText(QRectF(r.left() + 16, r.top() + 8, r.width() - 64, 20), Qt::AlignLeft | Qt::AlignVCenter,
-                QFontMetrics(title).elidedText(view_.title, Qt::ElideRight, int(r.width() - 64)));
-    // The minimize button.
-    const QRectF b = button();
-    p->setPen(QPen(Theme::accent(), 1.5));
-    p->setBrush(Theme::background());
-    p->drawRoundedRect(b, 4, 4);
-    p->drawLine(QPointF(b.left() + 7, b.center().y()), QPointF(b.right() - 7, b.center().y()));
+    const double titleWidth = editButton().left() - 4 - (r.left() + 16);
+    p->drawText(QRectF(r.left() + 16, r.top() + 8, titleWidth, 20), Qt::AlignLeft | Qt::AlignVCenter,
+                QFontMetrics(title).elidedText(view_.title, Qt::ElideRight, int(titleWidth)));
+    headerbutton::paint(p, button(), headerbutton::Glyph::Minus, Theme::accent());
+    headerbutton::paint(p, editButton(), headerbutton::Glyph::Pencil, Theme::accent());
     // A short connector from every border pad to the pad it stands for inside.
     QPen connector(Theme::accent(), 1.4, Qt::DashLine);
     p->setPen(connector);
@@ -215,7 +214,7 @@ void TemplateFrameItem::mousePressEvent(QGraphicsSceneMouseEvent* event) {
 }
 
 void TemplateFrameItem::mouseMoveEvent(QGraphicsSceneMouseEvent* event) {
-    if (!(event->buttons() & Qt::LeftButton) || button().contains(dragFrom_) || canvas_->locked()) return;
+    if (!(event->buttons() & Qt::LeftButton) || onButton(dragFrom_) || canvas_->locked()) return;
     const QPointF delta = event->scenePos() - dragFrom_;
     if (!dragging_ && delta.manhattanLength() < 3) return;
     dragging_ = true;
@@ -238,11 +237,13 @@ void TemplateFrameItem::mouseReleaseEvent(QGraphicsSceneMouseEvent* event) {
         if (ElementItem* first = canvas_->element(view_.members.value(0))) canvas_->elementDragged(first->view().name, first->pos());
     } else if (button().contains(event->scenePos())) {
         canvas_->frameMinimized(view_.id);
+    } else if (editButton().contains(event->scenePos())) {
+        canvas_->frameEdit(view_.id);
     }
     dragging_ = false;
     event->accept();
 }
 
 void TemplateFrameItem::mouseDoubleClickEvent(QGraphicsSceneMouseEvent* event) {
-    if (!button().contains(event->scenePos())) canvas_->frameActivated(view_.id);
+    if (!onButton(event->scenePos())) canvas_->frameActivated(view_.id);
 }

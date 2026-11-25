@@ -59,7 +59,7 @@ public:
     void editTemplateParams(const QString& instanceId);
 
 signals:
-    void editTemplateRequested(const QString& name);  // the window asks before it replaces the document
+    void editTemplateRequested(const QString& name);  // the window opens a Template window for it
 
 private:
     QString path(const QString& element, const QString& identity) const;  // "<element as the user reads it>.<pad>"

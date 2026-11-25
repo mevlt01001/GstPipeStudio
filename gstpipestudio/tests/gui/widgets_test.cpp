@@ -35,6 +35,7 @@
 #include "confirmdialog.h"
 #include "drawer.h"
 #include "elementitem.h"
+#include <QPointer>
 #include "newprojectdialog.h"
 #include "panels.h"
 #include "templateframeitem.h"
@@ -283,6 +284,56 @@ private slots:
         scene_rebuild(w);
         QVERIFY(!w.scene()->frame(id));
         QCOMPARE(w.scene()->element(convert), w.scene()->element(sink));  // one box again
+    }
+
+    // A template's ✎ opens it in a window of its own; what that window saves reaches this canvas as a newer version.
+    void thePencilEditsTheTemplateInItsOwnWindow() {
+        QTemporaryDir library;
+        qputenv("GPS_USER_DIR", library.path().toUtf8());
+        MainWindow w(c.get());
+        w.show();
+        QString src, convert, sink;
+        buildChain(w, &src, &convert, &sink);
+        QVERIFY(c->saveTemplate("Tail", {convert, sink}));
+        QVERIFY(settle(*c));
+        scene_rebuild(w);
+        ElementItem* box = w.scene()->element(convert);
+        QVERIFY(box && box->view().isTemplate);
+        QVERIFY(w.grab().save(shotDir() + "/template_pencil.png"));
+
+        QSignalSpy asked(w.scene(), &CanvasScene::templateEditRequested);
+        w.scene()->frameEdit(c->templateBox(convert));
+        QCOMPARE(asked.count(), 1);
+        QCOMPARE(asked.first().first().toString(), QString("Tail"));
+        MainWindow* edit = nullptr;
+        QVERIFY(waitFor([&] {
+            for (QWidget* top : QApplication::topLevelWidgets())
+                if (top->objectName() == "templateWindow" && top->isVisible()) edit = qobject_cast<MainWindow*>(top);
+            return edit != nullptr;
+        }));
+        QVERIFY(edit->width() < w.width() || edit->height() < w.height());
+        auto* other = edit->findChild<Controller*>();
+        QVERIFY(other && other != c.get());
+        QSignalSpy laidOut(&other->canvasLayout(), &CanvasLayout::aligned);  // an opened file is laid out once
+        QVERIFY(waitFor([&] { return other->libraryTemplate() == "Tail" && other->plan().elements.size() == 2; }, 30000));
+        QVERIFY(settle(*other));
+        QVERIFY(edit->windowTitle().contains("Template: Tail"));
+        QVERIFY(laidOut.count() || laidOut.wait(30000));
+        QVERIFY(waitFor([&] { return !other->canvasLayout().applying(); }));
+        QVERIFY(other->plan().elements[0].x != other->plan().elements[1].x);  // side by side, not on top of each other
+        scene_rebuild(*edit);
+        QVERIFY(edit->grab().save(shotDir() + "/template_window.png"));
+
+        QObject::disconnect(c.get(), &Controller::templatesOutdated, &w, nullptr);  // no dialog in a test
+        QSignalSpy outdated(c.get(), &Controller::templatesOutdated);
+        QString error;
+        QVERIFY2(other->save(QString(), &error), qPrintable(error));
+        QVERIFY(outdated.wait(5000));
+        QCOMPARE(outdated.first().first().toStringList(), QStringList{c->templateBox(convert)});
+        QPointer<MainWindow> closing(edit);
+        edit->close();
+        QVERIFY(waitFor([&] { return closing.isNull(); }));
+        qunsetenv("GPS_USER_DIR");
     }
 
     void saveAsTemplateDrawsTheBorderThenAsksForNameAndParameters() {

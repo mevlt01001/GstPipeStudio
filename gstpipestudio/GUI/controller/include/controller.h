@@ -117,6 +117,8 @@ public:
     // A library template on the canvas as the document: Save writes its next revision to the library, and its
     // parameters (the plan's exposed list) are set with setTemplateParameters.
     void editLibraryTemplate(const QString& name);
+    // Another window wrote the library: read it again, and offer the newer versions of templates on this canvas.
+    void reloadLibrary();
     QString libraryTemplate() const { return libraryTemplate_; }  // the one being edited, "" for a pipeline
     void setTemplateParameters(const std::vector<gps::ExposedParam>& params);
     QStringList addTemplate(const QString& templateName, double x = std::numeric_limits<double>::quiet_NaN(), double y = std::numeric_limits<double>::quiet_NaN());
@@ -203,6 +205,7 @@ signals:
     void telemetryReceived(const gps::TelemetrySample& sample);
     void templateChanged(const QString& id);              // its content no longer matches its template: what now?
     void templatesOutdated(const QStringList& ids);       // an opened file holds older versions of library templates
+    void libraryChanged();                                // this controller wrote the library
 
 private:
     void log(const QString& line);
@@ -221,6 +224,8 @@ private:
     bool transact(const std::function<bool(gps::Graph&, Edit&)>& change);
     void load(const QString& source, const QString& documentPath, bool dirty, const QString& action, const QString& libraryTemplate = {});
     void checkTemplates(bool ask);
+    void libraryWritten();       // after every write to the library: read it again and tell the other windows
+    void offerNewerTemplates();  // templatesOutdated, when the library holds newer versions of copies on this canvas
     bool commitTemplateEdit(const QString& id);
     bool infosReady(const gps::Graph& clip, std::function<void()> retry);
     static QPointF topLeft(const gps::Graph& clip);
