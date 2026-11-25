@@ -183,6 +183,36 @@ static void replacingKeepsMembership() {
     CHECK(Pipeline::validate(g));
 }
 
+static void updatingFromTheLibrary() {
+    Graph g;
+    const std::string src = g.addElement("src");
+    const std::string id = tpl::insertTemplate(g, decodeTemplate(), 0, 0);
+    const std::string first = tpl::members(g, id).front();
+    CHECK(g.linkExisting(src, "src", first, "sink"));
+    const ExposedParam bitrate = g.instance(id)->params[0];
+    CHECK(tpl::setParam(g, bitrate, "8000"));
+
+    // Revision 4 puts a filter between parse and dec.
+    Graph newer = decodeTemplate();
+    newer.revision = 4;
+    const std::string filter = newer.addElement("filter");
+    CHECK(newer.disconnectLink("parse_1", "src"));
+    CHECK(newer.linkExisting("parse_1", "src", filter, "sink"));
+    CHECK(newer.linkExisting(filter, "src", "dec_2", "sink", "video/x-h264, width=(int)640"));
+    CHECK(tpl::replaceContent(g, id, newer));
+
+    CHECK_EQ(tpl::members(g, id).size(), size_t(4));
+    CHECK_EQ(g.instance(id)->revision, 4);
+    CHECK(!tpl::modified(g, id));
+    // The link from outside reaches the first element of the new content.
+    const int in = g.linkFrom(src, "src");
+    CHECK(in >= 0 && tpl::inside(g, g.links[size_t(in)].sinkElement, id));
+    CHECK_EQ(g.find(g.links[size_t(in)].sinkElement)->factory, std::string("depay"));
+    // The parameter kept its value.
+    CHECK_EQ(tpl::paramValue(g, g.instance(id)->params[0]), std::string("8000"));
+    CHECK(Pipeline::validate(g));
+}
+
 int main() {
     placing();
     parameters();
@@ -191,5 +221,6 @@ int main() {
     copies();
     confForm();
     replacingKeepsMembership();
+    updatingFromTheLibrary();
     return finish("templates_test");
 }

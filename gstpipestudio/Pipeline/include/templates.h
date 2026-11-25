@@ -38,6 +38,9 @@ std::string fingerprint(const Graph& g, const std::string& id);  // of extract()
 bool modified(const Graph& g, const std::string& id);            // content changed since the last sync
 // After a sanctioned change (insert, update, save to the library): the instance and every one around it are in sync.
 void sync(Graph& g, const std::string& id, int revision);
+// The instance takes the content of a newer library template: its members are replaced, links from outside reach the
+// same pads again (by the names inside the template), and parameters keep the values they had. False when it is gone.
+bool replaceContent(Graph& g, const std::string& id, const Graph& tmpl);
 
 // ---- parameters
 std::string paramValue(const Graph& g, const ExposedParam& p);  // "" when not set (the element's default)

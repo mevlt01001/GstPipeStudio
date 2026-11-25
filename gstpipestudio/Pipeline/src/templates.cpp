@@ -302,6 +302,64 @@ void sync(Graph& g, const std::string& id, int revision) {
     }
 }
 
+bool replaceContent(Graph& g, const std::string& id, const Graph& tmpl) {
+    const TemplateInstance* found = g.instance(id);
+    if (!found) return false;
+    const TemplateInstance before = *found;
+    const std::vector<std::string> old = members(g, id);
+    const std::set<std::string> inside(old.begin(), old.end());
+    // What reaches into it from outside, by the names inside the template, and the values of its parameters.
+    struct Crossing {
+        Connection link;
+        bool srcInside;
+    };
+    std::vector<Crossing> crossings;
+    for (const Connection& l : g.links) {
+        const bool src = inside.count(l.srcElement) > 0, sink = inside.count(l.sinkElement) > 0;
+        if (src == sink) continue;
+        Crossing c{l, src};
+        std::string& end = src ? c.link.srcElement : c.link.sinkElement;
+        auto local = before.local.find(end);
+        end = local == before.local.end() ? end : local->second;
+        crossings.push_back(c);
+    }
+    std::map<std::string, std::string> values;
+    for (const ExposedParam& p : before.params) values[p.name] = paramValue(g, p);
+    double x = 0, y = 0;
+    if (!old.empty()) x = g.find(old.front())->x, y = g.find(old.front())->y;
+
+    g.deleteElements(old, false);  // takes the instance and the ones inside it along
+    TemplateInstance renewed;
+    renewed.id = before.id;
+    renewed.templateName = tmpl.name;
+    renewed.revision = tmpl.revision;
+    renewed.parent = g.instance(before.parent) ? before.parent : "";
+    g.instances.push_back(renewed);
+    double left = 0, top = 0;
+    if (!tmpl.elements.empty()) left = tmpl.elements.front().x, top = tmpl.elements.front().y;
+    const std::map<std::string, std::string> names = insertCopy(g, tmpl, x - left, y - top, before.id);
+    TemplateInstance* placed = g.instance(before.id);
+    for (const auto& [inTemplate, created] : names) placed->local[created] = inTemplate;
+    for (const ExposedParam& p : tmpl.exposed) {
+        ExposedParam moved = renamed(p, names);
+        if (!moved.element.empty()) placed->params.push_back(moved);
+    }
+    for (const Crossing& c : crossings) {
+        Connection l = c.link;
+        std::string& end = c.srcInside ? l.srcElement : l.sinkElement;
+        auto created = names.find(end);
+        if (created == names.end()) continue;  // the newer template has no such element: the link goes
+        end = created->second;
+        g.linkExisting(l.srcElement, l.srcPad, l.sinkElement, l.sinkPad, l.caps, l.sinkPadProps);
+    }
+    for (const ExposedParam& p : std::vector<ExposedParam>(placed->params)) {
+        auto value = values.find(p.name);
+        if (value != values.end()) setParam(g, p, value->second);
+    }
+    sync(g, before.id, tmpl.revision);
+    return true;
+}
+
 // ---- parameters
 
 std::string paramValue(const Graph& g, const ExposedParam& p) {
