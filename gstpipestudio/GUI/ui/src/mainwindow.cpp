@@ -464,7 +464,7 @@ void MainWindow::restoreSession() {
     const Settings::Session session = Settings::session();
     QList<Document*> opened;
     for (const QString& entry : session.tabs) {
-        const QString kind = entry.section(':', 0, 0), value = entry.section(':', 1);
+        const QString kind = SaveTarget::kindOf(entry), value = SaveTarget::valueOf(entry);
         if (kind == LibraryTemplateTarget::kKind) {
             opened << openTemplate(value);
         } else if (kind == ProjectConfTarget::kKind && QFileInfo::exists(value)) {

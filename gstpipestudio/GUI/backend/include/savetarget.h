@@ -25,6 +25,11 @@ public:
     virtual QString runBlockedReason() const { return QString(); } // why it cannot run on its own, "" when it can
     virtual QStringList templateFolders() const;             // where its template references are read from
     virtual SaveResult write(const gps::Graph& plan) = 0;    // the plan as the document holds it
+
+    // A session key is "<kind>:<value>", the kind being a target's kKind.
+    static QString key(const char* kind, const QString& value) { return QString(kind) + ":" + value; }
+    static QString kindOf(const QString& entry) { return entry.section(':', 0, 0); }
+    static QString valueOf(const QString& entry) { return entry.section(':', 1); }
 };
 
 // A canvas never saved: "Untitled-N". Its first Save asks for a project.
@@ -35,7 +40,7 @@ public:
     static int lowestFree(const QList<const SaveTarget*>& open);  // the N a new untitled document takes
 
     QString title() const override { return QString("Untitled-%1").arg(number_); }
-    QString sessionKey() const override { return QString(kKind) + ":" + QString::number(number_); }
+    QString sessionKey() const override { return key(kKind, QString::number(number_)); }
     bool needsDestination() const override { return true; }
     SaveResult write(const gps::Graph&) override { return SaveResult::failed("Choose a project to save it in first"); }
 
@@ -67,7 +72,7 @@ class LibraryTemplateTarget final : public SaveTarget {
 public:
     static constexpr const char* kKind = "template";
     LibraryTemplateTarget(const QString& name, TemplateLibrary& library) : name_(name), library_(library) {}
-    static QString keyFor(const QString& name) { return QString(kKind) + ":" + name; }
+    static QString keyFor(const QString& name) { return key(kKind, name); }
 
     QString title() const override { return "Template: " + name_; }
     QString path() const override;

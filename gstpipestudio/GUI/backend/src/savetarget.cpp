@@ -24,7 +24,7 @@ int UntitledTarget::lowestFree(const QList<const SaveTarget*>& open) {
 
 ProjectConfTarget::ProjectConfTarget(const QString& confPath) : path_(QFileInfo(confPath).absoluteFilePath()) {}
 
-QString ProjectConfTarget::keyFor(const QString& confPath) { return QString(kKind) + ":" + QFileInfo(confPath).absoluteFilePath(); }
+QString ProjectConfTarget::keyFor(const QString& confPath) { return key(kKind, QFileInfo(confPath).absoluteFilePath()); }
 
 QString ProjectConfTarget::title() const { return QFileInfo(path_).fileName(); }
 
