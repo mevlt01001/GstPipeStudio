@@ -476,6 +476,20 @@ private slots:
         qputenv("GPS_BIN_DIR", old);
     }
 
+    // Asked again before the first answer came (Retry, a second window), only the last start answers.
+    void aCheckAskedAgainAnswersOnlyForItsLastStart() {
+        StartupCheck startup;
+        QSignalSpy done(&startup, &StartupCheck::finished);
+        env("1.20.3", "1", "");
+        startup.start();  // would say NotInstalled
+        env("1.20.3", "", "");
+        startup.start();
+        QVERIFY(done.wait(10000));
+        QTest::qWait(500);
+        QCOMPARE(done.count(), 1);
+        QCOMPARE(startup.result().state, StartupResult::Ready);
+    }
+
     void theSetupPageShowsForEveryBadStateAndRetryRecovers() {
         env("1.20.3", "1", "");
         MainWindow w(c.get());
