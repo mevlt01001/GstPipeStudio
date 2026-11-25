@@ -32,7 +32,7 @@ class StartupCheck : public QObject {
 public:
     explicit StartupCheck(QObject* parent = nullptr);
 
-    void start();  // asynchronous; finished() comes once per start
+    void start();  // asynchronous; finished() comes once, for the last start
     const StartupResult& result() const { return result_; }
 
 signals:
@@ -44,4 +44,5 @@ private:
     void done(const StartupResult& result);
 
     StartupResult result_;
+    int run_ = 0;  // which start the answers on their way belong to
 };

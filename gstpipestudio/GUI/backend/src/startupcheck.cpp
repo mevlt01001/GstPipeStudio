@@ -25,9 +25,11 @@ StartupCheck::StartupCheck(QObject* parent) : QObject(parent) {}
 
 void StartupCheck::start() {
     result_ = StartupResult();
+    const int run = ++run_;
     auto* client = new HelperClient(this);
-    connect(client, &HelperClient::finished, this, [this, client](const HelperResult& r) {
+    connect(client, &HelperClient::finished, this, [this, client, run](const HelperResult& r) {
         client->deleteLater();
+        if (run != run_) return;  // a later start asked again: only its answer counts
         gps::VersionInfo version;
         gps::ErrorReply error;
         bool usable = r.outcome == HelperResult::Finished && r.read(&version) && !version.gstreamer.version.empty();
@@ -61,8 +63,9 @@ void StartupCheck::askSystemTool() {
         return;
     }
     auto* client = new HelperClient(this);
-    connect(client, &HelperClient::finished, this, [this, client, r](const HelperResult& answer) mutable {
+    connect(client, &HelperClient::finished, this, [this, client, r, run = run_](const HelperResult& answer) mutable {
         client->deleteLater();
+        if (run != run_) return;
         if (answer.outcome != HelperResult::Finished || answer.exitCode != 0) {
             r.state = StartupResult::NotInstalled;  // present but unable to run: GStreamer is not usable either
         } else {
