@@ -427,6 +427,9 @@ private slots:
         QVERIFY(w.closeDocument(w.document()));
         QCOMPARE(w.tabs()->count(), 1);
         QCOMPARE(w.tabs()->tabText(0), QString("Untitled-1"));
+        // The tab that replaces a closed Untitled-1 takes its number again.
+        QVERIFY(w.closeDocument(w.document()));
+        QCOMPARE(w.tabs()->tabText(0), QString("Untitled-1"));
     }
 
     // Untitled tabs take the lowest free number; Save of one asks for a project, Save all writes every unsaved tab,

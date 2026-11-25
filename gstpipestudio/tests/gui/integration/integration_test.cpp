@@ -1,7 +1,7 @@
 // integration_test.cpp – the real GUI (offscreen) driven like a user, against the REAL gps-inspect / gps-update / gps-run.
 // Nothing here is faked except the two helpers that crash or hang on purpose (written to a temp folder).
 // Every flow of SPEC 8 goes through widgets: toolbar, canvas clicks, the drawer pages (picker, properties, caps), menus.
-// File dialogs are not driven (QFileDialog is native); the window's saveFile()/openFile() are called instead.
+// File dialogs are not driven (QFileDialog is native); SaveFlow::saveAs() and the window's openFile() are called instead.
 #include <QAction>
 #include <QCheckBox>
 #include <QComboBox>

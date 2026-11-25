@@ -439,9 +439,9 @@ Document* MainWindow::target() { return doc_ && doc_->pristine() ? doc_ : newDoc
 bool MainWindow::closeDocument(Document* d) {
     if (!d || !docs_.contains(d) || !saveFlow_->confirmClose({d})) return false;
     if (d->controller()->running()) d->controller()->stopRun();
-    if (docs_.size() == 1) newDocument();  // the window always has a canvas
+    docs_.removeAll(d);  // first: its Untitled-N is free for the tab that may replace it
+    if (docs_.isEmpty()) newDocument();  // the window always has a canvas
     if (d == doc_) activate(docAt(indexOf(d) + 1) ? docAt(indexOf(d) + 1) : docAt(indexOf(d) - 1));
-    docs_.removeAll(d);
     tabs_->removeTab(indexOf(d));
     pages_->removeWidget(d->centre());
     delete d;
