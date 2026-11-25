@@ -1,6 +1,8 @@
 // conf.cpp – the .conf text form of a Graph (SPEC 3). Provisional format, kept in this one file.
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <set>
 #include <sstream>
@@ -75,14 +77,39 @@ int suffixOf(const std::string& name) {
 
 }  // namespace
 
-std::string Graph::toConf() const {
+std::string Graph::toConf(Form form) const {
+    // In the reference form, the members of an unchanged top-level copy are written as the copy: "<copy>" for an
+    // element, "<member inside the template>.<pad>" for a pad. A changed copy is written inline, so nothing is lost.
+    std::map<std::string, std::string> owner;  // member element or nested instance -> the referenced copy around it
+    std::vector<const TemplateInstance*> referenced;
+    if (form == Form::Reference) {
+        for (const TemplateInstance& t : instances) {
+            if (!t.parent.empty() || templates::modified(*this, t.id)) continue;
+            referenced.push_back(&t);
+            for (const std::string& m : templates::members(*this, t.id)) owner[m] = t.id;
+            for (const std::string& n : templates::nested(*this, t.id)) owner[n] = t.id;
+        }
+    }
+    auto end = [&](const std::string& element, const std::string& pad, std::string* outPad) {
+        auto copy = owner.find(element);
+        if (copy == owner.end()) {
+            *outPad = pad;
+            return element;
+        }
+        *outPad = instance(copy->second)->local.at(element) + "." + pad;
+        return copy->second;
+    };
+
     std::ostringstream out;
     out << "[gstpipestudio]\nversion=1\n";
     put(out, "name", name);
-    out << "complete=" << (complete ? 1 : 0) << "\nnext=" << nextId << "\n";
+    out << "complete=" << (complete ? 1 : 0) << "\n";
+    // The reader starts numbering after the highest number it reads; referenced members get new names every time.
+    if (form == Form::Inline) out << "next=" << nextId << "\n";
     if (revision) out << "revision=" << revision << "\n";
 
     for (const Element& e : elements) {
+        if (owner.count(e.name)) continue;
         out << "\n[element:" << e.name << "]\n";
         put(out, "factory", e.factory);
         if (!e.group.empty()) put(out, "group", e.group);
@@ -90,21 +117,37 @@ std::string Graph::toConf() const {
         for (const auto& r : e.requestSink) out << "requestsink." << r.first << "=" << r.second << "\n";
         for (const auto& p : e.props) put(out, "prop." + p.first, p.second);
     }
-    for (size_t i = 0; i < links.size(); ++i) {
-        const Connection& l = links[i];
-        out << "\n[link:" << i << "]\n";
-        put(out, "src", l.srcElement);
-        put(out, "srcpad", l.srcPad);
-        put(out, "sink", l.sinkElement);
-        put(out, "sinkpad", l.sinkPad);
+    int written = 0;
+    for (const Connection& l : links) {
+        auto from = owner.find(l.srcElement), to = owner.find(l.sinkElement);
+        if (from != owner.end() && to != owner.end() && from->second == to->second) continue;  // inside one copy
+        std::string srcPad, sinkPad;
+        out << "\n[link:" << written++ << "]\n";
+        put(out, "src", end(l.srcElement, l.srcPad, &srcPad));
+        put(out, "srcpad", srcPad);
+        put(out, "sink", end(l.sinkElement, l.sinkPad, &sinkPad));
+        put(out, "sinkpad", sinkPad);
         if (!l.caps.empty()) put(out, "caps", l.caps);
         for (const auto& p : l.sinkPadProps) put(out, "padprop." + p.first, p.second);
     }
     for (const ExposedParam& p : exposed) {
+        std::string property;
+        const std::string element = end(p.element, p.property, &property);
         out << "\n[expose:" << p.name << "]\n";
-        put(out, "target", p.element + "." + p.property);
+        put(out, "target", element + "." + property);
+    }
+    for (const TemplateInstance* t : referenced) {
+        out << "\n[template:" << t->id << "]\n";
+        put(out, "template", t->templateName);
+        out << "revision=" << t->revision << "\n";
+        for (const ExposedParam& p : t->params) {
+            const std::string value = templates::paramValue(*this, p);
+            if (!value.empty()) put(out, "prop." + p.name, value);
+        }
     }
     for (const TemplateInstance& t : instances) {
+        if (owner.count(t.id) || std::any_of(referenced.begin(), referenced.end(), [&](const TemplateInstance* r) { return r->id == t.id; }))
+            continue;
         out << "\n[template:" << t.id << "]\n";
         put(out, "template", t.templateName);
         out << "revision=" << t.revision << "\n";
@@ -116,7 +159,7 @@ std::string Graph::toConf() const {
     return out.str();
 }
 
-bool Graph::fromConf(const std::string& text, Graph* out, std::string* error) {
+bool Graph::fromConf(const std::string& text, Graph* out, std::string* error, const TemplateSource& templates) {
     // 1. Cut the text into sections.
     std::vector<Section> sections;
     std::istringstream in(text);
@@ -146,6 +189,7 @@ bool Graph::fromConf(const std::string& text, Graph* out, std::string* error) {
     // 2. Read them in order. Unknown sections and keys are ignored.
     Graph plan;
     plan.name = "pipeline";
+    std::map<std::string, std::map<std::string, std::string>> values;  // referenced copy -> parameter values
     bool header = false;
     int next = 0;
     std::set<std::string> names;
@@ -201,7 +245,8 @@ bool Graph::fromConf(const std::string& text, Graph* out, std::string* error) {
             TemplateInstance t;
             t.id = s.name;
             for (const auto& kv : s.keys) {
-                if (kv.first == "template") t.templateName = kv.second;
+                if (kv.first.rfind("prop.", 0) == 0) values[t.id][kv.first.substr(5)] = kv.second;  // a reference's parameters
+                else if (kv.first == "template") t.templateName = kv.second;
                 else if (kv.first == "revision") t.revision = std::max(0, std::atoi(kv.second.c_str()));
                 else if (kv.first == "parent") t.parent = kv.second;
                 else if (kv.first == "signature") t.signature = kv.second;
@@ -226,6 +271,39 @@ bool Graph::fromConf(const std::string& text, Graph* out, std::string* error) {
     }
     if (!header) return fail(error, 1, "missing [gstpipestudio] section");
     plan.nextId = next;
+
+    // A copy that holds nothing in the file is a reference: its template's content comes from its own file, and the
+    // links and exposes that name "<copy>" and "<member inside it>.<pad>" reach the members it placed.
+    std::map<std::string, std::map<std::string, std::string>> placed;  // copy -> member inside the template -> name
+    for (const TemplateInstance& t : std::vector<TemplateInstance>(plan.instances)) {
+        const bool holds = std::any_of(plan.elements.begin(), plan.elements.end(), [&](const Element& e) { return e.group == t.id; }) ||
+                           std::any_of(plan.instances.begin(), plan.instances.end(), [&](const TemplateInstance& i) { return i.parent == t.id; });
+        if (holds || !t.parent.empty()) continue;
+        Graph tmpl;
+        std::string why = "no template folder to look in";
+        if (!templates || !templates(t.templateName, &tmpl, &why)) return fail(error, 0, "template " + t.templateName + ": " + why);
+        plan.instances.erase(std::remove_if(plan.instances.begin(), plan.instances.end(), [&](const TemplateInstance& i) { return i.id == t.id; }),
+                             plan.instances.end());
+        placed[t.id] = templates::placeReference(plan, t.id, tmpl, values[t.id]);
+    }
+    auto reach = [&](std::string* element, std::string* pad) {
+        auto copy = placed.find(*element);
+        if (copy == placed.end()) return true;
+        const size_t dot = pad->find('.');
+        auto member = dot == std::string::npos ? copy->second.end() : copy->second.find(pad->substr(0, dot));
+        if (member == copy->second.end()) return false;
+        *element = member->second;
+        *pad = pad->substr(dot + 1);
+        return true;
+    };
+    for (Connection& l : plan.links) {
+        if (!reach(&l.srcElement, &l.srcPad) || !reach(&l.sinkElement, &l.sinkPad))
+            return fail(error, 0, "link " + l.srcElement + " -> " + l.sinkElement + " names a member its template does not have");
+    }
+    for (ExposedParam& p : plan.exposed) {
+        if (!reach(&p.element, &p.property)) return fail(error, 0, "expose '" + p.name + "' names a member its template does not have");
+    }
+    for (const Element& e : plan.elements) names.insert(e.name);
 
     // 3. The plan must make sense on its own.
     std::set<std::pair<std::string, std::string>> srcPads;
@@ -270,22 +348,41 @@ bool Graph::fromConf(const std::string& text, Graph* out, std::string* error) {
     return true;
 }
 
-bool Graph::save(const std::string& path, std::string* error) const {
-    std::ofstream file(path, std::ios::binary | std::ios::trunc);
-    if (!file) {
-        if (error) *error = "cannot write " + path;
-        return false;
-    }
-    file << toConf();
-    file.flush();
-    if (!file) {
-        if (error) *error = "write failed for " + path;
-        return false;
-    }
-    return true;
+namespace {
+
+std::string folderOf(const std::string& path) {
+    const size_t slash = path.find_last_of('/');
+    return slash == std::string::npos ? "." : path.substr(0, slash);
 }
 
-bool Graph::load(const std::string& path, Graph* out, std::string* error) {
+bool writeFile(const std::string& path, const std::string& text, std::string* error) {
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    if (file) file << text;
+    file.flush();
+    if (!file && error) *error = "cannot write " + path;
+    return static_cast<bool>(file);
+}
+
+}  // namespace
+
+bool Graph::save(const std::string& path, std::string* error) const { return writeFile(path, toConf(), error); }
+
+bool Graph::saveProject(const std::string& path, std::string* error) const {
+    const std::string folder = folderOf(path) + "/templates";
+    bool made = false;
+    for (const TemplateInstance& t : instances) {
+        if (!t.parent.empty() || templates::modified(*this, t.id)) continue;  // written inline in the conf
+        if (!made) {
+            std::error_code ignored;
+            std::filesystem::create_directories(folder, ignored);
+            made = true;
+        }
+        if (!writeFile(folder + "/" + templates::fileName(t.templateName), templates::extract(*this, t.id).toConf(), error)) return false;
+    }
+    return writeFile(path, toConf(Form::Reference), error);
+}
+
+bool Graph::load(const std::string& path, Graph* out, std::string* error, const std::vector<std::string>& libraries) {
     std::ifstream file(path, std::ios::binary);
     if (!file) {
         if (error) *error = "cannot read " + path;
@@ -293,7 +390,25 @@ bool Graph::load(const std::string& path, Graph* out, std::string* error) {
     }
     std::stringstream text;
     text << file.rdbuf();
-    return fromConf(text.str(), out, error);
+    std::vector<std::string> folders{folderOf(path) + "/templates"};
+    folders.insert(folders.end(), libraries.begin(), libraries.end());
+    if (const char* more = std::getenv("GPS_TEMPLATE_PATH")) {
+        std::stringstream list(more);
+        for (std::string dir; std::getline(list, dir, ':');) {
+            if (!dir.empty()) folders.push_back(dir);
+        }
+    }
+    auto find = [&](const std::string& name, Graph* tmpl, std::string* why) {
+        for (const std::string& dir : folders) {
+            const std::string candidate = dir + "/" + templates::fileName(name);
+            if (std::ifstream(candidate).good()) return load(candidate, tmpl, why, libraries);
+        }
+        std::string looked;
+        for (const std::string& dir : folders) looked += (looked.empty() ? "" : ", ") + dir;
+        *why = "not found in " + looked;
+        return false;
+    };
+    return fromConf(text.str(), out, error, find);
 }
 
 }  // namespace gps

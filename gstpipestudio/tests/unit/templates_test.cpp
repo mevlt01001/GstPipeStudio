@@ -1,5 +1,7 @@
 // templates_test.cpp – template instances in the Graph: placing, nesting, parameters, the library side and the conf.
 #include <algorithm>
+#include <filesystem>
+#include <unistd.h>
 #include <iostream>
 
 #include "check.h"
@@ -217,6 +219,74 @@ static void updatingFromTheLibrary() {
     CHECK(Pipeline::validate(g));
 }
 
+// A project's conf names a template like an element: its content comes from the template's own file, like an import.
+static void references() {
+    Graph g;
+    const std::string src = g.addElement("src");
+    const std::string id = tpl::insertTemplate(g, decodeTemplate(), 0, 0);
+    const std::vector<std::string> inner = tpl::members(g, id);
+    const std::string sink = g.addElement("sink");
+    CHECK(g.linkExisting(src, "src", inner.front(), "sink"));
+    CHECK(g.linkExisting(inner.back(), "src", sink, "sink", "video/x-raw"));
+    CHECK(tpl::setParam(g, g.instance(id)->params[0], "8000"));
+
+    const std::string text = g.toConf(Graph::Form::Reference);
+    CHECK(text.find("factory=depay") == std::string::npos);  // the content is not in the project's conf
+    CHECK(text.find("[template:Decode#1]\ntemplate=Decode\nrevision=3\nprop.bitrate=8000\n") != std::string::npos);
+    CHECK(text.find("sink=Decode#1\nsinkpad=depay_0.sink\n") != std::string::npos);
+    CHECK(text.find("src=Decode#1\nsrcpad=dec_2.src\n") != std::string::npos);
+
+    Graph back;
+    std::string error;
+    auto library = [](const std::string& name, Graph* t, std::string* why) {
+        if (name != "Decode") return *why = "unknown", false;
+        *t = decodeTemplate();
+        return true;
+    };
+    CHECK(Graph::fromConf(text, &back, &error, library));
+    CHECK_EQ(error, std::string());
+    CHECK_EQ(tpl::members(back, id).size(), size_t(3));
+    CHECK(!tpl::modified(back, id));
+    CHECK_EQ(back.instance(id)->revision, 3);
+    CHECK_EQ(tpl::paramValue(back, back.instance(id)->params[0]), std::string("8000"));
+    const int in = back.linkFrom(src, "src");
+    CHECK(in >= 0 && back.find(back.links[size_t(in)].sinkElement)->factory == "depay");
+    CHECK(back.linkInto(sink, "sink") >= 0 && back.links[size_t(back.linkInto(sink, "sink"))].caps == "video/x-raw");
+    CHECK(Pipeline::validate(back));
+    CHECK_EQ(back.toConf(Graph::Form::Reference), text);  // read and written again, the same file
+
+    // Without the template's file the conf cannot be read, and says which template is missing.
+    CHECK(!Graph::fromConf(text, &back, &error));
+    CHECK(error.find("Decode") != std::string::npos);
+
+    // A changed copy is written whole: nothing of the change is lost.
+    CHECK(g.setProps(g.instance(id)->params[0].element, {{"bitrate", "8000"}, {"preset", "fast"}}));
+    CHECK(g.toConf(Graph::Form::Reference).find("factory=depay") != std::string::npos);
+    CHECK_EQ(tpl::fileName("My cam: 2"), std::string("My_cam__2.conf"));
+}
+
+// A saved project keeps a copy of every template it uses in its own templates folder: the folder runs on its own.
+static void projectFolder() {
+    Graph g;
+    const std::string src = g.addElement("src");
+    const std::string id = tpl::insertTemplate(g, decodeTemplate(), 0, 0);
+    CHECK(g.linkExisting(src, "src", tpl::members(g, id).front(), "sink"));
+    const std::filesystem::path folder = std::filesystem::temp_directory_path() / ("gps_project_" + std::to_string(::getpid()));
+    std::filesystem::create_directories(folder);
+    std::string error;
+    CHECK(g.saveProject((folder / "cam.conf").string(), &error));
+    CHECK(std::filesystem::exists(folder / "templates" / "Decode.conf"));
+    Graph back;
+    CHECK(Graph::load((folder / "cam.conf").string(), &back, &error));
+    CHECK_EQ(error, std::string());
+    CHECK_EQ(tpl::members(back, id).size(), size_t(3));
+    CHECK(!tpl::modified(back, id));
+    // Without the copy it is not found (no library given).
+    std::filesystem::remove_all(folder / "templates");
+    CHECK(!Graph::load((folder / "cam.conf").string(), &back, &error));
+    std::filesystem::remove_all(folder);
+}
+
 int main() {
     placing();
     parameters();
@@ -226,5 +296,7 @@ int main() {
     confForm();
     replacingKeepsMembership();
     updatingFromTheLibrary();
+    references();
+    projectFolder();
     return finish("templates_test");
 }

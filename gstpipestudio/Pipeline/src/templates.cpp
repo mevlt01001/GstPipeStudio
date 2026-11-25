@@ -2,6 +2,7 @@
 #include "templates.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <cstdio>
 #include <set>
@@ -217,6 +218,36 @@ void detach(Graph& g, const std::string& id) {
     }
     g.instances.erase(std::remove_if(g.instances.begin(), g.instances.end(), [&](const TemplateInstance& x) { return x.id == id; }),
                       g.instances.end());
+}
+
+// ---- references
+
+std::string fileName(const std::string& templateName) {
+    std::string safe = templateName;
+    for (char& c : safe) {
+        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_' && c != '.' && c != '-') c = '_';
+    }
+    return safe + ".conf";
+}
+
+std::map<std::string, std::string> placeReference(Graph& g, const std::string& id, const Graph& tmpl,
+                                                  const std::map<std::string, std::string>& values) {
+    const std::string placed = insertTemplate(g, tmpl, 0, 0);
+    for (Element& e : g.elements) {
+        if (e.group == placed) e.group = id;
+    }
+    for (TemplateInstance& t : g.instances) {
+        if (t.parent == placed) t.parent = id;
+        if (t.id == placed) t.id = id;
+    }
+    TemplateInstance& t = *g.instance(id);
+    for (const ExposedParam& p : std::vector<ExposedParam>(t.params)) {
+        auto value = values.find(p.name);
+        if (value != values.end()) setParam(g, p, value->second);
+    }
+    std::map<std::string, std::string> byInside;
+    for (const auto& [now, inside] : g.instance(id)->local) byInside[inside] = now;
+    return byInside;
 }
 
 // ---- the library side

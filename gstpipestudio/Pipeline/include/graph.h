@@ -194,10 +194,21 @@ public:
     bool removeQueue(const std::string& queueName);
 
     // ---- text form
-    std::string toConf() const;
-    static bool fromConf(const std::string& text, Graph* out, std::string* error);
-    bool save(const std::string& path, std::string* error) const;
-    static bool load(const std::string& path, Graph* out, std::string* error);
+    // Inline: every element, template members too (temporary files, the clipboard, the library's own files).
+    // Reference: a project's conf. An unchanged top-level template copy is written like an element, by its template's
+    // name, revision and parameter values (as props); a link across its border names the copy and "<member>.<pad>",
+    // the member's name inside the template. Like an import: the content comes from the template's own file.
+    enum class Form { Inline, Reference };
+    std::string toConf(Form form = Form::Inline) const;
+    // Finds a referenced template's content by its name; false (and why) when there is none.
+    using TemplateSource = std::function<bool(const std::string& templateName, Graph* tmpl, std::string* error)>;
+    static bool fromConf(const std::string& text, Graph* out, std::string* error, const TemplateSource& templates = {});
+    bool save(const std::string& path, std::string* error) const;  // inline
+    // A project's conf in the reference form, and beside it <folder>/templates/<template>.conf for every template it
+    // references: the content it uses, so the folder runs on its own (copied to another machine, for instance).
+    bool saveProject(const std::string& path, std::string* error) const;
+    // References resolve from <folder of path>/templates, then the folders given, then GPS_TEMPLATE_PATH (':' between).
+    static bool load(const std::string& path, Graph* out, std::string* error, const std::vector<std::string>& libraries = {});
 
 private:
     std::string newName(const std::string& factory);

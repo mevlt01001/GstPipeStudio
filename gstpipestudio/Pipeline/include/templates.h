@@ -42,6 +42,14 @@ void sync(Graph& g, const std::string& id, int revision);
 // same pads again (by the names inside the template), and parameters keep the values they had. False when it is gone.
 bool replaceContent(Graph& g, const std::string& id, const Graph& tmpl);
 
+// ---- references (a project's conf names a template instead of holding its content)
+// A template's file name: "<name>.conf", characters outside [A-Za-z0-9_.-] made '_'.
+std::string fileName(const std::string& templateName);
+// Places a referenced template's content as the instance `id` with these parameter values (by parameter name).
+// Returns each member's name inside the template -> its name in g.
+std::map<std::string, std::string> placeReference(Graph& g, const std::string& id, const Graph& tmpl,
+                                                  const std::map<std::string, std::string>& values);
+
 // ---- parameters
 std::string paramValue(const Graph& g, const ExposedParam& p);  // "" when not set (the element's default)
 bool setParam(Graph& g, const ExposedParam& p, const std::string& value);
