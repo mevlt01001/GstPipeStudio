@@ -28,7 +28,7 @@
 
 ## Property editing
 
-- Reset individual properties or all editable element properties to their factory defaults. Save applies the changes; Cancel discards them.
+- A calmer Properties panel: one line per property, a changed value marked in green with a small ↺ that restores the default, and Reset all beside the search. Save applies the changes; Cancel discards them.
 - The mouse wheel never changes a value: it scrolls the form. Values are typed or chosen.
 
 ## Release workflow

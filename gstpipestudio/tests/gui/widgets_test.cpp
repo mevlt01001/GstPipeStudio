@@ -22,6 +22,7 @@
 #include <QTemporaryDir>
 #include <QWheelEvent>
 #include <QTimer>
+#include <QToolButton>
 #include <QToolTip>
 #include <QMessageBox>
 
@@ -220,7 +221,9 @@ private slots:
         PropertyInfo info; info.name = "gain"; info.kind = "int";
         info.writable = true; info.defaultValue = "5"; info.min = "0"; info.max = "100";
         PropertyEditor editor(info, QString("42"));
-        editor.findChild<QPushButton*>("resetPropertyButton")->click();
+        QVERIFY(!editor.findChild<QToolButton*>("resetPropertyButton")->isHidden());  // not the default: ↺ offered
+        editor.findChild<QToolButton*>("resetPropertyButton")->click();
+        QVERIFY(editor.findChild<QToolButton*>("resetPropertyButton")->isHidden());
         QCOMPARE(editor.text(), QString("5"));
         QVERIFY(editor.touched());
         QVERIFY(PropertyEditor::collect({&editor}, {{"gain", "42"}}).empty());

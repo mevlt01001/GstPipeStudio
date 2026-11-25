@@ -2,6 +2,7 @@
 // Used for element properties (properties page) and for sink pad properties (caps page).
 #pragma once
 
+#include <QToolButton>
 #include <QWidget>
 #include <functional>
 #include <optional>
@@ -33,8 +34,10 @@ signals:
 private:
     QWidget* build(const QString& initial);
     void touch();
+    void refresh();  // the ↺ shows while the value is not the default
 
     PropertyInfo info_;
     bool touched_ = false;
     std::function<QString()> read_;
+    QToolButton* reset_ = nullptr;
 };

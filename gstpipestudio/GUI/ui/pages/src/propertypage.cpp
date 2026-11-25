@@ -41,16 +41,25 @@ PropertyPage::PropertyPage(const PropertyPageInput& input, QWidget* parent) : Dr
     search_->setClearButtonEnabled(true);
     search_->setMaximumWidth(320);
     topBar->addWidget(search_, 0, Qt::AlignTop);
+    auto* reset = new QPushButton("Reset all", this);
+    reset->setObjectName("resetPropertiesButton");
+    reset->setFlat(true);
+    reset->setToolTip("Every property back to its factory default; Save applies the change");
+    topBar->addWidget(reset, 0, Qt::AlignTop);
+    connect(reset, &QPushButton::clicked, this, [this] {
+        for (auto* editor : editors_) editor->resetToDefault();
+    });
     root->addLayout(topBar);
 
     auto* contentRow = new QHBoxLayout;
     contentRow->setSpacing(12);
 
-    // One row per editable property. Rows are hidden, not removed, by the search box.
+    // One line per editable property: its name, then its value. A value that is not the default is marked: the name in
+    // the accent colour, a ↺ beside the value. Rows are hidden, not removed, by the search box.
     auto* list = new QWidget;
     auto* rows = new QVBoxLayout(list);
     rows->setContentsMargins(0, 0, 8, 0);
-    rows->setSpacing(6);
+    rows->setSpacing(2);
     int shown = 0;
     for (const PropertyInfo& p : input.info.properties) {
         if (!PropertyEditor::editable(p)) continue;
@@ -61,21 +70,26 @@ PropertyPage::PropertyPage(const PropertyPageInput& input, QWidget* parent) : Dr
 
         auto* row = new QWidget(list);
         row->setObjectName("row_" + name);
-        auto* line = new QVBoxLayout(row);
+        auto* line = new QHBoxLayout(row);
         line->setContentsMargins(0, 0, 0, 0);
-        line->setSpacing(3);
+        line->setSpacing(12);
 
         auto* label = new QLabel(p.deprecated ? name + "  (deprecated)" : name, row);
-        label->setToolTip(fromStd(p.blurb));
-        label->setWordWrap(true);
-        if (p.deprecated) label->setStyleSheet("color: " + Theme::muted().name() + ";");
-        else label->setStyleSheet("font-weight: bold;");
+        label->setToolTip(fromStd(p.blurb.empty() ? p.name : p.name + ": " + p.blurb));
+        label->setFixedWidth(220);
 
         auto* editor = new PropertyEditor(p, current, row);
         editor->setObjectName("editor_" + name);
+        editor->setMaximumWidth(420);
+        auto mark = [label, editor, deprecated = p.deprecated] {
+            label->setStyleSheet(deprecated ? "color: " + Theme::muted().name() + ";"
+                                 : editor->isDefault() ? QString() : "color: " + Theme::accent().name() + "; font-weight: bold;");
+        };
+        mark();
+        connect(editor, &PropertyEditor::edited, label, mark);
 
-        line->addWidget(label);
-        line->addWidget(editor);
+        line->addWidget(label, 0, Qt::AlignVCenter | Qt::AlignLeft);
+        line->addWidget(editor, 1, Qt::AlignVCenter | Qt::AlignLeft);
         rows->addWidget(row);
         editors_ << editor;
         rows_[name] = row;
@@ -149,12 +163,6 @@ PropertyPage::PropertyPage(const PropertyPageInput& input, QWidget* parent) : Dr
     root->addLayout(contentRow, 1);
 
     QHBoxLayout* buttons = addFooter(root, input.acceptText);
-    auto* reset = new QPushButton("Reset all properties", this);
-    reset->setObjectName("resetPropertiesButton");
-    buttons->insertWidget(0, reset);
-    connect(reset, &QPushButton::clicked, this, [this] {
-        for (auto* editor : editors_) editor->resetToDefault();
-    });
     if (input.canDelete) {
         auto* del = new QPushButton("Delete", this);
         del->setObjectName("deleteElementButton");

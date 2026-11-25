@@ -9,7 +9,7 @@
 #include <QRegularExpression>
 #include <QRegularExpressionValidator>
 #include <QSpinBox>
-#include <QPushButton>
+#include <QToolButton>
 #include <QVBoxLayout>
 #include <climits>
 #include <memory>
@@ -72,13 +72,19 @@ PropertyEditor::PropertyEditor(const PropertyInfo& info, const std::optional<QSt
     : QWidget(parent), info_(info) {
     auto* layout = new QHBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->addWidget(build(current ? *current : fromStd(info.defaultValue)));
-    auto* reset = new QPushButton("Reset", this);
-    reset->setObjectName("resetPropertyButton");
-    reset->setToolTip("Restore the factory default; Save applies the change");
-    layout->addWidget(reset);
-    connect(reset, &QPushButton::clicked, this, &PropertyEditor::resetToDefault);
+    layout->setSpacing(4);
+    layout->addWidget(build(current ? *current : fromStd(info.defaultValue)), 1);
+    // A small ↺ beside a value that is not the factory default: it puts the default back (Save applies it).
+    reset_ = new QToolButton(this);
+    reset_->setObjectName("resetPropertyButton");
+    reset_->setText("↺");
+    reset_->setAutoRaise(true);
+    reset_->setFixedSize(24, 24);
+    reset_->setToolTip("Restore the factory default (" + fromStd(info.defaultValue) + "); Save applies the change");
+    layout->addWidget(reset_);
+    connect(reset_, &QToolButton::clicked, this, &PropertyEditor::resetToDefault);
     setToolTip(fromStd(info.blurb));
+    refresh();
 }
 
 void PropertyEditor::resetToDefault() {
@@ -86,14 +92,17 @@ void PropertyEditor::resetToDefault() {
     auto* old = row->takeAt(0);
     delete old->widget();
     delete old;
-    row->insertWidget(0, build(fromStd(info_.defaultValue)));
+    row->insertWidget(0, build(fromStd(info_.defaultValue)), 1);
     touch();
 }
 
 void PropertyEditor::touch() {
     touched_ = true;
+    refresh();
     emit edited();
 }
+
+void PropertyEditor::refresh() { reset_->setVisible(!isDefault()); }
 
 bool PropertyEditor::isDefault() const { return sameValue(info_, text(), fromStd(info_.defaultValue)); }
 
