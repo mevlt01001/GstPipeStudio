@@ -1014,13 +1014,12 @@ private slots:
         QVERIFY(w->windowTitle().contains("roundtrip.conf"));
         QVERIFY(shot("17_opened_file"));
 
-        // saving the opened plan again writes the same text (positions, names, links)
+        // saving the opened plan again writes the same text (names, links); opening lays the canvas out anew
         QVERIFY(w->saveFile(work.filePath("roundtrip2.conf")));
         QFile a(conf), b(work.filePath("roundtrip2.conf"));
         QVERIFY(a.open(QIODevice::ReadOnly) && b.open(QIODevice::ReadOnly));
         QString first = QString::fromUtf8(a.readAll()), second = QString::fromUtf8(b.readAll());
-        first.replace(QRegularExpression("name=.*\n"), "");
-        second.replace(QRegularExpression("name=.*\n"), "");
+        for (QString* text : {&first, &second}) text->replace(QRegularExpression("(name|x|y)=.*\n"), "");
         QCOMPARE(second, first);
         QVERIFY(planText.contains("[link:4]"));
     }

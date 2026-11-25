@@ -3,6 +3,7 @@
 #pragma once
 
 #include <QList>
+#include <QPointF>
 #include <QString>
 
 #include "canvasmetrics.h"
@@ -55,6 +56,8 @@ struct TemplateInfo {
 
 struct LinkView {
     int index = -1;
+    QString id;             // "<src element>|<src pad>": the name the layout gives its route
+    QList<QList<QPointF>> route;  // pieces of the route of the last nice alignment, empty when the canvas changed since
     QString srcElement, srcIdentity, sinkElement, sinkIdentity;
     QString badge;          // "caps · 2": the link carries a caps choice with 2 pinned fields; "" when Auto
     QString tip;            // the choice itself

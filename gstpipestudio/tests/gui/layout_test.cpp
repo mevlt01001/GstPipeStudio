@@ -30,7 +30,7 @@ Node deepstream(int cameras) {
     for (int i = 0; i < cameras; ++i) muxSinks << QString("sink_%1").arg(i);
     root.children << box("mux", muxSinks, {"src"}) << box("infer", {"sink"}, {"src"}) << box("tee", {"sink"}, {"src_0", "src_1"})
                   << box("osd", {"sink"}, {"src"}) << box("display", {"sink"}, {}) << box("enc", {"sink"}, {"src"}) << box("file", {"sink"}, {});
-    auto link = [&](Node& in, const QString& id, const QString& from, const QString& to) { in.edges.append({id, from, to}); };
+    auto link = [&](Node& in, const QString& id, const QString& from, const QString& to) { in.edges.append({id, from, to, {}}); };
     for (int i = 0; i < cameras; ++i) {
         const QString cam = QString("cam%1").arg(i), dec = QString("dec%1").arg(i);
         root.children << box(cam, {}, {"src"});
@@ -118,6 +118,19 @@ private slots:
                     if (a.key() < b.key() && !a.value().contains(b.value()) && !b.value().contains(a.value()))
                         QVERIFY2(!a.value().intersects(b.value()), qPrintable(a.key() + " / " + b.key()));
         }
+    }
+
+    void aLinkLabelGetsRoomBetweenItsColumns() {
+        Node root;
+        root.id = "root";
+        root.children << box("a", {}, {"src"}) << box("b", {"sink"}, {});
+        root.edges.append({"L", "a|src|src", "b|sink|sink", QSizeF(320, 14)});
+        ElkEngine engine;
+        Result r;
+        QString error;
+        QVERIFY2(engine.run(root, Routing::Curves, &r, &error), qPrintable(error));
+        qInfo() << "gap with a 320 px label" << r.nodes["b"].left() - r.nodes["a"].right();
+        QVERIFY(r.nodes["b"].left() - r.nodes["a"].right() >= 320);
     }
 
     void runnerDeliversOnlyTheNewestAnswer() {

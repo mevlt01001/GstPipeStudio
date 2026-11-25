@@ -18,7 +18,7 @@ add_library(gps_gui STATIC
     model/include/elementview.h
     controller/include/controller.h controller/src/controller.cpp
     controller/include/flows.h controller/src/flows.cpp
-    controller/include/layout.h controller/src/layout.cpp
+    controller/include/canvaslayout.h controller/src/canvaslayout.cpp
     layout/include/layoutgraph.h
     layout/include/elkengine.h layout/src/elkengine.cpp
     layout/include/layoutrunner.h layout/src/layoutrunner.cpp

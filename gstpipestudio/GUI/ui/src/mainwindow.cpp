@@ -20,6 +20,8 @@
 #include <QTabWidget>
 #include <QTimer>
 #include <QToolBar>
+#include <tuple>
+#include <QActionGroup>
 
 #include "canvasscene.h"
 #include "canvasview.h"
@@ -173,9 +175,7 @@ void MainWindow::buildActions() {
     auto* showProps = make("actionShowProperties", "&Properties", {}, [this] { tabs_->setCurrentWidget(propsTab_); });
     auto* showCaps = make("actionShowCaps", "&Caps", {}, [this] { tabs_->setCurrentWidget(capsTab_); });
     auto* fit = make("actionFit", "Zoom to &fit", {QKeySequence(Qt::CTRL | Qt::Key_0)}, [this] { view_->fitAll(); });
-    auto* arrange = make("actionArrange", "Arrange &pipeline", {QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_L)}, [this] {
-        if (controller_->arrangePipeline()) QTimer::singleShot(0, view_, &CanvasView::fitAll);
-    });
+    auto* arrange = make("actionArrange", "Arrange &pipeline", {QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_L)}, [this] { arrangeAll(); });
     auto* zoomIn = make("actionZoomIn", "Zoom &in", {QKeySequence::ZoomIn}, [this] { view_->zoomBy(1.25); });
     auto* zoomOut = make("actionZoomOut", "Zoom &out", {QKeySequence::ZoomOut}, [this] { view_->zoomBy(0.8); });
     auto* quit = make("actionQuit", "&Quit", {QKeySequence::Quit}, [this] { close(); });
@@ -202,6 +202,21 @@ void MainWindow::buildActions() {
     viewMenu->addActions({showLog, showValidation, showTelemetry, showProps, showCaps, find});
     viewMenu->addSeparator();
     viewMenu->addActions({arrange, fit, zoomIn, zoomOut});
+    // Link style: the next nice alignment routes links as curves or right-angle lines.
+    QMenu* linkStyle = viewMenu->addMenu("&Link style");
+    auto* styles = new QActionGroup(this);
+    for (auto [name, routing, label] : {std::tuple{"actionLinkCurves", layout::Routing::Curves, "&Curves"},
+                                        std::tuple{"actionLinkRightAngles", layout::Routing::RightAngles, "&Right angles"}}) {
+        QAction* style = linkStyle->addAction(label);
+        style->setObjectName(name);
+        style->setCheckable(true);
+        style->setChecked(controller_->canvasLayout().routing() == routing);
+        styles->addAction(style);
+        connect(style, &QAction::triggered, this, [this, routing = routing] {
+            controller_->canvasLayout().setRouting(routing);
+            arrangeAll();
+        });
+    }
     auto* connectedMove = viewMenu->addAction("Move connected elements together");
     connectedMove->setObjectName("actionConnectedMove"); connectedMove->setCheckable(true);
     connectedMove->setToolTip("Drag an element to move its connected component; undo restores all positions");
@@ -414,6 +429,15 @@ void MainWindow::openCapsTab(const QString& srcElement, const QString& srcIdenti
     flows_->editCaps(srcElement, srcIdentity);
 }
 
+void MainWindow::arrangeAll() {
+    if (!controller_->niceAlign()) return;
+    auto* once = new QObject(this);
+    connect(&controller_->canvasLayout(), &CanvasLayout::aligned, once, [this, once](bool ok) {
+        if (ok) QTimer::singleShot(300, view_, &CanvasView::fitAll);  // after the boxes slid into place
+        once->deleteLater();
+    });
+}
+
 void MainWindow::showCanvasMenu(const QPoint& screenPos) {
     if (controller_->editingBlocked() || controller_->environmentBlocked()) return;
     auto* menu = new QMenu(this);
@@ -434,10 +458,9 @@ void MainWindow::showCanvasMenu(const QPoint& screenPos) {
         menu->addSeparator();
         menu->addAction(QString("Save selection (%1) as template…").arg(sel.size()), this, [this] { saveSelectedAsTemplate(); })
             ->setObjectName("actionCanvasSaveCustom");
+        menu->addAction("Auto align", this, [this, sel] { controller_->niceAlign(sel); })->setObjectName("actionCanvasAutoAlign");
         if (sel.size() >= 2) {
             menu->addAction("Connect selected elements", this, [this] { connectSelected(); })->setObjectName("actionCanvasConnectSelected");
-            menu->addAction("Align horizontally", this, [this, sel] { controller_->alignElements(sel, Qt::Horizontal); });
-            menu->addAction("Align vertically", this, [this, sel] { controller_->alignElements(sel, Qt::Vertical); });
         }
         menu->addAction("Duplicate selected", this, [this] { duplicateSelected(); });
         menu->addAction("Copy selected", this, [this] { copySelected(); });
@@ -454,9 +477,7 @@ void MainWindow::showCanvasMenu(const QPoint& screenPos) {
     menu->addSeparator();
     menu->addAction("Select all", this, [this] { selectAll(); });
     menu->addAction("Zoom to fit", this, [this] { view_->fitAll(); });
-    menu->addAction("Arrange pipeline", this, [this] {
-        if (controller_->arrangePipeline()) QTimer::singleShot(0, view_, &CanvasView::fitAll);
-    });
+    menu->addAction("Arrange pipeline", this, [this] { arrangeAll(); });
     auto* v = menu->addAction("Validate", this, [this] { controller_->refresh(); });
     v->setEnabled(!controller_->plan().empty());
     menu->popup(screenPos);
@@ -505,11 +526,8 @@ void MainWindow::showSelectionMenu(const QString& clickedElement, const QPoint& 
             ->setObjectName("actionConnectSelectedMenu");
         menu->addAction("Disconnect links between selected", this, [this, sel] { controller_->disconnectBetweenElements(sel); })
             ->setObjectName("actionDisconnectSelectedMenu");
-        menu->addAction("Align horizontally", this, [this, sel] { controller_->alignElements(sel, Qt::Horizontal); })
-            ->setObjectName("actionAlignHorizontally");
-        menu->addAction("Align vertically", this, [this, sel] { controller_->alignElements(sel, Qt::Vertical); })
-            ->setObjectName("actionAlignVertically");
     }
+    menu->addAction("Auto align", this, [this, sel] { controller_->niceAlign(sel); })->setObjectName("actionAutoAlign");
     menu->addSeparator();
     menu->addAction(QString("Duplicate (%1)").arg(sel.size()), this, [this] { duplicateSelected(); })->setObjectName("actionDuplicateSelection");
     menu->addAction(QString("Copy (%1)").arg(sel.size()), this, [this] { copySelected(); })->setObjectName("actionCopySelection");

@@ -2,6 +2,7 @@
 #include "linkitem.h"
 
 #include <QFontMetrics>
+#include <QLineF>
 #include <QGraphicsSceneMouseEvent>
 #include <QPainter>
 #include <QPainterPathStroker>
@@ -31,12 +32,32 @@ LinkItem::LinkItem(const LinkView& view, PadItem* from, PadItem* to) : view_(vie
 
 void LinkItem::updatePath() {
     prepareGeometryChange();
-    // The curve starts and ends at the pad's edge, so the pad circles stay visible.
-    double edge = metrics::kPadRadius + 2;
-    QPointF a = from_->center() + QPointF(edge, 0), b = to_->center() - QPointF(edge, 0);
-    double reach = qBound(30.0, qAbs(b.x() - a.x()) / 2, 150.0);
-    path_ = QPainterPath(a);
-    path_.cubicTo(a + QPointF(reach, 0), b - QPointF(reach, 0), b);
+    // The line starts and ends at the pad's edge, so the pad circles stay visible.
+    const double edge = metrics::kPadRadius + 2;
+    const QPointF from = from_->center(), to = to_->center();
+    auto at = [](QPointF p, QPointF q) { return QLineF(p, q).length() < 1.5; };
+    bool starts = false, ends = false;
+    for (const QList<QPointF>& piece : view_.route) {
+        if (piece.size() < 2) continue;
+        starts = starts || at(piece.front(), from);
+        ends = ends || at(piece.back(), to);
+    }
+    path_ = QPainterPath();
+    if (starts && ends) {
+        // The route of the last nice alignment, while both pads are where it left them.
+        for (QList<QPointF> piece : view_.route) {
+            if (piece.size() < 2) continue;
+            if (at(piece.front(), from)) piece.front() += QPointF(edge, 0);
+            if (at(piece.back(), to)) piece.back() -= QPointF(edge, 0);
+            path_.moveTo(piece.front());
+            for (int i = 1; i < piece.size(); ++i) path_.lineTo(piece[i]);
+        }
+    } else {
+        const QPointF a = from + QPointF(edge, 0), b = to - QPointF(edge, 0);
+        const double reach = qBound(30.0, qAbs(b.x() - a.x()) / 2, 150.0);
+        path_.moveTo(a);
+        path_.cubicTo(a + QPointF(reach, 0), b - QPointF(reach, 0), b);
+    }
     update();
 }
 

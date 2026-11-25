@@ -13,10 +13,7 @@ using metrics::kBoxWidth;
 using metrics::kHeader;
 using metrics::kPadRow;
 using metrics::kPropLine;
-
-namespace {
-double padY(int row) { return kHeader + 6 + (row + 0.5) * kPadRow; }
-}  // namespace
+using metrics::padY;
 
 ElementItem::PadLabel ElementItem::padLabel(const PadView& pad) {
     QFont small = QApplication::font();

@@ -3,6 +3,8 @@
 #pragma once
 
 #include <QGraphicsScene>
+#include <QPointer>
+#include <QVariantAnimation>
 #include <QHash>
 #include <QPair>
 #include <QPointF>
@@ -90,4 +92,7 @@ private:
     bool locked_ = false;
     bool stale_ = false;
     gps::TelemetrySample telemetry_;
+    QHash<QString, QPointF> animateFrom_;  // after a nice alignment: where the boxes were, to slide them from there
+    QPointer<QVariantAnimation> slide_;
+    void slide();
 };

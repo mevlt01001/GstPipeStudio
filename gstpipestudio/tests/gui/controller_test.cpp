@@ -61,40 +61,42 @@ private slots:
         QVERIFY(!c->refresh());
     }
 
-    void arrangingPipelineKeepsExecutionAndCanUndo() {
+    void niceAlignmentLaysOutTheCanvasInOneUndoStep() {
         const Chain chain = makeChain();
         QVERIFY(settle(*c));
-        const auto before = c->plan().find(toStd(chain.convert))->x;
+        c->setPositions({{chain.src, QPointF(500, 300)}, {chain.convert, QPointF(0, 0)}, {chain.sink, QPointF(250, 600)}});
+        auto at = [&](const QString& name) { const auto* e = c->plan().find(toStd(name)); return QPointF(e->x, e->y); };
         const auto revision = c->pipeline().lastChange().executionRevision;
-        QVERIFY(c->arrangePipeline());
-        const auto* source = c->plan().find(toStd(chain.src));
-        const auto* convert = c->plan().find(toStd(chain.convert));
-        const auto* sink = c->plan().find(toStd(chain.sink));
-        QVERIFY(convert->x - source->x >= 500);
-        QVERIFY(sink->x - convert->x >= 500);
-        QCOMPARE(c->pipeline().lastChange().executionRevision, revision);
-        QVERIFY(!c->updating());
-        QVERIFY(c->undo());
-        QCOMPARE(c->plan().find(toStd(chain.convert))->x, before);
+        QSignalSpy done(&c->canvasLayout(), &CanvasLayout::aligned);
+        QVERIFY(c->niceAlign());
+        QVERIFY(done.wait(30000));
+        QVERIFY(done[0][0].toBool());
+        // Left to right on one line, nothing on top of anything.
+        QVERIFY(at(chain.convert).x() >= at(chain.src).x() + metrics::kBoxWidth);
+        QVERIFY(at(chain.sink).x() >= at(chain.convert).x() + metrics::kBoxWidth);
+        QVERIFY(qAbs(at(chain.src).y() - at(chain.convert).y()) < 1);
+        QCOMPARE(c->pipeline().lastChange().executionRevision, revision);  // presentation only
+        // While nothing moves, a link follows the route the layout gave it.
+        QVERIFY(c->canvasLayout().fresh());
+        QVERIFY(!c->linkViews().front().route.isEmpty());
+        QVERIFY(c->undo());  // one step back
+        QCOMPARE(at(chain.convert), QPointF(0, 0));
+        QVERIFY(!c->canvasLayout().fresh());
+        QVERIFY(c->linkViews().front().route.isEmpty());
     }
 
-    void aligningIsOneUndoStepOnEitherAxis() {
+    void autoAlignKeepsTheSelectionWhereItWas() {
         const Chain chain = makeChain();
         QVERIFY(settle(*c));
-        c->setPositions({{chain.src, QPointF(0, 10)}, {chain.convert, QPointF(50, 100)}, {chain.sink, QPointF(400, 40)}});
-        const QStringList all = {chain.src, chain.convert, chain.sink};
+        c->setPositions({{chain.src, QPointF(1000, 1000)}, {chain.convert, QPointF(300, 0)}, {chain.sink, QPointF(0, 40)}});
         auto at = [&](const QString& name) { const auto* e = c->plan().find(toStd(name)); return QPointF(e->x, e->y); };
-        QVERIFY(c->alignElements(all, Qt::Horizontal));
-        QCOMPARE(at(chain.src).y(), 50.0);  // the mean
-        QCOMPARE(at(chain.sink).y(), 50.0);
-        QCOMPARE(at(chain.convert).x(), metrics::kColumn);  // pushed out of the source's way, order kept
-        QCOMPARE(at(chain.sink).x(), 2 * metrics::kColumn);
-        QVERIFY(c->undo());
-        QCOMPARE(at(chain.convert), QPointF(50, 100));
-        QVERIFY(c->alignElements(all, Qt::Vertical));
-        QCOMPARE(at(chain.src).x(), at(chain.sink).x());
-        QVERIFY(at(chain.convert).y() >= at(chain.sink).y() + c->view(chain.sink).height() + metrics::kGap);  // sink was higher up
-        QVERIFY(!c->alignElements({chain.src}, Qt::Vertical));  // one box is no line
+        QSignalSpy done(&c->canvasLayout(), &CanvasLayout::aligned);
+        QVERIFY(c->niceAlign({chain.convert, chain.sink}));
+        QVERIFY(done.wait(30000));
+        QCOMPARE(at(chain.src), QPointF(1000, 1000));  // not selected: untouched
+        QVERIFY(at(chain.sink).x() >= at(chain.convert).x() + metrics::kBoxWidth);
+        QCOMPARE(qMin(at(chain.convert).x(), at(chain.sink).x()), 0.0);  // the selection starts where it started
+        QCOMPARE(qMin(at(chain.convert).y(), at(chain.sink).y()), 0.0);
     }
 
     void addSourceRunsAnUpdate() {

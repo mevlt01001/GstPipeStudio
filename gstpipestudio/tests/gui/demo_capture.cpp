@@ -42,7 +42,9 @@ int main(int argc, char** argv) {
                                            support::withProps({{"sync", "true"}, {"qos", "true"}, {"max-lateness", "1000000"}}));
     if (sink.isEmpty() || !controller->result().complete()) return 5;
     window.scene()->rebuild(); window.view()->fitAll(); capture(12);
-    if (!controller->arrangePipeline()) return 6;
+    QSignalSpy aligned(&controller->canvasLayout(), &CanvasLayout::aligned);
+    if (!controller->niceAlign() || !aligned.wait(30000)) return 6;
+    QTest::qWait(400);
     window.scene()->rebuild(); window.view()->fitAll(); capture(14);
     auto* panel = window.findChild<TelemetryPanel*>("telemetryPanel");
     if (!panel) return 7;

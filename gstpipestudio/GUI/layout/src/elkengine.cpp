@@ -43,6 +43,7 @@ QJsonObject options(const Node& n, bool root, Routing routing) {
         o["org.eclipse.elk.spacing.nodeNode"] = "40";
         o["org.eclipse.elk.spacing.edgeNode"] = "20";
         o["org.eclipse.elk.layered.nodePlacement.strategy"] = "BRANDES_KOEPF";
+        o["org.eclipse.elk.spacing.edgeLabel"] = "6";
         if (!root) {
             o["org.eclipse.elk.portConstraints"] = "FIXED_SIDE";
             o["org.eclipse.elk.padding"] = "[top=40,left=24,bottom=24,right=24]";
@@ -82,8 +83,13 @@ QJsonObject toElk(const Node& n, bool root, Routing routing) {
     QJsonArray children, edges;
     for (const Node& c : n.children) children.append(toElk(c, false, routing));
     int piece = 0;
-    for (const Edge& e : n.edges)
-        edges.append(QJsonObject{{"id", e.id + "~" + n.id + "~" + QString::number(piece++)}, {"sources", QJsonArray{e.from}}, {"targets", QJsonArray{e.to}}});
+    for (const Edge& e : n.edges) {
+        QJsonObject edge{{"id", e.id + "~" + n.id + "~" + QString::number(piece++)}, {"sources", QJsonArray{e.from}}, {"targets", QJsonArray{e.to}}};
+        if (!e.label.isEmpty())
+            edge["labels"] = QJsonArray{QJsonObject{{"text", "caps"}, {"width", e.label.width()}, {"height", e.label.height()},
+                                                    {"layoutOptions", QJsonObject{{"org.eclipse.elk.edgeLabels.placement", "CENTER"}}}}};
+        edges.append(edge);
+    }
     o["children"] = children;
     o["edges"] = edges;
     return o;

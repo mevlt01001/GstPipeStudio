@@ -7,7 +7,9 @@
 #include <QPainterPath>
 #include <QPen>
 #include <QTimer>
+#include <QVariantAnimation>
 #include <cmath>
+#include <tuple>
 
 #include "controller.h"
 #include "elementitem.h"
@@ -18,6 +20,35 @@
 CanvasScene::CanvasScene(Controller* controller, QObject* parent) : QGraphicsScene(parent), controller_(controller) {
     setSceneRect(-2000, -2000, 4000, 4000);
     connect(controller_, &Controller::telemetryReceived, this, &CanvasScene::applyTelemetry);
+    connect(&controller_->canvasLayout(), &CanvasLayout::applied, this, [this](const QHash<QString, QPointF>& from) {
+        animateFrom_ = from;
+        scheduleRebuild();
+    });
+}
+
+// The boxes a nice alignment moved slide from where they were to where it put them; the links follow.
+void CanvasScene::slide() {
+    QList<std::tuple<ElementItem*, QPointF, QPointF>> moves;
+    QSet<ElementItem*> seen;
+    for (ElementItem* item : std::as_const(elements_)) {
+        if (!item || seen.contains(item) || !animateFrom_.contains(item->view().name)) continue;
+        seen.insert(item);
+        const QPointF start = animateFrom_.value(item->view().name), end = item->pos();
+        if (start != end) moves.append({item, start, end});
+    }
+    animateFrom_.clear();
+    if (moves.isEmpty()) return;
+    slide_ = new QVariantAnimation(this);
+    slide_->setDuration(260);
+    slide_->setEasingCurve(QEasingCurve::OutCubic);
+    slide_->setStartValue(0.0);
+    slide_->setEndValue(1.0);
+    connect(slide_, &QVariantAnimation::valueChanged, this, [this, moves](const QVariant& value) {
+        const double t = value.toDouble();
+        for (const auto& [item, start, end] : moves) item->setPos(start + (end - start) * t);
+        updateLinks();
+    });
+    slide_->start(QAbstractAnimation::DeleteWhenStopped);
 }
 
 void CanvasScene::applyTelemetry(const gps::TelemetrySample& sample) {
@@ -80,6 +111,7 @@ void CanvasScene::scheduleRebuild() {
 
 void CanvasScene::rebuild() {
     pending_ = false;
+    if (slide_) slide_->stop();  // its items go away with the rebuild
     finishConnectedMove();
     dragWire_ = nullptr;
     if (!hasExplicitSelection_ && !elements_.isEmpty()) {
@@ -139,6 +171,7 @@ void CanvasScene::rebuild() {
     if (controller_->monitoring()) applyTelemetry(telemetry_);
     else telemetry_ = {};
     setSceneRect(sceneRect().united(itemsBoundingRect().adjusted(-1000, -1000, 1000, 1000)));
+    if (!animateFrom_.isEmpty()) slide();
     emit rebuilt();
 }
 

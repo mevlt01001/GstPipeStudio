@@ -14,6 +14,9 @@ inline constexpr int kNoteLines = 3;  // an error text of GStreamer needs about 
 inline constexpr double kColumn = 280; // distance between the left edges of two neighbours: where Controller::addAfter puts a new box
 inline constexpr double kGap = 28;
 
+// The centre of a box's row-th pad below the box's top: sinks on the left edge, srcs on the right.
+inline double padY(int row) { return kHeader + 6 + (row + 0.5) * kPadRow; }
+
 inline double boxHeight(int padRows, int propLines, bool note) {
     return kHeader + 6 + padRows * kPadRow + (propLines ? 4 + propLines * kPropLine : 0) + (note ? 4 + kNoteLines * kPropLine : 0) + 8;
 }

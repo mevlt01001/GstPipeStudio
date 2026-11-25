@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <memory>
 #include <set>
+#include <utility>
 #include <csignal>
 
 namespace {
@@ -47,7 +48,8 @@ QStringList limitedLines(const QStringList& lines) {
 
 }  // namespace
 
-Controller::Controller(QObject* parent) : QObject(parent), watch_(new SlowWatch(this)), startup_(new StartupCheck(this)) {
+Controller::Controller(QObject* parent)
+    : QObject(parent), layout_(new CanvasLayout(*this)), watch_(new SlowWatch(this)), startup_(new StartupCheck(this)) {
     bool ok = false;
     int ms = qEnvironmentVariableIntValue("GPS_UPDATE_TIMEOUT_MS", &ok);
     if (ok && ms > 0) updateTimeoutMs_ = ms;
@@ -199,10 +201,12 @@ QStringList Controller::expandSelection(const QStringList& elementNames) const {
 }
 
 void Controller::setTemplateExpanded(const QString& groupId, bool expanded) {
-    if (groupId.isEmpty()) return;
+    if (groupId.isEmpty() || isTemplateExpanded(groupId) == expanded) return;
     if (expanded) expandedTemplates_.insert(groupId);
     else expandedTemplates_.remove(groupId);
+    layout_->invalidate();
     emit changed();
+    niceAlign();  // the box grows into its frame or shrinks back: everything around it makes room
 }
 
 bool Controller::wrapAsTemplate(const QStringList& elementNames, const QString& groupTitle) {
@@ -465,6 +469,8 @@ QList<LinkView> Controller::linkViews() const {
         v.srcIdentity = fromStd(l.srcPad);
         v.sinkElement = fromStd(l.sinkElement);
         v.sinkIdentity = linkSinkIdentity(v.index);
+        v.id = CanvasLayout::linkId(v.srcElement, v.srcIdentity);
+        v.route = layout_->route(v.id);
         v.badge = l.caps.empty() ? QString() : badgeOf(fromStd(l.caps));
         v.tip = fromStd(l.caps);
         const PadReport* srcRep = result().pad(l.srcElement, l.srcPad, true);
@@ -934,12 +940,12 @@ void Controller::setPositions(const QList<QPair<QString, QPointF>>& positions) {
             }
         } else updates[e->name] = {e->name, pt.x(), pt.y()};
     }
-    layout::Placements moves;
+    QList<QPair<QString, QPointF>> moves;
     for (const auto& entry : updates) moves.append({fromStd(entry.first), QPointF(entry.second.x, entry.second.y)});
     move(moves);
 }
 
-bool Controller::move(const layout::Placements& placements) {
+bool Controller::move(const QList<QPair<QString, QPointF>>& placements) {
     std::vector<gps::Placement> moves;
     for (const auto& [element, at] : placements) moves.push_back({toStd(element), at.x(), at.y()});
     if (moves.empty() || !pipeline_.editor().execute(gps::MoveElementsAction(std::move(moves)))) return false;
@@ -1030,33 +1036,8 @@ bool Controller::disconnectBetweenElements(const QStringList& names) {
     });
 }
 
-QList<layout::Box> Controller::boxes(const QStringList& names) const {
-    QList<layout::Box> out;
-    for (const QString& name : names) {
-        if (const gps::Element* e = plan().find(toStd(name))) out.append({name, QPointF(e->x, e->y), view(name).height()});
-    }
-    return out;
-}
-
-bool Controller::alignElements(const QStringList& names, Qt::Orientation orientation) {
-    if (editingBlocked()) return false;
-    QList<layout::Box> selected = boxes(expandSelection(names));
-    if (selected.size() < 2 || !move(layout::align(selected, orientation))) return false;
-    note(orientation == Qt::Horizontal ? "Aligned selected elements horizontally" : "Aligned selected elements vertically");
-    return true;
-}
-
-bool Controller::arrangePipeline() {
-    if (editingBlocked() || plan().elements.empty()) return false;
-    const std::map<std::string, int> levels = plan().levels();
-    if (levels.empty()) return false;
-    QStringList names;
-    for (const gps::Element& e : plan().elements) names << fromStd(e.name);
-    QList<QPair<int, QString>> labels;
-    for (const LinkView& link : linkViews()) labels.append({levels.at(toStd(link.srcElement)), link.negotiatedCaps});
-    setPositions(layout::arrange(levels, boxes(names), labels));
-    note("Arranged pipeline for readable caps and branches");
-    return true;
+bool Controller::niceAlign(const QStringList& elements) {
+    return layout_->align(elements.isEmpty() ? QStringList() : expandSelection(elements));
 }
 
 gps::Removal Controller::previewCut(const QString& element, const QString& pad) const {
@@ -1089,6 +1070,7 @@ void Controller::dispatchUpdate() {
         pipeline_.observeIdle();
         emit changed();
         emit updateFinished(true);
+        if (std::exchange(alignWhenValidated_, false)) niceAlign();
         return;
     }
     updating_ = true;
@@ -1134,6 +1116,7 @@ void Controller::finishUpdate(const gps::ExecutionResult& r) {
     log("Validation: " + statusText(result()) + (result().message.empty() ? QString() : " – " + fromStd(result().message)));
     emit changed();
     emit updateFinished(result().ok());
+    if (std::exchange(alignWhenValidated_, false)) niceAlign();
 }
 
 bool Controller::refresh() {
@@ -1179,8 +1162,8 @@ void Controller::open(const QString& path, bool imported) {
         path_ = imported ? QString() : path;
         dirty_ = imported;
         note(imported ? "Imported a gst-launch pipeline" : "Opened a plan file");
+        alignWhenValidated_ = true;
         emit changed();
-        if (imported) arrangePipeline();
         startUpdate();
     });
 }
