@@ -672,6 +672,16 @@ private slots:
         QCOMPARE(ProjectFile::load(project).templates().value("Tail"), 1);
         QCOMPARE(ProjectRegistry::usingTemplate("Tail"), QStringList{QFileInfo(project).absoluteFilePath()});
         QVERIFY(ProjectRegistry::usingTemplate("Other").isEmpty());
+        // The conf imports the template like a module; the folder keeps the content it uses.
+        QFile conf(dir.filePath("uses.conf"));
+        QVERIFY(conf.open(QIODevice::ReadOnly));
+        const QString saved = QString::fromUtf8(conf.readAll());
+        QVERIFY(saved.contains("template=Tail") && !saved.contains("factory=fakesink"));
+        QVERIFY(QFile::exists(dir.filePath("templates/Tail.conf")));
+        c->open(dir.filePath("uses.conf"));
+        QVERIFY(settle(*c));
+        QCOMPARE(c->plan().instances.size(), size_t(1));
+        QCOMPARE(c->templateMembers(fromStd(c->plan().instances.front().id)).size(), 2);
     }
 
     void aChangedTemplateCopyAsksThenUpdatesTheLibraryAndTheOtherCopies() {

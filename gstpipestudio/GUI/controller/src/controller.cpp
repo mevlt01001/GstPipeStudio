@@ -3,6 +3,7 @@
 
 #include "capstext.h"
 #include "actions.h"
+#include "apppaths.h"
 #include "projectfile.h"
 #include "templates.h"
 #include "versionhistory.h"
@@ -1416,7 +1417,9 @@ void Controller::load(const QString& source, const QString& documentPath, bool d
     if (busy()) return;
     auto loaded = std::make_shared<gps::Graph>();
     std::string error;
-    if (!gps::Graph::load(toStd(source), loaded.get(), &error)) {
+    // Its templates: the document's own copies (an earlier version is read from elsewhere), then the library.
+    const std::vector<std::string> libraries{toStd(QFileInfo(documentPath).dir().filePath("templates")), toStd(AppPaths::templates())};
+    if (!gps::Graph::load(toStd(source), loaded.get(), &error, libraries)) {
         emit notice("Unable to open the file: " + fromStd(error));
         return;
     }
@@ -1483,9 +1486,10 @@ bool Controller::save(const QString& path, QString* error) {
     gps::Graph saved = plan();
     saved.complete = result().complete();
     saved.name = toStd(QFileInfo(target).completeBaseName());
-    VersionHistory::keep(target, QByteArray::fromStdString(saved.toConf()));  // the file as it was stays (File > Version history)
+    // The file as it was stays (File > Version history).
+    VersionHistory::keep(target, QByteArray::fromStdString(saved.toConf(gps::Graph::Form::Reference)));
     std::string failure;
-    if (!saved.save(toStd(target), &failure)) {
+    if (!saved.saveProject(toStd(target), &failure)) {
         if (error) *error = fromStd(failure);
         return false;
     }
