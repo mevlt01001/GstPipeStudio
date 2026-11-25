@@ -36,6 +36,8 @@ public:
     void chooseElement();
     // A saved template (opens the template list in the right drawer; hovering one shows a peek)
     void chooseTemplate();
+    void templateMenu(const QString& name, const QPoint& at);  // right click on a template in the library
+    void editTemplateParameters();  // of the library template being edited on the canvas
     // Left click on a free src pad (opens PickerPage in the right drawer)
     void fromFreePad(const QString& element, const QString& identity);
     // Right click on a linked pad or a link
@@ -55,6 +57,9 @@ public:
     void saveAsTemplate(const QStringList& elements);
     // A placed template's Properties tab: its parameters only, as if it were one element.
     void editTemplateParams(const QString& instanceId);
+
+signals:
+    void editTemplateRequested(const QString& name);  // the window asks before it replaces the document
 
 private:
     QString path(const QString& element, const QString& identity) const;  // "<element as the user reads it>.<pad>"

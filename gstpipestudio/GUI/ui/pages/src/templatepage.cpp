@@ -74,6 +74,15 @@ TemplatePage::TemplatePage(const TemplatePageInput& input, QWidget* parent) : Dr
     connect(add, &QPushButton::clicked, this, [this] { this->add(); });
     connect(remove, &QPushButton::clicked, this, [this] { delete added_->currentItem(); });
     connect(primary_, &QPushButton::clicked, this, &TemplatePage::confirmed);
+    name_->setReadOnly(input.fixedName);
+    for (const gps::ExposedParam& p : input.chosen) {
+        for (size_t i = 0; i < input_.choices.size(); ++i) {
+            if (input_.choices[i].element != p.element || input_.choices[i].property != p.property) continue;
+            input_.choices[i].name = p.name;  // the name it has
+            auto* item = new QListWidgetItem(fromStd(p.name), added_);
+            item->setData(kIndexRole, static_cast<int>(i));
+        }
+    }
     connect(name_, &QLineEdit::returnPressed, this, &TemplatePage::confirmed);
     fillProperties();
 }

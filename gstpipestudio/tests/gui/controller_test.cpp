@@ -684,6 +684,46 @@ private slots:
         QCOMPARE(c->templateMembers(fromStd(c->plan().instances.front().id)).size(), 2);
     }
 
+    // The library is a folder of modules: a template is edited on the canvas (Save is its next revision), renamed,
+    // exported, imported and deleted.
+    void theLibraryEditsRenamesExportsImportsAndDeletes() {
+        QTemporaryDir state, dir;
+        qputenv("GPS_USER_DIR", state.path().toUtf8());
+        const Chain chain = makeChain();
+        QVERIFY(settle(*c));
+        QVERIFY(c->saveTemplate("Tail", {chain.convert, chain.sink}));
+        QVERIFY(settle(*c));
+
+        c->editLibraryTemplate("Tail");
+        QVERIFY(waitFor([&] { return c->libraryTemplate() == "Tail"; }));
+        QVERIFY(settle(*c));
+        QCOMPARE(c->plan().elements.size(), size_t(2));
+        const QString convert = fromStd(c->plan().elements.front().name);
+        QVERIFY(c->editElement(convert, withProps({{"qos", "false"}})));
+        QStringList all;
+        for (const gps::Element& e : c->plan().elements) all << fromStd(e.name);
+        const std::vector<gps::ExposedParam> choices = c->parameterChoices(all);
+        QVERIFY(!choices.empty());
+        const std::vector<gps::ExposedParam> params{choices.front()};
+        c->setTemplateParameters(params);
+        QVERIFY(settle(*c));
+        QString error;
+        QVERIFY2(c->save(QString(), &error), qPrintable(error));
+        QCOMPARE(c->templateContent("Tail").revision, 2);
+        QCOMPARE(c->templateContent("Tail").exposed.size(), size_t(1));
+        QVERIFY(!c->dirty());
+
+        QVERIFY(c->renameTemplate("Tail", "End", &error));
+        QVERIFY(c->templateContent("Tail").elements.empty() && !c->templateContent("End").elements.empty());
+        QVERIFY(!c->renameTemplate("Nope", "Other", &error));
+        QVERIFY(c->exportTemplate("End", dir.filePath("End.conf"), &error));
+        QVERIFY(!c->importTemplate(dir.filePath("End.conf"), &error).size());  // the name is taken
+        QVERIFY(c->deleteTemplate("End"));
+        QVERIFY(c->templateContent("End").elements.empty());
+        QCOMPARE(c->importTemplate(dir.filePath("End.conf"), &error), QString("End"));
+        QCOMPARE(c->templateContent("End").revision, 2);
+    }
+
     void aChangedTemplateCopyAsksThenUpdatesTheLibraryAndTheOtherCopies() {
         QTemporaryDir state, dir;
         qputenv("GPS_USER_DIR", state.path().toUtf8());

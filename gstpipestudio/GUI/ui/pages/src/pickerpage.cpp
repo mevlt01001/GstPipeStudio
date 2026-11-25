@@ -153,8 +153,22 @@ PickerPage::PickerPage(const PickerData& data, QWidget* parent) : DrawerPage(par
         }
     }
 
-    addFooter(root, "Choose");
+    QHBoxLayout* footer = addFooter(root, "Choose");
     connect(primary_, &QPushButton::clicked, this, [this] { choose(); });
+    if (data.importTemplate) {
+        auto* import = new QPushButton("Import…", this);
+        import->setObjectName("importTemplate");
+        import->setToolTip("Add a template file to the library");
+        footer->insertWidget(0, import);
+        connect(import, &QPushButton::clicked, this, data.importTemplate);
+    }
+    if (data.templateMenu) {
+        list_->setContextMenuPolicy(Qt::CustomContextMenu);
+        connect(list_, &QWidget::customContextMenuRequested, this, [this, menu = data.templateMenu](const QPoint& at) {
+            QListWidgetItem* item = list_->itemAt(at);
+            if (item && !item->data(kTemplateRole).toString().isEmpty()) menu(item->data(kTemplateRole).toString(), list_->viewport()->mapToGlobal(at));
+        });
+    }
 
     connect(search_, &QLineEdit::textChanged, this, &PickerPage::filter);
     connect(list_, &QListWidget::itemDoubleClicked, this, [this] { choose(); });

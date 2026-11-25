@@ -444,7 +444,7 @@ private slots:
         QVERIFY(settle(*c));
         const QString id = c->beginTemplate({convert, sink});
         std::vector<gps::ExposedParam> chosen;
-        for (const gps::ExposedParam& p : c->parameterChoices(id)) {
+        for (const gps::ExposedParam& p : c->parameterChoices(c->templateMembers(id))) {
             if (p.name == c->plan().displayNames().at(toStd(convert)) + ".caps.width" || p.name == c->plan().displayNames().at(toStd(sink)) + ".sync")
                 chosen.push_back(p);
         }

@@ -92,6 +92,9 @@ MainWindow::MainWindow(Controller* controller, QWidget* parent) : QMainWindow(pa
     connect(scene_, &CanvasScene::elementMenuRequested, this, &MainWindow::onElementMenuRequested, Qt::QueuedConnection);
     connect(scene_, &CanvasScene::templateMenuRequested, this, &MainWindow::showTemplateMenu, Qt::QueuedConnection);
     connect(scene_, &CanvasScene::templateActivated, flows_, &Flows::editTemplateParams);
+    connect(flows_, &Flows::editTemplateRequested, this, [this](const QString& name) {
+        if (confirmDiscard()) controller_->editLibraryTemplate(name);
+    });
     connect(controller_, &Controller::templateChanged, this, &MainWindow::askTemplateChange, Qt::QueuedConnection);
     connect(controller_, &Controller::templatesOutdated, this, &MainWindow::askTemplatesOutdated, Qt::QueuedConnection);
     connect(scene_, &QGraphicsScene::selectionChanged, this, &MainWindow::refreshState);
@@ -181,6 +184,7 @@ void MainWindow::buildActions() {
     auto* pasteAct = make("actionPaste", "&Paste", {QKeySequence::Paste}, [this] { pasteClipboard(); });
     auto* connectSelAct = make("actionConnectSelected", "Connect &selected", {QKeySequence(Qt::CTRL | Qt::Key_L)}, [this] { connectSelected(); });
     auto* saveCustomAct = make("actionSaveTemplateElement", "Save as &template…", {QKeySequence(Qt::CTRL | Qt::Key_G)}, [this] { saveSelectedAsTemplate(); });
+    auto* templateParams = make("actionTemplateParameters", "Template &parameters…", {}, [this] { flows_->editTemplateParameters(); });
     saveCustomAct->setIconText("Save as template");
     auto* find = make("actionFind", "&Find element", {QKeySequence::Find}, [this] {
         if (drawer_->isOpen()) drawer_->focusSearch();
@@ -264,7 +268,7 @@ void MainWindow::buildActions() {
     connect(connectedMove, &QAction::toggled, scene_, &CanvasScene::setConnectedMoveEnabled);
 
     QMenu* pipeline = menuBar()->addMenu("&Pipeline");
-    pipeline->addActions({addElement, addTemplate, saveCustomAct, connectSelAct});
+    pipeline->addActions({addElement, addTemplate, saveCustomAct, templateParams, connectSelAct});
     pipeline->addSeparator();
     pipeline->addActions({update, run});
 
@@ -348,6 +352,7 @@ void MainWindow::refreshState() {
     act("actionAddElement")->setEnabled(!editBlocked && !blocked);
     act("actionAddTemplate")->setEnabled(!editBlocked && !blocked);
     act("actionSaveTemplateElement")->setEnabled(!editBlocked && !scene_->selectedElementNames().isEmpty());
+    act("actionTemplateParameters")->setEnabled(!editBlocked && !controller_->libraryTemplate().isEmpty());
     act("actionDelete")->setEnabled(!editBlocked && !scene_->selectedItems().isEmpty());
     act("actionUndo")->setEnabled(controller_->canUndo());
     act("actionRedo")->setEnabled(controller_->canRedo());
@@ -396,7 +401,8 @@ void MainWindow::refreshState() {
     drawer_->setBusy(editBlocked);
     flows_->setBusy(editBlocked);
 
-    QString name = controller_->filePath().isEmpty() ? "untitled" : QFileInfo(controller_->filePath()).fileName();
+    QString name = !controller_->libraryTemplate().isEmpty() ? "Template: " + controller_->libraryTemplate()
+                   : controller_->filePath().isEmpty() ? "untitled" : QFileInfo(controller_->filePath()).fileName();
     setWindowTitle(BuildInfo::title() + " " + BuildInfo::version() + " – " + name + (controller_->dirty() ? " *" : ""));
 }
 

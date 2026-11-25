@@ -12,6 +12,8 @@ struct PickerData {
     QList<ExistingTarget> existing;   // free Always sink pads and Request sink templates of elements in the plan
     QList<TemplateInfo> templates;  // saved templates
     std::function<gps::Graph(const QString&)> templateContent;  // set: hovering a template shows a peek of this
+    std::function<void(const QString&, const QPoint&)> templateMenu;  // set: right click on a template opens it
+    std::function<void()> importTemplate;  // set: an Import button beside Choose
     QStringList compatible;           // factories whose sink meets the pad, ranked
     std::vector<FactoryEntry> candidates; // every factory that may be offered
     bool showFilters = false;         // role and pad presence filter chips

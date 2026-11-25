@@ -17,6 +17,8 @@ class QListWidget;
 struct TemplatePageInput {
     QString name;                               // suggested
     std::vector<gps::ExposedParam> choices;     // every parameter Add parameter may offer
+    std::vector<gps::ExposedParam> chosen = {}; // parameters it has already
+    bool fixedName = false;                     // the name is shown, not asked
 };
 
 class TemplatePage : public DrawerPage {

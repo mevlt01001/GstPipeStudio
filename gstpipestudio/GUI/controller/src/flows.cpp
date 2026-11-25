@@ -1,7 +1,12 @@
 // flows.cpp
 #include "flows.h"
 
+#include <QFileDialog>
+#include <QInputDialog>
+#include <QMessageBox>
+#include <QDir>
 #include "panels.h"
+#include "projectfile.h"
 
 #include <QAction>
 #include <memory>
@@ -65,7 +70,7 @@ void Flows::saveAsTemplate(const QStringList& elements) {
     if (controller_->editingBlocked() || elements.isEmpty()) return;
     const QString id = controller_->beginTemplate(elements);
     if (id.isEmpty()) return;
-    auto* page = new TemplatePage({QString(), controller_->parameterChoices(id)});
+    auto* page = new TemplatePage({QString(), controller_->parameterChoices(controller_->templateMembers(id))});
     auto saved = std::make_shared<bool>(false);
     connect(page, &TemplatePage::confirmed, this, [this, page, id, saved] {
         QString error;
@@ -246,6 +251,14 @@ void Flows::chooseTemplate() {
     PickerData data;
     data.templates = controller_->templates();
     data.templateContent = [this](const QString& name) { return controller_->templateContent(name); };
+    data.templateMenu = [this](const QString& name, const QPoint& at) { templateMenu(name, at); };
+    data.importTemplate = [this] {
+        const QString file = QFileDialog::getOpenFileName(window_, "Import template", QDir::homePath(), "Templates (*.conf)");
+        if (file.isEmpty()) return;
+        QString error;
+        if (controller_->importTemplate(file, &error).isEmpty()) QMessageBox::warning(window_, "Import template", error);
+        else chooseTemplate();  // the list again, with it
+    };
     auto* page = new PickerPage(data);
     connect(page, &PickerPage::picked, this, [this](const PickerChoice& choice) {
         if (choice.kind != PickerChoice::Template) return;
@@ -256,6 +269,51 @@ void Flows::chooseTemplate() {
                      data.templates.isEmpty() ? "No templates yet: select elements and use Save as template."
                                               : "Choose a saved template; hover one for a quick look inside.",
                      Drawer::Replace);
+}
+
+// The library's own menu on a template: edit it on the canvas, rename, export or delete it.
+void Flows::templateMenu(const QString& name, const QPoint& at) {
+    QMenu menu(window_);
+    menu.addAction("Edit template", this, [this, name] {
+        drawer_->dismiss();
+        emit editTemplateRequested(name);
+    })->setObjectName("actionEditLibraryTemplate");
+    menu.addAction("Rename…", this, [this, name] {
+        bool ok = false;
+        const QString to = QInputDialog::getText(window_, "Rename template", "New name of " + name, QLineEdit::Normal, name, &ok);
+        QString error;
+        if (!ok) return;
+        if (!controller_->renameTemplate(name, to, &error)) QMessageBox::warning(window_, "Rename template", error);
+        else chooseTemplate();
+    });
+    menu.addAction("Export…", this, [this, name] {
+        const QString file = QFileDialog::getSaveFileName(window_, "Export template", QDir::home().filePath(name + ".conf"), "Templates (*.conf)");
+        QString error;
+        if (!file.isEmpty() && !controller_->exportTemplate(name, file, &error)) QMessageBox::warning(window_, "Export template", error);
+    });
+    menu.addSeparator();
+    menu.addAction("Delete…", this, [this, name] {
+        const int projects = ProjectRegistry::usingTemplate(name).size();
+        const QString note = projects ? QString("\n\n%1 project(s) use it; each keeps its own copy.").arg(projects) : QString();
+        if (QMessageBox::question(window_, "Delete template", "Delete the template " + name + " from the library?" + note,
+                                  QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
+            return;
+        controller_->deleteTemplate(name);
+        chooseTemplate();
+    })->setObjectName("actionDeleteLibraryTemplate");
+    menu.exec(at);
+}
+
+// The template being edited on the canvas: its parameters, chosen like when it was saved.
+void Flows::editTemplateParameters() {
+    QStringList all;
+    for (const gps::Element& e : controller_->plan().elements) all << fromStd(e.name);
+    auto* page = new TemplatePage({controller_->libraryTemplate(), controller_->parameterChoices(all), controller_->plan().exposed, true});
+    connect(page, &TemplatePage::confirmed, this, [this, page] {
+        controller_->setTemplateParameters(page->params());
+        closeProperties();
+    });
+    presentProperties(page, "Template parameters · " + controller_->libraryTemplate());
 }
 
 void Flows::newElementProperties(const QString& factory) {

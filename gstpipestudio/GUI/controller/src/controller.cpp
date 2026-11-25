@@ -98,12 +98,15 @@ QString Controller::saveBlockedReason() const {
     if (monitoring_) return "Monitoring is running";
     if (opening_) return "A file is being opened";
     if (cancelled_) return "Validation was cancelled — press Validate";
+    // A library template has no source of its own to validate it with: it is validated where it is used.
+    if (!libraryTemplate_.isEmpty()) return QString();
     if (!result().valid()) return "The pipeline is not validated yet — press Validate";
     if (!result().ok()) return "The last validation reported a problem (see the Validation tab)";
     return QString();
 }
 
 QString Controller::runBlockedReason() const {
+    if (!libraryTemplate_.isEmpty()) return "A template runs inside a pipeline: add it to one with Add template";
     QString reason = saveBlockedReason();
     if (reason.isEmpty() && !result().complete()) return "The pipeline is not complete: link every free src pad";
     return reason;
@@ -276,6 +279,91 @@ bool Controller::finishTemplate(const QString& id, const QString& name, const st
 
 void Controller::cancelTemplate(const QString& id) { detachTemplate(id); }
 
+bool Controller::renameTemplate(const QString& from, const QString& to, QString* error) {
+    QString clean = to.trimmed();
+    clean.replace('#', '_');
+    const gps::Graph* old = library_.plan(from);
+    auto refuse = [&](const QString& why) {
+        if (error) *error = why;
+        return false;
+    };
+    if (!old) return refuse("There is no template named " + from + ".");
+    if (clean.isEmpty()) return refuse("Give the template a name.");
+    if (clean == from) return true;
+    if (library_.plan(clean)) return refuse("A template named " + clean + " already exists. Choose another name.");
+    QString failure;
+    if (!library_.save(clean, *old, &failure)) return refuse("Unable to save the template: " + failure);
+    library_.remove(from);
+    library_.load(catalog_);
+    transact([&](gps::Graph& g, Edit& edit) {
+        bool any = false;
+        for (gps::TemplateInstance& t : g.instances) {
+            if (t.templateName == toStd(from)) t.templateName = toStd(clean), any = true;
+        }
+        edit.action = "Renamed template " + from + " to " + clean;
+        edit.presentation = true;
+        return any;
+    });
+    emit changed();
+    return true;
+}
+
+bool Controller::deleteTemplate(const QString& name) {
+    if (!library_.remove(name)) return false;
+    library_.load(catalog_);
+    emit changed();
+    return true;
+}
+
+bool Controller::exportTemplate(const QString& name, const QString& file, QString* error) {
+    const gps::Graph* t = library_.plan(name);
+    std::string failure;
+    if (t && t->save(toStd(file), &failure)) return true;
+    if (error) *error = t ? fromStd(failure) : "There is no template named " + name + ".";
+    return false;
+}
+
+QString Controller::importTemplate(const QString& file, QString* error) {
+    gps::Graph t;
+    std::string failure;
+    if (!gps::Graph::load(toStd(file), &t, &failure, {toStd(AppPaths::templates())}) || t.elements.empty()) {
+        if (error) *error = "Not a template: " + (failure.empty() ? QString("it holds no elements") : fromStd(failure));
+        return QString();
+    }
+    QString name = t.name.empty() || t.name == "pipeline" ? QFileInfo(file).completeBaseName() : fromStd(t.name);
+    name.replace('#', '_');
+    if (library_.plan(name)) {
+        if (error) *error = "A template named " + name + " already exists. Rename it first.";
+        return QString();
+    }
+    QString saveError;
+    if (!library_.save(name, t, &saveError)) {
+        if (error) *error = saveError;
+        return QString();
+    }
+    library_.load(catalog_);
+    emit changed();
+    return name;
+}
+
+void Controller::editLibraryTemplate(const QString& name) {
+    if (!library_.plan(name)) return;
+    const QString file = QDir(AppPaths::templates()).filePath(fromStd(gps::templates::fileName(toStd(name))));
+    load(file, file, false, "Opened template " + name, name);
+}
+
+void Controller::setTemplateParameters(const std::vector<gps::ExposedParam>& params) {
+    transact([&](gps::Graph& g, Edit& edit) {
+        g.exposed.clear();
+        for (const gps::ExposedParam& p : params) {
+            if (g.find(p.element)) g.exposed.push_back(p);
+        }
+        edit.action = QString("Set %1 template parameter(s)").arg(g.exposed.size());
+        edit.presentation = true;
+        return true;
+    });
+}
+
 bool Controller::saveTemplate(const QString& templateName, const QStringList& elementNames) {
     const QString id = beginTemplate(elementNames);
     if (id.isEmpty()) return false;
@@ -289,15 +377,16 @@ bool Controller::saveTemplate(const QString& templateName, const QStringList& el
     return true;
 }
 
-std::vector<gps::ExposedParam> Controller::parameterChoices(const QString& id) const {
+std::vector<gps::ExposedParam> Controller::parameterChoices(const QStringList& elements) const {
     std::vector<gps::ExposedParam> out;
     auto offer = [&](const std::string& element, const std::string& property) {
         gps::ExposedParam p{"", element, property};
         p.name = gps::templates::paramName(plan(), p);
         out.push_back(p);
     };
-    for (const QString& member : templateMembers(id)) {
+    for (const QString& member : elements) {
         const gps::Element* e = plan().find(toStd(member));
+        if (!e) continue;
         if (const ElementInfo* inf = catalog_.info(fromStd(e->factory))) {
             for (const PropertyInfo& p : inf->properties) {
                 if (p.writable && !p.deprecated) offer(e->name, p.name);
@@ -1399,6 +1488,7 @@ void Controller::newPlan() {
     knownModified_.clear();
     cancelled_ = false;
     path_.clear();
+    libraryTemplate_.clear();
     dirty_ = false;
     emit changed();
 }
@@ -1413,7 +1503,7 @@ void Controller::restoreVersion(const QString& version) {
 }
 
 // The plan of source becomes the document at documentPath ("" = untitled), once every factory it uses is known.
-void Controller::load(const QString& source, const QString& documentPath, bool dirty, const QString& action) {
+void Controller::load(const QString& source, const QString& documentPath, bool dirty, const QString& action, const QString& libraryTemplate) {
     if (busy()) return;
     auto loaded = std::make_shared<gps::Graph>();
     std::string error;
@@ -1428,7 +1518,7 @@ void Controller::load(const QString& source, const QString& documentPath, bool d
         if (!factories.contains(fromStd(e.factory))) factories << fromStd(e.factory);
     }
     opening_ = true;
-    catalog_.fetchInfos(factories, [this, loaded, documentPath, dirty, action](bool ok) {
+    catalog_.fetchInfos(factories, [this, loaded, documentPath, dirty, action, libraryTemplate](bool ok) {
         opening_ = false;
         if (!ok) {
             emit notice("Unable to open the file: the plan uses an element this installation does not have.");
@@ -1439,6 +1529,7 @@ void Controller::load(const QString& source, const QString& documentPath, bool d
         if (!pipeline_.reset(*loaded, &failure)) { emit notice(fromStd(failure)); return; }
         path_ = documentPath;
         dirty_ = dirty;
+        libraryTemplate_ = libraryTemplate;
         note(action);
         alignWhenValidated_ = true;
         editingTemplates_.clear();
@@ -1483,6 +1574,26 @@ bool Controller::save(const QString& path, QString* error) {
         return false;
     }
     for (const QString& id : QSet<QString>(editingTemplates_)) commitTemplateEdit(id);  // saving ends every template edit
+    if (!libraryTemplate_.isEmpty() && target == path_) {  // a library template: its next revision
+        gps::Graph next = plan();
+        next.revision = plan().revision + 1;
+        QString failure;
+        if (!library_.save(libraryTemplate_, next, &failure)) {
+            if (error) *error = "Unable to save the template: " + failure;
+            return false;
+        }
+        library_.load(catalog_);
+        transact([&](gps::Graph& g, Edit& edit) {
+            g.revision = next.revision;
+            edit.action = QString("Saved template %1, revision %2").arg(libraryTemplate_).arg(next.revision);
+            edit.presentation = true;
+            return true;
+        });
+        dirty_ = false;
+        emit changed();
+        return true;
+    }
+    libraryTemplate_.clear();  // saved elsewhere, it is a pipeline of its own
     gps::Graph saved = plan();
     saved.complete = result().complete();
     saved.name = toStd(QFileInfo(target).completeBaseName());

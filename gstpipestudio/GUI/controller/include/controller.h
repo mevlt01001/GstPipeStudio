@@ -93,7 +93,7 @@ public:
     bool finishTemplate(const QString& id, const QString& name, const std::vector<gps::ExposedParam>& params, QString* error);
     void cancelTemplate(const QString& id);
     bool saveTemplate(const QString& templateName, const QStringList& elementNames);  // all three, no parameters, collapsed
-    std::vector<gps::ExposedParam> parameterChoices(const QString& id) const;  // what Add parameter offers
+    std::vector<gps::ExposedParam> parameterChoices(const QStringList& elements) const;  // what Add parameter offers
     // A template copy's content changed (templateChanged): the user chooses. Keep editing: the library gets the change
     // as the template's next revision when the copy collapses or the file is saved, and the unchanged copies follow.
     void keepEditingTemplate(const QString& id);
@@ -108,6 +108,17 @@ public:
     bool setTemplateParams(const QString& id, const std::map<std::string, std::string>& values);  // name -> value, "" = default
     bool removeTemplate(const QString& templateName);
     gps::Graph templateContent(const QString& name) const;  // the library template, empty when there is none
+
+    // ---- the template library, like a folder of modules: what a project imports
+    bool renameTemplate(const QString& from, const QString& to, QString* error);  // copies on the canvas follow
+    bool deleteTemplate(const QString& name);  // projects that use it keep their own copy in their templates folder
+    bool exportTemplate(const QString& name, const QString& file, QString* error);
+    QString importTemplate(const QString& file, QString* error);  // the name it got, "" when refused
+    // A library template on the canvas as the document: Save writes its next revision to the library, and its
+    // parameters (the plan's exposed list) are set with setTemplateParameters.
+    void editLibraryTemplate(const QString& name);
+    QString libraryTemplate() const { return libraryTemplate_; }  // the one being edited, "" for a pipeline
+    void setTemplateParameters(const std::vector<gps::ExposedParam>& params);
     QStringList addTemplate(const QString& templateName, double x = std::numeric_limits<double>::quiet_NaN(), double y = std::numeric_limits<double>::quiet_NaN());
     QStringList addTemplateAfter(const QString& srcElement, const QString& srcPad, const QString& templateName);
     bool detachTemplate(const QString& groupId);
@@ -208,7 +219,7 @@ private:
     // The one path of an edit: refused while editing is blocked or when change returns false (nothing happened);
     // otherwise one undo step, noted, and validated as the Edit says.
     bool transact(const std::function<bool(gps::Graph&, Edit&)>& change);
-    void load(const QString& source, const QString& documentPath, bool dirty, const QString& action);
+    void load(const QString& source, const QString& documentPath, bool dirty, const QString& action, const QString& libraryTemplate = {});
     void checkTemplates(bool ask);
     bool commitTemplateEdit(const QString& id);
     bool anyTracked(const QStringList& elements) const;  // fed by a source in the plan as it is now
@@ -248,6 +259,7 @@ private:
     FactoryCatalog catalog_;
     CanvasLayout* layout_;
     bool alignWhenValidated_ = false;
+    QString libraryTemplate_;     // the library template the canvas is, while it is edited
     bool restoring_ = false;     // undo or redo is running
     bool alignQueued_ = false;   // automatic alignment follows the current burst of edits  // an opened file is laid out once its first validation tells every pad
     QSet<QString> editingTemplates_;   // copies whose changes go to their template (Update template was chosen)
