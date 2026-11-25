@@ -827,6 +827,9 @@ private slots:
         QVERIFY(outdated.wait(10000));
         QCOMPARE(outdated[0][0].toStringList().size(), 2);
         QVERIFY(settle(*c));
+        c->services().library().reload();  // read again, as when the catalog arrives: the same revision asks once
+        QTest::qWait(100);
+        QCOMPARE(outdated.count(), 1);
         QVERIFY(c->updateTemplates(outdated[0][0].toStringList()));
         QVERIFY(c->outdatedTemplates().isEmpty());
     }

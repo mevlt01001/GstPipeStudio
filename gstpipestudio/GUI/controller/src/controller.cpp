@@ -78,10 +78,7 @@ Controller::Controller(AppServices& services, QObject* parent)
         offerNewerTemplates();
     });
     offerTimer_.setSingleShot(true);
-    connect(&offerTimer_, &QTimer::timeout, this, [this] {
-        const QStringList outdated = outdatedTemplates();
-        if (!outdated.isEmpty()) emit templatesOutdated(outdated);
-    });
+    connect(&offerTimer_, &QTimer::timeout, this, &Controller::offerNow);
 }
 
 void Controller::registerFactory(const QString& factory) {
@@ -811,6 +808,18 @@ bool Controller::onCanvas(const QString& id, QString* error) const {
 // Asked when the current edit or write is over, so the offer is about the canvas as it is then.
 void Controller::offerNewerTemplates() { offerTimer_.start(0); }
 
+// Only a revision not offered yet asks: the library read again (the catalog arrived, another template was written)
+// does not ask about the same revisions twice.
+void Controller::offerNow() {
+    const QStringList outdated = outdatedTemplates();
+    bool fresh = false;
+    for (const QString& id : outdated) {
+        const int revision = services_.library().plan(fromStd(plan().instance(toStd(id))->templateName))->revision;
+        if (std::exchange(offered_[id], revision) != revision) fresh = true;
+    }
+    if (fresh) emit templatesOutdated(outdated);
+}
+
 QStringList Controller::outdatedTemplates() const {
     QStringList out;
     for (const gps::TemplateInstance& t : plan().instances) {
@@ -1445,6 +1454,7 @@ void Controller::load(const QString& source, const QString& documentPath, bool d
         note(action);
         alignWhenValidated_ = true;
         editingTemplates_.clear();
+        offered_.clear();
         checkTemplates(false);
         emit changed();
         startUpdate();

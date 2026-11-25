@@ -210,6 +210,7 @@ private:
     void load(const QString& source, const QString& documentPath, bool dirty, const QString& action, const QString& libraryTemplate = {});
     void checkTemplates(bool ask);
     void offerNewerTemplates();  // templatesOutdated soon, when the library holds newer versions of copies on this canvas
+    void offerNow();
     bool commitTemplateEdit(const QString& id);
     bool onCanvas(const QString& instanceId, QString* error) const;  // false, with the reason, when it is gone
     bool infosReady(const gps::Graph& clip, std::function<void()> retry);
@@ -264,6 +265,7 @@ private:
     bool cancelling_ = false;
 
     QTimer offerTimer_;  // coalesces the templatesOutdated offers of one burst of library changes
+    QHash<QString, int> offered_;  // copy id -> the library revision it was last offered
     DesktopUrlOpener desktopOpener_;
     UrlOpener* opener_ = &desktopOpener_;
     QString action_, linking_;
