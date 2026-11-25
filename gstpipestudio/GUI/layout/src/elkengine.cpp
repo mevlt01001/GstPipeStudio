@@ -11,7 +11,8 @@
 namespace layout {
 namespace {
 
-constexpr double kPortSize = 8;
+// A port is a point: ELK then starts and ends a link exactly on the pad centre the canvas draws.
+constexpr double kPortSize = 0;
 
 // elkjs expects a browser or Node. QuickJS has neither: give it a global object, a silent console and a setTimeout that
 // only queues, and run the queue ourselves until the layout promise settles.
@@ -43,7 +44,6 @@ QJsonObject options(const Node& n, bool root, Routing routing) {
         o["org.eclipse.elk.spacing.nodeNode"] = "40";
         o["org.eclipse.elk.spacing.edgeNode"] = "20";
         o["org.eclipse.elk.layered.nodePlacement.strategy"] = "BRANDES_KOEPF";
-        o["org.eclipse.elk.spacing.edgeLabel"] = "6";
         if (!root) {
             o["org.eclipse.elk.portConstraints"] = "FIXED_SIDE";
             o["org.eclipse.elk.padding"] = "[top=40,left=24,bottom=24,right=24]";
@@ -84,11 +84,8 @@ QJsonObject toElk(const Node& n, bool root, Routing routing) {
     for (const Node& c : n.children) children.append(toElk(c, false, routing));
     int piece = 0;
     for (const Edge& e : n.edges) {
-        QJsonObject edge{{"id", e.id + "~" + n.id + "~" + QString::number(piece++)}, {"sources", QJsonArray{e.from}}, {"targets", QJsonArray{e.to}}};
-        if (!e.label.isEmpty())
-            edge["labels"] = QJsonArray{QJsonObject{{"text", "caps"}, {"width", e.label.width()}, {"height", e.label.height()},
-                                                    {"layoutOptions", QJsonObject{{"org.eclipse.elk.edgeLabels.placement", "CENTER"}}}}};
-        edges.append(edge);
+        edges.append(QJsonObject{{"id", e.id + "~" + n.id + "~" + QString::number(piece++)}, {"sources", QJsonArray{e.from}},
+                                 {"targets", QJsonArray{e.to}}});
     }
     o["children"] = children;
     o["edges"] = edges;

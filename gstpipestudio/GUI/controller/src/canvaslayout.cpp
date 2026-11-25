@@ -1,12 +1,10 @@
 // canvaslayout.cpp – see canvaslayout.h.
 #include "canvaslayout.h"
 
-#include <QFontMetricsF>
 #include <QSettings>
 #include <QSet>
 #include <algorithm>
 
-#include "capslabel.h"
 #include "controller.h"
 #include "elkengine.h"
 #include "templates.h"
@@ -82,7 +80,7 @@ layout::Node CanvasLayout::tree(const QStringList& elements) const {
     auto outward = [&](const QStringList& path, int down, const QString& key, bool isSrc, const QString& link, QString end) {
         for (int k = path.size() - 1; k >= down; --k) {
             const QString port = border(path[k], key, isSrc);
-            edges[path[k]].append(isSrc ? layout::Edge{link, end, port, {}} : layout::Edge{link, port, end, {}});
+            edges[path[k]].append(isSrc ? layout::Edge{link, end, port} : layout::Edge{link, port, end});
             end = port;
         }
         return end;
@@ -118,13 +116,6 @@ layout::Node CanvasLayout::tree(const QStringList& elements) const {
         leaves[path.isEmpty() ? QString() : path.last()].append(leaf);
     }
 
-    // A link's caps text needs room between the columns it joins: the layout leaves it (capslabel draws it).
-    QHash<QString, QSizeF> labels;
-    const QFontMetricsF text(capslabel::font());
-    for (const LinkView& v : controller_.linkViews()) {
-        if (!v.negotiatedCaps.isEmpty()) labels[v.id] = QSizeF(std::min(480.0, text.horizontalAdvance(capslabel::singleLine(v.negotiatedCaps))), text.height());
-    }
-
     for (size_t i = 0; i < g.links.size(); ++i) {
         const gps::Connection& l = g.links[i];
         const QString src = fromStd(l.srcElement), sink = fromStd(l.sinkElement);
@@ -137,7 +128,7 @@ layout::Node CanvasLayout::tree(const QStringList& elements) const {
         const QString a = outward(from, shared, padKey(src, fromStd(l.srcPad), true), true, id, padKey(src, fromStd(l.srcPad), true));
         const QString b = outward(to, shared, padKey(sink, fromStd(g.sinkIdentity(i)), false), false, id,
                                   padKey(sink, fromStd(g.sinkIdentity(i)), false));
-        edges[shared ? from[shared - 1] : QString()].append({id, a, b, labels.value(id)});
+        edges[shared ? from[shared - 1] : QString()].append({id, a, b});
     }
 
     // Frames hold their leaves and the frames inside them; a frame with nothing placed inside is left out.

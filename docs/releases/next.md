@@ -8,7 +8,7 @@
 
 ## Layout
 
-- Nice alignment (ELK in QuickJS, on its own thread) places the canvas when a file opens, when a template expands or collapses, and on Arrange pipeline or Auto align. Links avoid boxes and crossings; each link's caps text gets room.
+- Nice alignment (ELK in QuickJS, on its own thread) places the canvas when a file opens, when a template expands or collapses, and on Arrange pipeline or Auto align. Links avoid boxes and crossings, and start and end on their pads in both link styles.
 - View > Link style: curves or right-angle lines. A conf no longer stores positions.
 
 ## Projects and history

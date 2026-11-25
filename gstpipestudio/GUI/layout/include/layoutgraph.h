@@ -7,7 +7,6 @@
 #include <QList>
 #include <QPointF>
 #include <QRectF>
-#include <QSizeF>
 #include <QString>
 
 namespace layout {
@@ -21,7 +20,6 @@ struct Port {
 struct Edge {
     QString id;          // the same id on every piece of one link
     QString from, to;    // port ids: a box's, or the frame's own ports (from inside to its border and back)
-    QSizeF label;        // room the link's text needs along it (its caps), empty for none
 };
 
 struct Node {
