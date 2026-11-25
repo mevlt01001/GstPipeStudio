@@ -20,6 +20,8 @@
 #include <QTabWidget>
 #include <QTemporaryDir>
 #include <QWheelEvent>
+#include <QTimer>
+#include <QMessageBox>
 
 #include "canvasscene.h"
 #include "canvasview.h"
@@ -425,6 +427,44 @@ private slots:
         QVERIFY(waitFor([&] { return !c->busy() && c->plan().links.back().caps.find("640") != std::string::npos; }, 8000));
         QVERIFY(text(c->plan().links[size_t(c->plan().linkFrom(toStd(convert), "src"))].caps).contains("width=(int)640"));
         QVERIFY(!gps::templates::modified(c->plan(), toStd(id)));  // parameter values are the copy's own
+    }
+
+    void changingATemplateAsksWhatNow() {
+        QTemporaryDir library;
+        qputenv("GPS_USER_DIR", library.path().toUtf8());
+        MainWindow w(c.get());
+        w.show();
+        QString src, convert, sink;
+        buildChain(w, &src, &convert, &sink);
+        QVERIFY(c->saveTemplate("Tail", {convert, sink}));
+        QVERIFY(settle(*c));
+        const QString id = c->templateBox(convert);
+        c->setTemplateExpanded(id, true);
+        // Answers the question the window asks, with the button named, from inside the dialog's own event loop.
+        QString asked;
+        auto answer = [&asked](const char* button) {
+            auto* poll = new QTimer;
+            poll->setInterval(20);
+            QObject::connect(poll, &QTimer::timeout, [poll, button, &asked] {
+                auto* box = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+                if (!box) return;
+                poll->stop();
+                poll->deleteLater();
+                asked = box->text() + "\n" + box->informativeText();
+                box->findChild<QPushButton*>(button)->click();
+            });
+            poll->start();
+        };
+        answer("undoTemplateChange");
+        QVERIFY(c->editElement(convert, withProps({{"qos", "false"}})));
+        QVERIFY(waitFor([&] { return !c->plan().find(toStd(convert))->props.count("qos"); }, 5000));  // Undo took it back
+        QVERIFY(asked.contains("'Tail' template changes") && asked.contains("Change: Edited the properties of"));
+        QVERIFY(c->plan().instance(toStd(id)));
+
+        answer("detachTemplate");
+        QVERIFY(c->editElement(convert, withProps({{"qos", "false"}})));
+        QVERIFY(waitFor([&] { return !c->plan().instance(toStd(id)); }, 5000));  // Detach: plain elements with the change
+        QCOMPARE(c->plan().find(toStd(convert))->props.at("qos"), std::string("false"));
     }
 
     void wheelNeverEditsValues() {

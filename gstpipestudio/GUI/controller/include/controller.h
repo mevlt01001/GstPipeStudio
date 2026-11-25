@@ -94,6 +94,15 @@ public:
     void cancelTemplate(const QString& id);
     bool saveTemplate(const QString& templateName, const QStringList& elementNames);  // all three, no parameters, collapsed
     std::vector<gps::ExposedParam> parameterChoices(const QString& id) const;  // what Add parameter offers
+    // A template copy's content changed (templateChanged): the user chooses. Keep editing: the library gets the change
+    // as the template's next revision when the copy collapses or the file is saved, and the unchanged copies follow.
+    void keepEditingTemplate(const QString& id);
+    bool isEditingTemplate(const QString& id) const { return editingTemplates_.contains(id); }
+    bool saveTemplateAsNew(const QString& id, const QString& name, QString* error);
+    QStringList projectsUsing(const QString& templateName) const;  // .gpsproj files of the projects it is used in
+    QStringList outdatedTemplates() const;           // copies whose library template is newer
+    bool updateTemplates(const QStringList& ids);    // they take the library's newer content: one undo step
+    QString lastAction() const { return action_; }   // what the last edit did, in words
     // A placed template's parameters: the collapsed box shows these as its properties.
     std::vector<gps::ExposedParam> templateParams(const QString& id) const;
     bool setTemplateParams(const QString& id, const std::map<std::string, std::string>& values);  // name -> value, "" = default
@@ -179,6 +188,8 @@ signals:
     void environmentChecked();
     void runFinished(const QString& status);
     void telemetryReceived(const gps::TelemetrySample& sample);
+    void templateChanged(const QString& id);              // its content no longer matches its template: what now?
+    void templatesOutdated(const QStringList& ids);       // an opened file holds older versions of library templates
 
 private:
     void log(const QString& line);
@@ -197,6 +208,8 @@ private:
     // otherwise one undo step, noted, and validated as the Edit says.
     bool transact(const std::function<bool(gps::Graph&, Edit&)>& change);
     void load(const QString& source, const QString& documentPath, bool dirty, const QString& action);
+    void checkTemplates(bool ask);
+    bool commitTemplateEdit(const QString& id);
     bool anyTracked(const QStringList& elements) const;  // fed by a source in the plan as it is now
     bool infosReady(const gps::Graph& clip, std::function<void()> retry);
     static QPointF topLeft(const gps::Graph& clip);
@@ -232,6 +245,8 @@ private:
     FactoryCatalog catalog_;
     CanvasLayout* layout_;
     bool alignWhenValidated_ = false;  // an opened file is laid out once its first validation tells every pad
+    QSet<QString> editingTemplates_;   // copies whose changes go to their template (Update template was chosen)
+    QSet<QString> knownModified_;      // copies already known to differ from their template
     TemplateLibrary library_;
     QSet<QString> expandedTemplates_;
     HelperClient* runClient_ = nullptr;

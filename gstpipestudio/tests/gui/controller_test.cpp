@@ -635,6 +635,53 @@ private slots:
         QVERIFY(ProjectRegistry::usingTemplate("Other").isEmpty());
     }
 
+    void aChangedTemplateCopyAsksThenUpdatesTheLibraryAndTheOtherCopies() {
+        QTemporaryDir state, dir;
+        qputenv("GPS_USER_DIR", state.path().toUtf8());
+        const Chain chain = makeChain();
+        QVERIFY(settle(*c));
+        QVERIFY(c->saveTemplate("Tail", {chain.convert, chain.sink}));
+        QVERIFY(settle(*c));
+        const QString first = c->templateBox(chain.convert);
+        const QStringList second = c->addTemplate("Tail");
+        QVERIFY(!second.isEmpty());
+        QVERIFY(settle(*c));
+        const QString other = c->templateBox(second.first());
+        QString error;
+        QVERIFY2(c->save(dir.filePath("old.conf"), &error), qPrintable(error));  // holds revision 1
+
+        QSignalSpy asked(c.get(), &Controller::templateChanged);
+        c->setTemplateExpanded(first, true);  // inside it, members are plain elements
+        QVERIFY(c->editElement(chain.convert, withProps({{"qos", "false"}})));
+        QVERIFY(asked.wait(3000));
+        QCOMPARE(asked[0][0].toString(), first);
+        c->keepEditingTemplate(first);  // "Update template"
+        QVERIFY(c->editElement(chain.convert, withProps({{"qos", "false"}, {"dither", "0"}})));
+        QTest::qWait(100);
+        QCOMPARE(asked.count(), 1);  // asked once per editing session
+        QVERIFY(settle(*c));
+
+        c->setTemplateExpanded(first, false);  // collapsing ends the session: the library gets revision 2
+        QCOMPARE(c->templateContent("Tail").revision, 2);
+        QVERIFY(waitFor([&] { return c->plan().instance(toStd(other)) && c->plan().instance(toStd(other))->revision == 2; }, 5000));
+        bool followed = false;
+        for (const QString& m : c->templateMembers(other)) {
+            const gps::Element* e = c->plan().find(toStd(m));
+            followed = followed || (e->factory == "videoconvert" && e->props.count("dither"));
+        }
+        QVERIFY(followed);  // the other copy took the change
+        QVERIFY(settle(*c));
+
+        // A file saved before the change: opening it offers the newer version.
+        QSignalSpy outdated(c.get(), &Controller::templatesOutdated);
+        c->open(dir.filePath("old.conf"));
+        QVERIFY(outdated.wait(10000));
+        QCOMPARE(outdated[0][0].toStringList().size(), 2);
+        QVERIFY(settle(*c));
+        QVERIFY(c->updateTemplates(outdated[0][0].toStringList()));
+        QVERIFY(c->outdatedTemplates().isEmpty());
+    }
+
     void dragMovesTheBoxButSavesNothing() {
         QString src = addSource(*c, "videotestsrc");
         QTemporaryDir dir;

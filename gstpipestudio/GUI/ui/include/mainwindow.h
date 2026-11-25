@@ -53,6 +53,8 @@ protected:
 private:
     void arrangeAll();  // nice alignment of the whole canvas, then zoom to fit
     void showVersionHistory();
+    void askTemplateChange(const QString& id);
+    void askTemplatesOutdated(const QStringList& ids);
     void buildActions();
     void buildPanels();
     void refreshState();

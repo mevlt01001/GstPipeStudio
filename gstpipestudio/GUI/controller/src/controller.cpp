@@ -204,6 +204,7 @@ QStringList Controller::expandSelection(const QStringList& elementNames) const {
 
 void Controller::setTemplateExpanded(const QString& groupId, bool expanded) {
     if (groupId.isEmpty() || isTemplateExpanded(groupId) == expanded) return;
+    if (!expanded && editingTemplates_.contains(groupId)) commitTemplateEdit(groupId);  // collapsing ends its editing
     if (expanded) expandedTemplates_.insert(groupId);
     else expandedTemplates_.remove(groupId);
     layout_->invalidate();
@@ -358,7 +359,7 @@ QStringList Controller::addTemplate(const QString& templateName, double x, doubl
         for (const std::string& m : gps::templates::members(g, id)) created << fromStd(m);
         edit.action = "Added template " + templateName;
         edit.touched = created.value(0);
-        edit.validate = anyTracked(created);
+        edit.validate = true;  // what is fed by a source is validated again; the new copy shows its pads
         return true;
     });
     if (!created.isEmpty()) niceAlign();  // the new box finds its place among the others
@@ -696,10 +697,124 @@ bool Controller::transact(const std::function<bool(gps::Graph&, Edit&)>& change)
         if (!commitTransaction()) return false;
         dirty_ = true;
         emit changed();
+        checkTemplates(true);
         return true;
     }
     edited(edit.touched, edit.validate.value_or(anyTracked({edit.touched})));
+    checkTemplates(true);
     return true;
+}
+
+// Which template copies hold content their template does not: the first time one does, the window asks what that
+// means (unless the user already chose to edit that template). Undo and opening a file only take note.
+void Controller::checkTemplates(bool ask) {
+    QSet<QString> now;
+    for (const gps::TemplateInstance& t : plan().instances) {
+        if (gps::templates::modified(plan(), t.id)) now.insert(fromStd(t.id));
+    }
+    QSet<QString> fresh = now - knownModified_ - editingTemplates_;
+    knownModified_ = now;
+    if (!ask || fresh.isEmpty()) return;
+    QString innermost;
+    size_t depth = 0;
+    for (const QString& id : fresh) {
+        const size_t d = gps::templates::chain(plan(), toStd(id)).size() + 1;
+        if (d > depth || (d == depth && id < innermost)) depth = d, innermost = id;
+    }
+    QTimer::singleShot(0, this, [this, innermost] {
+        if (plan().instance(toStd(innermost)) && !editingTemplates_.contains(innermost)) emit templateChanged(innermost);
+    });
+}
+
+void Controller::keepEditingTemplate(const QString& id) {
+    editingTemplates_.insert(id);
+    log("Editing template " + fromStd(plan().instance(toStd(id))->templateName) + ": the library gets the change when it collapses or the file is saved");
+}
+
+// The edited copy becomes the template's next revision; the other copies on this canvas that were not changed follow.
+bool Controller::commitTemplateEdit(const QString& id) {
+    editingTemplates_.remove(id);
+    const gps::TemplateInstance* t = plan().instance(toStd(id));
+    if (!t || !gps::templates::modified(plan(), t->id)) return false;
+    const QString name = fromStd(t->templateName);
+    const gps::Graph* library = library_.plan(name);
+    const int revision = std::max(library ? library->revision : 0, t->revision) + 1;
+    transact([&](gps::Graph& g, Edit& edit) {
+        gps::templates::sync(g, toStd(id), revision);
+        edit.action = QString("Updated template %1 to revision %2").arg(name).arg(revision);
+        edit.presentation = true;
+        return true;
+    });
+    QString error;
+    if (!library_.save(name, gps::templates::extract(plan(), toStd(id)), &error)) {
+        emit notice("Unable to update the template: " + error);
+        return false;
+    }
+    library_.load(catalog_);
+    QStringList others;
+    for (const gps::TemplateInstance& other : plan().instances) {
+        if (fromStd(other.id) != id && fromStd(other.templateName) == name && !gps::templates::modified(plan(), other.id)) others << fromStd(other.id);
+    }
+    if (!others.isEmpty()) updateTemplates(others);
+    emit changed();
+    return true;
+}
+
+bool Controller::saveTemplateAsNew(const QString& id, const QString& name, QString* error) {
+    QString clean = name.trimmed();
+    clean.replace('#', '_');
+    auto refuse = [&](const QString& why) {
+        if (error) *error = why;
+        return false;
+    };
+    if (clean.isEmpty()) return refuse("Give the template a name.");
+    if (library_.plan(clean)) return refuse("A template named " + clean + " already exists. Choose another name.");
+    if (!plan().instance(toStd(id))) return refuse("The template is no longer on the canvas.");
+    editingTemplates_.remove(id);
+    transact([&](gps::Graph& g, Edit& edit) {
+        g.instance(toStd(id))->templateName = toStd(clean);
+        gps::templates::sync(g, toStd(id), 1);
+        edit.action = "Saved a copy as the new template " + clean;
+        edit.presentation = true;
+        return true;
+    });
+    QString failure;
+    if (!library_.save(clean, gps::templates::extract(plan(), toStd(id)), &failure)) return refuse("Unable to save the template: " + failure);
+    library_.load(catalog_);
+    emit changed();
+    return true;
+}
+
+QStringList Controller::projectsUsing(const QString& templateName) const { return ProjectRegistry::usingTemplate(templateName); }
+
+QStringList Controller::outdatedTemplates() const {
+    QStringList out;
+    for (const gps::TemplateInstance& t : plan().instances) {
+        const gps::Graph* library = library_.plan(fromStd(t.templateName));
+        if (library && library->revision > t.revision) out << fromStd(t.id);
+    }
+    return out;
+}
+
+bool Controller::updateTemplates(const QStringList& ids) {
+    QStringList touched;
+    const bool done = transact([&](gps::Graph& g, Edit& edit) {
+        bool any = false;
+        for (const QString& id : ids) {
+            const gps::TemplateInstance* t = g.instance(toStd(id));
+            const gps::Graph* library = t ? library_.plan(fromStd(t->templateName)) : nullptr;
+            if (library && gps::templates::replaceContent(g, toStd(id), *library)) any = true;
+        }
+        for (const QString& id : ids) {
+            for (const std::string& m : gps::templates::members(g, toStd(id))) touched << fromStd(m);
+        }
+        edit.action = QString("Took the library's newer version of %1 template(s)").arg(ids.size());
+        edit.touched = touched.value(0);
+        edit.validate = true;
+        return any;
+    });
+    if (done) niceAlign();
+    return done;
 }
 
 bool Controller::commitTransaction() {
@@ -726,6 +841,7 @@ bool Controller::undo() {
     if (!canUndo() || !pipeline_.editor().undo()) return false;
     note("Undo");
     edited(QString(), pipeline_.lastChange().kind == gps::ChangeKind::Execution);
+    checkTemplates(false);
     return true;
 }
 
@@ -733,6 +849,7 @@ bool Controller::redo() {
     if (!canRedo() || !pipeline_.editor().redo()) return false;
     note("Redo");
     edited(QString(), pipeline_.lastChange().kind == gps::ChangeKind::Execution);
+    checkTemplates(false);
     return true;
 }
 
@@ -877,6 +994,7 @@ bool Controller::disconnectLink(const QString& element, const QString& pad) {
     if (!pipeline_.editor().execute(action)) return false;
     note("Disconnected the link at " + element + "." + pad, linking);
     edited(element, wasTracked);
+    checkTemplates(true);
     return true;
 }
 
@@ -976,6 +1094,7 @@ bool Controller::spliceElements(const QStringList& elements, const QString& link
     }
     note("Spliced " + expanded.join(", ") + " into link from " + linkSrcElement + "." + linkSrcPad);
     edited(expanded.first(), plan().isElementTracked(toStd(linkSrcElement), catalog_.traits()));
+    checkTemplates(true);
     return true;
 }
 
@@ -1239,6 +1358,8 @@ bool Controller::refresh() {
 void Controller::newPlan() {
     if (busy()) return;
     pipeline_.reset();
+    editingTemplates_.clear();
+    knownModified_.clear();
     cancelled_ = false;
     path_.clear();
     dirty_ = false;
@@ -1281,8 +1402,12 @@ void Controller::load(const QString& source, const QString& documentPath, bool d
         dirty_ = dirty;
         note(action);
         alignWhenValidated_ = true;
+        editingTemplates_.clear();
+        checkTemplates(false);
         emit changed();
         startUpdate();
+        const QStringList outdated = outdatedTemplates();
+        if (!outdated.isEmpty()) QTimer::singleShot(0, this, [this, outdated] { emit templatesOutdated(outdated); });
     });
 }
 
@@ -1318,6 +1443,7 @@ bool Controller::save(const QString& path, QString* error) {
         if (error) *error = "Unable to save: " + (saveBlockedReason().isEmpty() ? QString("no file name") : saveBlockedReason());
         return false;
     }
+    for (const QString& id : QSet<QString>(editingTemplates_)) commitTemplateEdit(id);  // saving ends every template edit
     gps::Graph saved = plan();
     saved.complete = result().complete();
     saved.name = toStd(QFileInfo(target).completeBaseName());

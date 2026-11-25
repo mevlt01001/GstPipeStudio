@@ -39,6 +39,7 @@
 #include "logpanel.h"
 #include "propertypage.h"
 #include "setuppage.h"
+#include "templates.h"
 #include "theme.h"
 #include "versionhistory.h"
 #include "updatepanel.h"
@@ -90,6 +91,8 @@ MainWindow::MainWindow(Controller* controller, QWidget* parent) : QMainWindow(pa
     connect(scene_, &CanvasScene::elementMenuRequested, this, &MainWindow::onElementMenuRequested, Qt::QueuedConnection);
     connect(scene_, &CanvasScene::templateMenuRequested, this, &MainWindow::showTemplateMenu, Qt::QueuedConnection);
     connect(scene_, &CanvasScene::templateActivated, flows_, &Flows::editTemplateParams);
+    connect(controller_, &Controller::templateChanged, this, &MainWindow::askTemplateChange, Qt::QueuedConnection);
+    connect(controller_, &Controller::templatesOutdated, this, &MainWindow::askTemplatesOutdated, Qt::QueuedConnection);
     connect(scene_, &QGraphicsScene::selectionChanged, this, &MainWindow::refreshState);
     connect(scene_, &CanvasScene::canvasContextMenuRequested, this, [this](const QPoint& screenPos, const QPointF&) { showCanvasMenu(screenPos); }, Qt::QueuedConnection);
     connect(scene_, &CanvasScene::elementActivated, flows_, &Flows::editProperties, Qt::QueuedConnection);
@@ -644,6 +647,69 @@ void MainWindow::pasteClipboard() {
 void MainWindow::showAbout() {
     AboutDialog dialog(controller_->environment().statusText(), this);
     dialog.exec();
+}
+
+// "Template changes, what now?" (TEMPLATE_PLAN D17, D30): the change, the projects the template is used in, and four
+// answers. Closing the window is Undo: nothing was decided.
+void MainWindow::askTemplateChange(const QString& id) {
+    const gps::TemplateInstance* t = controller_->plan().instance(id.toStdString());
+    if (!t) return;
+    const QString name = QString::fromStdString(t->templateName);
+    QStringList used;
+    for (const QString& project : controller_->projectsUsing(name)) used << QFileInfo(project).absolutePath();
+    QMessageBox box(this);
+    box.setObjectName("templateChange");
+    box.setWindowTitle("Template changes");
+    box.setIcon(QMessageBox::Question);
+    box.setText(QString("<b>'%1' template changes</b>").arg(name.toHtmlEscaped()));
+    box.setInformativeText("Change: " + controller_->lastAction() + "\n\n" +
+                           (used.isEmpty() ? QString("No saved project uses this template yet.")
+                                           : "Used in:\n  " + used.join("\n  ") + "\n\nUpdating it changes these projects too."));
+    QPushButton* update = box.addButton("Update template", QMessageBox::AcceptRole);
+    QPushButton* asNew = box.addButton("Save as new template…", QMessageBox::ActionRole);
+    QPushButton* detach = box.addButton("Detach", QMessageBox::ActionRole);
+    QPushButton* undo = box.addButton("Undo", QMessageBox::RejectRole);
+    update->setObjectName("updateTemplate");
+    asNew->setObjectName("saveAsNewTemplate");
+    detach->setObjectName("detachTemplate");
+    undo->setObjectName("undoTemplateChange");
+    box.setDefaultButton(update);
+    box.setEscapeButton(undo);
+    box.exec();
+    if (box.clickedButton() == update) {
+        controller_->keepEditingTemplate(id);
+        statusBar()->showMessage("Editing template " + name + ": the change goes to the library when it collapses or the file is saved.", 8000);
+    } else if (box.clickedButton() == asNew) {
+        bool ok = false;
+        const QString newName = QInputDialog::getText(this, "Save as new template", "Name of the new template:", QLineEdit::Normal, name + " 2", &ok);
+        QString error;
+        if (!ok || !controller_->saveTemplateAsNew(id, newName, &error)) {
+            if (!error.isEmpty()) QMessageBox::warning(this, "Save as new template", error);
+            controller_->undo();
+        }
+    } else if (box.clickedButton() == detach) {
+        controller_->detachTemplate(id);
+    } else {
+        controller_->undo();
+    }
+}
+
+// An opened file holds older versions of templates the library has newer ones of.
+void MainWindow::askTemplatesOutdated(const QStringList& ids) {
+    QStringList lines;
+    for (const QString& id : ids) {
+        const gps::TemplateInstance* t = controller_->plan().instance(id.toStdString());
+        if (!t) continue;
+        const QString name = QString::fromStdString(t->templateName);
+        const gps::Graph newer = controller_->templateContent(name);
+        lines << QString("%1: revision %2 → %3%4").arg(name).arg(t->revision).arg(newer.revision)
+                     .arg(gps::templates::modified(controller_->plan(), t->id) ? "  (its changes here would be lost)" : "");
+    }
+    if (lines.isEmpty()) return;
+    const auto answer = QMessageBox::question(this, "Templates were updated",
+        "The library has newer versions of templates this file uses:\n\n  " + lines.join("\n  ") + "\n\nUse the newer versions?",
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+    if (answer == QMessageBox::Yes) controller_->updateTemplates(ids);
 }
 
 // The earlier versions of the open file, newest first; the chosen one comes back as an unsaved change.
