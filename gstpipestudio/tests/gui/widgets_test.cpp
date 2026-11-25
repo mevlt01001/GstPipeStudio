@@ -215,13 +215,12 @@ private slots:
         QVERIFY(PropertyEditor::collect({&editor}, {{"gain", "42"}}).empty());
     }
 
-    void wheelEditsOnlyAfterHoverDwell() {
+    void wheelNeverEditsValues() {
         QScrollArea area;
         auto* content = new QWidget; content->setMinimumSize(200, 1200);
         auto* spin = new QSpinBox(content); spin->setRange(0, 100); spin->setValue(20);
         area.setWidget(content); area.resize(250, 200); area.show();
         QTest::qWait(20);
-        QEvent leave(QEvent::Leave); QApplication::sendEvent(spin, &leave);
         QEnterEvent enter(QPointF(5, 5), QPointF(5, 5), spin->mapToGlobal(QPoint(5, 5)));
         QApplication::sendEvent(spin, &enter);
         auto wheel = [&] {
@@ -231,11 +230,10 @@ private slots:
         };
         wheel();
         QCOMPARE(spin->value(), 20);
-        QVERIFY(area.verticalScrollBar()->value() > 0);
-        QApplication::sendEvent(spin, &enter);
-        QTest::qWait(550);
+        QVERIFY(area.verticalScrollBar()->value() > 0);  // the form scrolled instead
+        QTest::qWait(550);  // not even after a long hover
         wheel();
-        QCOMPARE(spin->value(), 19);
+        QCOMPARE(spin->value(), 20);
     }
 
     void aboutShowsBuildIdentityAndAnimation() {

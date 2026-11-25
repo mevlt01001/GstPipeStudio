@@ -44,7 +44,7 @@ Qt is bundled in release packages. GStreamer **1.16+** and the plugins your pipe
 
 Open **View → Live metrics → Start monitoring**. Every element shows processing time, age and Drop Rate. The graph compares all elements; choose one for detail. A dash means the measurement is unavailable. Drop Rate requires QoS-reported buffer counts; it is not inferred from input/output differences.
 
-**Small conveniences:** reset properties to defaults, undo graph edits, copy one or several elements, arrange the graph, and enable **View → Move connected elements together**. Hover a value control for 500 ms before using the wheel to edit it.
+**Small conveniences:** reset properties to defaults, undo graph edits, copy one or several elements, arrange the graph, and enable **View → Move connected elements together**.
 
 ## Help improve it
 

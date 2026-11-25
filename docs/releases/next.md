@@ -8,7 +8,7 @@
 ## Property editing
 
 - Reset individual properties or all editable element properties to their factory defaults. Save applies the changes; Cancel discards them.
-- Value controls accept mouse-wheel edits only after a 500 ms hover. Scrolling through a form no longer immediately changes values.
+- The mouse wheel never changes a value: it scrolls the form. Values are typed or chosen.
 
 ## Release workflow
 
