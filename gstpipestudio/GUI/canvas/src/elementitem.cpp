@@ -7,6 +7,7 @@
 
 #include "canvasscene.h"
 #include "paditem.h"
+#include "templatepeek.h"
 #include "theme.h"
 
 using metrics::kBoxWidth;
@@ -43,6 +44,11 @@ ElementItem::ElementItem(const ElementView& view) : view_(view) {
     });
     setAcceptedMouseButtons(Qt::LeftButton | Qt::RightButton);
     setZValue(1);
+    peek_.setSingleShot(true);
+    peek_.setInterval(TemplatePeek::kHoverMs);
+    connect(&peek_, &QTimer::timeout, this, [this] {
+        if (auto* canvas = qobject_cast<CanvasScene*>(scene())) canvas->peekTemplate(view_.groupId);
+    });
     setToolTip(view.note.isEmpty() ? view.factory : view.factory + "\n\n" + view.note);
 
     for (int i = 0; i < view.sinks.size(); ++i) {
@@ -205,17 +211,22 @@ QVariant ElementItem::itemChange(GraphicsItemChange change, const QVariant& valu
 
 void ElementItem::hoverEnterEvent(QGraphicsSceneHoverEvent*) {
     hover_ = true;
+    if (view_.isTemplate) peek_.start();
     hoverAnimation_.stop(); hoverAnimation_.setStartValue(hoverProgress_); hoverAnimation_.setEndValue(1.0); hoverAnimation_.start();
 }
 
 void ElementItem::hoverLeaveEvent(QGraphicsSceneHoverEvent*) {
     hover_ = false;
+    peek_.stop();
+    TemplatePeek::hide();
     hoverAnimation_.stop(); hoverAnimation_.setStartValue(hoverProgress_); hoverAnimation_.setEndValue(0.0); hoverAnimation_.start();
 }
 
 QRectF ElementItem::expandButton() const { return QRectF(kBoxWidth - 34, 10, 24, 20); }
 
 void ElementItem::mousePressEvent(QGraphicsSceneMouseEvent* event) {
+    peek_.stop();
+    TemplatePeek::hide();
     if (view_.isTemplate && event->button() == Qt::LeftButton && expandButton().contains(event->pos())) {
         if (auto* canvas = qobject_cast<CanvasScene*>(scene())) canvas->frameExpanded(view_.groupId);
         event->accept();

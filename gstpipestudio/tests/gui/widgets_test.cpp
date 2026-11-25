@@ -29,6 +29,7 @@
 #include "elementitem.h"
 #include "templateframeitem.h"
 #include "templatepage.h"
+#include "templatepeek.h"
 #include "factorydelegate.h"
 #include "flows.h"
 #include "capslabel.h"
@@ -337,6 +338,54 @@ private slots:
         QVERIFY(waitFor([&] { return c->plan().instances.empty(); }));
         QVERIFY(c->templates().isEmpty());
         QVERIFY(c->plan().find(toStd(convert))->group.empty());
+    }
+
+    void addTemplateListsTheLibraryWithAPeekAndInsertsCollapsed() {
+        QTemporaryDir library;
+        qputenv("GPS_USER_DIR", library.path().toUtf8());
+        MainWindow w(c.get());
+        w.show();
+        QString src, convert, sink;
+        buildChain(w, &src, &convert, &sink);
+        QVERIFY(c->saveTemplate("Tail", {convert, sink}));
+        QVERIFY(settle(*c));
+
+        // Add element lists elements only; templates have their own page.
+        w.findChild<QAction*>("actionAddElement")->trigger();
+        auto* elements = pageOf<PickerPage>(w);
+        QVERIFY(elements);
+        for (int i = 0; i < elements->findChild<QListWidget*>("pickerList")->count(); ++i)
+            QVERIFY(elements->findChild<QListWidget*>("pickerList")->item(i)->text() != "Templates");
+        w.drawer()->dismiss();
+
+        w.findChild<QAction*>("actionAddTemplate")->trigger();
+        QVERIFY(waitFor([&] { return w.drawer()->title() == "Add template"; }));
+        auto* picker = pageOf<PickerPage>(w);
+        QVERIFY(picker);
+        auto* list = picker->findChild<QListWidget*>("pickerList");
+        QCOMPARE(list->item(0)->text(), QString("Templates"));
+        QCOMPARE(list->item(1)->text(), QString("Tail"));
+        QVERIFY(waitFor([&] { return w.drawer()->width() == Drawer::kWidth; }, 2000));
+
+        // Hovering a template for a moment shows a peek inside it; moving off hides it.
+        const QPoint row = list->visualItemRect(list->item(1)).center();
+        QMouseEvent move(QEvent::MouseMove, row, list->viewport()->mapToGlobal(row), Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(list->viewport(), &move);
+        QVERIFY(waitFor([&] { return TemplatePeek::current() != nullptr; }, 2000));
+        QVERIFY(TemplatePeek::current()->grab().save(shotDir() + "/template_peek.png"));
+        QEvent leave(QEvent::Leave);
+        QApplication::sendEvent(list->viewport(), &leave);
+        QVERIFY(waitFor([&] { return TemplatePeek::current() == nullptr; }, 2000));
+
+        // Choosing it inserts it collapsed, as one box, and nice alignment finds it a place.
+        QSignalSpy aligned(&c->canvasLayout(), &CanvasLayout::aligned);
+        list->setCurrentRow(1);
+        press(picker, "saveButton");
+        QVERIFY(waitFor([&] { return c->plan().instances.size() == 2; }));
+        QVERIFY(aligned.wait(30000));
+        const QString placed = fromStd(c->plan().instances.back().id);
+        QVERIFY(!c->isTemplateExpanded(placed));
+        QCOMPARE(c->templateMembers(placed).size(), 2);
     }
 
     void wheelNeverEditsValues() {

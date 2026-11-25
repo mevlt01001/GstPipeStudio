@@ -46,6 +46,7 @@ add_library(gps_gui STATIC
     ui/widgets/include/spinner.h ui/widgets/src/spinner.cpp
     ui/widgets/include/updatepanel.h ui/widgets/src/updatepanel.cpp
     ui/widgets/include/telemetrypanel.h ui/widgets/src/telemetrypanel.cpp
+    ui/widgets/include/templatepeek.h ui/widgets/src/templatepeek.cpp
     ui/widgets/include/validationindicator.h ui/widgets/src/validationindicator.cpp)
 target_include_directories(gps_gui PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}

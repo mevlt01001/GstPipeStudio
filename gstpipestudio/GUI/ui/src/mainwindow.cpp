@@ -154,6 +154,8 @@ void MainWindow::buildActions() {
     auto* addElement = make("actionAddElement", "Add &element…", {QKeySequence(Qt::CTRL | Qt::Key_E), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_E)},
                             [this] { flows_->chooseElement(); });
     addElement->setIconText("Add element");
+    auto* addTemplate = make("actionAddTemplate", "Add &template…", {QKeySequence(Qt::CTRL | Qt::Key_T)}, [this] { flows_->chooseTemplate(); });
+    addTemplate->setIconText("Add template");
     auto* undoAct = make("actionUndo", "&Undo", {QKeySequence::Undo}, [this] { controller_->undo(); });
     undoAct->setIconText("Undo");
     auto* redoAct = make("actionRedo", "&Redo", {QKeySequence::Redo, QKeySequence(Qt::CTRL | Qt::Key_Y)}, [this] { controller_->redo(); });
@@ -193,7 +195,7 @@ void MainWindow::buildActions() {
     file->addSeparator();
     file->addAction(quit);
     QMenu* pipeline = menuBar()->addMenu("&Pipeline");
-    pipeline->addActions({addElement, update, run});
+    pipeline->addActions({addElement, addTemplate, update, run});
     pipeline->addSeparator();
     pipeline->addActions({undoAct, redoAct});
     pipeline->addSeparator();
@@ -237,6 +239,7 @@ void MainWindow::buildActions() {
     bar->addActions({update, run});
     bar->addSeparator();
     bar->addAction(addElement);
+    bar->addAction(addTemplate);
     bar->addAction(saveCustomAct);
     bar->widgetForAction(run)->setObjectName("primaryAction");
 }
@@ -309,6 +312,7 @@ void MainWindow::refreshState() {
     act("actionOpen")->setEnabled(!busy && !blocked);
     act("actionImportLaunch")->setEnabled(!busy && !blocked);
     act("actionAddElement")->setEnabled(!editBlocked && !blocked);
+    act("actionAddTemplate")->setEnabled(!editBlocked && !blocked);
     act("actionSaveTemplateElement")->setEnabled(!editBlocked && !scene_->selectedElementNames().isEmpty());
     act("actionUndo")->setEnabled(controller_->canUndo());
     act("actionRedo")->setEnabled(controller_->canRedo());
@@ -450,15 +454,7 @@ void MainWindow::showCanvasMenu(const QPoint& screenPos) {
     menu->setObjectName("canvasMenu");
     menu->setAttribute(Qt::WA_DeleteOnClose);
     menu->addAction("Add element…", this, [this] { flows_->chooseElement(); })->setObjectName("actionCanvasAddElement");
-    if (!controller_->templates().isEmpty()) {
-        QMenu* customSub = menu->addMenu("Add template");
-        for (const TemplateInfo& c : controller_->templates()) {
-            customSub->addAction(c.name + "  (" + c.description + ")", this, [this, name = c.name] {
-                QStringList created = controller_->addTemplate(name);
-                if (!created.isEmpty()) scene_->setSelectedElements(created);
-            });
-        }
-    }
+    menu->addAction("Add template…", this, [this] { flows_->chooseTemplate(); })->setObjectName("actionCanvasAddTemplate");
     QStringList sel = scene_->selectedElementNames();
     if (!sel.isEmpty()) {
         menu->addSeparator();

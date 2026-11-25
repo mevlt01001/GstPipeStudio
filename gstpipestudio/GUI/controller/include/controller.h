@@ -98,6 +98,7 @@ public:
     std::vector<gps::ExposedParam> templateParams(const QString& id) const;
     bool setTemplateParams(const QString& id, const std::map<std::string, std::string>& values);  // name -> value, "" = default
     bool removeTemplate(const QString& templateName);
+    gps::Graph templateContent(const QString& name) const;  // the library template, empty when there is none
     QStringList addTemplate(const QString& templateName, double x = std::numeric_limits<double>::quiet_NaN(), double y = std::numeric_limits<double>::quiet_NaN());
     QStringList addTemplateAfter(const QString& srcElement, const QString& srcPad, const QString& templateName);
     bool detachTemplate(const QString& groupId);

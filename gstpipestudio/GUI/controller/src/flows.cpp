@@ -205,18 +205,29 @@ void Flows::chooseElement() {
     PickerData data;
     data.newHeader = "Elements";
     data.showFilters = true;
-    data.templates = controller_->templates();
     data.candidates = controller_->catalog().entries();
     auto* page = new PickerPage(data);
     connect(page, &PickerPage::picked, this, [this](const PickerChoice& choice) {
-        if (choice.kind == PickerChoice::Template) {
-            controller_->addTemplate(choice.factory);
-            drawer_->dismiss();
-        } else {
-            newElementProperties(choice.factory);
-        }
+        newElementProperties(choice.factory);
     });
     drawer_->present(page, "Add element", "Choose an element to place on the canvas: a source, a filter or a sink.", Drawer::Replace);
+}
+
+void Flows::chooseTemplate() {
+    if (controller_->editingBlocked()) return;
+    PickerData data;
+    data.templates = controller_->templates();
+    data.templateContent = [this](const QString& name) { return controller_->templateContent(name); };
+    auto* page = new PickerPage(data);
+    connect(page, &PickerPage::picked, this, [this](const PickerChoice& choice) {
+        if (choice.kind != PickerChoice::Template) return;
+        drawer_->dismiss();
+        controller_->addTemplate(choice.factory);
+    });
+    drawer_->present(page, "Add template",
+                     data.templates.isEmpty() ? "No templates yet: select elements and use Save as template."
+                                              : "Choose a saved template; hover one for a quick look inside.",
+                     Drawer::Replace);
 }
 
 void Flows::newElementProperties(const QString& factory) {

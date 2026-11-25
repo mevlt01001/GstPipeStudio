@@ -3,7 +3,10 @@
 
 #include <QButtonGroup>
 #include <QHBoxLayout>
+#include <QCursor>
 #include <QKeyEvent>
+#include <QMouseEvent>
+#include <QTimer>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -13,6 +16,7 @@
 #include <algorithm>
 
 #include "factorydelegate.h"
+#include "templatepeek.h"
 
 namespace {
 constexpr int kExistingRole = Qt::UserRole + 20;  // index into PickerData::existing
@@ -74,7 +78,14 @@ PickerPage::PickerPage(const PickerData& data, QWidget* parent) : DrawerPage(par
     list_->setObjectName("pickerList");
     list_->setItemDelegate(new FactoryDelegate(list_));
     list_->setMouseTracking(true);
+    list_->viewport()->installEventFilter(this);
     root->addWidget(list_, 1);
+    peek_ = new QTimer(this);
+    peek_->setSingleShot(true);
+    peek_->setInterval(TemplatePeek::kHoverMs);
+    connect(peek_, &QTimer::timeout, this, [this] {
+        if (data_.templateContent && !peeked_.isEmpty()) TemplatePeek::show(data_.templateContent(peeked_), QCursor::pos(), this);
+    });
 
     auto addHeader = [&](const QString& text) {
         auto* item = new QListWidgetItem(text, list_);
@@ -215,6 +226,10 @@ void PickerPage::filter(const QString& text) {
     list_->setCurrentItem(first);  // Enter takes the best hit
 }
 
+PickerPage::~PickerPage() {
+    if (TemplatePeek::current() && TemplatePeek::current()->parent() == this) TemplatePeek::hide();
+}
+
 PickerChoice PickerPage::choice() const {
     PickerChoice c;
     QListWidgetItem* item = list_->currentItem();
@@ -234,6 +249,17 @@ PickerChoice PickerPage::choice() const {
 
 // Up and Down in the search box move the selection in the list.
 bool PickerPage::eventFilter(QObject* watched, QEvent* event) {
+    // A template under the pointer for a moment: a peek inside it. Moving off it, or leaving the list, hides it.
+    if (watched == list_->viewport() && (event->type() == QEvent::MouseMove || event->type() == QEvent::Leave)) {
+        QListWidgetItem* item = event->type() == QEvent::MouseMove ? list_->itemAt(static_cast<QMouseEvent*>(event)->position().toPoint()) : nullptr;
+        const QString name = item ? item->data(kTemplateRole).toString() : QString();
+        if (name != peeked_) {
+            peeked_ = name;
+            TemplatePeek::hide();
+            if (name.isEmpty()) peek_->stop();
+            else peek_->start();
+        }
+    }
     if (watched == search_ && event->type() == QEvent::KeyPress) {
         int key = static_cast<QKeyEvent*>(event)->key();
         if (key == Qt::Key_Down || key == Qt::Key_Up) {

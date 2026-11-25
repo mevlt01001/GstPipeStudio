@@ -34,6 +34,8 @@ public:
 
     // Any element: a source, a filter or a sink (opens PickerPage in the right drawer)
     void chooseElement();
+    // A saved template (opens the template list in the right drawer; hovering one shows a peek)
+    void chooseTemplate();
     // Left click on a free src pad (opens PickerPage in the right drawer)
     void fromFreePad(const QString& element, const QString& identity);
     // Right click on a linked pad or a link

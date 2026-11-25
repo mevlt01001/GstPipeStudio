@@ -56,6 +56,7 @@ public:
     void frameActivated(const QString& instanceId);
     void frameMinimized(const QString& instanceId);
     void frameExpanded(const QString& instanceId);
+    void peekTemplate(const QString& instanceId);  // a quick look inside a collapsed template, near the pointer
     void updateLinks();
     void setConnectedMoveEnabled(bool enabled) { connectedMoveEnabled_ = enabled; }
     void beginConnectedMove(const QString& name);

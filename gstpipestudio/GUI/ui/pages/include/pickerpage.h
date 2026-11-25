@@ -2,6 +2,8 @@
 // Existing elements first, then new ones, compatible ones ranked on top.
 #pragma once
 
+#include <functional>
+
 #include "controller.h"
 #include "drawer.h"
 
@@ -9,6 +11,7 @@ struct PickerData {
     QString newHeader = "New element";
     QList<ExistingTarget> existing;   // free Always sink pads and Request sink templates of elements in the plan
     QList<TemplateInfo> templates;  // saved templates
+    std::function<gps::Graph(const QString&)> templateContent;  // set: hovering a template shows a peek of this
     QStringList compatible;           // factories whose sink meets the pad, ranked
     std::vector<FactoryEntry> candidates; // every factory that may be offered
     bool showFilters = false;         // role and pad presence filter chips
@@ -22,6 +25,7 @@ struct PickerChoice {
 };
 
 class QButtonGroup;
+class QTimer;
 class QLineEdit;
 class QListWidget;
 class QListWidgetItem;
@@ -33,6 +37,7 @@ public:
     enum PresenceFilter { PresenceAll = 0, PresenceAlways, PresenceSometimes, PresenceRequest };
 
     explicit PickerPage(const PickerData& data, QWidget* parent = nullptr);
+    ~PickerPage() override;
     PickerChoice choice() const;  // the selected row
 
     void setRoleFilter(RoleFilter role);
@@ -57,6 +62,8 @@ private:
     PickerData data_;
     QLineEdit* search_;
     QListWidget* list_;
+    QTimer* peek_;
+    QString peeked_;  // the template under the pointer
     RoleFilter roleFilter_ = RoleAll;
     PresenceFilter presenceFilter_ = PresenceAll;
 };

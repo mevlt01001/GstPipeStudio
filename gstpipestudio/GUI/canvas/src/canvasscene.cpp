@@ -2,7 +2,9 @@
 #include "canvasscene.h"
 #include "connectionpreview.h"
 
+#include <QCursor>
 #include <QGraphicsPathItem>
+#include <QGraphicsView>
 #include <QGraphicsSceneContextMenuEvent>
 #include <QGraphicsSceneMouseEvent>
 #include <QPainterPath>
@@ -19,6 +21,8 @@
 #include "linkitem.h"
 #include "paditem.h"
 #include "templateframeitem.h"
+#include "templatepeek.h"
+#include "templates.h"
 #include "theme.h"
 
 CanvasScene::CanvasScene(Controller* controller, QObject* parent) : QGraphicsScene(parent), controller_(controller) {
@@ -342,6 +346,11 @@ void CanvasScene::frameMinimized(const QString& instanceId) {
 }
 void CanvasScene::frameExpanded(const QString& instanceId) {
     if (!locked_) controller_->setTemplateExpanded(instanceId, true);
+}
+
+void CanvasScene::peekTemplate(const QString& instanceId) {
+    if (locked_ || views().isEmpty() || !pipeline().graph().instance(instanceId.toStdString())) return;
+    TemplatePeek::show(gps::templates::extract(pipeline().graph(), instanceId.toStdString()), QCursor::pos(), views().front());
 }
 
 void CanvasScene::mouseMoveEvent(QGraphicsSceneMouseEvent* event) {

@@ -332,6 +332,11 @@ bool Controller::setTemplateParams(const QString& id, const std::map<std::string
     });
 }
 
+gps::Graph Controller::templateContent(const QString& name) const {
+    const gps::Graph* found = library_.plan(name);
+    return found ? *found : gps::Graph();
+}
+
 bool Controller::removeTemplate(const QString& templateName) {
     const bool removed = library_.remove(templateName);
     library_.load(catalog_);
@@ -354,6 +359,7 @@ QStringList Controller::addTemplate(const QString& templateName, double x, doubl
         edit.validate = anyTracked(created);
         return true;
     });
+    if (!created.isEmpty()) niceAlign();  // the new box finds its place among the others
     return created;
 }
 
