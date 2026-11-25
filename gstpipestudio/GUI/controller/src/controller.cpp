@@ -910,7 +910,7 @@ bool Controller::infosReady(const gps::Graph& clip, std::function<void()> retry)
         if (!catalog().info(factory) && !missing.contains(factory)) missing << factory;
     }
     if (missing.isEmpty()) return true;
-    catalog().fetchInfos(missing, [retry](bool ok) {
+    catalog().fetchInfos(missing, this, [retry](bool ok) {
         if (ok) retry();
     });
     return false;
@@ -1430,7 +1430,7 @@ void Controller::load(const QString& source, const QString& documentPath, bool d
         if (!factories.contains(fromStd(e.factory))) factories << fromStd(e.factory);
     }
     opening_ = true;
-    catalog().fetchInfos(factories, [this, loaded, documentPath, dirty, action, libraryTemplate](bool ok) {
+    catalog().fetchInfos(factories, this, [this, loaded, documentPath, dirty, action, libraryTemplate](bool ok) {
         opening_ = false;
         if (!ok) {
             emit notice("Unable to open the file: the plan uses an element this installation does not have.");

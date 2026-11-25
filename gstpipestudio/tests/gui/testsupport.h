@@ -53,7 +53,7 @@ inline bool settle(Controller& c) { return waitFor([&] { return !c.busy(); }); }
 inline const ElementInfo* need(Controller& c, const QString& factory) {
     const ElementInfo* found = nullptr;
     bool done = false;
-    c.catalog().fetchInfo(factory, [&](const ElementInfo* i) {
+    c.catalog().fetchInfo(factory, &c, [&](const ElementInfo* i) {
         found = i;
         done = true;
     });

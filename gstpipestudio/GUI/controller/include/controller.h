@@ -1,7 +1,7 @@
 // Controller owns the Pipeline document and coordinates GUI workflows and helper processes.
 // Widgets read views and submit edits; GraphEditor owns transactions and history.
 // Preview updates are coalesced and allow further edits. Playback, opening and cancellation block edits.
-// Call catalog().fetchInfo() before edits that refer to a new factory.
+// Call catalog().fetchInfo(factory, this, …) before edits that refer to a new factory.
 #pragma once
 
 #include <QHash>

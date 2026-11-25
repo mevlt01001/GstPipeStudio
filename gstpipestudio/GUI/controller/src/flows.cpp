@@ -316,7 +316,7 @@ void Flows::editTemplateParameters() {
 }
 
 void Flows::newElementProperties(const QString& factory) {
-    controller_->catalog().fetchInfo(factory, [this, factory](const ElementInfo* info) {
+    controller_->catalog().fetchInfo(factory, this, [this, factory](const ElementInfo* info) {
         if (!info) return;
         PropertyPageInput in;
         in.info = *info;
@@ -335,7 +335,7 @@ void Flows::newElementProperties(const QString& factory) {
 void Flows::fromFreePad(const QString& element, const QString& identity) {
     if (controller_->editingBlocked()) return;
     QString allowed = controller_->padAllowed(element, identity);
-    controller_->catalog().fetchCompatible(allowed, [this, element, identity, allowed](const QStringList& compatible) {
+    controller_->catalog().fetchCompatible(allowed, this, [this, element, identity, allowed](const QStringList& compatible) {
         PickerData data;
         data.existing = controller_->existingTargets(element, identity);
         for (const TemplateInfo& c : library().list()) {
@@ -364,7 +364,7 @@ void Flows::fromFreePad(const QString& element, const QString& identity) {
 }
 
 void Flows::newElement(Mode mode, const QString& element, const QString& identity, const QString& factory) {
-    controller_->catalog().fetchInfo(factory, [this, mode, element, identity, factory](const ElementInfo* info) {
+    controller_->catalog().fetchInfo(factory, this, [this, mode, element, identity, factory](const ElementInfo* info) {
         if (!info) return;
         PropertyPageInput in;
         in.info = *info;
@@ -483,7 +483,7 @@ void Flows::editCaps(const QString& element, const QString& identity) {
 void Flows::replaceBehind(const QString& element, const QString& identity) {
     if (controller_->editingBlocked()) return;
     QString allowed = controller_->padAllowed(element, identity);
-    controller_->catalog().fetchCompatible(allowed, [this, element, identity](const QStringList& compatible) {
+    controller_->catalog().fetchCompatible(allowed, this, [this, element, identity](const QStringList& compatible) {
         PickerData data;
         data.compatible = compatible;
         data.candidates = factories(false);
@@ -507,7 +507,7 @@ void Flows::disconnectLinkOnly(const QString& element, const QString& identity) 
 
 void Flows::addQueue(const QString& element, const QString& identity) {
     if (controller_->editingBlocked()) return;
-    controller_->catalog().fetchInfo(gps::kQueueFactory, [this, element, identity](const ElementInfo* info) {
+    controller_->catalog().fetchInfo(gps::kQueueFactory, this, [this, element, identity](const ElementInfo* info) {
         if (info) controller_->insertQueue(element, identity);
     });
 }

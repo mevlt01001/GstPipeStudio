@@ -145,7 +145,7 @@ private slots:
         QVERIFY(w.grab().save(QString("%1/ux_30_real_helpers.png").arg(shotDir())));
 
         QStringList compatible;
-        c->catalog().fetchCompatible(c->padAllowed(nv, "src"), [&](const QStringList& l) { compatible = l; });
+        c->catalog().fetchCompatible(c->padAllowed(nv, "src"), c.get(), [&](const QStringList& l) { compatible = l; });
         QVERIFY(waitFor([&] { return !compatible.isEmpty(); }));
         PickerData data;
         data.compatible = compatible;

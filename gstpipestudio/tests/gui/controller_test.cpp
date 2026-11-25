@@ -519,6 +519,18 @@ private slots:
         QVERIFY(fromStd(c->result().message).contains("gps-update was not found"));
     }
 
+    // The catalog serves every tab: a tab closed while its question is on its way is not called back.
+    void aClosedTabIsNotCalledBack() {
+        FactoryCatalog catalog;  // its own, so nothing is cached yet
+        auto* closed = new QObject;
+        bool late = false, answered = false;
+        catalog.fetchInfo("videotestsrc", closed, [&](const ElementInfo*) { late = true; });
+        catalog.fetchInfos({"videotestsrc"}, c.get(), [&](bool ok) { answered = ok; });
+        delete closed;
+        QVERIFY(waitFor([&] { return answered; }));
+        QVERIFY(!late);
+    }
+
     void cancelLeavesThePlanAlone() {
         // Everything before the last page's Add / Save is a read: previews, info and compatible lists change nothing.
         Chain ch = makeChain();
@@ -528,7 +540,7 @@ private slots:
         c->previewDeleteSource(ch.src);
         need(*c, "tee");
         QStringList compatible;
-        c->catalog().fetchCompatible("video/x-raw", [&](const QStringList& l) { compatible = l; });
+        c->catalog().fetchCompatible("video/x-raw", c.get(), [&](const QStringList& l) { compatible = l; });
         QVERIFY(waitFor([&] { return !compatible.isEmpty(); }));
         QVERIFY(compatible.contains("videoconvert"));
         QVERIFY(!compatible.contains("audiotestsrc"));

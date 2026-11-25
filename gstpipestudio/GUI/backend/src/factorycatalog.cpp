@@ -1,9 +1,20 @@
 // factorycatalog.cpp – see factorycatalog.h.
 #include "factorycatalog.h"
 
+#include <QPointer>
 #include <memory>
 
 #include "helperclient.h"
+
+namespace {
+// done, called only while context exists.
+template <typename Callback>
+Callback whileAlive(QObject* context, Callback done) {
+    return [context = QPointer<QObject>(context), done = std::move(done)](auto&&... args) {
+        if (context) done(std::forward<decltype(args)>(args)...);
+    };
+}
+}  // namespace
 
 HelperClient* FactoryCatalog::ask(const QStringList& args, std::function<void(const HelperResult&)> done) {
     return HelperClient::run(this, "gps-inspect", args, 30000, [this](const QString& line) { emit logLine(line); }, std::move(done));
@@ -41,12 +52,12 @@ const FactoryEntry* FactoryCatalog::entry(const QString& factory) const {
     return nullptr;
 }
 
-void FactoryCatalog::fetchInfo(const QString& factory, InfoCallback done) {
+void FactoryCatalog::fetchInfo(const QString& factory, QObject* context, InfoCallback done) {
     if (const ElementInfo* cached = info(factory)) {
         done(cached);
         return;
     }
-    pending_[factory].append(done);
+    pending_[factory].append(whileAlive(context, std::move(done)));
     if (pending_[factory].size() > 1) return;  // a call for this factory is already on its way
 
     ask({"element", factory}, [this, factory](const HelperResult& r) {
@@ -62,7 +73,7 @@ void FactoryCatalog::fetchInfo(const QString& factory, InfoCallback done) {
     });
 }
 
-void FactoryCatalog::fetchInfos(const QStringList& factories, std::function<void(bool)> done) {
+void FactoryCatalog::fetchInfos(const QStringList& factories, QObject* context, std::function<void(bool)> done) {
     if (factories.isEmpty()) {
         done(true);
         return;
@@ -70,14 +81,14 @@ void FactoryCatalog::fetchInfos(const QStringList& factories, std::function<void
     auto remaining = std::make_shared<int>(factories.size());
     auto failed = std::make_shared<bool>(false);
     for (const QString& f : factories) {
-        fetchInfo(f, [remaining, failed, done](const ElementInfo* i) {
+        fetchInfo(f, context, [remaining, failed, done](const ElementInfo* i) {
             if (!i) *failed = true;
             if (--*remaining == 0) done(!*failed);
         });
     }
 }
 
-void FactoryCatalog::fetchCompatible(const QString& caps, NamesCallback done) {
+void FactoryCatalog::fetchCompatible(const QString& caps, QObject* context, NamesCallback done) {
     auto cached = compatible_.constFind(caps);
     if (cached != compatible_.constEnd()) {
         done(cached.value());
@@ -85,7 +96,7 @@ void FactoryCatalog::fetchCompatible(const QString& caps, NamesCallback done) {
     }
     QStringList args = {"compatible"};
     if (!caps.isEmpty()) args << "--caps" << caps;
-    ask(args, [this, caps, done](const HelperResult& r) {
+    ask(args, [this, caps, done = whileAlive(context, std::move(done))](const HelperResult& r) {
         QStringList names;
         gps::CompatibleFactories answer;
         if (r.read(&answer)) {

@@ -31,9 +31,11 @@ public:
     void forEachInfo(const std::function<void(const QString&, const ElementInfo&)>& visit) const;  // every one fetched so far
     // The factory's row: from its fetched information, else from the list; nullptr when neither knows it.
     const FactoryEntry* entry(const QString& factory) const;
-    void fetchInfo(const QString& factory, InfoCallback done);  // calls done at once when cached; nullptr on failure
-    void fetchInfos(const QStringList& factories, std::function<void(bool)> done);
-    void fetchCompatible(const QString& caps, NamesCallback done);  // ranked factories that can follow these caps
+    // The questions to gps-inspect. The catalog serves every tab, so each answer goes to done only while context (the
+    // asking tab's object) still exists: a tab closed meanwhile is not called back.
+    void fetchInfo(const QString& factory, QObject* context, InfoCallback done);  // done at once when cached; nullptr on failure
+    void fetchInfos(const QStringList& factories, QObject* context, std::function<void(bool)> done);
+    void fetchCompatible(const QString& caps, QObject* context, NamesCallback done);  // ranked factories that can follow these caps
     gps::TraitsFn traits() const;
 
 signals:
