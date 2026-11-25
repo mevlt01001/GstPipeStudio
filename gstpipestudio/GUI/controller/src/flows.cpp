@@ -2,6 +2,7 @@
 #include "flows.h"
 
 #include <QAction>
+#include <memory>
 #include <QClipboard>
 #include <QGuiApplication>
 #include <QHBoxLayout>
@@ -16,6 +17,7 @@
 #include "drawer.h"
 #include "pickerpage.h"
 #include "propertypage.h"
+#include "templatepage.h"
 #include "theme.h"
 
 namespace {
@@ -56,6 +58,27 @@ void Flows::setBusy(bool busy) {
     if (CapsPage* c = capsPage()) c->setEnabled(!busy);
 }
 
+void Flows::saveAsTemplate(const QStringList& elements) {
+    if (controller_->editingBlocked() || elements.isEmpty()) return;
+    const QString id = controller_->beginTemplate(elements);
+    if (id.isEmpty()) return;
+    auto* page = new TemplatePage({QString(), controller_->parameterChoices(id)});
+    auto saved = std::make_shared<bool>(false);
+    connect(page, &TemplatePage::confirmed, this, [this, page, id, saved] {
+        QString error;
+        if (!controller_->finishTemplate(id, page->name(), page->params(), &error)) {
+            page->showError(error);
+            return;
+        }
+        *saved = true;
+        closeProperties();
+    });
+    connect(page, &QObject::destroyed, this, [this, id, saved] {
+        if (!*saved) controller_->cancelTemplate(id);
+    });
+    presentProperties(page, "Save as template");
+}
+
 PropertyPage* Flows::propertyPage() const {
     return propsTab_ ? propsTab_->findChild<PropertyPage*>() : nullptr;
 }
@@ -64,7 +87,7 @@ CapsPage* Flows::capsPage() const {
     return capsTab_ ? capsTab_->findChild<CapsPage*>() : nullptr;
 }
 
-void Flows::presentProperties(PropertyPage* page, const QString& title) {
+void Flows::presentProperties(DrawerPage* page, const QString& title) {
     drawer_->dismiss();
     if (!propsTab_ || !tabs_) {
         page->deleteLater();

@@ -28,6 +28,7 @@
 #include "drawer.h"
 #include "elementitem.h"
 #include "templateframeitem.h"
+#include "templatepage.h"
 #include "factorydelegate.h"
 #include "flows.h"
 #include "capslabel.h"
@@ -72,6 +73,7 @@ T* pageOf(MainWindow& w, int ms = 8000) {
     (void)QTest::qWaitFor([&] {
         if constexpr (std::is_same_v<T, PropertyPage>) found = w.flows()->propertyPage();
         else if constexpr (std::is_same_v<T, CapsPage>) found = w.flows()->capsPage();
+        else if constexpr (std::is_same_v<T, TemplatePage>) found = w.propertiesTab()->findChild<TemplatePage*>();
         else found = w.drawer()->page<T>();
         return found != nullptr;
     }, ms);
@@ -266,6 +268,75 @@ private slots:
         scene_rebuild(w);
         QVERIFY(!w.scene()->frame(id));
         QCOMPARE(w.scene()->element(convert), w.scene()->element(sink));  // one box again
+    }
+
+    void saveAsTemplateDrawsTheBorderThenAsksForNameAndParameters() {
+        QTemporaryDir library;
+        qputenv("GPS_USER_DIR", library.path().toUtf8());
+        MainWindow w(c.get());
+        w.show();
+        QString src, convert, sink;
+        buildChain(w, &src, &convert, &sink);
+        QVERIFY(c->setCaps(convert, "src", "video/x-raw, width=(int)320", {}));
+        QVERIFY(settle(*c));
+        auto* save = w.findChild<QAction*>("actionSaveTemplateElement");
+        w.scene()->setSelectedElements({});
+        QVERIFY(!save->isEnabled());  // nothing to save
+        w.scene()->setSelectedElements({convert, sink});
+        QVERIFY(save->isEnabled());
+        save->trigger();
+        auto* page = pageOf<TemplatePage>(w);
+        QVERIFY(page);
+        QCOMPARE(c->visibleFrames().size(), 1);  // the border is drawn while the name is asked
+        const QString id = c->visibleFrames().front();
+
+        // Add parameter: an element first, then one of its properties or a field of its fixed caps.
+        auto* element = page->findChild<QComboBox*>("paramElement");
+        auto* property = page->findChild<QComboBox*>("paramProperty");
+        QCOMPARE(element->count(), 2);
+        element->setCurrentText(convert);
+        QVERIFY(property->findText("caps.width") >= 0);
+        property->setCurrentText("caps.width");
+        press(page, "addParameter");
+        element->setCurrentText(sink);
+        property->setCurrentText("sync");
+        press(page, "addParameter");
+        press(page, "addParameter");  // twice is once
+        QCOMPARE(page->findChild<QListWidget*>("templateParams")->count(), 2);
+
+        press(page, "saveButton");  // no name yet
+        QVERIFY(page->findChild<QLabel*>("templateError")->isVisible());
+        QTest::keyClicks(page->findChild<QLineEdit*>("templateName"), "Tail");
+        press(page, "saveButton");
+        QVERIFY(waitFor([&] { return !w.flows()->propertyPage() && !visibleChild<TemplatePage>(&w); }));
+        QCOMPARE(c->templates().size(), 1);
+        QCOMPARE(c->templates().front().name, QString("Tail"));
+        const auto params = c->templateParams(id);
+        QCOMPARE(params.size(), size_t(2));
+        QCOMPARE(params[0].name, toStd(convert) + ".caps.width");
+        QCOMPARE(params[1].name, toStd(sink) + ".sync");
+        QFile file(library.path() + "/data/templates/Tail.conf");
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const QString saved = QString::fromUtf8(file.readAll());
+        QVERIFY(saved.contains("[expose:") && saved.contains("caps.width") && !saved.contains("\nx="));
+    }
+
+    void cancellingSaveAsTemplateLeavesPlainElements() {
+        QTemporaryDir library;
+        qputenv("GPS_USER_DIR", library.path().toUtf8());
+        MainWindow w(c.get());
+        w.show();
+        QString src, convert, sink;
+        buildChain(w, &src, &convert, &sink);
+        w.scene()->setSelectedElements({convert, sink});
+        w.findChild<QAction*>("actionSaveTemplateElement")->trigger();
+        auto* page = pageOf<TemplatePage>(w);
+        QVERIFY(page);
+        QCOMPARE(c->plan().instances.size(), size_t(1));
+        press(page, "cancelButton");
+        QVERIFY(waitFor([&] { return c->plan().instances.empty(); }));
+        QVERIFY(c->templates().isEmpty());
+        QVERIFY(c->plan().find(toStd(convert))->group.empty());
     }
 
     void wheelNeverEditsValues() {

@@ -87,7 +87,16 @@ public:
 
     // ---- templates (saved multi-element presets & canvas groups)
     const QList<TemplateInfo>& templates() const { return library_.list(); }
-    bool saveTemplate(const QString& templateName, const QStringList& elementNames, const QString& description = QString());
+    // Making a template: the selection becomes an expanded instance at once, so its border is drawn and the canvas
+    // makes room; finish names it, gives it its parameters and writes it to the library; cancel takes it back.
+    QString beginTemplate(const QStringList& elements);  // the new instance, "" when refused
+    bool finishTemplate(const QString& id, const QString& name, const std::vector<gps::ExposedParam>& params, QString* error);
+    void cancelTemplate(const QString& id);
+    bool saveTemplate(const QString& templateName, const QStringList& elementNames);  // all three, no parameters, collapsed
+    std::vector<gps::ExposedParam> parameterChoices(const QString& id) const;  // what Add parameter offers
+    // A placed template's parameters: the collapsed box shows these as its properties.
+    std::vector<gps::ExposedParam> templateParams(const QString& id) const;
+    bool setTemplateParams(const QString& id, const std::map<std::string, std::string>& values);  // name -> value, "" = default
     bool removeTemplate(const QString& templateName);
     QStringList addTemplate(const QString& templateName, double x = std::numeric_limits<double>::quiet_NaN(), double y = std::numeric_limits<double>::quiet_NaN());
     QStringList addTemplateAfter(const QString& srcElement, const QString& srcPad, const QString& templateName);
@@ -185,7 +194,6 @@ private:
     // The one path of an edit: refused while editing is blocked or when change returns false (nothing happened);
     // otherwise one undo step, noted, and validated as the Edit says.
     bool transact(const std::function<bool(gps::Graph&, Edit&)>& change);
-    bool wrapAsTemplate(const QStringList& elements, const QString& templateName);  // one undo step
     bool anyTracked(const QStringList& elements) const;  // fed by a source in the plan as it is now
     bool infosReady(const gps::Graph& clip, std::function<void()> retry);
     static QPointF topLeft(const gps::Graph& clip);

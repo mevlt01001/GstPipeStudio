@@ -209,22 +209,6 @@ void Controller::setTemplateExpanded(const QString& groupId, bool expanded) {
     niceAlign();  // the box grows into its frame or shrinks back: everything around it makes room
 }
 
-bool Controller::wrapAsTemplate(const QStringList& elementNames, const QString& groupTitle) {
-    QStringList expanded = expandSelection(elementNames);
-    if (expanded.isEmpty()) return false;
-    QString cleanTitle = groupTitle.trimmed();
-    if (cleanTitle.isEmpty()) cleanTitle = "Template";
-    cleanTitle.replace('#', '_');
-    return transact([&](gps::Graph& g, Edit& edit) {
-        std::vector<std::string> names;
-        for (const QString& n : expanded) names.push_back(toStd(n));
-        expandedTemplates_.remove(fromStd(gps::templates::wrap(g, names, toStd(cleanTitle), {})));
-        edit.action = "Grouped elements as " + cleanTitle;
-        edit.presentation = true;
-        return true;
-    });
-}
-
 bool Controller::detachTemplate(const QString& groupId) {
     QStringList members = templateMembers(groupId);
     if (groupId.isEmpty() || members.isEmpty()) return false;
@@ -237,23 +221,115 @@ bool Controller::detachTemplate(const QString& groupId) {
     });
 }
 
-bool Controller::saveTemplate(const QString& templateName, const QStringList& elementNames, const QString& description) {
-    Q_UNUSED(description);
-    QString clean = templateName.trimmed();
+QString Controller::beginTemplate(const QStringList& elementNames) {
+    const QStringList members = expandSelection(elementNames);
+    if (members.isEmpty()) return QString();
+    QString id;
+    const bool made = transact([&](gps::Graph& g, Edit& edit) {
+        std::vector<std::string> names;
+        for (const QString& n : members) names.push_back(toStd(n));
+        id = fromStd(gps::templates::wrap(g, names, "New template", {}));
+        edit.action = QString("Made a template of %1 element(s)").arg(members.size());
+        edit.presentation = true;
+        return true;
+    });
+    if (!made) return QString();
+    setTemplateExpanded(id, true);  // its border is drawn, and the canvas makes room
+    return id;
+}
+
+bool Controller::finishTemplate(const QString& id, const QString& name, const std::vector<gps::ExposedParam>& params, QString* error) {
+    QString clean = name.trimmed();
     clean.replace('#', '_');
-    QStringList expanded = expandSelection(elementNames);
-    if (clean.isEmpty() || expanded.isEmpty() || editingBlocked()) return false;
-    // The selection on the canvas becomes a collapsed instance of the new template, and the library gets its content.
-    if (!wrapAsTemplate(expanded, clean)) return false;
-    const QString id = templateBox(expanded.first());
-    QString error;
-    if (!library_.save(clean, gps::templates::extract(plan(), toStd(id)), &error)) {
-        emit notice("Unable to save template: " + error);
+    auto refuse = [&](const QString& why) {
+        if (error) *error = why;
         return false;
-    }
+    };
+    if (clean.isEmpty()) return refuse("Give the template a name.");
+    if (library_.plan(clean)) return refuse("A template named " + clean + " already exists. Choose another name.");
+    if (!plan().instance(toStd(id))) return refuse("The template is no longer on the canvas.");
+    transact([&](gps::Graph& g, Edit& edit) {
+        gps::TemplateInstance* t = g.instance(toStd(id));
+        t->templateName = toStd(clean);
+        t->params.clear();
+        for (const gps::ExposedParam& p : params) {
+            if (gps::templates::inside(g, p.element, t->id)) t->params.push_back(p);
+        }
+        gps::templates::sync(g, t->id, 1);
+        edit.action = "Saved template " + clean;
+        edit.presentation = true;
+        return true;
+    });
+    QString failure;
+    if (!library_.save(clean, gps::templates::extract(plan(), toStd(id)), &failure)) return refuse("Unable to save the template: " + failure);
     library_.load(catalog_);
     emit changed();
     return true;
+}
+
+void Controller::cancelTemplate(const QString& id) { detachTemplate(id); }
+
+bool Controller::saveTemplate(const QString& templateName, const QStringList& elementNames) {
+    const QString id = beginTemplate(elementNames);
+    if (id.isEmpty()) return false;
+    QString error;
+    if (!finishTemplate(id, templateName, {}, &error)) {
+        emit notice(error);
+        cancelTemplate(id);
+        return false;
+    }
+    setTemplateExpanded(id, false);
+    return true;
+}
+
+std::vector<gps::ExposedParam> Controller::parameterChoices(const QString& id) const {
+    std::vector<gps::ExposedParam> out;
+    auto offer = [&](const std::string& element, const std::string& property) {
+        gps::ExposedParam p{"", element, property};
+        p.name = gps::templates::paramName(p);
+        out.push_back(p);
+    };
+    for (const QString& member : templateMembers(id)) {
+        const gps::Element* e = plan().find(toStd(member));
+        if (const ElementInfo* inf = catalog_.info(fromStd(e->factory))) {
+            for (const PropertyInfo& p : inf->properties) {
+                if (p.writable && !p.deprecated) offer(e->name, p.name);
+            }
+        }
+        // Fixed caps are parameters too, field by field: the element's own caps property, and the caps on its src links.
+        auto own = e->props.find("caps");
+        if (own != e->props.end()) {
+            for (const gps::CapsField& f : gps::CapsChoice::fromText(own->second).fields) offer(e->name, "caps." + f.name);
+        }
+        const std::vector<int> out = plan().linksFromElement(e->name);
+        for (int i : out) {
+            const gps::Connection& l = plan().links[static_cast<size_t>(i)];
+            const std::string prefix = out.size() == 1 && own == e->props.end() ? "caps." : l.srcPad + ".caps.";
+            for (const gps::CapsField& f : gps::CapsChoice::fromText(l.caps).fields) offer(e->name, prefix + f.name);
+        }
+    }
+    return out;
+}
+
+std::vector<gps::ExposedParam> Controller::templateParams(const QString& id) const {
+    const gps::TemplateInstance* t = plan().instance(toStd(id));
+    return t ? t->params : std::vector<gps::ExposedParam>();
+}
+
+bool Controller::setTemplateParams(const QString& id, const std::map<std::string, std::string>& values) {
+    const gps::TemplateInstance* t = plan().instance(toStd(id));
+    if (!t) return false;
+    const QString title = fromStd(t->templateName);
+    return transact([&](gps::Graph& g, Edit& edit) {
+        for (const gps::ExposedParam& p : g.instance(toStd(id))->params) {
+            auto value = values.find(p.name);
+            if (value != values.end()) gps::templates::setParam(g, p, value->second);
+        }
+        edit.action = "Set the parameters of template " + title;
+        edit.touched = templateMembers(id).value(0);
+        edit.validate = anyTracked(templateMembers(id));
+        return true;
+    });
 }
 
 bool Controller::removeTemplate(const QString& templateName) {
@@ -420,7 +496,8 @@ ElementView Controller::templateView(const QString& groupId) const {
     QStringList members = templateMembers(groupId);
     if (members.isEmpty()) return v;
 
-    QString title = groupId.section('#', 0, 0);
+    const gps::TemplateInstance* placed = plan().instance(toStd(groupId));
+    QString title = placed ? fromStd(placed->templateName) : groupId.section('#', 0, 0);
     v.name = members.first();
     v.displayTitle = title.isEmpty() ? groupId : title;
     v.groupId = groupId;

@@ -10,6 +10,7 @@
 
 class CapsPage;
 class Drawer;
+class DrawerPage;
 class PropertyPage;
 class QDialog;
 class QTabWidget;
@@ -31,7 +32,7 @@ public:
     void closeProperties();
     void closeCaps();
 
-    // Add source / any element (opens PickerPage in the right drawer)
+    // Any element: a source, a filter or a sink (opens PickerPage in the right drawer)
     void chooseElement();
     // Left click on a free src pad (opens PickerPage in the right drawer)
     void fromFreePad(const QString& element, const QString& identity);
@@ -47,11 +48,14 @@ public:
     void editProperties(const QString& element);
     void deleteSource(const QString& element);
     void deleteElementOnly(const QString& element);
+    // Save as template: the selection becomes a template at once (its border is drawn); the Properties tab asks for its
+    // name and parameters. Cancel, or leaving the page unsaved, makes the elements plain again.
+    void saveAsTemplate(const QStringList& elements);
 
 private:
     enum class Mode { Add, Replace };
 
-    void presentProperties(PropertyPage* page, const QString& title);
+    void presentProperties(DrawerPage* page, const QString& title);  // the one way a page enters the Properties tab
     void presentCaps(CapsPage* page, const QString& title, const QString& subtitle);
     void confirmRemoval(const gps::Removal& removal, const QString& verb, std::function<void()> accepted);
     void newElementProperties(const QString& factory);

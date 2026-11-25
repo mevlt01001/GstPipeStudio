@@ -83,6 +83,7 @@ MainWindow::MainWindow(Controller* controller, QWidget* parent) : QMainWindow(pa
     connect(scene_, &CanvasScene::linkMenuRequested, flows_, &Flows::showLinkMenu, Qt::QueuedConnection);
     connect(scene_, &CanvasScene::elementMenuRequested, this, &MainWindow::onElementMenuRequested, Qt::QueuedConnection);
     connect(scene_, &CanvasScene::templateMenuRequested, this, &MainWindow::showTemplateMenu, Qt::QueuedConnection);
+    connect(scene_, &QGraphicsScene::selectionChanged, this, &MainWindow::refreshState);
     connect(scene_, &CanvasScene::canvasContextMenuRequested, this, [this](const QPoint& screenPos, const QPointF&) { showCanvasMenu(screenPos); }, Qt::QueuedConnection);
     connect(scene_, &CanvasScene::elementActivated, flows_, &Flows::editProperties, Qt::QueuedConnection);
     connect(scene_, &CanvasScene::elementsMoved, controller_, &Controller::setPositions, Qt::QueuedConnection);
@@ -308,6 +309,7 @@ void MainWindow::refreshState() {
     act("actionOpen")->setEnabled(!busy && !blocked);
     act("actionImportLaunch")->setEnabled(!busy && !blocked);
     act("actionAddElement")->setEnabled(!editBlocked && !blocked);
+    act("actionSaveTemplateElement")->setEnabled(!editBlocked && !scene_->selectedElementNames().isEmpty());
     act("actionUndo")->setEnabled(controller_->canUndo());
     act("actionRedo")->setEnabled(controller_->canRedo());
     act("actionSave")->setEnabled(controller_->canSave());
@@ -429,6 +431,9 @@ void MainWindow::resetCapsTab() {
 void MainWindow::openCapsTab(const QString& srcElement, const QString& srcIdentity) {
     flows_->editCaps(srcElement, srcIdentity);
 }
+
+// The scene is a child: while Qt deletes it, it reports its items leaving the selection. Nobody listens by then.
+MainWindow::~MainWindow() { disconnect(scene_, nullptr, this, nullptr); }
 
 void MainWindow::arrangeAll() {
     if (!controller_->niceAlign()) return;
@@ -557,28 +562,12 @@ void MainWindow::showSelectionMenu(const QString& clickedElement, const QPoint& 
 }
 
 void MainWindow::saveSelectedAsTemplate() {
-    if (controller_->editingBlocked()) return;
-    QStringList sel = scene_->selectedElementNames();
-    if (sel.isEmpty()) {
-        statusBar()->showMessage("Select one or more elements on the canvas first to save as a template.", 6000);
+    const QStringList selection = scene_->selectedElementNames();
+    if (selection.isEmpty()) {
+        statusBar()->showMessage("Select elements or a template on the canvas first.", 6000);
         return;
     }
-    QStringList factories;
-    for (const QString& n : sel) {
-        if (const gps::Element* e = controller_->plan().find(n.toStdString())) {
-            factories << QString::fromStdString(e->factory);
-        }
-    }
-    QString suggested = factories.join("_");
-    if (suggested.size() > 28) suggested = suggested.left(28);
-    bool ok = false;
-    QString name = QInputDialog::getText(this, "Save as Template",
-                                         QString("Save %1 selected element(s) as a reusable Template:\n(%2)").arg(sel.size()).arg(factories.join(" → ")),
-                                         QLineEdit::Normal, suggested, &ok);
-    if (!ok || name.trimmed().isEmpty()) return;
-    if (controller_->saveTemplate(name.trimmed(), sel)) {
-        statusBar()->showMessage(QString("Saved template '%1' (%2 elements). Available in Add Element.").arg(name.trimmed()).arg(sel.size()), 8000);
-    }
+    flows_->saveAsTemplate(selection);
 }
 
 void MainWindow::connectSelected() {

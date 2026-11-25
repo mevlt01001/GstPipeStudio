@@ -36,6 +36,7 @@ add_library(gps_gui STATIC
     ui/pages/include/pickerpage.h ui/pages/src/pickerpage.cpp
     ui/pages/include/propertypage.h ui/pages/src/propertypage.cpp
     ui/pages/include/setuppage.h ui/pages/src/setuppage.cpp
+    ui/pages/include/templatepage.h ui/pages/src/templatepage.cpp
     ui/widgets/include/capsfieldeditor.h ui/widgets/src/capsfieldeditor.cpp
     ui/widgets/include/confirmdialog.h ui/widgets/src/confirmdialog.cpp
     ui/widgets/include/factorydelegate.h ui/widgets/src/factorydelegate.cpp

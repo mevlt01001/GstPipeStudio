@@ -25,6 +25,7 @@ class MainWindow : public QMainWindow {
     Q_OBJECT
 public:
     explicit MainWindow(Controller* controller, QWidget* parent = nullptr);
+    ~MainWindow() override;
 
     CanvasScene* scene() const { return scene_; }
     CanvasView* view() const { return view_; }

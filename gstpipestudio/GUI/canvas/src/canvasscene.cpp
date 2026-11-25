@@ -7,6 +7,7 @@
 #include <QGraphicsSceneMouseEvent>
 #include <QPainterPath>
 #include <QPen>
+#include <QSignalBlocker>
 #include <QTimer>
 #include <QVariantAnimation>
 #include <algorithm>
@@ -132,11 +133,15 @@ void CanvasScene::rebuild() {
     }
     hasExplicitSelection_ = false;
 
-    clear();
-    elements_.clear();
-    pads_.clear();
-    links_.clear();
-    frames_.clear();
+    {
+        // Deleting the items takes them out of the selection; nobody should hear about it half way through.
+        const QSignalBlocker quiet(this);
+        clear();
+        elements_.clear();
+        pads_.clear();
+        links_.clear();
+        frames_.clear();
+    }
 
     QSet<QString> builtCollapsedGroups;
     for (const gps::Element& e : pipeline().graph().elements) {
