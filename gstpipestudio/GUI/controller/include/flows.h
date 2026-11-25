@@ -53,6 +53,8 @@ public:
     // Save as template: the selection becomes a template at once (its border is drawn); the Properties tab asks for its
     // name and parameters. Cancel, or leaving the page unsaved, makes the elements plain again.
     void saveAsTemplate(const QStringList& elements);
+    // A placed template's Properties tab: its parameters only, as if it were one element.
+    void editTemplateParams(const QString& instanceId);
 
 private:
     enum class Mode { Add, Replace };

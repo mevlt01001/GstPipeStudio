@@ -262,13 +262,16 @@ void ElementItem::mouseReleaseEvent(QGraphicsSceneMouseEvent* event) {
         if (auto* canvas = qobject_cast<CanvasScene*>(scene())) canvas->elementDragged(view_.name, pos());
     } else if (event->button() == Qt::LeftButton && event->modifiers() == Qt::NoModifier) {
         if (auto* canvas = qobject_cast<CanvasScene*>(scene())) {
-            if (canvas->selectedElementNames().size() <= 1 && !view_.isTemplate) {
-                canvas->elementDoubleClicked(view_.name);
-            }
+            // A click opens the Properties tab: a template's parameters, an element's properties.
+            if (view_.isTemplate) canvas->frameActivated(view_.groupId);
+            else if (canvas->selectedElementNames().size() <= 1) canvas->elementDoubleClicked(view_.name);
         }
     }
 }
 
 void ElementItem::mouseDoubleClickEvent(QGraphicsSceneMouseEvent*) {
-    if (auto* canvas = qobject_cast<CanvasScene*>(scene())) canvas->elementDoubleClicked(view_.name);
+    auto* canvas = qobject_cast<CanvasScene*>(scene());
+    if (!canvas) return;
+    if (view_.isTemplate) canvas->frameActivated(view_.groupId);
+    else canvas->elementDoubleClicked(view_.name);
 }

@@ -83,6 +83,7 @@ MainWindow::MainWindow(Controller* controller, QWidget* parent) : QMainWindow(pa
     connect(scene_, &CanvasScene::linkMenuRequested, flows_, &Flows::showLinkMenu, Qt::QueuedConnection);
     connect(scene_, &CanvasScene::elementMenuRequested, this, &MainWindow::onElementMenuRequested, Qt::QueuedConnection);
     connect(scene_, &CanvasScene::templateMenuRequested, this, &MainWindow::showTemplateMenu, Qt::QueuedConnection);
+    connect(scene_, &CanvasScene::templateActivated, flows_, &Flows::editTemplateParams);
     connect(scene_, &QGraphicsScene::selectionChanged, this, &MainWindow::refreshState);
     connect(scene_, &CanvasScene::canvasContextMenuRequested, this, [this](const QPoint& screenPos, const QPointF&) { showCanvasMenu(screenPos); }, Qt::QueuedConnection);
     connect(scene_, &CanvasScene::elementActivated, flows_, &Flows::editProperties, Qt::QueuedConnection);

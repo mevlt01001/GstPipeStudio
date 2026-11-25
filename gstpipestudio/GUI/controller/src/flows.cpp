@@ -18,6 +18,8 @@
 #include "pickerpage.h"
 #include "propertypage.h"
 #include "templatepage.h"
+#include "templateparamspage.h"
+#include "templates.h"
 #include "theme.h"
 
 namespace {
@@ -77,6 +79,27 @@ void Flows::saveAsTemplate(const QStringList& elements) {
         if (!*saved) controller_->cancelTemplate(id);
     });
     presentProperties(page, "Save as template");
+}
+
+void Flows::editTemplateParams(const QString& instanceId) {
+    const gps::TemplateInstance* t = controller_->plan().instance(toStd(instanceId));
+    if (!t || controller_->editingBlocked()) return;
+    std::vector<TemplateParam> rows;
+    for (const gps::ExposedParam& p : t->params) {
+        TemplateParam row{p, std::nullopt, fromStd(gps::templates::paramValue(controller_->plan(), p))};
+        const gps::Element* e = controller_->plan().find(p.element);
+        if (const ElementInfo* info = e ? controller_->catalog().info(fromStd(e->factory)) : nullptr) {
+            for (const PropertyInfo& property : info->properties) {
+                if (property.name == p.property) row.property = property;
+            }
+        }
+        rows.push_back(row);
+    }
+    auto* page = new TemplateParamsPage(rows);
+    connect(page, &TemplateParamsPage::confirmed, this, [this, page, instanceId] {
+        if (controller_->setTemplateParams(instanceId, page->values())) closeProperties();
+    });
+    presentProperties(page, "Template · " + fromStd(t->templateName));
 }
 
 PropertyPage* Flows::propertyPage() const {

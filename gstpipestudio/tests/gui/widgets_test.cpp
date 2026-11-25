@@ -29,6 +29,8 @@
 #include "elementitem.h"
 #include "templateframeitem.h"
 #include "templatepage.h"
+#include "templateparamspage.h"
+#include "templates.h"
 #include "templatepeek.h"
 #include "factorydelegate.h"
 #include "flows.h"
@@ -386,6 +388,43 @@ private slots:
         const QString placed = fromStd(c->plan().instances.back().id);
         QVERIFY(!c->isTemplateExpanded(placed));
         QCOMPARE(c->templateMembers(placed).size(), 2);
+    }
+
+    void aCollapsedTemplateShowsOnlyItsParametersAsProperties() {
+        QTemporaryDir library;
+        qputenv("GPS_USER_DIR", library.path().toUtf8());
+        MainWindow w(c.get());
+        w.show();
+        QString src, convert, sink;
+        buildChain(w, &src, &convert, &sink);
+        QVERIFY(c->setCaps(convert, "src", "video/x-raw, width=(int)320", {}));
+        QVERIFY(settle(*c));
+        const QString id = c->beginTemplate({convert, sink});
+        std::vector<gps::ExposedParam> chosen;
+        for (const gps::ExposedParam& p : c->parameterChoices(id)) {
+            if (p.name == toStd(convert) + ".caps.width" || p.name == toStd(sink) + ".sync") chosen.push_back(p);
+        }
+        QCOMPARE(chosen.size(), size_t(2));
+        QString error;
+        QVERIFY2(c->finishTemplate(id, "Tail", chosen, &error), qPrintable(error));
+        c->setTemplateExpanded(id, false);
+        QVERIFY(settle(*c));
+
+        w.scene()->frameActivated(id);  // what a click on the collapsed box does
+        auto* page = w.propertiesTab()->findChild<TemplateParamsPage*>();
+        QVERIFY(page);
+        QCOMPARE(w.flows()->propertiesTitle(), QString("Template · Tail"));
+        auto* width = page->findChild<QLineEdit*>("param_" + convert + ".caps.width");
+        QVERIFY(width);
+        QCOMPARE(width->text(), QString("320"));
+        QVERIFY(page->findChild<QWidget*>("param_" + sink + ".sync"));
+        QVERIFY(!page->findChild<QWidget*>("param_" + sink + ".async"));  // not a parameter: stays inside
+        width->clear();
+        QTest::keyClicks(width, "640");
+        press(page, "saveButton");
+        QVERIFY(waitFor([&] { return !c->busy() && c->plan().links.back().caps.find("640") != std::string::npos; }, 8000));
+        QVERIFY(text(c->plan().links[size_t(c->plan().linkFrom(toStd(convert), "src"))].caps).contains("width=(int)640"));
+        QVERIFY(!gps::templates::modified(c->plan(), toStd(id)));  // parameter values are the copy's own
     }
 
     void wheelNeverEditsValues() {
