@@ -49,7 +49,8 @@ ElementItem::ElementItem(const ElementView& view) : view_(view) {
     connect(&peek_, &QTimer::timeout, this, [this] {
         if (auto* canvas = qobject_cast<CanvasScene*>(scene())) canvas->peekTemplate(view_.groupId);
     });
-    setToolTip(view.note.isEmpty() ? view.factory : view.factory + "\n\n" + view.note);
+    // A collapsed template has its peek instead.
+    if (!view.isTemplate) setToolTip(view.note.isEmpty() ? view.factory : view.factory + "\n\n" + view.note);
 
     for (int i = 0; i < view.sinks.size(); ++i) {
         auto* pad = new PadItem(view.sinks[i], this);

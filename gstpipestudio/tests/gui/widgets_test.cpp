@@ -21,6 +21,7 @@
 #include <QTemporaryDir>
 #include <QWheelEvent>
 #include <QTimer>
+#include <QToolTip>
 #include <QMessageBox>
 
 #include "canvasscene.h"
@@ -286,9 +287,12 @@ private slots:
         QVERIFY(settle(*c));
         auto* save = w.findChild<QAction*>("actionSaveTemplateElement");
         w.scene()->setSelectedElements({});
+        auto* remove = w.findChild<QAction*>("actionDelete");
         QVERIFY(!save->isEnabled());  // nothing to save
+        QVERIFY(!remove->isEnabled());
         w.scene()->setSelectedElements({convert, sink});
         QVERIFY(save->isEnabled());
+        QVERIFY(remove->isEnabled());
         save->trigger();
         auto* page = pageOf<TemplatePage>(w);
         QVERIFY(page);
@@ -377,6 +381,12 @@ private slots:
         QApplication::sendEvent(list->viewport(), &move);
         QVERIFY(waitFor([&] { return TemplatePeek::current() != nullptr; }, 2000));
         QVERIFY(TemplatePeek::current()->grab().save(shotDir() + "/template_peek.png"));
+        QLabel tipped("tipped");  // no tooltip covers an open peek
+        tipped.setToolTip("a tooltip");
+        tipped.show();
+        QHelpEvent tip(QEvent::ToolTip, QPoint(2, 2), tipped.mapToGlobal(QPoint(2, 2)));
+        QApplication::sendEvent(&tipped, &tip);
+        QVERIFY(!QToolTip::isVisible());
         QEvent leave(QEvent::Leave);
         QApplication::sendEvent(list->viewport(), &leave);
         QVERIFY(waitFor([&] { return TemplatePeek::current() == nullptr; }, 2000));

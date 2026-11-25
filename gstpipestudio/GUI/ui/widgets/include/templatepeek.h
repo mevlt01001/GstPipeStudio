@@ -1,6 +1,6 @@
 // templatepeek.h – a quick look inside a template before it is inserted or expanded: its elements as small boxes in
 // columns (by the links), its links, and its parameters. Shown after a 500 ms hover over a template in the Add template
-// page and over a collapsed template on the canvas; any other mouse move hides it.
+// page and over a collapsed template on the canvas; any other mouse move hides it. While it is open no tooltip shows.
 #pragma once
 
 #include <QFrame>
@@ -25,6 +25,7 @@ public:
 
 protected:
     void paintEvent(QPaintEvent* event) override;
+    bool eventFilter(QObject* watched, QEvent* event) override;  // no tooltip covers an open peek
 
 private:
     gps::Graph content_;

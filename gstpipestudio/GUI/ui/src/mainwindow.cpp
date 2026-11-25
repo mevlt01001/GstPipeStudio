@@ -174,6 +174,7 @@ void MainWindow::buildActions() {
     auto* dupAct = make("actionDuplicate", "&Duplicate", {QKeySequence(Qt::CTRL | Qt::Key_D)}, [this] { duplicateSelected(); });
     auto* selAllAct = make("actionSelectAll", "Select &All", {QKeySequence::SelectAll}, [this] { selectAll(); });
     auto* delAct = make("actionDelete", "De&lete", {QKeySequence::Delete, QKeySequence(Qt::Key_Backspace)}, [this] { deleteSelected(); });
+    delAct->setIconText("Delete");
     auto* copyAct = make("actionCopy", "&Copy", {QKeySequence::Copy}, [this] { copySelected(); });
     auto* cutAct = make("actionCut", "Cu&t", {QKeySequence::Cut}, [this] { cutSelected(); });
     auto* pasteAct = make("actionPaste", "&Paste", {QKeySequence::Paste}, [this] { pasteClipboard(); });
@@ -252,6 +253,8 @@ void MainWindow::buildActions() {
     bar->addAction(addElement);
     bar->addAction(addTemplate);
     bar->addAction(saveCustomAct);
+    bar->addSeparator();
+    bar->addAction(delAct);
     bar->widgetForAction(run)->setObjectName("primaryAction");
 }
 
@@ -325,6 +328,7 @@ void MainWindow::refreshState() {
     act("actionAddElement")->setEnabled(!editBlocked && !blocked);
     act("actionAddTemplate")->setEnabled(!editBlocked && !blocked);
     act("actionSaveTemplateElement")->setEnabled(!editBlocked && !scene_->selectedElementNames().isEmpty());
+    act("actionDelete")->setEnabled(!editBlocked && !scene_->selectedItems().isEmpty());
     act("actionUndo")->setEnabled(controller_->canUndo());
     act("actionRedo")->setEnabled(controller_->canRedo());
     act("actionSave")->setEnabled(controller_->canSave());

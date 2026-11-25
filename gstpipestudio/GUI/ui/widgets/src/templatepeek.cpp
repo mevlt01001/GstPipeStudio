@@ -1,10 +1,12 @@
 // templatepeek.cpp – see templatepeek.h.
 #include "templatepeek.h"
 
+#include <QApplication>
 #include <QGuiApplication>
 #include <QPainter>
 #include <QPainterPath>
 #include <QScreen>
+#include <QToolTip>
 
 #include "contract.h"
 #include "templates.h"
@@ -20,6 +22,8 @@ TemplatePeek::TemplatePeek(const gps::Graph& content, QWidget* parent) : QFrame(
     setObjectName("templatePeek");
     setAttribute(Qt::WA_TransparentForMouseEvents);
     setAttribute(Qt::WA_ShowWithoutActivating);
+    QToolTip::hideText();
+    qApp->installEventFilter(this);
     // Columns by link depth: a quick, fixed picture (the canvas uses nice alignment).
     std::map<std::string, int> level = content.levels();
     QHash<int, int> rows;
@@ -57,6 +61,8 @@ void TemplatePeek::hide() {
 }
 
 TemplatePeek* TemplatePeek::current() { return shown_; }
+
+bool TemplatePeek::eventFilter(QObject*, QEvent* event) { return event->type() == QEvent::ToolTip; }
 
 void TemplatePeek::paintEvent(QPaintEvent*) {
     QPainter p(this);
