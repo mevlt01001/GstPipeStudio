@@ -1,6 +1,7 @@
 # The GUI links gps_pipeline and Qt only. It never sees GStreamer: the helpers (gps-inspect, gps-update, gps-run) do.
 find_package(Qt6 REQUIRED COMPONENTS Widgets)
 set(CMAKE_AUTOMOC ON)
+add_subdirectory(${GPS_ROOT}/third_party/quickjs ${CMAKE_BINARY_DIR}/third_party/quickjs)
 
 add_library(gps_gui STATIC
     backend/include/apppaths.h backend/src/apppaths.cpp
@@ -18,6 +19,9 @@ add_library(gps_gui STATIC
     controller/include/controller.h controller/src/controller.cpp
     controller/include/flows.h controller/src/flows.cpp
     controller/include/layout.h controller/src/layout.cpp
+    layout/include/layoutgraph.h
+    layout/include/elkengine.h layout/src/elkengine.cpp
+    layout/include/layoutrunner.h layout/src/layoutrunner.cpp
     canvas/include/canvasmetrics.h
     canvas/include/canvasscene.h canvas/src/canvasscene.cpp
     canvas/include/canvasview.h canvas/src/canvasview.cpp
@@ -46,11 +50,12 @@ target_include_directories(gps_gui PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/backend/include
     ${CMAKE_CURRENT_SOURCE_DIR}/model/include
     ${CMAKE_CURRENT_SOURCE_DIR}/controller/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/layout/include
     ${CMAKE_CURRENT_SOURCE_DIR}/canvas/include
     ${CMAKE_CURRENT_SOURCE_DIR}/ui/include
     ${CMAKE_CURRENT_SOURCE_DIR}/ui/pages/include
     ${CMAKE_CURRENT_SOURCE_DIR}/ui/widgets/include)
-target_link_libraries(gps_gui PUBLIC Qt6::Widgets gps_pipeline)
+target_link_libraries(gps_gui PUBLIC Qt6::Widgets gps_pipeline PRIVATE gps_quickjs)
 
 add_executable(gstpipestudio ${GPS_ROOT}/main.cpp)
 target_link_libraries(gstpipestudio PRIVATE gps_gui)
@@ -94,6 +99,8 @@ qt_add_resources(gps_gui branding PREFIX "/brand" BASE "${GPS_ROOT}/assets/logo"
 target_sources(gps_gui PRIVATE ui/widgets/src/windowchrome.cpp ui/widgets/src/aboutdialog.cpp)
 
 target_sources(gps_gui PRIVATE canvas/src/connectionpreview.cpp)
+# elkjs 0.10.0 (EPL-2.0), unchanged: the ELK layout the layout::ElkEngine runs in QuickJS.
+qt_add_resources(gps_gui elk PREFIX "/layout" BASE "${GPS_ROOT}/third_party/elkjs" FILES "${GPS_ROOT}/third_party/elkjs/elk.bundled.js")
 
 qt_add_resources(gps_gui appicon PREFIX "/brand" BASE "${GPS_ROOT}/packaging/icons/hicolor/64x64/apps"
     FILES "${GPS_ROOT}/packaging/icons/hicolor/64x64/apps/gstpipestudio.png")
