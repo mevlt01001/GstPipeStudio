@@ -42,6 +42,8 @@ Processing time measures first sink arrival to first src departure, including wa
 
 ## Desktop experience
 
+- Menus in the usual order: File (New, Open, Open recent, Save, Save as…), Edit (Undo, Redo, Cut, Copy, Paste, Duplicate, Delete, Select all, Find), View, Pipeline, Help.
+- Log, Validation, Live metrics, Properties and Caps are dock panels: move, tab, split, float or close them; View > Panels brings one back, Reset layout restores the row under the canvas, and the window remembers the layout.
 - Unified menu and window controls, animated About dialog, and visible version/build identity.
 - Development and release builds use separate settings; support reports include the real build version and commit.
 - Larger pipeline file picker, slightly lighter canvas, animated pad feedback and retracting connection previews.

@@ -33,6 +33,7 @@ add_library(gps_gui STATIC
     canvas/include/templateframeitem.h canvas/src/templateframeitem.cpp
     ui/include/drawer.h ui/src/drawer.cpp
     ui/include/mainwindow.h ui/src/mainwindow.cpp
+    ui/include/panels.h ui/src/panels.cpp
     ui/include/theme.h ui/src/theme.cpp
     ui/pages/include/capspage.h ui/pages/src/capspage.cpp
     ui/pages/include/pickerpage.h ui/pages/src/pickerpage.cpp

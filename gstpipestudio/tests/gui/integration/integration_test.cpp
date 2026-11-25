@@ -36,6 +36,9 @@
 #include "linkitem.h"
 #include "logpanel.h"
 #include "mainwindow.h"
+#include "panels.h"
+
+#include <QDockWidget>
 #include "paditem.h"
 #include "pickerpage.h"
 #include "propertypage.h"
@@ -551,7 +554,7 @@ private slots:
         auto* caps = capsPage();
         QVERIFY(caps);
         QCOMPARE(caps->findChild<QComboBox*>("mediaCombo")->itemText(1), QString("image/jpeg"));
-        QVERIFY(shotOf(w->bottomTabs(), "03_caps_fixed_fields"));
+        QVERIFY(shotOf(w->panels()->dock(w->capsTab()), "03_caps_fixed_fields"));
         timed("Apply caps (Auto)", [&] { press(caps, "saveButton"); });
         idle();
         QString dec = text(c->plan().elements.back().name);
@@ -678,7 +681,7 @@ private slots:
         // The real allowedStructures of videotestsrc.src drive the dialog
         QStringList seenFormats;
         QString mix = addBehind(a, "src", "compositor", {}, [&](CapsPage* d) {
-            QVERIFY(shotOf(w->bottomTabs(), "07_caps_page_real_fields"));
+            QVERIFY(shotOf(w->panels()->dock(w->capsTab()), "07_caps_page_real_fields"));
             QVERIFY(w->flows()->capsTitle().startsWith("Caps ·"));
             auto* media = d->findChild<QComboBox*>("mediaCombo");
             QVERIFY2(media->findText("video/x-raw") >= 0, qPrintable(media->itemText(media->count() - 1)));
@@ -730,7 +733,7 @@ private slots:
         pinField(caps, "width", "320");
         pinField(caps, "height", "240");
         caps->findChild<QWidget*>("padEditor_xpos")->findChild<QSpinBox*>()->setValue(160);
-        QVERIFY(shotOf(w->bottomTabs(), "09_caps_page_pad_settings"));
+        QVERIFY(shotOf(w->panels()->dock(w->capsTab()), "09_caps_page_pad_settings"));
         timed("Link to a Request pad: apply caps + xpos", [&] { press(caps, "saveButton"); });
         idle();
         QVERIFY2(c->result().ok(), (c->result().status + ": " + c->result().message).c_str());

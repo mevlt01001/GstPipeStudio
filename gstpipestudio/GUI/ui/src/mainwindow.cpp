@@ -40,6 +40,7 @@
 #include "propertypage.h"
 #include "setuppage.h"
 #include "templates.h"
+#include "panels.h"
 #include "theme.h"
 #include "versionhistory.h"
 #include "updatepanel.h"
@@ -78,8 +79,8 @@ MainWindow::MainWindow(Controller* controller, QWidget* parent) : QMainWindow(pa
     centre_->addWidget(setup_);
     setCentralWidget(centre_);
 
-    buildActions();
     buildPanels();
+    buildActions();
     auto* menus = menuBar();
     auto* chrome = new WindowChrome(this, menus);
     setMenuWidget(chrome);
@@ -185,11 +186,6 @@ void MainWindow::buildActions() {
         if (drawer_->isOpen()) drawer_->focusSearch();
         else if (flows_->propertyPage()) flows_->propertyPage()->focusFirst();
     });
-    auto* showLog = make("actionShowLog", "&Log", {}, [this] { tabs_->setCurrentWidget(log_); });
-    auto* showValidation = make("actionShowValidation", "&Validation", {}, [this] { tabs_->setCurrentWidget(updates_); });
-    auto* showTelemetry = make("actionShowTelemetry", "&Live metrics", {}, [this] { tabs_->setCurrentWidget(telemetry_); });
-    auto* showProps = make("actionShowProperties", "&Properties", {}, [this] { tabs_->setCurrentWidget(propsTab_); });
-    auto* showCaps = make("actionShowCaps", "&Caps", {}, [this] { tabs_->setCurrentWidget(capsTab_); });
     auto* fit = make("actionFit", "Zoom to &fit", {QKeySequence(Qt::CTRL | Qt::Key_0)}, [this] { view_->fitAll(); });
     auto* arrange = make("actionArrange", "Arrange &pipeline", {QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_L)}, [this] { controller_->niceAlign(); });
     auto* zoomIn = make("actionZoomIn", "Zoom &in", {QKeySequence::ZoomIn}, [this] { view_->zoomBy(1.25); });
@@ -202,22 +198,51 @@ void MainWindow::buildActions() {
         QMessageBox::information(this, "GStreamer information", env.version.isEmpty() ? "GStreamer was not checked or not found." : env.statusText());
     });
 
+    // The menus as desktop applications have them: File, Edit, View, then the application's own, then Help.
     QMenu* file = menuBar()->addMenu("&File");
-    file->addActions({newPlan, open, import, save, saveAs, history});
+    file->addActions({newPlan, open});
+    QMenu* recent = file->addMenu("Open &recent");
+    recent->setObjectName("menuRecent");
+    connect(recent, &QMenu::aboutToShow, this, [this, recent] {
+        recent->clear();
+        const QStringList files = QSettings().value("recentFiles").toStringList();
+        for (const QString& path : files) recent->addAction(QFileInfo(path).fileName(), this, [this, path] {
+            if (confirmDiscard()) openFile(path);
+        })->setToolTip(path);
+        if (files.isEmpty()) recent->addAction("No recent files")->setEnabled(false);
+    });
+    file->addSeparator();
+    file->addActions({save, saveAs});
+    file->addSeparator();
+    file->addActions({import, history});
     file->addSeparator();
     file->addAction(quit);
-    QMenu* pipeline = menuBar()->addMenu("&Pipeline");
-    pipeline->addActions({addElement, addTemplate, update, run});
-    pipeline->addSeparator();
-    pipeline->addActions({undoAct, redoAct});
-    pipeline->addSeparator();
-    pipeline->addActions({copyAct, cutAct, pasteAct, dupAct, selAllAct, delAct});
-    pipeline->addSeparator();
-    pipeline->addActions({connectSelAct, saveCustomAct});
+
+    QMenu* edit = menuBar()->addMenu("&Edit");
+    edit->addActions({undoAct, redoAct});
+    edit->addSeparator();
+    edit->addActions({cutAct, copyAct, pasteAct, dupAct, delAct});
+    edit->addSeparator();
+    edit->addActions({selAllAct, find});
+
     QMenu* viewMenu = menuBar()->addMenu("&View");
-    viewMenu->addActions({showLog, showValidation, showTelemetry, showProps, showCaps, find});
+    QMenu* panels = viewMenu->addMenu("&Panels");
+    panels->addActions(panels_->toggles());
+    panels->addSeparator();
+    panels->addAction("&Reset layout", this, [this] { panels_->reset(updates_); })->setObjectName("actionResetLayout");
     viewMenu->addSeparator();
-    viewMenu->addActions({arrange, fit, zoomIn, zoomOut});
+    viewMenu->addActions({zoomIn, zoomOut, fit});
+    viewMenu->addSeparator();
+    viewMenu->addAction(arrange);
+    auto* automatic = viewMenu->addAction("&Auto alignment");
+    automatic->setObjectName("actionAutoAlignment");
+    automatic->setCheckable(true);
+    automatic->setChecked(controller_->canvasLayout().automatic());
+    automatic->setToolTip("Align the whole canvas after every edit; a dragged box slides back into place");
+    connect(automatic, &QAction::toggled, this, [this](bool on) {
+        controller_->canvasLayout().setAutomatic(on);
+        if (on) controller_->niceAlign();
+    });
     // Link style: the next nice alignment routes links as curves or right-angle lines.
     QMenu* linkStyle = viewMenu->addMenu("&Link style");
     auto* styles = new QActionGroup(this);
@@ -233,21 +258,20 @@ void MainWindow::buildActions() {
             controller_->niceAlign();
         });
     }
-    auto* automatic = viewMenu->addAction("&Auto alignment");
-    automatic->setObjectName("actionAutoAlignment");
-    automatic->setCheckable(true);
-    automatic->setChecked(controller_->canvasLayout().automatic());
-    automatic->setToolTip("Align the whole canvas after every edit; a dragged box slides back into place");
-    connect(automatic, &QAction::toggled, this, [this](bool on) {
-        controller_->canvasLayout().setAutomatic(on);
-        if (on) controller_->niceAlign();
-    });
     auto* connectedMove = viewMenu->addAction("Move connected elements together");
     connectedMove->setObjectName("actionConnectedMove"); connectedMove->setCheckable(true);
     connectedMove->setToolTip("Drag an element to move its connected component; undo restores all positions");
     connect(connectedMove, &QAction::toggled, scene_, &CanvasScene::setConnectedMoveEnabled);
+
+    QMenu* pipeline = menuBar()->addMenu("&Pipeline");
+    pipeline->addActions({addElement, addTemplate, saveCustomAct, connectSelAct});
+    pipeline->addSeparator();
+    pipeline->addActions({update, run});
+
     QMenu* help = menuBar()->addMenu("&Help");
-    help->addActions({support, gstInfo, about});
+    help->addActions({gstInfo, support});
+    help->addSeparator();
+    help->addAction(about);
 
     QToolBar* bar = addToolBar("Tools");
     bar->setObjectName("toolbar");
@@ -278,29 +302,16 @@ void MainWindow::buildPanels() {
     capsTab_->setObjectName("capsTab");
     new QVBoxLayout(capsTab_);
 
-    tabs_ = new QTabWidget(this);
-    tabs_->setObjectName("bottomTabs");
-    tabs_->addTab(log_, "Log");
-    tabs_->addTab(updates_, "Validation");
-    tabs_->addTab(telemetry_, "Live metrics");
-    tabs_->addTab(propsTab_, "Properties");
-    tabs_->addTab(capsTab_, "Caps");
-    tabs_->setCurrentWidget(updates_);
-    flows_->setBottomPanels(tabs_, propsTab_, capsTab_, updates_);
-    auto* bottom = new QDockWidget("Panels", this);
-    bottom->setObjectName("bottomDock");
-    bottom->setFeatures(QDockWidget::NoDockWidgetFeatures);
-    bottom->setTitleBarWidget(new QWidget(bottom));  // the tabs are the title
-    bottom->setWidget(tabs_);
-    bottom->setMinimumHeight(180);
-    addDockWidget(Qt::BottomDockWidgetArea, bottom);
-    resizeDocks({bottom}, {240}, Qt::Vertical);
     // Forms and the live overview need room for their controls and table.
-    connect(tabs_, &QTabWidget::currentChanged, this, [this, bottom] {
-        QWidget* cur = tabs_->currentWidget();
-        if ((cur == propsTab_ || cur == capsTab_ || cur == telemetry_) && bottom->height() < 400)
-            resizeDocks({bottom}, {400}, Qt::Vertical);
-    });
+    panels_ = new Panels(this);
+    panels_->add(log_, "Log");
+    panels_->add(updates_, "Validation");
+    panels_->add(telemetry_, "Live metrics", 400);
+    panels_->add(propsTab_, "Properties", 400);
+    panels_->add(capsTab_, "Caps", 400);
+    resizeDocks({panels_->dock(log_)}, {240}, Qt::Vertical);
+    panels_->show(updates_);
+    flows_->setBottomPanels(panels_, propsTab_, capsTab_, updates_);
 
     state_ = new QLabel(this);
     state_->setObjectName("stateLabel");
@@ -415,16 +426,27 @@ void MainWindow::onRebuilt() {
     }
 }
 
+// File > Open recent: the last ten files opened or saved, newest first.
+void MainWindow::remember(const QString& path) {
+    QSettings settings;
+    QStringList files = settings.value("recentFiles").toStringList();
+    const QString file = QFileInfo(path).absoluteFilePath();
+    files.removeAll(file);
+    files.prepend(file);
+    settings.setValue("recentFiles", files.mid(0, 10));
+    settings.setValue("lastDir", QFileInfo(path).absolutePath());
+}
+
 void MainWindow::openFile(const QString& path) {
     fitNext_ = true;
-    QSettings().setValue("lastDir", QFileInfo(path).absolutePath());
+    remember(path);
     controller_->open(path);
 }
 
 bool MainWindow::saveFile(const QString& path) {
     QString error;
     if (controller_->save(path, &error)) {
-        if (!path.isEmpty()) QSettings().setValue("lastDir", QFileInfo(path).absolutePath());
+        if (!controller_->filePath().isEmpty()) remember(controller_->filePath());
         return true;
     }
     statusBar()->showMessage(error, 10000);

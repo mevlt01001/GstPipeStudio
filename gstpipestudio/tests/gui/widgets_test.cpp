@@ -10,6 +10,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QDockWidget>
 #include <QMenu>
 #include <QPainter>
 #include <QPushButton>
@@ -30,6 +31,7 @@
 #include "confirmdialog.h"
 #include "drawer.h"
 #include "elementitem.h"
+#include "panels.h"
 #include "templateframeitem.h"
 #include "templatepage.h"
 #include "templateparamspage.h"
@@ -190,7 +192,7 @@ private slots:
         QVERIFY(settle(*c));
         auto* panel = w.findChild<TelemetryPanel*>("telemetryPanel");
         QVERIFY(panel);
-        w.findChild<QTabWidget*>("bottomTabs")->setCurrentWidget(panel);
+        w.panels()->show(panel);
         auto* toggle = panel->findChild<QPushButton*>("monitorToggle");
         QVERIFY(toggle->isEnabled());
         QTest::mouseClick(toggle, Qt::LeftButton);
@@ -1224,8 +1226,18 @@ private slots:
         QVERIFY(log.contains("kaput"));
         QVERIFY(w.logPanel()->isReadOnly());
         QVERIFY(w.logPanel()->font().styleHint() == QFont::Monospace || w.logPanel()->font().family().contains("Mono"));
-        QCOMPARE(w.bottomTabs()->tabText(0), QString("Log"));
-        QCOMPARE(w.bottomTabs()->tabText(1), QString("Validation"));
+        QCOMPARE(w.panels()->dock(w.logPanel())->windowTitle(), QString("Log"));
+        QCOMPARE(w.panels()->dock(w.updatePanel())->windowTitle(), QString("Validation"));
+        // The panels are docks the user moves, closes and brings back from View > Panels; Reset layout tabs them again.
+        QAction* logToggle = w.findChild<QAction*>("actionPanelLog");
+        QVERIFY(logToggle && logToggle->isCheckable());
+        w.panels()->dock(w.logPanel())->setFloating(true);
+        w.panels()->dock(w.logPanel())->close();
+        QVERIFY(!logToggle->isChecked());
+        w.findChild<QAction*>("actionResetLayout")->trigger();
+        QVERIFY(logToggle->isChecked() && !w.panels()->dock(w.logPanel())->isFloating());
+        QVERIFY(w.panels()->showing(w.updatePanel()));
+
     }
 
     void refusedAndUnknownShowInTheUpdatePanel() {
@@ -1277,7 +1289,7 @@ private slots:
         auto* props = pageOf<PropertyPage>(w);
         QVERIFY(props);
         QVERIFY(!w.drawer()->isOpen());  // the right drawer is exclusively for picking elements
-        QCOMPARE(w.bottomTabs()->currentWidget(), w.propertiesTab());
+        QVERIFY(w.panels()->showing(w.propertiesTab()));
         QCOMPARE(w.flows()->propertiesTitle(), QString("Add element · audiotestsrc"));
         QCOMPARE(props->primary()->text(), QString("Add element"));
         in<QSpinBox>(*props, "editor_num-buffers")->setValue(25);
@@ -1339,7 +1351,7 @@ private slots:
         auto* props = pageOf<PropertyPage>(w);
         QVERIFY(props);
         QVERIFY(!w.drawer()->isOpen());
-        QCOMPARE(w.bottomTabs()->currentWidget(), w.propertiesTab());
+        QVERIFY(w.panels()->showing(w.propertiesTab()));
         QVERIFY(w.flows()->propertiesTitle().contains("videoconvert"));
         press(props, "cancelButton");
         QVERIFY(!w.flows()->propertyPage());
@@ -1357,7 +1369,7 @@ private slots:
         QVERIFY(!c->busy());
         QCOMPARE(c->plan().elements.size(), size_t(2));
         QVERIFY(!w.drawer()->isOpen());
-        QCOMPARE(w.bottomTabs()->currentWidget(), w.capsTab());
+        QVERIFY(w.panels()->showing(w.capsTab()));
         QCOMPARE(caps->findChild<QComboBox*>("mediaCombo")->itemText(1), QString("video/x-raw"));
         press(caps, "cancelButton");
         QVERIFY(!w.flows()->capsPage());
@@ -1589,7 +1601,7 @@ private slots:
         auto* page = pageOf<PropertyPage>(w);
         QVERIFY(page);
         QVERIFY(!w.drawer()->isOpen());
-        QCOMPARE(w.bottomTabs()->currentWidget(), w.propertiesTab());
+        QVERIFY(w.panels()->showing(w.propertiesTab()));
         QCOMPARE(w.flows()->propertiesTitle(), "Edit properties · " + c->displayName(src));
         QCOMPARE(page->primary()->text(), QString("Save"));
         in<QComboBox>(*page, "editor_pattern")->setCurrentIndex(1);
@@ -1611,7 +1623,7 @@ private slots:
         auto* caps = pageOf<CapsPage>(w);
         QVERIFY(caps);
         QVERIFY(!w.drawer()->isOpen());
-        QCOMPARE(w.bottomTabs()->currentWidget(), w.capsTab());
+        QVERIFY(w.panels()->showing(w.capsTab()));
         QVERIFY(w.flows()->capsTitle().startsWith("Edit caps"));
         QVERIFY(!caps->findChild<QPushButton*>("skipButton"));  // Skip belongs to the step after an add
         caps->findChild<QComboBox*>("mediaCombo")->setCurrentIndex(1);
@@ -1740,8 +1752,8 @@ private slots:
         QString src, convert, sink;
         buildChain(w, &src, &convert, &sink);
         w.openCapsTab(src, "src");
-        QCOMPARE(w.bottomTabs()->tabText(w.bottomTabs()->currentIndex()), QString("Caps"));
-        QVERIFY(w.bottomTabs()->currentWidget()->findChild<CapsPage*>());
+        QVERIFY(w.panels()->showing(w.capsTab()));
+        QVERIFY(w.capsTab()->findChild<CapsPage*>());
 
         // 5. Rubber-band marquee selection mode on CanvasView & collapsed Template rendering on CanvasScene.
         QCOMPARE(w.view()->dragMode(), QGraphicsView::RubberBandDrag);

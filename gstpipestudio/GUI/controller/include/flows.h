@@ -13,7 +13,7 @@ class Drawer;
 class DrawerPage;
 class PropertyPage;
 class QDialog;
-class QTabWidget;
+class Panels;
 class QWidget;
 
 class Flows : public QObject {
@@ -21,7 +21,7 @@ class Flows : public QObject {
 public:
     Flows(Controller* controller, Drawer* drawer, QWidget* window);
 
-    void setBottomPanels(QTabWidget* tabs, QWidget* propsTab, QWidget* capsTab, QWidget* defaultTab);
+    void setBottomPanels(Panels* panels, QWidget* propsTab, QWidget* capsTab, QWidget* defaultTab);
     void setBusy(bool busy);
 
     PropertyPage* propertyPage() const;
@@ -75,7 +75,7 @@ private:
     Controller* controller_;
     Drawer* drawer_;
     QWidget* window_;
-    QTabWidget* tabs_ = nullptr;
+    Panels* panels_ = nullptr;
     QWidget* propsTab_ = nullptr;
     QWidget* capsTab_ = nullptr;
     QWidget* defaultTab_ = nullptr;

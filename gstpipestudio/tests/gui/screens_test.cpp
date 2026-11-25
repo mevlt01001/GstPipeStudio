@@ -14,7 +14,9 @@
 #include "drawer.h"
 #include "elementitem.h"
 #include "flows.h"
+#include "logpanel.h"
 #include "mainwindow.h"
+#include "panels.h"
 #include "pickerpage.h"
 #include "propertypage.h"
 #include "setuppage.h"
@@ -104,7 +106,7 @@ private slots:
         w.view()->centerOn(w.scene()->element("tee_1"));
         QTest::qWait(100);
         save(w.view(), "ux_03b_canvas_1to1");
-        w.bottomTabs()->setCurrentIndex(0);
+        w.panels()->show(w.logPanel());
         QTest::qWait(100);
         save(&w, "ux_04_log_panel");
     }

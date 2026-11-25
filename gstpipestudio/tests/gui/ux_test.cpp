@@ -611,7 +611,7 @@ private slots:
         // Menus have access keys.
         QStringList menus;
         for (QAction* a : w.findChild<QMenuBar*>("applicationMenu")->actions()) menus << a->text();
-        QCOMPARE(menus, QStringList({"&File", "&Pipeline", "&View", "&Help"}));
+        QCOMPARE(menus, QStringList({"&File", "&Edit", "&View", "&Pipeline", "&Help"}));  // the usual order
     }
 
     void openingTheDrawerKeepsTheCanvasWhereItWas() {

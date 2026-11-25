@@ -75,7 +75,7 @@ QStatusBar { background: @panel@; border-top: 1px solid @line@; }
 QStatusBar::item { border: none; }
 QStatusBar QLabel { background: transparent; padding-left: 10px; padding-right: 10px; }
 
-QDockWidget { titlebar-close-icon: none; color: @text@; }
+QDockWidget { color: @text@; }
 QDockWidget::title { background: @panel@; border-bottom: 1px solid @line@; padding: 6px 10px; font-weight: bold; }
 
 QTabWidget::pane { border: 1px solid @line@; background: @panel@; top: -1px; }

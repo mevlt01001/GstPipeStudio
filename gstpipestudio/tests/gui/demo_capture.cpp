@@ -7,6 +7,7 @@
 #include "canvasscene.h"
 #include "canvasview.h"
 #include "mainwindow.h"
+#include "panels.h"
 #include "telemetrypanel.h"
 #include "testsupport.h"
 #include "aboutdialog.h"
@@ -48,7 +49,7 @@ int main(int argc, char** argv) {
     window.scene()->rebuild(); window.view()->fitAll(); capture(14);
     auto* panel = window.findChild<TelemetryPanel*>("telemetryPanel");
     if (!panel) return 7;
-    window.bottomTabs()->setCurrentWidget(panel);
+    window.panels()->show(panel);
     if (!controller->startMonitoring()) return 8;
     capture(20);
     panel->findChild<QComboBox*>("monitorElement")->setCurrentText(queue);

@@ -1,6 +1,8 @@
 // flows.cpp
 #include "flows.h"
 
+#include "panels.h"
+
 #include <QAction>
 #include <memory>
 #include <QClipboard>
@@ -45,8 +47,8 @@ void clearTabLayout(QWidget* tab) {
 Flows::Flows(Controller* controller, Drawer* drawer, QWidget* window)
     : QObject(window), controller_(controller), drawer_(drawer), window_(window) {}
 
-void Flows::setBottomPanels(QTabWidget* tabs, QWidget* propsTab, QWidget* capsTab, QWidget* defaultTab) {
-    tabs_ = tabs;
+void Flows::setBottomPanels(Panels* panels, QWidget* propsTab, QWidget* capsTab, QWidget* defaultTab) {
+    panels_ = panels;
     propsTab_ = propsTab;
     capsTab_ = capsTab;
     defaultTab_ = defaultTab;
@@ -115,7 +117,7 @@ CapsPage* Flows::capsPage() const {
 
 void Flows::presentProperties(DrawerPage* page, const QString& title) {
     drawer_->dismiss();
-    if (!propsTab_ || !tabs_) {
+    if (!propsTab_ || !panels_) {
         page->deleteLater();
         return;
     }
@@ -130,7 +132,7 @@ void Flows::presentProperties(DrawerPage* page, const QString& title) {
     layout->addWidget(page, 1);
     page->show();
     connect(page, &DrawerPage::cancelled, this, &Flows::closeProperties);
-    tabs_->setCurrentWidget(propsTab_);
+    panels_->show(propsTab_);
     page->focusFirst();
 }
 
@@ -138,19 +140,19 @@ void Flows::closeProperties() {
     abandonPending();  // closing while a validation runs: no caps step afterwards
     propsTitle_.clear();
     if (!propsTab_) return;
-    bool wasCurrent = tabs_ && tabs_->currentWidget() == propsTab_;
+    bool wasCurrent = panels_ && panels_->showing(propsTab_);
     clearTabLayout(propsTab_);
     auto* layout = static_cast<QVBoxLayout*>(propsTab_->layout());
     auto* hint = new QLabel("Click an element on the canvas to inspect or edit its Properties.", propsTab_);
     hint->setObjectName("muted");
     layout->addWidget(hint);
     layout->addStretch(1);
-    if (wasCurrent && tabs_ && defaultTab_) tabs_->setCurrentWidget(defaultTab_);
+    if (wasCurrent && defaultTab_) panels_->show(defaultTab_);
 }
 
 void Flows::presentCaps(CapsPage* page, const QString& title, const QString& subtitle) {
     drawer_->dismiss();
-    if (!capsTab_ || !tabs_) {
+    if (!capsTab_ || !panels_) {
         page->deleteLater();
         return;
     }
@@ -178,21 +180,21 @@ void Flows::presentCaps(CapsPage* page, const QString& title, const QString& sub
     page->show();
     connect(page, &DrawerPage::cancelled, this, &Flows::closeCaps);
     connect(page, &CapsPage::skipped, this, &Flows::closeCaps);
-    tabs_->setCurrentWidget(capsTab_);
+    panels_->show(capsTab_);
     page->focusFirst();
 }
 
 void Flows::closeCaps() {
     capsTitle_.clear();
     if (!capsTab_) return;
-    bool wasCurrent = tabs_ && tabs_->currentWidget() == capsTab_;
+    bool wasCurrent = panels_ && panels_->showing(capsTab_);
     clearTabLayout(capsTab_);
     auto* layout = static_cast<QVBoxLayout*>(capsTab_->layout());
     auto* hint = new QLabel("Click a link on the canvas to inspect or edit its Caps.", capsTab_);
     hint->setObjectName("muted");
     layout->addWidget(hint);
     layout->addStretch(1);
-    if (wasCurrent && tabs_ && defaultTab_) tabs_->setCurrentWidget(defaultTab_);
+    if (wasCurrent && defaultTab_) panels_->show(defaultTab_);
 }
 
 // The user closed the drawer or cancelled while the validation of an edit was still running: no caps page opens afterwards.

@@ -16,6 +16,7 @@ class QAction;
 class QLabel;
 class QStackedWidget;
 class QTabWidget;
+class Panels;
 class SetupPage;
 class UpdatePanel;
 class TelemetryPanel;
@@ -33,7 +34,7 @@ public:
     Drawer* drawer() const { return drawer_; }
     UpdatePanel* updatePanel() const { return updates_; }
     LogPanel* logPanel() const { return log_; }
-    QTabWidget* bottomTabs() const { return tabs_; }
+    Panels* panels() const { return panels_; }
     QWidget* propertiesTab() const { return propsTab_; }
     QWidget* capsTab() const { return capsTab_; }
     SetupPage* setupPage() const { return setup_; }
@@ -61,6 +62,7 @@ private:
     void onEnvironment();
     bool confirmDiscard();  // true when it is fine to drop the plan on screen
     void saveAs();
+    void remember(const QString& path);  // a file opened or saved: File > Open recent
     void toggleRun();
     void showAbout();
     void showCanvasMenu(const QPoint& screenPos);
@@ -89,7 +91,7 @@ private:
     LogPanel* log_;
     QWidget* propsTab_ = nullptr;
     QWidget* capsTab_ = nullptr;
-    QTabWidget* tabs_;
+    Panels* panels_ = nullptr;
     QLabel* state_;
     QLabel* environment_;
     QLabel* command_;
