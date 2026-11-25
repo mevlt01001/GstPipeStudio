@@ -97,7 +97,7 @@ void Flows::editTemplateParams(const QString& instanceId) {
     for (const gps::ExposedParam& p : t->params) {
         TemplateParam row{p, std::nullopt, fromStd(gps::templates::paramValue(controller_->plan(), p))};
         const gps::Element* e = controller_->plan().find(p.element);
-        if (const ElementInfo* info = e ? controller_->catalog().info(fromStd(e->factory)) : nullptr) {
+        if (const ElementInfo* info = e ? catalog().info(fromStd(e->factory)) : nullptr) {
             for (const PropertyInfo& property : info->properties) {
                 if (property.name == p.property) row.property = property;
             }
@@ -226,7 +226,7 @@ void Flows::confirmRemoval(const gps::Removal& removal, const QString& verb, std
 
 std::vector<FactoryEntry> Flows::factories(bool sources) const {
     std::vector<FactoryEntry> out;
-    for (const FactoryEntry& e : controller_->catalog().entries()) {
+    for (const FactoryEntry& e : catalog().entries()) {
         if (e.isSource == sources) out.push_back(e);
     }
     return out;
@@ -237,7 +237,7 @@ void Flows::chooseElement() {
     PickerData data;
     data.newHeader = "Elements";
     data.showFilters = true;
-    data.candidates = controller_->catalog().entries();
+    data.candidates = catalog().entries();
     auto* page = new PickerPage(data);
     connect(page, &PickerPage::picked, this, [this](const PickerChoice& choice) {
         newElementProperties(choice.factory);
@@ -316,7 +316,7 @@ void Flows::editTemplateParameters() {
 }
 
 void Flows::newElementProperties(const QString& factory) {
-    controller_->catalog().fetchInfo(factory, this, [this, factory](const ElementInfo* info) {
+    catalog().fetchInfo(factory, this, [this, factory](const ElementInfo* info) {
         if (!info) return;
         PropertyPageInput in;
         in.info = *info;
@@ -335,7 +335,7 @@ void Flows::newElementProperties(const QString& factory) {
 void Flows::fromFreePad(const QString& element, const QString& identity) {
     if (controller_->editingBlocked()) return;
     QString allowed = controller_->padAllowed(element, identity);
-    controller_->catalog().fetchCompatible(allowed, this, [this, element, identity, allowed](const QStringList& compatible) {
+    catalog().fetchCompatible(allowed, this, [this, element, identity, allowed](const QStringList& compatible) {
         PickerData data;
         data.existing = controller_->existingTargets(element, identity);
         for (const TemplateInfo& c : library().list()) {
@@ -364,7 +364,7 @@ void Flows::fromFreePad(const QString& element, const QString& identity) {
 }
 
 void Flows::newElement(Mode mode, const QString& element, const QString& identity, const QString& factory) {
-    controller_->catalog().fetchInfo(factory, this, [this, mode, element, identity, factory](const ElementInfo* info) {
+    catalog().fetchInfo(factory, this, [this, mode, element, identity, factory](const ElementInfo* info) {
         if (!info) return;
         PropertyPageInput in;
         in.info = *info;
@@ -483,7 +483,7 @@ void Flows::editCaps(const QString& element, const QString& identity) {
 void Flows::replaceBehind(const QString& element, const QString& identity) {
     if (controller_->editingBlocked()) return;
     QString allowed = controller_->padAllowed(element, identity);
-    controller_->catalog().fetchCompatible(allowed, this, [this, element, identity](const QStringList& compatible) {
+    catalog().fetchCompatible(allowed, this, [this, element, identity](const QStringList& compatible) {
         PickerData data;
         data.compatible = compatible;
         data.candidates = factories(false);
@@ -507,7 +507,7 @@ void Flows::disconnectLinkOnly(const QString& element, const QString& identity) 
 
 void Flows::addQueue(const QString& element, const QString& identity) {
     if (controller_->editingBlocked()) return;
-    controller_->catalog().fetchInfo(gps::kQueueFactory, this, [this, element, identity](const ElementInfo* info) {
+    catalog().fetchInfo(gps::kQueueFactory, this, [this, element, identity](const ElementInfo* info) {
         if (info) controller_->insertQueue(element, identity);
     });
 }
@@ -520,7 +520,7 @@ void Flows::editProperties(const QString& element) {
         return;
     }
     const gps::Element* e = controller_->plan().find(element.toStdString());
-    const ElementInfo* info = e ? controller_->catalog().info(fromStd(e->factory)) : nullptr;
+    const ElementInfo* info = e ? catalog().info(fromStd(e->factory)) : nullptr;
     if (!info) return;
 
     PropertyPageInput in;

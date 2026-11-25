@@ -442,7 +442,7 @@ private slots:
         qputenv("GPS_BIN_DIR", goodBin);
         c = makeController();
         c->setUpdateTimeoutMs(10000);
-        QVERIFY(c->catalog().loaded());
+        QVERIFY(c->services().catalog().loaded());
         w = std::make_unique<MainWindow>(c.get());
         w->show();
     }
@@ -470,7 +470,7 @@ private slots:
     // =================================================================================================================
 
     void realCatalogFillsTheAddElementPicker() {
-        QVERIFY2(c->catalog().entries().size() > 300, qPrintable(QString::number(c->catalog().entries().size())));
+        QVERIFY2(c->services().catalog().entries().size() > 300, qPrintable(QString::number(c->services().catalog().entries().size())));
         w->findChild<QAction*>("actionAddElement")->trigger();
         auto* picker = shown<PickerPage>();
         QVERIFY(picker);
@@ -485,9 +485,9 @@ private slots:
         for (const char* f : {"videotestsrc", "filesrc", "audiotestsrc", "v4l2src"}) QVERIFY2(names.contains(f), f);
         QVERIFY(names.contains("fakesink"));  // one list for sources, filters and sinks
         bool deepstream = false;  // a plain Ubuntu has no nv* elements, so no badge is expected there
-        for (const FactoryEntry& e : c->catalog().entries()) deepstream = deepstream || e.nvidia;
+        for (const FactoryEntry& e : c->services().catalog().entries()) deepstream = deepstream || e.nvidia;
         if (deepstream) QVERIFY2(nvidia > 0, "no NVIDIA badge among the elements");
-        qInfo() << "factories" << c->catalog().entries().size() << "listed" << names.size() << "nvidia" << nvidia;
+        qInfo() << "factories" << c->services().catalog().entries().size() << "listed" << names.size() << "nvidia" << nvidia;
         QVERIFY(waitFor([&] { return w->drawer()->width() == Drawer::kWidth; }, 3000));
         QVERIFY(shotOf(w->drawer(), "00_add_element_picker"));
         press(picker, "cancelButton");

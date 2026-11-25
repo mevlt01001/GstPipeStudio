@@ -38,9 +38,9 @@ private slots:
     void cleanup() { c.reset(); }
 
     void catalogAndTraits() {
-        QVERIFY(c->catalog().loaded());
+        QVERIFY(c->services().catalog().loaded());
         auto find = [&](const QString& f) {
-            for (const FactoryEntry& e : c->catalog().entries()) {
+            for (const FactoryEntry& e : c->services().catalog().entries()) {
                 if (fromStd(e.factory) == f) return e;
             }
             return FactoryEntry();
@@ -50,10 +50,10 @@ private slots:
         QVERIFY(find("nvvideoconvert").nvidia);
         QVERIFY(find("tee").hasRequestSrc);
         // Traits come from the catalog before the info is fetched, from the info afterwards.
-        QVERIFY(c->catalog().traits()("videotestsrc").isSource);
-        QVERIFY(!c->catalog().traits()("tee").isSource);
+        QVERIFY(c->services().catalog().traits()("videotestsrc").isSource);
+        QVERIFY(!c->services().catalog().traits()("tee").isSource);
         QVERIFY(need(*c, "audiotestsrc")->entry.isSource);
-        QVERIFY(c->catalog().traits()("audiotestsrc").isSource);
+        QVERIFY(c->services().catalog().traits()("audiotestsrc").isSource);
     }
 
     void emptyCanvas() {
@@ -540,7 +540,7 @@ private slots:
         c->previewDeleteSource(ch.src);
         need(*c, "tee");
         QStringList compatible;
-        c->catalog().fetchCompatible("video/x-raw", c.get(), [&](const QStringList& l) { compatible = l; });
+        c->services().catalog().fetchCompatible("video/x-raw", c.get(), [&](const QStringList& l) { compatible = l; });
         QVERIFY(waitFor([&] { return !compatible.isEmpty(); }));
         QVERIFY(compatible.contains("videoconvert"));
         QVERIFY(!compatible.contains("audiotestsrc"));

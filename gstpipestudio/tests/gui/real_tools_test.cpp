@@ -46,17 +46,17 @@ private slots:
     }
 
     void catalogHasTheUsualElementsAndNvidiaBadges() {
-        QVERIFY(c->catalog().loaded());
-        QVERIFY2(c->catalog().entries().size() > 50, qPrintable(QString::number(c->catalog().entries().size())));
+        QVERIFY(c->services().catalog().loaded());
+        QVERIFY2(c->services().catalog().entries().size() > 50, qPrintable(QString::number(c->services().catalog().entries().size())));
         QMap<QString, FactoryEntry> by;
-        for (const FactoryEntry& e : c->catalog().entries()) by[fromStd(e.factory)] = e;
+        for (const FactoryEntry& e : c->services().catalog().entries()) by[fromStd(e.factory)] = e;
         for (const char* f : {"videotestsrc", "videoconvert", "fakesink", "queue", "tee", "compositor"}) QVERIFY2(by.contains(f), f);
         QVERIFY(by["videotestsrc"].isSource);
         QVERIFY(!by["videoconvert"].isSource);
         QVERIFY(by["tee"].hasRequestSrc);
         int nvidia = 0;
-        for (const FactoryEntry& e : c->catalog().entries()) nvidia += e.nvidia;
-        qInfo() << "factories:" << c->catalog().entries().size() << "nvidia:" << nvidia;
+        for (const FactoryEntry& e : c->services().catalog().entries()) nvidia += e.nvidia;
+        qInfo() << "factories:" << c->services().catalog().entries().size() << "nvidia:" << nvidia;
     }
 
     void elementInfoParses() {
@@ -145,11 +145,11 @@ private slots:
         QVERIFY(w.grab().save(QString("%1/ux_30_real_helpers.png").arg(shotDir())));
 
         QStringList compatible;
-        c->catalog().fetchCompatible(c->padAllowed(nv, "src"), c.get(), [&](const QStringList& l) { compatible = l; });
+        c->services().catalog().fetchCompatible(c->padAllowed(nv, "src"), c.get(), [&](const QStringList& l) { compatible = l; });
         QVERIFY(waitFor([&] { return !compatible.isEmpty(); }));
         PickerData data;
         data.compatible = compatible;
-        for (const FactoryEntry& e : c->catalog().entries()) {
+        for (const FactoryEntry& e : c->services().catalog().entries()) {
             if (!e.isSource) data.candidates.push_back(e);
         }
         QElapsedTimer timer;

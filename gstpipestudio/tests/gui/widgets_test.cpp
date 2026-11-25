@@ -423,7 +423,6 @@ private slots:
         Controller* second = w.document()->controller();
         QVERIFY(second != c.get());
         QCOMPARE(&second->services(), &shared);
-        QCOMPARE(&second->catalog(), &c->catalog());
         QVERIFY(!w.showingSetup());
         QVERIFY(w.findChild<QAction*>("actionAddElement")->isEnabled());
         // A factory the first tab fetched is known here without asking gps-inspect again.
@@ -1113,7 +1112,7 @@ private slots:
         PickerData data;
         data.existing = {{"mix_1", "compositor", "sink_%u", true}, {"over_2", "textoverlay", "video_sink", false}};
         data.compatible = {"jpegdec", "videoconvert"};
-        for (const FactoryEntry& e : c->catalog().entries()) {
+        for (const FactoryEntry& e : c->services().catalog().entries()) {
             if (!e.isSource) data.candidates.push_back(e);
         }
         Drawer drawer;  // Enter and Esc are the drawer's
@@ -1175,7 +1174,7 @@ private slots:
     void pickerDoubleClickAndCancel() {
         PickerData data;
         data.compatible = {"queue"};
-        for (const FactoryEntry& e : c->catalog().entries()) {
+        for (const FactoryEntry& e : c->services().catalog().entries()) {
             if (!e.isSource) data.candidates.push_back(e);
         }
         PickerPage first(data);
@@ -2007,7 +2006,7 @@ private slots:
         picker->setRoleFilter(PickerPage::RoleSrc);
         auto* list = picker->findChild<QListWidget*>("pickerList");
         for (int i = 1; i < list->count(); ++i) {
-            if (!list->item(i)->isHidden()) QVERIFY(c->catalog().traits()(list->item(i)->text().toStdString()).isSource);
+            if (!list->item(i)->isHidden()) QVERIFY(c->services().catalog().traits()(list->item(i)->text().toStdString()).isSource);
         }
         picker->setRoleFilter(PickerPage::RoleAll);
         picker->setPresenceFilter(PickerPage::PresenceRequest);

@@ -1,7 +1,7 @@
 // Controller owns the Pipeline document and coordinates GUI workflows and helper processes.
 // Widgets read views and submit edits; GraphEditor owns transactions and history.
 // Preview updates are coalesced and allow further edits. Playback, opening and cancellation block edits.
-// Call catalog().fetchInfo(factory, this, …) before edits that refer to a new factory.
+// Call services().catalog().fetchInfo(factory, context, …) before edits that refer to a new factory.
 #pragma once
 
 #include <QHash>
@@ -77,9 +77,6 @@ public:
     void setUrlOpener(UrlOpener* opener) { opener_ = opener; }
     SupportInfo supportInfo(const QString& title) const;
     void requestSupport(const QString& title);  // opens the prefilled issue in the browser
-
-    // ---- what GStreamer offers (gps-inspect); the Controller registers each fetched factory with the Pipeline
-    FactoryCatalog& catalog() const { return services_.catalog(); }
 
     // ---- templates (saved multi-element presets & canvas groups); the library itself is services().library()
     // Making a template: the selection becomes an expanded instance at once, so its border is drawn and the canvas
@@ -232,6 +229,8 @@ private:
     void subgraphExternalPads(const QStringList& members, QList<PadView>* outSinks, QList<PadView>* outSrcs) const;
     bool linkOrderedInternal(const QStringList& expanded, QString* lastTouched = nullptr);
 
+    // What GStreamer offers (gps-inspect), shared by every document; each fetched factory is registered with the Pipeline.
+    FactoryCatalog& catalog() const { return services_.catalog(); }
     void registerFactory(const QString& factory);  // its definition, from the catalog, for the Pipeline
 
     AppServices& services_;
