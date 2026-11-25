@@ -113,11 +113,21 @@ void ElementItem::paint(QPainter* p, const QStyleOptionGraphicsItem*, QWidget*) 
     QFont small = base;
     small.setPointSizeF(8);
 
+    if (view_.isTemplate) {
+        // "+": expand the template into its frame.
+        const QRectF b = expandButton();
+        p->setPen(QPen(Theme::accentHover(), 1.5));
+        p->setBrush(Theme::background());
+        p->drawRoundedRect(b, 4, 4);
+        p->drawLine(QPointF(b.left() + 7, b.center().y()), QPointF(b.right() - 7, b.center().y()));
+        p->drawLine(QPointF(b.center().x(), b.top() + 5), QPointF(b.center().x(), b.bottom() - 5));
+    }
     QString headerTitle = view_.displayTitle.isEmpty() ? view_.name : view_.displayTitle;
     p->setFont(bold);
     p->setPen(view_.isTemplate ? Theme::accentHover() : Theme::text());
-    p->drawText(QRectF(12, 5, kBoxWidth - 24, 20), Qt::AlignLeft | Qt::AlignVCenter,
-                QFontMetrics(bold).elidedText(headerTitle, Qt::ElideRight, int(kBoxWidth - 24)));
+    const double titleWidth = kBoxWidth - (view_.isTemplate ? 52 : 24);
+    p->drawText(QRectF(12, 5, titleWidth, 20), Qt::AlignLeft | Qt::AlignVCenter,
+                QFontMetrics(bold).elidedText(headerTitle, Qt::ElideRight, int(titleWidth)));
     p->setFont(small);
     p->setPen(Theme::muted());
     QString subTitle = view_.factory;
@@ -203,7 +213,14 @@ void ElementItem::hoverLeaveEvent(QGraphicsSceneHoverEvent*) {
     hoverAnimation_.stop(); hoverAnimation_.setStartValue(hoverProgress_); hoverAnimation_.setEndValue(0.0); hoverAnimation_.start();
 }
 
+QRectF ElementItem::expandButton() const { return QRectF(kBoxWidth - 34, 10, 24, 20); }
+
 void ElementItem::mousePressEvent(QGraphicsSceneMouseEvent* event) {
+    if (view_.isTemplate && event->button() == Qt::LeftButton && expandButton().contains(event->pos())) {
+        if (auto* canvas = qobject_cast<CanvasScene*>(scene())) canvas->frameExpanded(view_.groupId);
+        event->accept();
+        return;
+    }
     pressPos_ = pos();
     if (event->button() == Qt::RightButton) {
         if (!isSelected()) {

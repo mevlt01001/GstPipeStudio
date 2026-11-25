@@ -38,6 +38,8 @@ protected:
     void mouseDoubleClickEvent(QGraphicsSceneMouseEvent* event) override;
 
 private:
+    QRectF expandButton() const;  // a collapsed template's "+" in its header
+
     ElementView view_;
     QList<PadItem*> pads_;
     bool hover_ = false;

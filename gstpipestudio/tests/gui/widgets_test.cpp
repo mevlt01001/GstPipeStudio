@@ -27,6 +27,7 @@
 #include "confirmdialog.h"
 #include "drawer.h"
 #include "elementitem.h"
+#include "templateframeitem.h"
 #include "factorydelegate.h"
 #include "flows.h"
 #include "capslabel.h"
@@ -213,6 +214,58 @@ private slots:
         QCOMPARE(editor.text(), QString("5"));
         QVERIFY(editor.touched());
         QVERIFY(PropertyEditor::collect({&editor}, {{"gain", "42"}}).empty());
+    }
+
+    void expandedTemplateHasAFrameWithItsPadsOnTheBorder() {
+        QTemporaryDir library;
+        qputenv("GPS_USER_DIR", library.path().toUtf8());
+        MainWindow w(c.get());
+        w.resize(1400, 900);
+        w.show();
+        QString src, convert, sink;
+        buildChain(w, &src, &convert, &sink);
+        QVERIFY(c->saveTemplate("Tail", {convert, sink}));
+        QVERIFY(settle(*c));
+        const QString id = c->templateBox(convert);
+        QVERIFY(!id.isEmpty());
+        QVERIFY(!w.scene()->frame(id));  // a new template is one box
+
+        QSignalSpy aligned(&c->canvasLayout(), &CanvasLayout::aligned);
+        w.scene()->frameExpanded(id);
+        QVERIFY(c->isTemplateExpanded(id));
+        QVERIFY(aligned.wait(30000));
+        QTest::qWait(400);  // the boxes slide apart
+        scene_rebuild(w);
+        TemplateFrameItem* frame = w.scene()->frame(id);
+        QVERIFY(frame);
+        QCOMPARE(frame->view().title, QString("Tail"));
+        for (const QString& m : {convert, sink}) {
+            const QRectF box(w.scene()->element(m)->pos(), QSizeF(metrics::kBoxWidth, w.scene()->element(m)->view().height()));
+            QVERIFY(frame->frameRect().contains(box));
+        }
+        QVERIFY(!frame->frameRect().contains(w.scene()->element(src)->pos()));
+        // The template's input is on the left border, and the link from outside attaches there.
+        PadItem* input = w.scene()->pad(convert, "sink", false);
+        QVERIFY(input && input->parentItem() == frame);
+        QCOMPARE(input->center().x(), frame->frameRect().left());
+        QCOMPARE(w.scene()->links().size(), 2);
+        QVERIFY(w.grab().save(shotDir() + "/frame_expanded.png"));
+
+        // Inside it, members are plain elements; the border selects the template as one element.
+        frame->setSelected(true);
+        const QStringList selected = w.scene()->selectedElementNames();
+        QCOMPARE(QSet<QString>(selected.begin(), selected.end()), (QSet<QString>{convert, sink}));
+        // Left alone, it waits to collapse; with the pointer inside, it does not.
+        QVERIFY(frame->collapsePending());
+        frame->pointer(frame->frameRect().center());
+        QVERIFY(!frame->collapsePending());
+
+        w.scene()->frameMinimized(id);
+        QVERIFY(!c->isTemplateExpanded(id));
+        QVERIFY(aligned.wait(30000));
+        scene_rebuild(w);
+        QVERIFY(!w.scene()->frame(id));
+        QCOMPARE(w.scene()->element(convert), w.scene()->element(sink));  // one box again
     }
 
     void wheelNeverEditsValues() {

@@ -457,6 +457,30 @@ ElementView Controller::templateView(const QString& groupId) const {
     return v;
 }
 
+FrameView Controller::frameView(const QString& instanceId) const {
+    FrameView v;
+    const gps::TemplateInstance* t = plan().instance(toStd(instanceId));
+    if (!t) return v;
+    v.id = instanceId;
+    v.title = fromStd(t->templateName);
+    v.members = templateMembers(instanceId);
+    v.depth = static_cast<int>(gps::templates::chain(plan(), t->id).size());
+    QList<PadView> sinks, srcs;
+    subgraphExternalPads(v.members, &sinks, &srcs);
+    v.pads = sinks + srcs;
+    return v;
+}
+
+QStringList Controller::visibleFrames() const {
+    QStringList out;
+    for (const gps::TemplateInstance& t : plan().instances) {
+        bool shown = isTemplateExpanded(fromStd(t.id));
+        for (std::string up = t.parent; shown && !up.empty(); up = plan().instance(up)->parent) shown = isTemplateExpanded(fromStd(up));
+        if (shown) out << fromStd(t.id);
+    }
+    return out;
+}
+
 QString Controller::linkSinkIdentity(int link) const { return fromStd(plan().sinkIdentity(static_cast<size_t>(link))); }
 
 QList<LinkView> Controller::linkViews() const {

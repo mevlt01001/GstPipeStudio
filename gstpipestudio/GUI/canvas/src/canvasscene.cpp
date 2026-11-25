@@ -4,10 +4,12 @@
 
 #include <QGraphicsPathItem>
 #include <QGraphicsSceneContextMenuEvent>
+#include <QGraphicsSceneMouseEvent>
 #include <QPainterPath>
 #include <QPen>
 #include <QTimer>
 #include <QVariantAnimation>
+#include <algorithm>
 #include <cmath>
 #include <tuple>
 
@@ -15,6 +17,7 @@
 #include "elementitem.h"
 #include "linkitem.h"
 #include "paditem.h"
+#include "templateframeitem.h"
 #include "theme.h"
 
 CanvasScene::CanvasScene(Controller* controller, QObject* parent) : QGraphicsScene(parent), controller_(controller) {
@@ -78,6 +81,15 @@ QStringList CanvasScene::selectedElementNames() const {
     QStringList names;
     QSet<QString> seen;
     for (QGraphicsItem* item : selectedItems()) {
+        if (auto* frame = dynamic_cast<TemplateFrameItem*>(item)) {
+            for (const QString& m : frame->view().members) {
+                if (!seen.contains(m)) {
+                    seen.insert(m);
+                    names << m;
+                }
+            }
+            continue;
+        }
         if (auto* el = dynamic_cast<ElementItem*>(item)) {
             if (el->view().isTemplate && !el->view().templateMembers.isEmpty()) {
                 for (const QString& m : el->view().templateMembers) {
@@ -124,6 +136,7 @@ void CanvasScene::rebuild() {
     elements_.clear();
     pads_.clear();
     links_.clear();
+    frames_.clear();
 
     QSet<QString> builtCollapsedGroups;
     for (const gps::Element& e : pipeline().graph().elements) {
@@ -156,6 +169,29 @@ void CanvasScene::rebuild() {
             for (PadItem* p : item->pads()) pads_.insert(key(p->view().element, p->view().identity, p->view().isSrc), p);
         }
     }
+    // Expanded templates: a frame around their members, with the template's pads on its border. Inner frames first, so
+    // a pad shown on several borders belongs to the outermost one, where its outside link attaches.
+    QList<FrameView> shown;
+    for (const QString& id : controller_->visibleFrames()) shown << controller_->frameView(id);
+    std::sort(shown.begin(), shown.end(), [](const FrameView& a, const FrameView& b) { return a.depth > b.depth; });
+    QSet<QString> nowShown;
+    for (const FrameView& fv : shown) {
+        auto* frame = new TemplateFrameItem(fv, this);
+        addItem(frame);
+        frames_.insert(fv.id, frame);
+        nowShown.insert(fv.id);
+        for (PadItem* p : frame->pads()) {
+            const QString k = key(p->view().element, p->view().identity, p->view().isSrc);
+            frame->setInner(p, pads_.value(k));
+            pads_.insert(k, p);
+        }
+        frame->updateGeometry();
+        if (!shownFrames_.contains(fv.id)) frame->appear();
+        if (selectedElements_.contains(fv.members.value(0)) && fv.members.size() > 1 &&
+            std::all_of(fv.members.begin(), fv.members.end(), [&](const QString& m) { return selectedElements_.contains(m); }))
+            frame->setSelected(true);
+    }
+    shownFrames_ = nowShown;
     for (const LinkView& l : controller_->linkViews()) {
         if (elements_.value(l.srcElement) && elements_.value(l.srcElement) == elements_.value(l.sinkElement)) {
             continue;  // internal link inside a collapsed template
@@ -176,6 +212,9 @@ void CanvasScene::rebuild() {
 }
 
 void CanvasScene::updateLinks() {
+    QList<TemplateFrameItem*> inner = frames_.values();
+    std::sort(inner.begin(), inner.end(), [](TemplateFrameItem* a, TemplateFrameItem* b) { return a->view().depth > b->view().depth; });
+    for (TemplateFrameItem* f : inner) f->updateGeometry();
     for (LinkItem* l : links_) l->updatePath();
     setSceneRect(sceneRect().united(itemsBoundingRect().adjusted(-1000, -1000, 1000, 1000)));
 }
@@ -286,6 +325,23 @@ void CanvasScene::linkClicked(const QString& srcElement, const QString& srcIdent
 }
 void CanvasScene::linkContext(const QString& srcElement, const QString& srcIdentity, const QPoint& screenPos) {
     if (!locked_) emit linkMenuRequested(srcElement, srcIdentity, screenPos);
+}
+void CanvasScene::frameContext(const QString& instanceId, const QPoint& screenPos) {
+    if (!locked_) emit templateMenuRequested(instanceId, screenPos);
+}
+void CanvasScene::frameActivated(const QString& instanceId) {
+    if (!locked_) emit templateActivated(instanceId);
+}
+void CanvasScene::frameMinimized(const QString& instanceId) {
+    if (!locked_) controller_->setTemplateExpanded(instanceId, false);
+}
+void CanvasScene::frameExpanded(const QString& instanceId) {
+    if (!locked_) controller_->setTemplateExpanded(instanceId, true);
+}
+
+void CanvasScene::mouseMoveEvent(QGraphicsSceneMouseEvent* event) {
+    for (TemplateFrameItem* f : std::as_const(frames_)) f->pointer(event->scenePos());
+    QGraphicsScene::mouseMoveEvent(event);
 }
 
 void CanvasScene::beginConnectedMove(const QString& name) {

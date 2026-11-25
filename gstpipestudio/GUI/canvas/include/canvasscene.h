@@ -18,6 +18,7 @@ class Controller;
 class ElementItem;
 class LinkItem;
 class PadItem;
+class TemplateFrameItem;
 struct PadView;
 
 class CanvasScene : public QGraphicsScene {
@@ -26,7 +27,10 @@ public:
     explicit CanvasScene(Controller* controller, QObject* parent = nullptr);
 
     const gps::Pipeline& pipeline() const;
+    Controller* controller() const { return controller_; }
     ElementItem* element(const QString& name) const { return elements_.value(name); }
+    TemplateFrameItem* frame(const QString& instanceId) const { return frames_.value(instanceId); }
+    QList<TemplateFrameItem*> frames() const { return frames_.values(); }
     PadItem* pad(const QString& element, const QString& identity, bool isSrc) const;
     const QList<LinkItem*>& links() const { return links_; }
     QStringList selectedElementNames() const;
@@ -48,6 +52,10 @@ public:
     void elementDragged(const QString& element, const QPointF& pos);
     void linkClicked(const QString& srcElement, const QString& srcIdentity);
     void linkContext(const QString& srcElement, const QString& srcIdentity, const QPoint& screenPos);
+    void frameContext(const QString& instanceId, const QPoint& screenPos);
+    void frameActivated(const QString& instanceId);
+    void frameMinimized(const QString& instanceId);
+    void frameExpanded(const QString& instanceId);
     void updateLinks();
     void setConnectedMoveEnabled(bool enabled) { connectedMoveEnabled_ = enabled; }
     void beginConnectedMove(const QString& name);
@@ -69,10 +77,13 @@ signals:
     void elementMoved(const QString& element, double x, double y);
     void elementsMoved(const QList<QPair<QString, QPointF>>& positions);
     void elementSpliced(const QString& element, const QString& linkSrcElement, const QString& linkSrcPad);
+    void templateMenuRequested(const QString& instanceId, const QPoint& screenPos);
+    void templateActivated(const QString& instanceId);
     void rebuilt();
 
 protected:
     void contextMenuEvent(QGraphicsSceneContextMenuEvent* event) override;
+    void mouseMoveEvent(QGraphicsSceneMouseEvent* event) override;
 
 private:
     bool connectedMoveEnabled_ = false, movingConnected_ = false;
@@ -84,6 +95,8 @@ private:
     Controller* controller_;
     QHash<QString, ElementItem*> elements_;
     QHash<QString, PadItem*> pads_;
+    QHash<QString, TemplateFrameItem*> frames_;
+    QSet<QString> shownFrames_;  // frames of the last rebuild: a frame not among them grows in
     QList<LinkItem*> links_;
     QSet<QString> selectedElements_;
     bool hasExplicitSelection_ = false;

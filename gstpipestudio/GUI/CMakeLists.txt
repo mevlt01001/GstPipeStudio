@@ -28,6 +28,7 @@ add_library(gps_gui STATIC
     canvas/include/elementitem.h canvas/src/elementitem.cpp
     canvas/include/linkitem.h canvas/src/linkitem.cpp
     canvas/include/paditem.h canvas/src/paditem.cpp
+    canvas/include/templateframeitem.h canvas/src/templateframeitem.cpp
     ui/include/drawer.h ui/src/drawer.cpp
     ui/include/mainwindow.h ui/src/mainwindow.cpp
     ui/include/theme.h ui/src/theme.cpp

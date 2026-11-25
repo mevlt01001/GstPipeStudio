@@ -62,6 +62,7 @@ private:
     void showAbout();
     void showCanvasMenu(const QPoint& screenPos);
     void onElementMenuRequested(const QString& element, const QPoint& screenPos);
+    void showTemplateMenu(const QString& instanceId, const QPoint& screenPos);  // right click on an expanded template's border
     void showSelectionMenu(const QString& clickedElement, const QPoint& screenPos);
     void saveSelectedAsTemplate();
     void connectSelected();

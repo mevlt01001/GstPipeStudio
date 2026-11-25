@@ -101,6 +101,8 @@ public:
     // ---- what the canvas and the drawer show
     ElementView view(const QString& element) const;
     ElementView templateView(const QString& groupId) const;
+    FrameView frameView(const QString& instanceId) const;
+    QStringList visibleFrames() const;  // expanded templates whose every enclosing template is expanded too
     QList<LinkView> linkViews() const;
     QString linkSinkIdentity(int link) const;
     std::vector<StructureInfo> padStructures(const QString& element, const QString& identity) const;  // allowed by a src pad

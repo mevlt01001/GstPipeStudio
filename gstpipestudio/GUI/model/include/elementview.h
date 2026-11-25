@@ -54,6 +54,15 @@ struct TemplateInfo {
     int elementCount = 0;
 };
 
+// What the canvas shows of an expanded template: a border around its members, its name, and the template's pads on the
+// border (its free pads and the ones linked to the outside, like the ghost pads of a GstBin).
+struct FrameView {
+    QString id, title;
+    QStringList members;  // every element inside, nested ones too
+    QList<PadView> pads;
+    int depth = 0;        // templates around it
+};
+
 struct LinkView {
     int index = -1;
     QString id;             // "<src element>|<src pad>": the name the layout gives its route

@@ -82,6 +82,7 @@ MainWindow::MainWindow(Controller* controller, QWidget* parent) : QMainWindow(pa
     connect(scene_, &CanvasScene::linkClickedSignal, flows_, &Flows::editCaps, Qt::QueuedConnection);
     connect(scene_, &CanvasScene::linkMenuRequested, flows_, &Flows::showLinkMenu, Qt::QueuedConnection);
     connect(scene_, &CanvasScene::elementMenuRequested, this, &MainWindow::onElementMenuRequested, Qt::QueuedConnection);
+    connect(scene_, &CanvasScene::templateMenuRequested, this, &MainWindow::showTemplateMenu, Qt::QueuedConnection);
     connect(scene_, &CanvasScene::canvasContextMenuRequested, this, [this](const QPoint& screenPos, const QPointF&) { showCanvasMenu(screenPos); }, Qt::QueuedConnection);
     connect(scene_, &CanvasScene::elementActivated, flows_, &Flows::editProperties, Qt::QueuedConnection);
     connect(scene_, &CanvasScene::elementsMoved, controller_, &Controller::setPositions, Qt::QueuedConnection);
@@ -492,6 +493,25 @@ void MainWindow::onElementMenuRequested(const QString& element, const QPoint& sc
     } else {
         flows_->showElementMenu(element, screenPos);
     }
+}
+
+void MainWindow::showTemplateMenu(const QString& instanceId, const QPoint& screenPos) {
+    if (controller_->editingBlocked()) return;
+    const FrameView frame = controller_->frameView(instanceId);
+    if (frame.id.isEmpty()) return;
+    auto* menu = new QMenu(this);
+    menu->setObjectName("templateMenu");
+    menu->setAttribute(Qt::WA_DeleteOnClose);
+    menu->addAction("Collapse '" + frame.title + "'", this, [this, instanceId] { controller_->setTemplateExpanded(instanceId, false); })
+        ->setObjectName("actionCollapseTemplate");
+    menu->addAction("Auto align", this, [this, frame] { controller_->niceAlign(frame.members); })->setObjectName("actionTemplateAutoAlign");
+    menu->addAction("Save as template…", this, [this] { saveSelectedAsTemplate(); })->setObjectName("actionTemplateSaveAsTemplate");
+    menu->addAction("Detach from template '" + frame.title + "'", this, [this, instanceId] { controller_->detachTemplate(instanceId); })
+        ->setObjectName("actionDetachTemplate");
+    menu->addSeparator();
+    menu->addAction(QString("Delete template (%1 elements)").arg(frame.members.size()), this, [this] { deleteSelected(); })
+        ->setObjectName("actionDeleteTemplate");
+    menu->popup(screenPos);
 }
 
 void MainWindow::showSelectionMenu(const QString& clickedElement, const QPoint& screenPos) {
