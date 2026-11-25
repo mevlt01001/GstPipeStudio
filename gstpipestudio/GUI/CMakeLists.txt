@@ -6,6 +6,7 @@ add_subdirectory(${GPS_ROOT}/third_party/quickjs ${CMAKE_BINARY_DIR}/third_party
 add_library(gps_gui STATIC
     backend/include/apppaths.h backend/src/apppaths.cpp
     backend/include/saveresult.h
+    backend/include/savetarget.h backend/src/savetarget.cpp
     backend/include/projectfile.h backend/src/projectfile.cpp
     backend/include/versionhistory.h backend/src/versionhistory.cpp
     backend/include/templatelibrary.h backend/src/templatelibrary.cpp
