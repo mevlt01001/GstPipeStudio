@@ -34,6 +34,7 @@ add_library(gps_gui STATIC
     ui/include/drawer.h ui/src/drawer.cpp
     ui/include/mainwindow.h ui/src/mainwindow.cpp
     ui/include/panels.h ui/src/panels.cpp
+    ui/widgets/include/newprojectdialog.h ui/widgets/src/newprojectdialog.cpp
     ui/include/theme.h ui/src/theme.cpp
     ui/pages/include/capspage.h ui/pages/src/capspage.cpp
     ui/pages/include/pickerpage.h ui/pages/src/pickerpage.cpp

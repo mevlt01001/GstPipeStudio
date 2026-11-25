@@ -10,11 +10,14 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QDir>
 #include <QDockWidget>
+#include <QFile>
 #include <QMenu>
 #include <QPainter>
 #include <QPushButton>
 #include <QScrollBar>
+#include <QSettings>
 #include <QSignalSpy>
 #include <QSpinBox>
 #include <QTableWidget>
@@ -32,6 +35,7 @@
 #include "confirmdialog.h"
 #include "drawer.h"
 #include "elementitem.h"
+#include "newprojectdialog.h"
 #include "panels.h"
 #include "templateframeitem.h"
 #include "templatepage.h"
@@ -413,6 +417,30 @@ private slots:
         const QString placed = fromStd(c->plan().instances.back().id);
         QVERIFY(!c->isTemplateExpanded(placed));
         QCOMPARE(c->templateMembers(placed).size(), 2);
+    }
+
+    // A new project: a name, and its folder under the projects location; Save of a never saved canvas asks the same.
+    void aNewProjectGetsAFolderOfItsOwn() {
+        QTemporaryDir root;
+        QSettings().setValue("projects/location", root.path());
+        NewProjectDialog dialog;
+        auto* create = dialog.findChild<QPushButton*>("createProject");
+        QVERIFY(!create->isEnabled());  // no name yet
+        QTest::keyClicks(dialog.findChild<QLineEdit*>("projectName"), "front door");
+        QCOMPARE(dialog.confPath(), root.filePath("front_door/front_door.conf"));
+        QVERIFY(create->isEnabled());
+        QVERIFY(QDir().mkpath(root.filePath("front_door")));
+        QFile taken(root.filePath("front_door/front_door.conf"));
+        QVERIFY(taken.open(QIODevice::WriteOnly));
+        taken.close();
+        dialog.findChild<QLineEdit*>("projectName")->clear();
+        dialog.findChild<QLineEdit*>("projectName")->setText("front door");
+        QVERIFY(!create->isEnabled());  // there is one already
+        QSettings().remove("projects/location");
+
+        c->newProject(root.filePath("back/back.conf"));
+        QCOMPARE(c->filePath(), root.filePath("back/back.conf"));
+        QVERIFY(c->plan().empty());
     }
 
     // The peek shows the real pipeline: a branch is two rows, not one chain.

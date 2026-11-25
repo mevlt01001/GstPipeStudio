@@ -1493,6 +1493,14 @@ void Controller::newPlan() {
     emit changed();
 }
 
+void Controller::newProject(const QString& confPath) {
+    newPlan();
+    if (busy()) return;
+    path_ = confPath;
+    note("New project " + QFileInfo(confPath).completeBaseName());
+    emit changed();
+}
+
 void Controller::open(const QString& path, bool imported) {
     load(path, imported ? QString() : path, imported, imported ? "Imported a gst-launch pipeline" : "Opened a plan file");
     if (!imported && QFile::exists(ProjectFile::pathForConf(path))) ProjectRegistry::remember(ProjectFile::pathForConf(path));

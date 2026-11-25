@@ -182,6 +182,7 @@ public:
 
     // ---- files and runs
     void newPlan();
+    void newProject(const QString& confPath);  // an empty canvas whose Save writes there (its folder exists)
     void open(const QString& path, bool imported = false);  // asynchronous: the plan is replaced when all its factories are known
     void restoreVersion(const QString& version);  // an earlier version of the open file, as an unsaved change to it
     bool importLaunch(const QString& description); // brief native probe, then opens an unsaved canvas graph

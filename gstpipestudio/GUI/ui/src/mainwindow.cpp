@@ -40,6 +40,7 @@
 #include "propertypage.h"
 #include "setuppage.h"
 #include "templates.h"
+#include "newprojectdialog.h"
 #include "panels.h"
 #include "theme.h"
 #include "versionhistory.h"
@@ -159,9 +160,19 @@ void MainWindow::buildActions() {
         fitNext_ = true;
         controller_->importLaunch(description);
     });
+    auto* newProject = make("actionNewProject", "New &project…", {QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_N)}, [this] {
+        if (!confirmDiscard()) return;
+        const QString conf = NewProjectDialog::ask(this);
+        if (!conf.isEmpty()) controller_->newProject(conf);
+    });
+    // A canvas never saved becomes a project: its name is asked, its folder made, and it is saved there.
     auto* save = make("actionSave", "&Save", {QKeySequence::Save}, [this] {
-        if (controller_->filePath().isEmpty()) saveAs();
-        else saveFile(QString());
+        if (!controller_->filePath().isEmpty()) {
+            saveFile(QString());
+            return;
+        }
+        const QString conf = NewProjectDialog::ask(this);
+        if (!conf.isEmpty()) saveFile(conf);
     });
     auto* saveAs = make("actionSaveAs", "Save &as…", {QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_S)}, [this] { this->saveAs(); });
     auto* update = make("actionUpdate", "&Validate", {QKeySequence(Qt::CTRL | Qt::Key_R), QKeySequence(Qt::Key_F5)}, [this] { controller_->refresh(); });
@@ -204,7 +215,7 @@ void MainWindow::buildActions() {
 
     // The menus as desktop applications have them: File, Edit, View, then the application's own, then Help.
     QMenu* file = menuBar()->addMenu("&File");
-    file->addActions({newPlan, open});
+    file->addActions({newProject, newPlan, open});
     QMenu* recent = file->addMenu("Open &recent");
     recent->setObjectName("menuRecent");
     connect(recent, &QMenu::aboutToShow, this, [this, recent] {

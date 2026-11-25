@@ -17,6 +17,7 @@
 
 ## Projects and history
 
+- File > New project… asks a name and makes its folder under ~/workspace/GstPipeStudio (Change… picks another place, remembered). Save of a canvas never saved does the same, so Ctrl+S always lands in a project folder; Save as… still chooses any file.
 - A saved conf's folder gets a .gpsproj listing its confs and the templates they use. File > Version history restores one of the last 50 saves.
 - User folders follow the XDG base directories; the template library moves from custom_elements once.
 
