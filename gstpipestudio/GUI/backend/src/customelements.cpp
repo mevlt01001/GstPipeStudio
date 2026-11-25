@@ -11,6 +11,7 @@
 #include "apppaths.h"
 #include "contract.h"
 #include "factorycatalog.h"
+#include "templates.h"
 
 // Until 0.3 the library lived in the config folder as custom_elements/; its files move once.
 QString CustomElementLibrary::directory() {
@@ -38,6 +39,10 @@ void CustomElementLibrary::load(const FactoryCatalog& catalog) {
         gps::Graph sub;
         std::string err;
         if (!gps::Graph::load(toStd(dir.filePath(f)), &sub, &err) || sub.elements.empty()) continue;
+        // Library files before 0.4 tagged every element with "<name>#0": that is the template itself, not one inside it.
+        for (const gps::TemplateInstance& t : std::vector<gps::TemplateInstance>(sub.instances)) {
+            if (t.parent.empty() && t.templateName == sub.name) gps::templates::detach(sub, t.id);
+        }
         CustomElementInfo ci;
         ci.name = sub.name.empty() ? QFileInfo(f).completeBaseName() : fromStd(sub.name);
         ci.elementCount = static_cast<int>(sub.elements.size());
@@ -68,7 +73,6 @@ bool CustomElementLibrary::save(const QString& name, gps::Graph preset, QString*
     for (gps::Element& e : preset.elements) {
         e.x -= left;
         e.y -= top;
-        e.group = toStd(name + "#0");
     }
     std::string failure;
     if (preset.save(toStd(fileFor(name)), &failure)) return true;

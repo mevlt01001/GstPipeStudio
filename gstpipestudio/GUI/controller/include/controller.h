@@ -96,7 +96,7 @@ public:
     bool isGroupExpanded(const QString& groupId) const { return expandedGroups_.contains(groupId); }
     void setGroupExpanded(const QString& groupId, bool expanded);
     QStringList groupMembers(const QString& groupId) const;
-    QString elementGroup(const QString& elementName) const;
+    QString elementGroup(const QString& elementName) const;  // the collapsed instance it is drawn in, "" when none
     QStringList expandSelectionWithGroups(const QStringList& elementNames) const;
 
     // ---- what the canvas and the drawer show
@@ -186,8 +186,6 @@ private:
     bool anyTracked(const QStringList& elements) const;  // fed by a source in the plan as it is now
     bool infosReady(const gps::Graph& clip, std::function<void()> retry);
     static QPointF topLeft(const gps::Graph& clip);
-    std::map<std::string, std::string> insertCopy(gps::Graph& draft, const gps::Graph& clip, QPointF offset, const QString& group = {});
-    QString newGroupId(const QString& title);
     QString runFile(const QString& name);
     gps::Graph& editGraph() { return pipeline_.editor().draft(); }
     bool commitTransaction();
@@ -220,7 +218,6 @@ private:
     FactoryCatalog catalog_;
     CustomElementLibrary library_;
     QSet<QString> expandedGroups_;
-    int nextGroupId_ = 1;
     HelperClient* runClient_ = nullptr;
     QProcess* monitorClient_ = nullptr;
     QByteArray monitorOutput_;

@@ -1,4 +1,5 @@
 #include "pipeline.h"
+#include "templates.h"
 #include <algorithm>
 #include <cmath>
 #include <set>
@@ -9,6 +10,7 @@ namespace {
 std::string executionKey(Graph graph) {
     graph.name.clear(); graph.complete = false; graph.nextId = 0;
     for (auto& e : graph.elements) { e.x = e.y = 0; e.group.clear(); }
+    graph.instances.clear();  // template instances are presentation: the engine never reads them
     return graph.toConf();
 }
 bool fail(std::string* error, const std::string& message) {
@@ -42,6 +44,19 @@ bool Pipeline::validate(const Graph& graph, std::string* error) {
     for (const auto& p : graph.exposed)
         if (!names.count(p.element) || p.name.empty() || !exposed.insert(p.name).second)
             return fail(error, "An exposed property has a missing owner or duplicate name");
+    std::set<std::string> instances;
+    for (const auto& t : graph.instances)
+        if (t.id.empty() || !instances.insert(t.id).second) return fail(error, "Template instances need unique identities");
+    for (const auto& t : graph.instances) {
+        if (!t.parent.empty() && !instances.count(t.parent)) return fail(error, "A template instance names a missing parent");
+        if (templates::inside(graph, t.id, t.id)) return fail(error, "A template instance cannot be inside itself");
+        std::set<std::string> params;
+        for (const auto& p : t.params)
+            if (!templates::inside(graph, p.element, t.id) || !params.insert(p.name).second)
+                return fail(error, "A template parameter has a missing owner or duplicate name");
+    }
+    for (const auto& e : graph.elements)
+        if (!e.group.empty() && !instances.count(e.group)) return fail(error, "An element names a missing template instance");
     return true;
 }
 void Pipeline::install(Graph graph) {
@@ -232,6 +247,16 @@ Graph GraphFragment::copy(const Graph& graph) const {
     for (const auto& l : graph.links)
         if (selected.count(l.srcElement) && selected.count(l.sinkElement)) out.links.push_back(l);
     for (const auto& p : graph.exposed) if (selected.count(p.element)) out.exposed.push_back(p);
+    // A template instance comes along when all of it is selected; a part of one is plain elements.
+    for (const auto& t : graph.instances) {
+        const auto inner = templates::members(graph, t.id);
+        if (!inner.empty() && std::all_of(inner.begin(), inner.end(), [&](const std::string& m) { return selected.count(m) > 0; }))
+            out.instances.push_back(t);
+    }
+    for (auto& t : out.instances)
+        if (!out.instance(t.parent)) t.parent.clear();
+    for (auto& e : out.elements)
+        if (!out.instance(e.group)) e.group.clear();
     out.nextId = graph.nextId;
     return out;
 }

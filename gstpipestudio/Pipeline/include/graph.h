@@ -49,7 +49,7 @@ struct FactoryDefinition {
 struct Element {
     std::string name;     // unique, "<factory>_<N>" with non-alphanumerics turned into '_'
     std::string factory;
-    std::string group;    // custom element / group instance id ("<CustomName>#<id>"), "" when standalone
+    std::string group;    // the innermost template instance it belongs to (TemplateInstance::id), "" when standalone
     Props props;
     std::vector<Pad> pads; // Derived from factory templates and the current run; not serialized.
     std::map<std::string, int> requestSrc;   // Request src template -> how many pads to ask for before the run
@@ -69,7 +69,20 @@ struct Connection {
 struct ExposedParam {
     std::string name;      // what gst-launch and gps-run call it
     std::string element;   // plan element
-    std::string property;  // its property
+    std::string property;  // its property; "caps.<field>" / "<srcpad>.caps.<field>": a field of the caps on its src link
+};
+
+// A placed copy of a library template. Its members are ordinary elements whose Element::group names it; a nested
+// instance names the one around it in parent. Everything a template instance knows is presentation: the engine never
+// reads it, and a conf with instances runs like the same conf without them.
+struct TemplateInstance {
+    std::string id;            // "<Template>#<n>", unique in its Graph
+    std::string templateName;  // the library template it is a copy of
+    int revision = 0;          // the library revision it was copied from
+    std::string parent;        // the instance around it, "" at the top
+    std::vector<ExposedParam> params;          // its parameters: properties and caps fields of its members
+    std::map<std::string, std::string> local;  // member element or nested instance -> its name inside the template
+    std::string signature;     // content fingerprint at the last sync with the library (templates.h)
 };
 
 // "video_%u" and 0 -> "video_%u#0"
@@ -97,13 +110,17 @@ public:
     std::string name = "pipeline";
     bool complete = false;  // written by Save: the last update left no free src pad
     int nextId = 0;         // names are never reused
+    int revision = 0;       // a template's library revision; 0 for a project
     std::vector<Element> elements;
     std::vector<Connection> links;
     std::vector<ExposedParam> exposed;
+    std::vector<TemplateInstance> instances;
 
     // ---- lookup
     const Element* find(const std::string& name) const;
     Element* find(const std::string& name);
+    const TemplateInstance* instance(const std::string& id) const;
+    TemplateInstance* instance(const std::string& id);
     std::string sinkIdentity(size_t link) const;
     int linkFrom(const std::string& srcElement, const std::string& srcPad) const;  // index, or -1 for a free src pad
     int linkInto(const std::string& sinkElement, const std::string& sinkIdentity) const;  // index, or -1 for a free sink pad
@@ -183,6 +200,7 @@ public:
 private:
     std::string newName(const std::string& factory);
     void dropElement(const std::string& name, Removal* removed);
+    void dropEmptyInstances();
 };
 
 // Elements whose src templates are all Request get one pad by default, others none (SPEC 4.2).

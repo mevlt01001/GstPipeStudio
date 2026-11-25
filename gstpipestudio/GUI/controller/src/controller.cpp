@@ -3,6 +3,7 @@
 
 #include "capstext.h"
 #include "actions.h"
+#include "templates.h"
 
 #include <QClipboard>
 #include <QDir>
@@ -159,17 +160,19 @@ QString Controller::launchCommand() const {
 
 // ---- custom elements & groups
 
+// The box an element is drawn in: the outermost collapsed instance around it, "" when every one around it is expanded.
 QString Controller::elementGroup(const QString& elementName) const {
-    const gps::Element* e = plan().find(toStd(elementName));
-    return e ? fromStd(e->group) : QString();
+    const std::vector<std::string> around = gps::templates::chain(plan(), toStd(elementName));
+    for (auto up = around.rbegin(); up != around.rend(); ++up) {
+        if (!isGroupExpanded(fromStd(*up))) return fromStd(*up);
+    }
+    return QString();
 }
 
 QStringList Controller::groupMembers(const QString& groupId) const {
-    if (groupId.isEmpty()) return {};
     QStringList out;
-    std::string g = toStd(groupId);
-    for (const gps::Element& e : plan().elements) {
-        if (e.group == g) out << fromStd(e.name);
+    if (!groupId.isEmpty()) {
+        for (const std::string& m : gps::templates::members(plan(), toStd(groupId))) out << fromStd(m);
     }
     return out;
 }
@@ -180,7 +183,7 @@ QStringList Controller::expandSelectionWithGroups(const QStringList& elementName
     for (const QString& n : elementNames) {
         if (!plan().find(toStd(n))) continue;
         QString grp = elementGroup(n);
-        if (!grp.isEmpty() && !isGroupExpanded(grp)) {
+        if (!grp.isEmpty()) {
             for (const QString& m : groupMembers(grp)) {
                 if (!seen.contains(m)) {
                     seen.insert(m);
@@ -209,10 +212,9 @@ bool Controller::groupSelectedElements(const QStringList& elementNames, const QS
     if (cleanTitle.isEmpty()) cleanTitle = "CustomGroup";
     cleanTitle.replace('#', '_');
     return transact([&](gps::Graph& g, Edit& edit) {
-        const std::string groupId = toStd(newGroupId(cleanTitle));
-        for (const QString& n : expanded) {
-            if (gps::Element* e = g.find(toStd(n))) e->group = groupId;
-        }
+        std::vector<std::string> names;
+        for (const QString& n : expanded) names.push_back(toStd(n));
+        expandedGroups_.remove(fromStd(gps::templates::wrap(g, names, toStd(cleanTitle), {})));
         edit.action = "Grouped elements as " + cleanTitle;
         edit.presentation = true;
         return true;
@@ -223,9 +225,7 @@ bool Controller::ungroupElements(const QString& groupId) {
     QStringList members = groupMembers(groupId);
     if (groupId.isEmpty() || members.isEmpty()) return false;
     return transact([&](gps::Graph& g, Edit& edit) {
-        for (const QString& m : members) {
-            if (gps::Element* e = g.find(toStd(m))) e->group.clear();
-        }
+        gps::templates::detach(g, toStd(groupId));
         expandedGroups_.remove(groupId);
         edit.action = "Ungrouped " + groupId.section('#', 0, 0);
         edit.presentation = true;
@@ -238,16 +238,15 @@ bool Controller::saveCustomElement(const QString& customName, const QStringList&
     QString clean = customName.trimmed();
     clean.replace('#', '_');
     QStringList expanded = expandSelectionWithGroups(elementNames);
-    if (clean.isEmpty() || expanded.isEmpty()) return false;
-    gps::Graph preset = copySubplan(expanded);
-    if (preset.elements.empty()) return false;
+    if (clean.isEmpty() || expanded.isEmpty() || editingBlocked()) return false;
+    // The selection on the canvas becomes a collapsed instance of the new template, and the library gets its content.
+    if (!groupSelectedElements(expanded, clean)) return false;
+    const QString id = elementGroup(expanded.first());
     QString error;
-    if (!library_.save(clean, preset, &error)) {
+    if (!library_.save(clean, gps::templates::extract(plan(), toStd(id)), &error)) {
         emit notice("Unable to save custom element: " + error);
         return false;
     }
-    // The selection on the canvas becomes a collapsed instance of the new custom element.
-    if (!editingBlocked()) groupSelectedElements(expanded, clean);
     library_.load(catalog_);
     emit changed();
     return true;
@@ -262,11 +261,20 @@ bool Controller::removeCustomElement(const QString& customName) {
 
 QStringList Controller::addCustomElement(const QString& customName, double x, double y) {
     const gps::Graph* tmpl = library_.plan(customName);
-    if (!tmpl || editingBlocked()) return {};
-    gps::Graph copy = *tmpl;
-    for (gps::Element& e : copy.elements) e.group = toStd(customName);  // the paste gives the group a fresh id
-    QPointF at = (std::isfinite(x) && std::isfinite(y)) ? QPointF(x, y) : freeSpot();
-    return pasteSubplan(copy, at.x(), at.y());
+    if (!tmpl || tmpl->elements.empty() || editingBlocked()) return {};
+    if (!infosReady(*tmpl, [=] { addCustomElement(customName, x, y); })) return {};
+    const QPointF at = (std::isfinite(x) && std::isfinite(y)) ? QPointF(x, y) : freeSpot();
+    QStringList created;
+    transact([&](gps::Graph& g, Edit& edit) {
+        const QPointF offset = at - topLeft(*tmpl);
+        const std::string id = gps::templates::insertTemplate(g, *tmpl, offset.x(), offset.y());
+        for (const std::string& m : gps::templates::members(g, id)) created << fromStd(m);
+        edit.action = "Added custom element " + customName;
+        edit.touched = created.value(0);
+        edit.validate = anyTracked(created);
+        return true;
+    });
+    return created;
 }
 
 QStringList Controller::addCustomElementAfter(const QString& srcElement, const QString& srcPad, const QString& customName) {
@@ -274,11 +282,11 @@ QStringList Controller::addCustomElementAfter(const QString& srcElement, const Q
     const gps::Element* from = plan().find(toStd(srcElement));
     if (!tmpl || !from || editingBlocked()) return {};
     if (!infosReady(*tmpl, [=] { addCustomElementAfter(srcElement, srcPad, customName); })) return {};
-    const QString groupId = newGroupId(customName);
     QStringList created;
     transact([&](gps::Graph& g, Edit& edit) {
-        const QPointF to(from->x + metrics::kColumn, from->y);
-        for (const auto& entry : insertCopy(g, *tmpl, to - topLeft(*tmpl), groupId)) created << fromStd(entry.second);
+        const QPointF offset = QPointF(from->x + metrics::kColumn, from->y) - topLeft(*tmpl);
+        const QString groupId = fromStd(gps::templates::insertTemplate(g, *tmpl, offset.x(), offset.y()));
+        for (const std::string& m : gps::templates::members(g, toStd(groupId))) created << fromStd(m);
         // srcElement.srcPad feeds the first free sink pad of the new group
         for (const PadView& p : groupView(groupId).sinks) {
             if (p.state != PadView::Linked) {
@@ -646,7 +654,10 @@ QStringList Controller::pasteSubplan(const gps::Graph& clip, double targetX, dou
     const QPointF at = std::isfinite(targetX) ? QPointF(targetX, targetY) : topLeft(clip) + QPointF(40, 40);
     QStringList created;
     transact([&](gps::Graph& g, Edit& edit) {
-        for (const auto& entry : insertCopy(g, clip, at - topLeft(clip))) created << fromStd(entry.second);
+        const QPointF offset = at - topLeft(clip);
+        for (const auto& [old, made] : gps::templates::insertCopy(g, clip, offset.x(), offset.y())) {
+            if (g.find(made)) created << fromStd(made);
+        }
         edit.action = QString("Pasted %1 element(s)").arg(created.size());
         edit.touched = created.last();
         edit.validate = anyTracked(created);
@@ -673,39 +684,6 @@ QPointF Controller::topLeft(const gps::Graph& clip) {
     QPointF corner(clip.elements.front().x, clip.elements.front().y);
     for (const gps::Element& e : clip.elements) corner = QPointF(std::min(corner.x(), e.x), std::min(corner.y(), e.y));
     return corner;
-}
-
-// The clip's elements, links and exposed properties as new elements of the draft, moved by offset. Each group of the
-// clip gets a fresh id, unless group names the one every element joins. Returns old name -> new name.
-std::map<std::string, std::string> Controller::insertCopy(gps::Graph& g, const gps::Graph& clip, QPointF offset, const QString& group) {
-    std::map<std::string, std::string> names, groups;
-    for (const gps::Element& e : clip.elements) {
-        const std::string created = g.addElement(e.factory, e.props, e.x + offset.x(), e.y + offset.y());
-        std::string joined = toStd(group);
-        if (joined.empty() && !e.group.empty()) {
-            auto found = groups.find(e.group);
-            if (found == groups.end()) found = groups.emplace(e.group, toStd(newGroupId(fromStd(e.group).section('#', 0, 0)))).first;
-            joined = found->second;
-        }
-        g.find(created)->group = joined;
-        ElementEdit edit{e.props, e.requestSrc, e.requestSink, {}};
-        for (const gps::ExposedParam& p : clip.exposed) {
-            if (p.element == e.name) edit.exposed.push_back(p.property);
-        }
-        applyEdit(created, edit);
-        names[e.name] = created;
-    }
-    for (const gps::Connection& l : clip.links) {
-        auto src = names.find(l.srcElement), sink = names.find(l.sinkElement);
-        if (src != names.end() && sink != names.end()) g.linkExisting(src->second, l.srcPad, sink->second, l.sinkPad, l.caps, l.sinkPadProps);
-    }
-    return names;
-}
-
-QString Controller::newGroupId(const QString& title) {
-    const QString id = title + "#" + QString::number(nextGroupId_++);
-    expandedGroups_.remove(id);
-    return id;
 }
 
 bool Controller::anyTracked(const QStringList& elements) const {
@@ -971,8 +949,8 @@ void Controller::setPositions(const QList<QPair<QString, QPointF>>& positions) {
         if (!e) continue;
         const double dx = pt.x() - e->x, dy = pt.y() - e->y;
         if (std::abs(dx) < 0.01 && std::abs(dy) < 0.01) continue;
-        const QString group = fromStd(e->group);
-        if (!group.isEmpty() && !isGroupExpanded(group)) {
+        const QString group = elementGroup(element);
+        if (!group.isEmpty()) {
             if (handledGroups.contains(group)) continue;
             handledGroups.insert(group);
             for (const auto& member : groupMembers(group)) {

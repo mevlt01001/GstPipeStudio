@@ -7,6 +7,7 @@
 #include <sstream>
 
 #include "graph.h"
+#include "templates.h"
 
 namespace gps {
 namespace {
@@ -94,6 +95,7 @@ std::string Graph::toConf() const {
     out << "[gstpipestudio]\nversion=1\n";
     put(out, "name", name);
     out << "complete=" << (complete ? 1 : 0) << "\nnext=" << nextId << "\n";
+    if (revision) out << "revision=" << revision << "\n";
 
     for (const Element& e : elements) {
         out << "\n[element:" << e.name << "]\n";
@@ -117,6 +119,15 @@ std::string Graph::toConf() const {
     for (const ExposedParam& p : exposed) {
         out << "\n[expose:" << p.name << "]\n";
         put(out, "target", p.element + "." + p.property);
+    }
+    for (const TemplateInstance& t : instances) {
+        out << "\n[template:" << t.id << "]\n";
+        put(out, "template", t.templateName);
+        out << "revision=" << t.revision << "\n";
+        if (!t.parent.empty()) put(out, "parent", t.parent);
+        if (!t.signature.empty()) put(out, "signature", t.signature);
+        for (const auto& [member, inside] : t.local) put(out, "local." + member, inside);
+        for (const ExposedParam& p : t.params) put(out, "param." + p.name, p.element + "." + p.property);
     }
     return out.str();
 }
@@ -162,6 +173,7 @@ bool Graph::fromConf(const std::string& text, Graph* out, std::string* error) {
             if (const std::string* v = s.get("name")) plan.name = *v;
             if (const std::string* v = s.get("complete")) plan.complete = *v == "1";
             if (const std::string* v = s.get("next")) next = std::max(0, std::atoi(v->c_str()));
+            if (const std::string* v = s.get("revision")) plan.revision = std::max(0, std::atoi(v->c_str()));
         } else if (s.kind == "element") {
             if (!validName(s.name)) return fail(error, s.line, "bad element name '" + s.name + "'");
             if (!names.insert(s.name).second) return fail(error, s.line, "duplicate element '" + s.name + "'");
@@ -201,7 +213,33 @@ bool Graph::fromConf(const std::string& text, Graph* out, std::string* error) {
             size_t dot = target ? target->find('.') : std::string::npos;
             if (dot == std::string::npos || s.name.empty()) return fail(error, s.line, "expose needs target=element.property");
             plan.exposed.push_back({s.name, target->substr(0, dot), target->substr(dot + 1)});
+        } else if (s.kind == "template") {
+            if (s.name.empty() || plan.instance(s.name)) return fail(error, s.line, "template section needs a unique id");
+            TemplateInstance t;
+            t.id = s.name;
+            for (const auto& kv : s.keys) {
+                if (kv.first == "template") t.templateName = kv.second;
+                else if (kv.first == "revision") t.revision = std::max(0, std::atoi(kv.second.c_str()));
+                else if (kv.first == "parent") t.parent = kv.second;
+                else if (kv.first == "signature") t.signature = kv.second;
+                else if (kv.first.rfind("local.", 0) == 0) t.local[kv.first.substr(6)] = kv.second;
+                else if (kv.first.rfind("param.", 0) == 0) {
+                    size_t dot = kv.second.find('.');
+                    if (dot == std::string::npos) return fail(error, s.line, "param needs element.property");
+                    t.params.push_back({kv.first.substr(6), kv.second.substr(0, dot), kv.second.substr(dot + 1)});
+                }
+            }
+            if (t.templateName.empty()) t.templateName = t.id.substr(0, t.id.find('#'));
+            plan.instances.push_back(t);
         }
+    }
+    // Files before 0.4 tag group members only: every group becomes an instance of the template it was named after.
+    for (const Element& e : plan.elements) {
+        if (e.group.empty() || plan.instance(e.group)) continue;
+        TemplateInstance t;
+        t.id = e.group;
+        t.templateName = e.group.substr(0, e.group.find('#'));
+        plan.instances.push_back(t);
     }
     if (!header) return fail(error, 1, "missing [gstpipestudio] section");
     plan.nextId = next;
@@ -232,6 +270,17 @@ bool Graph::fromConf(const std::string& text, Graph* out, std::string* error) {
     }
     for (const ExposedParam& p : plan.exposed) {
         if (!names.count(p.element)) return fail(error, 0, "expose '" + p.name + "' names an element that does not exist");
+    }
+    for (const TemplateInstance& t : plan.instances) {
+        if (!t.parent.empty() && !plan.instance(t.parent)) return fail(error, 0, "template " + t.id + " names a missing parent");
+        if (templates::inside(plan, t.id, t.id)) return fail(error, 0, "template " + t.id + " is inside itself");
+        for (const ExposedParam& p : t.params) {
+            if (!templates::inside(plan, p.element, t.id)) return fail(error, 0, "template " + t.id + " has a parameter outside it");
+        }
+    }
+    // An instance read without a fingerprint (older files) starts in sync with what it holds now.
+    for (TemplateInstance& t : plan.instances) {
+        if (t.signature.empty()) t.signature = templates::fingerprint(plan, t.id);
     }
 
     *out = plan;

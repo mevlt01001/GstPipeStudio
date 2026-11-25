@@ -96,8 +96,8 @@ void CanvasScene::rebuild() {
     QSet<QString> builtCollapsedGroups;
     for (const gps::Element& e : pipeline().graph().elements) {
         QString name = QString::fromStdString(e.name);
-        QString grp = QString::fromStdString(e.group);
-        if (!grp.isEmpty() && !controller_->isGroupExpanded(grp)) {
+        QString grp = controller_->elementGroup(name);
+        if (!grp.isEmpty()) {
             if (builtCollapsedGroups.contains(grp)) continue;
             builtCollapsedGroups.insert(grp);
             ElementView gv = controller_->groupView(grp);

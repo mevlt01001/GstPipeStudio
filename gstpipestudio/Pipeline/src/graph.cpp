@@ -52,6 +52,17 @@ Element* Graph::find(const std::string& name) {
     return const_cast<Element*>(static_cast<const Graph*>(this)->find(name));
 }
 
+const TemplateInstance* Graph::instance(const std::string& id) const {
+    for (const TemplateInstance& t : instances) {
+        if (t.id == id) return &t;
+    }
+    return nullptr;
+}
+
+TemplateInstance* Graph::instance(const std::string& id) {
+    return const_cast<TemplateInstance*>(static_cast<const Graph*>(this)->instance(id));
+}
+
 std::string Graph::sinkIdentity(size_t index) const {
     const auto& link = links.at(index);
     if (!isTemplateName(link.sinkPad)) return link.sinkPad;
@@ -450,8 +461,29 @@ void Graph::dropElement(const std::string& name, Removal* removed) {
                 links.end());
     removed->links += static_cast<int>(before - links.size());
     removed->elements.push_back(name);
-    exposed.erase(std::remove_if(exposed.begin(), exposed.end(), [&](const ExposedParam& p) { return p.element == name; }),
-                  exposed.end());
+    auto owned = [&](const ExposedParam& p) { return p.element == name; };
+    exposed.erase(std::remove_if(exposed.begin(), exposed.end(), owned), exposed.end());
+    for (TemplateInstance& t : instances) {
+        t.params.erase(std::remove_if(t.params.begin(), t.params.end(), owned), t.params.end());
+        t.local.erase(name);
+    }
+    dropEmptyInstances();
+}
+
+// An instance without members is gone; the ones inside it move up to its parent.
+void Graph::dropEmptyInstances() {
+    for (bool dropped = true; dropped;) {
+        dropped = false;
+        for (size_t i = 0; i < instances.size() && !dropped; ++i) {
+            const std::string id = instances[i].id, parent = instances[i].parent;
+            const bool used = std::any_of(elements.begin(), elements.end(), [&](const Element& e) { return e.group == id; }) ||
+                              std::any_of(instances.begin(), instances.end(), [&](const TemplateInstance& t) { return t.parent == id; });
+            if (used) continue;
+            instances.erase(instances.begin() + static_cast<long>(i));
+            for (TemplateInstance& t : instances) t.local.erase(id);
+            dropped = true;
+        }
+    }
 }
 
 Removal Graph::prune(const TraitsFn& traits) {
@@ -484,15 +516,29 @@ Addition Graph::replace(const std::string& srcElement, const std::string& srcPad
     if (old < 0) return result;
     std::string targetName = links[old].sinkElement;
     double x = 0, y = 0;
+    std::vector<TemplateInstance> before = instances;  // the new element takes the old one's place in its template
+    std::string group;
     if (const Element* replaced = find(targetName)) {
         x = replaced->x;
         y = replaced->y;
+        group = replaced->group;
         dropElement(targetName, &result.removed);
     } else {
         disconnectLink(srcElement, srcPad);
         result.removed.links = 1;
     }
     result.element = addAfter(srcElement, srcPad, factory, sinkPad, props, x, y);
+    if (!group.empty() && !result.element.empty()) {
+        for (const TemplateInstance& t : before) {
+            if (!instance(t.id)) instances.push_back(t);  // the replaced element was its only member
+        }
+        for (TemplateInstance& t : instances) {
+            t.params.erase(std::remove_if(t.params.begin(), t.params.end(), [&](const ExposedParam& p) { return !find(p.element); }),
+                           t.params.end());
+            t.local.erase(targetName);
+        }
+        find(result.element)->group = group;
+    }
     return result;
 }
 
