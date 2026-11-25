@@ -6,8 +6,8 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QSettings>
+#include <QTemporaryDir>
 #include <algorithm>
-#include <cctype>
 
 #include "apppaths.h"
 #include "contract.h"
@@ -56,32 +56,27 @@ void ProjectFile::record(const QString& conf, const gps::Graph& content) {
     }
 }
 
-// The text QSettings reads back: a key or a section keeps [A-Za-z0-9_.-], other Latin-1 characters are %XX and the rest
-// %UXXXX; a value is quoted.
-QString ProjectFile::text() const {
-    auto key = [](const QString& raw) {
-        QString out;
-        for (const QChar c : raw) {
-            const ushort u = c.unicode();
-            if (u < 128 && (std::isalnum(u) || u == '_' || u == '.' || u == '-')) out += c;
-            else if (u < 256) out += "%" + QString::number(u, 16).rightJustified(2, '0').toUpper();
-            else out += "%U" + QString::number(u, 16).rightJustified(4, '0').toUpper();
-        }
-        return out;
-    };
-    auto quoted = [](QString value) { return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""; };
-    QString out = "[project]\nname=" + quoted(QFileInfo(path_).completeBaseName()) + "\nformat=1\n";
-    for (auto conf = confs_.cbegin(); conf != confs_.cend(); ++conf) {
-        out += "\n[" + key("conf " + conf.key()) + "]\nfile=" + quoted(conf.key()) + "\n";
-        // Template names may hold any character; INI keys may not: they are written in hex.
-        for (auto t = conf.value().cbegin(); t != conf.value().cend(); ++t) out += QString::fromLatin1(t.key().toUtf8().toHex()) + "=" + QString::number(t.value()) + "\n";
-    }
-    return out;
-}
-
+// QSettings owns the INI format, the reader's and the writer's: it drafts the manifest in a temporary folder, and the
+// draft is written through the one writer.
 bool ProjectFile::save(QString* error) const {
-    std::string failure;
-    if (gps::files::writeAtomic(toStd(path_), toStd(text()), &failure)) return true;
+    QTemporaryDir drafts;
+    const QString draft = drafts.filePath("manifest");
+    {
+        QSettings ini(draft, QSettings::IniFormat);
+        ini.setValue("project/name", QFileInfo(path_).completeBaseName());
+        ini.setValue("project/format", 1);
+        for (auto conf = confs_.cbegin(); conf != confs_.cend(); ++conf) {
+            ini.beginGroup("conf " + conf.key());
+            ini.setValue("file", conf.key());
+            // Template names may hold any character; INI keys may not: they are written in hex.
+            for (auto t = conf.value().cbegin(); t != conf.value().cend(); ++t) ini.setValue(QString(t.key().toUtf8().toHex()), t.value());
+            ini.endGroup();
+        }
+    }
+    QFile text(draft);
+    std::string failure = "cannot write " + toStd(path_);
+    if (drafts.isValid() && text.open(QIODevice::ReadOnly) && gps::files::writeAtomic(toStd(path_), text.readAll().toStdString(), &failure))
+        return true;
     if (error) *error = fromStd(failure);
     return false;
 }
