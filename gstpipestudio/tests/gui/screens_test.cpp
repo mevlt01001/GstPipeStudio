@@ -190,8 +190,8 @@ private slots:
         w.flows()->closeCaps();
         QTest::qWait(100);
 
-        // Add source (in right drawer).
-        w.flows()->chooseSource();
+        // Add element (in right drawer).
+        w.flows()->chooseElement();
         QVERIFY(w.drawer()->page<PickerPage>());
         saveWithDrawer(w, "ux_13_drawer_add_source");
         w.drawer()->dismiss();

@@ -147,9 +147,8 @@ void MainWindow::buildActions() {
     auto* saveAs = make("actionSaveAs", "Save &as…", {QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_S)}, [this] { this->saveAs(); });
     auto* update = make("actionUpdate", "&Validate", {QKeySequence(Qt::CTRL | Qt::Key_R), QKeySequence(Qt::Key_F5)}, [this] { controller_->refresh(); });
     auto* run = make("actionRun", "&Run", {QKeySequence(Qt::CTRL | Qt::Key_Return)}, [this] { toggleRun(); });
-    auto* addSource = make("actionAddSource", "Add &source…", {QKeySequence(Qt::CTRL | Qt::Key_E)}, [this] { flows_->chooseSource(); });
-    addSource->setIconText("Add source");
-    auto* addElement = make("actionAddElement", "Add &element…", {QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_E)}, [this] { flows_->chooseElement(); });
+    auto* addElement = make("actionAddElement", "Add &element…", {QKeySequence(Qt::CTRL | Qt::Key_E), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_E)},
+                            [this] { flows_->chooseElement(); });
     addElement->setIconText("Add element");
     auto* undoAct = make("actionUndo", "&Undo", {QKeySequence::Undo}, [this] { controller_->undo(); });
     undoAct->setIconText("Undo");
@@ -192,7 +191,7 @@ void MainWindow::buildActions() {
     file->addSeparator();
     file->addAction(quit);
     QMenu* pipeline = menuBar()->addMenu("&Pipeline");
-    pipeline->addActions({addSource, addElement, update, run});
+    pipeline->addActions({addElement, update, run});
     pipeline->addSeparator();
     pipeline->addActions({undoAct, redoAct});
     pipeline->addSeparator();
@@ -220,7 +219,6 @@ void MainWindow::buildActions() {
     bar->addSeparator();
     bar->addActions({update, run});
     bar->addSeparator();
-    bar->addAction(addSource);
     bar->addAction(addElement);
     bar->addAction(saveCustomAct);
     bar->widgetForAction(run)->setObjectName("primaryAction");
@@ -293,7 +291,6 @@ void MainWindow::refreshState() {
     act("actionNew")->setEnabled(!busy && !blocked);
     act("actionOpen")->setEnabled(!busy && !blocked);
     act("actionImportLaunch")->setEnabled(!busy && !blocked);
-    act("actionAddSource")->setEnabled(!editBlocked && !blocked);
     act("actionAddElement")->setEnabled(!editBlocked && !blocked);
     act("actionUndo")->setEnabled(controller_->canUndo());
     act("actionRedo")->setEnabled(controller_->canRedo());
@@ -313,7 +310,7 @@ void MainWindow::refreshState() {
     setReason(act("actionSaveAs"), "Save as", saveReason);
     setReason(act("actionRun"), controller_->running() ? "Stop" : "Run", controller_->running() ? QString() : runReason);
     act("actionUpdate")->setToolTip(!hasPlan ? "Validate is off. The canvas is empty" : busy ? "Validate is off. Wait for the running step to finish" : "Validate the pipeline (Ctrl+R)");
-    act("actionAddSource")->setToolTip(blocked ? "Add source is off. GStreamer is not ready" : editBlocked ? "Add source is off. Wait for the running step to finish" : "Add a source element (Ctrl+E)");
+    act("actionAddElement")->setToolTip(blocked ? "Add element is off. GStreamer is not ready" : editBlocked ? "Add element is off. Wait for the running step to finish" : "Add an element: a source, a filter or a sink (Ctrl+E)");
 
     const UpdateResult& r = controller_->result();
     QString text;
@@ -423,7 +420,6 @@ void MainWindow::showCanvasMenu(const QPoint& screenPos) {
     menu->setObjectName("canvasMenu");
     menu->setAttribute(Qt::WA_DeleteOnClose);
     menu->addAction("Add element…", this, [this] { flows_->chooseElement(); })->setObjectName("actionCanvasAddElement");
-    menu->addAction("Add source…", this, [this] { flows_->chooseSource(); })->setObjectName("actionCanvasAddSource");
     if (!controller_->templates().isEmpty()) {
         QMenu* customSub = menu->addMenu("Add template");
         for (const TemplateInfo& c : controller_->templates()) {
@@ -494,7 +490,7 @@ void MainWindow::showSelectionMenu(const QString& clickedElement, const QPoint& 
         menu->addAction(expanded ? ("Collapse '" + title + "' to single element") : ("Expand '" + title + "' (" + QString::number(controller_->templateMembers(grp).size()) + " elements)"),
                         this, [this, grp, expanded] { controller_->setTemplateExpanded(grp, !expanded); })
             ->setObjectName("actionToggleGroupExpand");
-        menu->addAction("Ungroup '" + title + "'", this, [this, grp] { controller_->detachTemplate(grp); })->setObjectName("actionUngroup");
+        menu->addAction("Detach from template '" + title + "'", this, [this, grp] { controller_->detachTemplate(grp); })->setObjectName("actionUngroup");
         if (expanded) {
             menu->addAction("Edit properties of " + clickedElement + "…", this, [this, clickedElement] { flows_->editProperties(clickedElement); });
         }
@@ -503,11 +499,6 @@ void MainWindow::showSelectionMenu(const QString& clickedElement, const QPoint& 
 
     menu->addAction(QString("Save as template (%1)…").arg(sel.size()), this, [this] { saveSelectedAsTemplate(); })
         ->setObjectName("actionSaveTemplateMenu");
-    if (grp.isEmpty() && sel.size() >= 2) {
-        menu->addAction("Combine into single group on canvas", this, [this, sel] {
-            controller_->groupSelectedElements(sel, "Template");
-        })->setObjectName("actionGroupSelected");
-    }
     if (sel.size() >= 2) {
         menu->addSeparator();
         menu->addAction("Connect selected elements", this, [this, sel] { controller_->connectSelectedElements(sel); })

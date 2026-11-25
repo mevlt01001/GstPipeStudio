@@ -51,7 +51,7 @@ inline const ElementInfo* need(Controller& c, const QString& factory) {
 // Each helper below returns the name of the new element, or "" when the edit was refused.
 inline QString addSource(Controller& c, const QString& factory, const ElementEdit& edit = {}) {
     need(c, factory);
-    if (!c.addSource(factory, edit)) return QString();
+    if (!c.addElement(factory, edit)) return QString();
     settle(c);
     return QString::fromStdString(c.plan().elements.back().name);
 }

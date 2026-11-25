@@ -205,7 +205,7 @@ void Controller::setTemplateExpanded(const QString& groupId, bool expanded) {
     emit changed();
 }
 
-bool Controller::groupSelectedElements(const QStringList& elementNames, const QString& groupTitle) {
+bool Controller::wrapAsTemplate(const QStringList& elementNames, const QString& groupTitle) {
     QStringList expanded = expandSelection(elementNames);
     if (expanded.isEmpty()) return false;
     QString cleanTitle = groupTitle.trimmed();
@@ -227,7 +227,7 @@ bool Controller::detachTemplate(const QString& groupId) {
     return transact([&](gps::Graph& g, Edit& edit) {
         gps::templates::detach(g, toStd(groupId));
         expandedTemplates_.remove(groupId);
-        edit.action = "Ungrouped " + groupId.section('#', 0, 0);
+        edit.action = "Detached from template " + groupId.section('#', 0, 0);
         edit.presentation = true;
         return true;
     });
@@ -240,7 +240,7 @@ bool Controller::saveTemplate(const QString& templateName, const QStringList& el
     QStringList expanded = expandSelection(elementNames);
     if (clean.isEmpty() || expanded.isEmpty() || editingBlocked()) return false;
     // The selection on the canvas becomes a collapsed instance of the new template, and the library gets its content.
-    if (!groupSelectedElements(expanded, clean)) return false;
+    if (!wrapAsTemplate(expanded, clean)) return false;
     const QString id = templateBox(expanded.first());
     QString error;
     if (!library_.save(clean, gps::templates::extract(plan(), toStd(id)), &error)) {
@@ -676,10 +676,6 @@ QStringList Controller::duplicateElements(const QStringList& names) {
     gps::Graph sub = copySubplan(names);
     if (sub.elements.empty()) return {};
     return pasteSubplan(sub);
-}
-
-bool Controller::addSource(const QString& factory, const ElementEdit& edit) {
-    return addElement(factory, edit);
 }
 
 bool Controller::addElement(const QString& factory, const ElementEdit& edit, double x, double y) {

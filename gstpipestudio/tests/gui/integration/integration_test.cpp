@@ -311,9 +311,9 @@ class IntegrationTest : public QObject {
 
     // ------------------------------------------------------------------ whole flows
 
-    // Add source (toolbar) -> picker page -> properties page -> Add element. Returns the new element's name.
+    // Add element (toolbar) -> picker page -> properties page -> Add element. Returns the new element's name.
     QString addSource(const QString& factory, const std::function<void(PropertyPage*)>& fill = {}, const QString& step = QString()) {
-        w->findChild<QAction*>("actionAddSource")->trigger();
+        w->findChild<QAction*>("actionAddElement")->trigger();
         auto* picker = shown<PickerPage>();
         NEED_R(picker, QString());
         pickRow(picker, factory);
@@ -467,27 +467,27 @@ private slots:
     // 1. The catalog the GUI gets from the real gps-inspect
     // =================================================================================================================
 
-    void realCatalogFillsTheAddSourcePicker() {
+    void realCatalogFillsTheAddElementPicker() {
         QVERIFY2(c->catalog().entries().size() > 300, qPrintable(QString::number(c->catalog().entries().size())));
-        w->findChild<QAction*>("actionAddSource")->trigger();
+        w->findChild<QAction*>("actionAddElement")->trigger();
         auto* picker = shown<PickerPage>();
         QVERIFY(picker);
         QVERIFY(w->drawer()->isOpen());
         auto* list = picker->findChild<QListWidget*>("pickerList");
         QStringList names;
         int nvidia = 0;
-        for (int i = 1; i < list->count(); ++i) {  // row 0 is the "Sources" header
+        for (int i = 1; i < list->count(); ++i) {  // row 0 is the "Elements" header
             names << list->item(i)->text();
             nvidia += list->item(i)->data(NvidiaRole).toBool();
         }
         for (const char* f : {"videotestsrc", "filesrc", "audiotestsrc", "v4l2src"}) QVERIFY2(names.contains(f), f);
-        QVERIFY(!names.contains("fakesink"));
+        QVERIFY(names.contains("fakesink"));  // one list for sources, filters and sinks
         bool deepstream = false;  // a plain Ubuntu has no nv* elements, so no badge is expected there
         for (const FactoryEntry& e : c->catalog().entries()) deepstream = deepstream || e.nvidia;
-        if (deepstream) QVERIFY2(nvidia > 0, "no NVIDIA badge among the sources");
-        qInfo() << "factories" << c->catalog().entries().size() << "sources" << names.size() << "nvidia sources" << nvidia;
+        if (deepstream) QVERIFY2(nvidia > 0, "no NVIDIA badge among the elements");
+        qInfo() << "factories" << c->catalog().entries().size() << "listed" << names.size() << "nvidia" << nvidia;
         QVERIFY(waitFor([&] { return w->drawer()->width() == Drawer::kWidth; }, 3000));
-        QVERIFY(shotOf(w->drawer(), "00_add_source_picker"));
+        QVERIFY(shotOf(w->drawer(), "00_add_element_picker"));
         press(picker, "cancelButton");
         QVERIFY(!w->drawer()->isOpen());
     }
@@ -707,7 +707,7 @@ private slots:
                  real->caps.c_str());
         QCOMPARE(c->view(mix).sinks.size(), 1);
 
-        // second source by "Add source", linked to the same compositor with "Request a pad"
+        // second source by "Add element", linked to the same compositor with "Request a pad"
         QString b = addSource("videotestsrc", [&](PropertyPage* d) {
             setNumber(d, "num-buffers", 30);
             setChoice(d, "pattern", "smpte");
@@ -1074,7 +1074,7 @@ private slots:
         QVERIFY(c->busy());
         // while the helper hangs, the GUI is still alive: it paints, and the actions are off
         QVERIFY(!w->findChild<QAction*>("actionSave")->isEnabled());
-        QVERIFY(w->findChild<QAction*>("actionAddSource")->isEnabled());
+        QVERIFY(w->findChild<QAction*>("actionAddElement")->isEnabled());
         QVERIFY(w->findChild<QLabel*>("stateLabel")->text().contains("keep editing"));
         QVERIFY(shot("19_validating_hung"));
         QVERIFY(waitFor([&] { return !c->busy(); }, 20000));
@@ -1086,7 +1086,7 @@ private slots:
         QVERIFY(!c->canSave());
         QVERIFY(w->isVisible());
         idle();
-        QVERIFY(w->findChild<QAction*>("actionAddSource")->isEnabled());
+        QVERIFY(w->findChild<QAction*>("actionAddElement")->isEnabled());
         QVERIFY(shot("20_after_the_hung_helper_was_killed"));
     }
 

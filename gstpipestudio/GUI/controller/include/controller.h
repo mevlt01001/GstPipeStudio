@@ -91,7 +91,6 @@ public:
     bool removeTemplate(const QString& templateName);
     QStringList addTemplate(const QString& templateName, double x = std::numeric_limits<double>::quiet_NaN(), double y = std::numeric_limits<double>::quiet_NaN());
     QStringList addTemplateAfter(const QString& srcElement, const QString& srcPad, const QString& templateName);
-    bool groupSelectedElements(const QStringList& elementNames, const QString& groupTitle);
     bool detachTemplate(const QString& groupId);
     bool isTemplateExpanded(const QString& groupId) const { return expandedTemplates_.contains(groupId); }
     void setTemplateExpanded(const QString& groupId, bool expanded);
@@ -111,7 +110,6 @@ public:
     const PadTemplateInfo* linkSinkTemplate(int link) const;  // template of the sink pad a link ends on
 
     // ---- edits. Each starts an update.
-    bool addSource(const QString& factory, const ElementEdit& edit);
     bool addElement(const QString& factory, const ElementEdit& edit, double x = std::numeric_limits<double>::quiet_NaN(), double y = std::numeric_limits<double>::quiet_NaN());
     bool addAfter(const QString& element, const QString& pad, const QString& factory, const QString& sinkPad,
                   const ElementEdit& edit);
@@ -183,6 +181,7 @@ private:
     // The one path of an edit: refused while editing is blocked or when change returns false (nothing happened);
     // otherwise one undo step, noted, and validated as the Edit says.
     bool transact(const std::function<bool(gps::Graph&, Edit&)>& change);
+    bool wrapAsTemplate(const QStringList& elements, const QString& templateName);  // one undo step
     bool anyTracked(const QStringList& elements) const;  // fed by a source in the plan as it is now
     bool infosReady(const gps::Graph& clip, std::function<void()> retry);
     static QPointF topLeft(const gps::Graph& clip);

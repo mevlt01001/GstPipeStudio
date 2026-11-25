@@ -100,7 +100,7 @@ private slots:
     void addSourceRunsAnUpdate() {
         need(*c, "videotestsrc");
         QSignalSpy finished(c.get(), &Controller::updateFinished);
-        QVERIFY(c->addSource("videotestsrc", withProps({{"pattern", "snow"}})));
+        QVERIFY(c->addElement("videotestsrc", withProps({{"pattern", "snow"}})));
         QVERIFY(c->updating());
         QVERIFY(c->busy());
         QVERIFY(c->dirty());
@@ -139,7 +139,7 @@ private slots:
         QVERIFY(c->run());
         QVERIFY(c->running());
         QVERIFY(!c->canSave());
-        QVERIFY(!c->addSource("videotestsrc", {}));
+        QVERIFY(!c->addElement("videotestsrc", {}));
         QVERIFY(waitFor([&] { return ended.count() == 1; }));
         QCOMPARE(ended[0][0].toString(), QString("eos"));
         QVERIFY(!c->running());
@@ -456,7 +456,7 @@ private slots:
         QVERIFY(waitFor([&] { return notices.count() > 0; }));
         QVERIFY(!lonely.catalog().loaded());
         // The element info of the main controller is cached, the update helper is what is missing.
-        QVERIFY(c->addSource("videotestsrc", {}));
+        QVERIFY(c->addElement("videotestsrc", {}));
         QVERIFY(settle(*c));
         QCOMPARE(fromStd(c->result().status), QString("error"));
         QVERIFY(fromStd(c->result().message).contains("gps-update was not found"));
@@ -507,7 +507,7 @@ private slots:
         QCOMPARE(other->linkViews()[0].badge, QString("caps · 1"));
 
         // "Save" with no path writes to the same file.
-        QVERIFY(other->addSource("videotestsrc", {}));
+        QVERIFY(other->addElement("videotestsrc", {}));
         QVERIFY(settle(*other));
         QVERIFY(other->dirty());
         QVERIFY(other->save("", &error));
@@ -602,7 +602,7 @@ private slots:
     void latestEditWinsDuringPreview() {
         need(*c, "videotestsrc");
         QSignalSpy finished(c.get(), &Controller::updateFinished);
-        QVERIFY(c->addSource("videotestsrc", withProps({{"fake-slow", "1200"}})));
+        QVERIFY(c->addElement("videotestsrc", withProps({{"fake-slow", "1200"}})));
         const QString source = text(c->plan().elements.front().name);
         QTest::qWait(150); // first helper is running
         QVERIFY(c->updating());

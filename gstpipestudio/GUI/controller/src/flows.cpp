@@ -167,7 +167,7 @@ void Flows::confirmRemoval(const gps::Removal& removal, const QString& verb, std
     dialog->open();
 }
 
-// ---- Add source / Add element (Right Drawer ONLY presents PickerPage)
+// ---- Add element (Right Drawer ONLY presents PickerPage)
 
 std::vector<FactoryEntry> Flows::factories(bool sources) const {
     std::vector<FactoryEntry> out;
@@ -175,26 +175,6 @@ std::vector<FactoryEntry> Flows::factories(bool sources) const {
         if (e.isSource == sources) out.push_back(e);
     }
     return out;
-}
-
-void Flows::chooseSource() {
-    if (controller_->editingBlocked()) return;
-    PickerData data;
-    data.newHeader = "Sources";
-    for (const TemplateInfo& c : controller_->templates()) {
-        if (c.isSource) data.templates << c;
-    }
-    data.candidates = factories(true);
-    auto* page = new PickerPage(data);
-    connect(page, &PickerPage::picked, this, [this](const PickerChoice& choice) {
-        if (choice.kind == PickerChoice::Template) {
-            controller_->addTemplate(choice.factory);
-            drawer_->dismiss();
-        } else {
-            sourceProperties(choice.factory);
-        }
-    });
-    drawer_->present(page, "Add source", "Choose the first element of the pipeline.", Drawer::Replace);
 }
 
 void Flows::chooseElement() {
@@ -210,13 +190,13 @@ void Flows::chooseElement() {
             controller_->addTemplate(choice.factory);
             drawer_->dismiss();
         } else {
-            sourceProperties(choice.factory);
+            newElementProperties(choice.factory);
         }
     });
-    drawer_->present(page, "Add element", "Choose any element (SRC, FILTER, SINK, or Custom) to place on the canvas.", Drawer::Replace);
+    drawer_->present(page, "Add element", "Choose an element to place on the canvas: a source, a filter or a sink.", Drawer::Replace);
 }
 
-void Flows::sourceProperties(const QString& factory) {
+void Flows::newElementProperties(const QString& factory) {
     controller_->catalog().fetchInfo(factory, [this, factory](const ElementInfo* info) {
         if (!info) return;
         PropertyPageInput in;
@@ -227,8 +207,7 @@ void Flows::sourceProperties(const QString& factory) {
         connect(page, &PropertyPage::confirmed, this, [this, page, factory] {
             if (controller_->addElement(factory, page->edit())) closeProperties();
         });
-        QString prefix = info->entry.isSource ? "Add source · " : "Add element · ";
-        presentProperties(page, prefix + factory);
+        presentProperties(page, "Add element · " + factory);
     });
 }
 

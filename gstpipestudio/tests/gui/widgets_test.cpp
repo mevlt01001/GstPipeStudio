@@ -856,15 +856,15 @@ private slots:
         auto act = [&](const char* name) { return w.findChild<QAction*>(name); };
         auto label = [&] { return w.findChild<QLabel*>("stateLabel")->text(); };
         // empty canvas
-        QVERIFY(act("actionNew")->isEnabled() && act("actionOpen")->isEnabled() && act("actionAddSource")->isEnabled());
+        QVERIFY(act("actionNew")->isEnabled() && act("actionOpen")->isEnabled() && act("actionAddElement")->isEnabled());
         QVERIFY(!act("actionSave")->isEnabled() && !act("actionRun")->isEnabled() && !act("actionUpdate")->isEnabled());
         QVERIFY(label().contains("Empty canvas"));
         QVERIFY(act("actionSave")->toolTip().contains("The canvas is empty"));  // a disabled action says why
 
         // updating: document replacement waits; canvas edits stay available
         need(*c, "videotestsrc");
-        QVERIFY(c->addSource("videotestsrc", {}));
-        QVERIFY(!act("actionNew")->isEnabled() && !act("actionOpen")->isEnabled() && act("actionAddSource")->isEnabled());
+        QVERIFY(c->addElement("videotestsrc", {}));
+        QVERIFY(!act("actionNew")->isEnabled() && !act("actionOpen")->isEnabled() && act("actionAddElement")->isEnabled());
         QVERIFY(!act("actionSave")->isEnabled() && !act("actionRun")->isEnabled());
         QVERIFY(label().contains("keep editing"));
         QVERIFY(act("actionSave")->toolTip().contains("Validation is running"));
@@ -957,21 +957,21 @@ private slots:
         QVERIFY(w.view()->width() > 900);  // the canvas has the whole window
     }
 
-    void toolbarAddSourceOpensThePickerAndTheFlowAddsTheSource() {
+    void toolbarAddElementOpensThePickerAndTheFlowAddsASource() {
         MainWindow w(c.get());
         w.show();
-        w.findChild<QAction*>("actionAddSource")->trigger();
+        w.findChild<QAction*>("actionAddElement")->trigger();
         auto* picker = pageOf<PickerPage>(w);
         QVERIFY(picker);
         QVERIFY(w.drawer()->isOpen());
-        QCOMPARE(w.drawer()->title(), QString("Add source"));
+        QCOMPARE(w.drawer()->title(), QString("Add element"));
         QVERIFY(waitFor([&] { return w.drawer()->width() == Drawer::kWidth; }, 2000));  // the slide ends
         auto* list = picker->findChild<QListWidget*>("pickerList");
-        QCOMPARE(list->item(0)->text(), QString("Sources"));
+        QCOMPARE(list->item(0)->text(), QString("Elements"));
         QStringList names;
         for (int i = 1; i < list->count(); ++i) names << list->item(i)->text();
         QVERIFY(names.contains("videotestsrc") && names.contains("filesrc") && names.contains("nvarguscamerasrc"));
-        QVERIFY(!names.contains("queue") && !names.contains("fakesink"));  // only sources
+        QVERIFY(names.contains("queue") && names.contains("fakesink"));  // one list: the SRC/FILTER/SINK chips narrow it
         QVERIFY(list->item(names.indexOf("nvarguscamerasrc") + 1)->data(NvidiaRole).toBool());
 
         // Cancel on the picker: nothing happens and the drawer closes.
@@ -981,7 +981,7 @@ private slots:
         QVERIFY(!c->dirty());
 
         // Picker (in right drawer) -> properties (in bottom Properties tab) -> Add element.
-        w.findChild<QAction*>("actionAddSource")->trigger();
+        w.findChild<QAction*>("actionAddElement")->trigger();
         picker = pageOf<PickerPage>(w);
         QTest::keyClicks(picker->findChild<QLineEdit*>("searchBox"), "audiot");
         QTest::keyClick(picker->findChild<QLineEdit*>("searchBox"), Qt::Key_Return);
@@ -989,7 +989,7 @@ private slots:
         QVERIFY(props);
         QVERIFY(!w.drawer()->isOpen());  // the right drawer is exclusively for picking elements
         QCOMPARE(w.bottomTabs()->currentWidget(), w.propertiesTab());
-        QCOMPARE(w.flows()->propertiesTitle(), QString("Add source · audiotestsrc"));
+        QCOMPARE(w.flows()->propertiesTitle(), QString("Add element · audiotestsrc"));
         QCOMPARE(props->primary()->text(), QString("Add element"));
         in<QSpinBox>(*props, "editor_num-buffers")->setValue(25);
         press(props, "saveButton");
@@ -1004,14 +1004,14 @@ private slots:
     void escAndEnterWorkInTheDrawer() {
         MainWindow w(c.get());
         w.show();
-        w.flows()->chooseSource();
+        w.flows()->chooseElement();
         auto* picker = pageOf<PickerPage>(w);
         QTest::keyClicks(picker->findChild<QLineEdit*>("searchBox"), "videot");
         QTest::keyClick(picker->findChild<QLineEdit*>("searchBox"), Qt::Key_Escape);
         QVERIFY(!w.drawer()->isOpen());
         QVERIFY(c->plan().empty());
         // Ctrl+F puts the cursor in the search box of the picker.
-        w.flows()->chooseSource();
+        w.flows()->chooseElement();
         picker = pageOf<PickerPage>(w);
         picker->findChild<QListWidget*>("pickerList")->setFocus();
         w.findChild<QAction*>("actionFind")->trigger();
@@ -1356,7 +1356,7 @@ private slots:
         w.flows()->showElementMenu(src, QPoint(10, 10));
         w.flows()->deleteSource(src);
         w.flows()->editProperties(src);
-        w.flows()->chooseSource();
+        w.flows()->chooseElement();
         QTest::qWait(50);
         QVERIFY(!visibleChild<QMenu>(&w));
         QVERIFY(!visibleChild<QDialog>(&w));

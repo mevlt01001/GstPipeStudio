@@ -32,7 +32,6 @@ public:
     void closeCaps();
 
     // Add source / any element (opens PickerPage in the right drawer)
-    void chooseSource();
     void chooseElement();
     // Left click on a free src pad (opens PickerPage in the right drawer)
     void fromFreePad(const QString& element, const QString& identity);
@@ -55,7 +54,7 @@ private:
     void presentProperties(PropertyPage* page, const QString& title);
     void presentCaps(CapsPage* page, const QString& title, const QString& subtitle);
     void confirmRemoval(const gps::Removal& removal, const QString& verb, std::function<void()> accepted);
-    void sourceProperties(const QString& factory);
+    void newElementProperties(const QString& factory);
     void newElement(Mode mode, const QString& element, const QString& identity, const QString& factory);
     // Runs an edit; when the validation succeeds the bottom Caps tab opens for the link from (element, identity).
     void editThenCaps(const QString& element, const QString& identity, std::function<bool()> edit);
