@@ -750,6 +750,40 @@ private slots:
         QCOMPARE(library.content("End").revision, 2);
     }
 
+    // One file per template: names that share a file name are refused, and a template an earlier version saved under
+    // another file name is deleted, and saved again, by its own file.
+    void theLibraryKeepsOneFilePerTemplate() {
+        QTemporaryDir state;
+        qputenv("GPS_USER_DIR", state.path().toUtf8());
+        TemplateLibrary& library = c->services().library();
+        library.reload();
+        const QDir folder(TemplateLibrary::directory());
+        gps::Graph one;
+        one.addElement("videotestsrc");
+        QString clean, error;
+        QVERIFY2(library.save("a b", one, &error), qPrintable(error));
+        QVERIFY(!library.acceptName("a_b", &clean, &error));  // a_b.conf is taken
+        QVERIFY(library.rename("a b", "a_b", &clean, &error));  // the same file, now under the new name
+        QVERIFY(library.plan("a_b") && !library.plan("a b"));
+        QCOMPARE(folder.entryList({"*.conf"}), QStringList{"a_b.conf"});
+
+        auto older = [&] {  // "Yüz" as earlier versions named its file
+            gps::Graph t = one;
+            t.name = "Yüz";
+            QVERIFY(t.save(toStd(folder.filePath("Y_z.conf")), nullptr));
+            library.reload();
+            QVERIFY(library.plan("Yüz"));
+        };
+        older();
+        QVERIFY(library.remove("Yüz"));
+        QCOMPARE(folder.entryList({"*.conf"}), QStringList{"a_b.conf"});
+        older();
+        QVERIFY2(library.save("Yüz", one, &error), qPrintable(error));
+        QCOMPARE(folder.entryList({"*.conf"}).size(), 2);  // its older file is gone
+        QVERIFY(library.plan("Yüz"));
+        qunsetenv("GPS_USER_DIR");
+    }
+
     void aChangedTemplateCopyAsksThenUpdatesTheLibraryAndTheOtherCopies() {
         QTemporaryDir state, dir;
         qputenv("GPS_USER_DIR", state.path().toUtf8());

@@ -289,7 +289,7 @@ bool Controller::renameTemplate(const QString& from, const QString& to, QString*
 
 void Controller::editLibraryTemplate(const QString& name) {
     if (!services_.library().plan(name)) return;
-    const QString file = TemplateLibrary::fileFor(name);
+    const QString file = services_.library().file(name);
     load(file, file, false, "Opened template " + name, name);
 }
 
@@ -1489,6 +1489,7 @@ bool Controller::save(const QString& path, QString* error) {
         gps::Graph next = plan();
         next.revision = services_.library().nextRevision(libraryTemplate_, plan().revision);
         if (!services_.library().save(libraryTemplate_, next, error)) return false;
+        path_ = services_.library().file(libraryTemplate_);  // an older file name is replaced by the current one
         transact([&](gps::Graph& g, Edit& edit) {
             g.revision = next.revision;
             edit.action = QString("Saved template %1, revision %2").arg(libraryTemplate_).arg(next.revision);

@@ -35,9 +35,15 @@ QString TemplateLibrary::fileFor(const QString& name) {
     return QDir(directory()).filePath(fromStd(gps::templates::fileName(toStd(name))));
 }
 
+QString TemplateLibrary::file(const QString& name) const {
+    auto found = files_.find(name);
+    return found == files_.end() ? fileFor(name) : found->second;
+}
+
 void TemplateLibrary::reload() {
     list_.clear();
     plans_.clear();
+    files_.clear();
     QDir dir(directory());
     for (const QString& f : dir.entryList({"*.conf"}, QDir::Files, QDir::Name)) {
         gps::Graph sub;
@@ -61,6 +67,7 @@ void TemplateLibrary::reload() {
         ci.isSource = !ci.hasFreeSink && ci.hasFreeSrc;
         ci.isSink = ci.hasFreeSink && !ci.hasFreeSrc;
         plans_[ci.name] = sub;
+        files_[ci.name] = dir.filePath(f);
         list_ << ci;
     }
     emit changed();
@@ -86,20 +93,34 @@ QStringList TemplateLibrary::projectsUsing(const QString& name) const { return P
 bool TemplateLibrary::acceptName(const QString& wanted, QString* clean, QString* error, const QString& except) const {
     *clean = wanted.trimmed();
     clean->replace('#', '_');  // '#' separates a template's name from its copy's number
+    const QString taken = holder(*clean, except);
     QString why;
     if (clean->isEmpty()) why = "Give the template a name.";
-    else if (*clean != except && plan(*clean)) why = "A template named " + *clean + " already exists. Choose another name.";
+    else if (!taken.isEmpty()) why = "A template named " + taken + " already exists. Choose another name.";
     if (error && !why.isEmpty()) *error = why;
     return why.isEmpty();
 }
 
+// Names that differ only in signs ("a b", "a_b") share a file: the name is taken as soon as its file is.
+QString TemplateLibrary::holder(const QString& name, const QString& except) const {
+    const QString target = fileFor(name);
+    for (const auto& [other, path] : files_) {
+        if (other != except && (fileFor(other) == target || path == target)) return other;
+    }
+    return QString();
+}
+
 bool TemplateLibrary::write(const QString& name, gps::Graph content, QString* error) {
     content.name = toStd(name);
-    VersionHistory::keep(fileFor(name), QByteArray::fromStdString(content.toConf()));  // a template keeps its history too
+    const QString target = fileFor(name), read = file(name);
+    VersionHistory::keep(target, QByteArray::fromStdString(content.toConf()));  // a template keeps its history too
     std::string failure;
-    if (content.save(toStd(fileFor(name)), &failure)) return true;
-    if (error) *error = "Unable to save the template: " + fromStd(failure);
-    return false;
+    if (!content.save(toStd(target), &failure)) {
+        if (error) *error = "Unable to save the template: " + fromStd(failure);
+        return false;
+    }
+    if (read != target) QFile::remove(read);  // read from a file named the older way: one file for it from now on
+    return true;
 }
 
 bool TemplateLibrary::save(const QString& name, gps::Graph content, QString* error) {
@@ -116,14 +137,15 @@ bool TemplateLibrary::rename(const QString& from, const QString& to, QString* cl
     }
     if (!acceptName(to, clean, error, from)) return false;
     if (*clean == from) return true;
+    const QString read = file(from);
     if (!write(*clean, *old, error)) return false;
-    QFile::remove(fileFor(from));
+    if (read != fileFor(*clean)) QFile::remove(read);  // "a b" and "a_b" share a file: it now holds the new name
     reload();
     return true;
 }
 
 bool TemplateLibrary::remove(const QString& name) {
-    if (!QFile::remove(fileFor(name))) return false;
+    if (!plan(name) || !QFile::remove(file(name))) return false;
     reload();
     return true;
 }
