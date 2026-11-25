@@ -26,7 +26,7 @@ bool fail(std::string* error, const std::string& message) {
 }
 }
 
-Pipeline::Pipeline(std::string name) : editor_(*this) { graph_.name = std::move(name); clearObservations(); }
+Pipeline::Pipeline(std::string name, TraitsFn traits) : traits_(std::move(traits)), editor_(*this) { graph_.name = std::move(name); clearObservations(); }
 bool Pipeline::validate(const Graph& graph, std::string* error) {
     std::set<std::string> names;
     for (const auto& e : graph.elements) {
@@ -67,7 +67,7 @@ bool Pipeline::validate(const Graph& graph, std::string* error) {
     return true;
 }
 void Pipeline::install(Graph graph) {
-    const bool affectsExecution = executionKey(graph) != executionKey(graph_);
+    const bool affectsExecution = executionKey(executed(graph)) != executionKey(executed(graph_));
     nextIdentity_ = std::max(nextIdentity_, graph.nextId);
     graph.nextId = nextIdentity_; // deletion/undo cannot recycle an identity
     graph_ = std::move(graph);
@@ -89,8 +89,9 @@ bool Pipeline::reset(Graph graph, std::string* error) {
     refreshPads();
     return true;
 }
-ExecutionPlan Pipeline::executionPlan(const TraitsFn& traits, std::uint64_t run) const {
-    return {graph_.trackedSubplan(traits), {change_.executionRevision, run}};
+Graph Pipeline::executed(const Graph& graph) const { return traits_ ? graph.trackedSubplan(traits_) : graph; }
+ExecutionPlan Pipeline::executionPlan(std::uint64_t run) const {
+    return {executed(graph_), {change_.executionRevision, run}};
 }
 bool Pipeline::apply(const ExecutionResult& result, ExecutionTicket expected) {
     if (!(result.ticket == expected) || result.ticket.revision != change_.executionRevision) return false;
@@ -290,11 +291,11 @@ void ExecutionCoordinator::supersede() {
     active_ = false;
     backend_.cancel();
 }
-void ExecutionCoordinator::start(const TraitsFn& traits, Completion completion) {
+void ExecutionCoordinator::start(Completion completion) {
     // Invalidate the old ticket before cancellation, including synchronous backends.
     expected_ = {document_.lastChange().executionRevision, ++nextRun_};
     if (active_) backend_.cancel();
-    auto plan = document_.executionPlan(traits, expected_.run);
+    auto plan = document_.executionPlan(expected_.run);
     active_ = true;
     std::weak_ptr<int> alive = lifetime_;
     backend_.execute(plan, [this, alive, completion](ExecutionResult result) {

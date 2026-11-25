@@ -423,7 +423,6 @@ bool Controller::setTemplateParams(const QString& id, const std::map<std::string
         }
         edit.action = "Set the parameters of template " + title;
         edit.touched = templateMembers(id).value(0);
-        edit.validate = anyTracked(templateMembers(id));
         return true;
     });
 }
@@ -452,7 +451,6 @@ QStringList Controller::addTemplate(const QString& templateName, double x, doubl
         for (const std::string& m : gps::templates::members(g, id)) created << fromStd(m);
         edit.action = "Added template " + templateName;
         edit.touched = created.value(0);
-        edit.validate = true;  // what is fed by a source is validated again; the new copy shows its pads
         return true;
     });
     if (!created.isEmpty()) niceAlign();  // the new box finds its place among the others
@@ -478,7 +476,6 @@ QStringList Controller::addTemplateAfter(const QString& srcElement, const QStrin
         }
         edit.action = "Added template " + templateName + " after " + srcElement + "." + srcPad;
         edit.touched = created.value(0);
-        edit.validate = anyTracked(created);
         return true;
     });
     return created;
@@ -804,7 +801,7 @@ bool Controller::transact(const std::function<bool(gps::Graph&, Edit&)>& change)
         checkTemplates(true);
         return true;
     }
-    edited(edit.touched, edit.validate.value_or(anyTracked({edit.touched})));
+    edited(edit.touched);
     checkTemplates(true);
     return true;
 }
@@ -914,7 +911,6 @@ bool Controller::updateTemplates(const QStringList& ids) {
         }
         edit.action = QString("Took the library's newer version of %1 template(s)").arg(ids.size());
         edit.touched = touched.value(0);
-        edit.validate = true;
         return any;
     });
     if (done) niceAlign();
@@ -929,13 +925,13 @@ bool Controller::commitTransaction() {
     return committed || error.empty();
 }
 
-void Controller::edited(const QString& touchedElement, bool validate) {
+void Controller::edited(const QString& touchedElement) {
     if (!commitTransaction()) return;
     dirty_ = true;
     touched_ = touchedElement;
     emit changed();
     alignAfterEdit();
-    if (validate || updating_) {
+    if (pipeline_.lastChange().kind == gps::ChangeKind::Execution || updating_) {
         startUpdate();
     } else {
         emit updateFinished(true);
@@ -946,7 +942,7 @@ bool Controller::undo() {
     if (!canUndo() || !pipeline_.editor().undo()) return false;
     note("Undo");
     const QScopedValueRollback restoring(restoring_, true);  // going back is not an edit to follow
-    edited(QString(), pipeline_.lastChange().kind == gps::ChangeKind::Execution);
+    edited(QString());
     checkTemplates(false);
     return true;
 }
@@ -955,7 +951,7 @@ bool Controller::redo() {
     if (!canRedo() || !pipeline_.editor().redo()) return false;
     note("Redo");
     const QScopedValueRollback restoring(restoring_, true);
-    edited(QString(), pipeline_.lastChange().kind == gps::ChangeKind::Execution);
+    edited(QString());
     checkTemplates(false);
     return true;
 }
@@ -978,7 +974,6 @@ QStringList Controller::pasteSubplan(const gps::Graph& clip, double targetX, dou
         }
         edit.action = QString("Pasted %1 element(s)").arg(created.size());
         edit.touched = created.last();
-        edit.validate = anyTracked(created);
         return true;
     });
     return created;
@@ -1004,11 +999,6 @@ QPointF Controller::topLeft(const gps::Graph& clip) {
     return corner;
 }
 
-bool Controller::anyTracked(const QStringList& elements) const {
-    return std::any_of(elements.begin(), elements.end(), [this](const QString& e) {
-        return plan().isElementTracked(toStd(e), catalog_.traits());
-    });
-}
 
 QStringList Controller::duplicateElements(const QStringList& names) {
     if (editingBlocked() || names.isEmpty()) return {};
@@ -1057,7 +1047,6 @@ bool Controller::linkExisting(const QString& element, const QString& pad, const 
         e.action = "Linked " + element + "." + pad + " to an existing element";
         e.linking = padText(element, pad) + " -> " + padText(sinkElement, sinkPad);
         e.touched = sinkElement;
-        e.validate = anyTracked({element, sinkElement});
         return true;
     });
 }
@@ -1080,7 +1069,7 @@ bool Controller::setCaps(const QString& element, const QString& pad, const QStri
     return transact([&](gps::Graph& g, Edit& e) {
         g.setCaps(toStd(element), toStd(pad), toStd(caps));
         g.setSinkPadProps(toStd(element), toStd(pad), sinkPadProps);
-        e = {"Changed the caps of " + element + "." + pad, padText(element, pad), element, true};
+        e = {"Changed the caps of " + element + "." + pad, padText(element, pad), element};
         return true;
     });
 }
@@ -1088,19 +1077,18 @@ bool Controller::setCaps(const QString& element, const QString& pad, const QStri
 bool Controller::cut(const QString& element, const QString& pad) {
     const QString linking = padText(element, pad);
     return transact([&](gps::Graph& g, Edit& e) {
-        e = {"Cut the link at " + element + "." + pad, linking, element, true};
+        e = {"Cut the link at " + element + "." + pad, linking, element};
         return g.cut(toStd(element), toStd(pad), catalog_.traits()).links > 0;
     });
 }
 
 bool Controller::disconnectLink(const QString& element, const QString& pad) {
     if (editingBlocked()) return false;
-    const bool wasTracked = plan().isElementTracked(toStd(element), catalog_.traits());
     const QString linking = padText(element, pad);
     gps::DisconnectAction action(toStd(element), toStd(pad));
     if (!pipeline_.editor().execute(action)) return false;
     note("Disconnected the link at " + element + "." + pad, linking);
-    edited(element, wasTracked);
+    edited(element);
     checkTemplates(true);
     return true;
 }
@@ -1133,7 +1121,6 @@ bool Controller::deleteSelection(const QStringList& elementNames, const QList<QP
     if (expanded.isEmpty() && links.isEmpty()) return false;
     QStringList touched = expanded;
     for (const auto& link : links) touched << link.first;
-    const bool tracked = anyTracked(touched);
 
     QList<PadView> extSrcs;
     subgraphExternalPads(expanded, nullptr, &extSrcs);
@@ -1146,7 +1133,6 @@ bool Controller::deleteSelection(const QStringList& elementNames, const QList<QP
         for (const auto& [srcEl, srcPad] : links) changedAny = g.disconnectLink(toStd(srcEl), toStd(srcPad)) || changedAny;
         if (!names.empty()) changedAny = g.deleteElements(names, autoHeal, exitTotalSrcPads) || changedAny;
         e.action = expanded.size() == 1 ? "Deleted element " + expanded.first() : QString("Deleted selection (%1 elements)").arg(expanded.size());
-        e.validate = tracked;
         return changedAny;
     });
 }
@@ -1200,7 +1186,7 @@ bool Controller::spliceElements(const QStringList& elements, const QString& link
         return false;
     }
     note("Spliced " + expanded.join(", ") + " into link from " + linkSrcElement + "." + linkSrcPad);
-    edited(expanded.first(), plan().isElementTracked(toStd(linkSrcElement), catalog_.traits()));
+    edited(expanded.first());
     checkTemplates(true);
     return true;
 }
@@ -1211,7 +1197,7 @@ bool Controller::insertQueue(const QString& element, const QString& pad) {
         std::string name = g.insertQueue(toStd(element), toStd(pad));
         if (name.empty()) return false;
         makeRoomForQueue(toStd(element), name);
-        e = {"Inserted a queue after " + element + "." + pad, padText(element, pad), fromStd(name), std::nullopt};
+        e = {"Inserted a queue after " + element + "." + pad, padText(element, pad), fromStd(name)};
         return true;
     });
 }
@@ -1244,10 +1230,8 @@ void Controller::makeRoomForQueue(const std::string& source, const std::string& 
 }
 
 bool Controller::removeQueue(const QString& queue) {
-    const bool tracked = anyTracked({queue});
     return transact([&](gps::Graph& g, Edit& e) {
         e.action = "Removed queue " + queue;
-        e.validate = tracked;
         return g.removeQueue(toStd(queue));
     });
 }
@@ -1353,7 +1337,6 @@ bool Controller::connectSelectedElements(const QStringList& names) {
     return transact([&](gps::Graph&, Edit& e) {
         e.action = "Connected selected elements";
         if (!linkOrderedInternal(expanded, &e.touched)) return false;
-        e.validate = anyTracked(expanded);
         return true;
     });
 }
@@ -1363,10 +1346,8 @@ bool Controller::disconnectBetweenElements(const QStringList& names) {
     QStringList expanded = expandSelection(names);
     std::set<std::string> chosen;
     for (const QString& n : expanded) chosen.insert(toStd(n));
-    const bool tracked = anyTracked(expanded);
     return transact([&](gps::Graph& g, Edit& e) {
         e.action = "Disconnected links between selected elements";
-        e.validate = tracked;
         return g.disconnectBetween(chosen);
     });
 }
@@ -1431,7 +1412,7 @@ void Controller::dispatchUpdate() {
     emit changed();
     backend_.setTimeout(updateTimeoutMs_);
     backend_.setSuspect(toStd(touched_));
-    execution_.start(catalog_.traits(), [this](const gps::ExecutionResult& result) { finishUpdate(result); });
+    execution_.start([this](const gps::ExecutionResult& result) { finishUpdate(result); });
 }
 
 void Controller::cancelUpdate() {

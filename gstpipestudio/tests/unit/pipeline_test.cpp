@@ -45,7 +45,7 @@ void transactions() {
     CHECK(later != source); CHECK(!editor.canRedo());
 }
 void invariantsAndFragments() {
-    Pipeline p;
+    Pipeline p("pipeline", traits);
     auto& g = p.editor().begin();
     auto a = g.addElement("source"), b = g.addElement("filter"), c = g.addElement("sink"), loose = g.addElement("filter");
     CHECK(g.linkExisting(a,"src",b,"sink")); CHECK(g.linkExisting(b,"src",c,"sink"));
@@ -53,12 +53,16 @@ void invariantsAndFragments() {
     CHECK(GraphFragment({a,b,c}).connected(p.graph())); CHECK(!GraphFragment({a,loose}).connected(p.graph()));
     CHECK(!GraphFragment({"absent"}).connected(p.graph()));
     auto fragment = GraphFragment({a,b}).copy(p.graph()); CHECK_EQ(fragment.links.size(), size_t(1));
-    const auto execution = p.executionPlan(traits,1); CHECK_EQ(execution.graph().elements.size(), size_t(3));
+    const auto execution = p.executionPlan(1); CHECK_EQ(execution.graph().elements.size(), size_t(3));
     CHECK_EQ(p.graph().elements.size(), size_t(4));
     auto execRevision = p.lastChange().executionRevision;
     CHECK(p.editor().execute(EditAction([&](Graph& d, std::string*) { d.find(a)->x = -100000; return true; })));
     CHECK_EQ(p.lastChange().executionRevision, execRevision);
     CHECK(p.editor().undo()); CHECK_EQ(p.lastChange().executionRevision, execRevision);
+    // Work no source feeds does not run: adding or changing it is not an Execution change.
+    CHECK(p.editor().execute(EditAction([&](Graph& d, std::string*) { d.addElement("filter"); return true; })));
+    CHECK(p.lastChange().kind == ChangeKind::Presentation); CHECK_EQ(p.lastChange().executionRevision, execRevision);
+    CHECK(p.editor().undo());
     CHECK(p.editor().execute(EditAction([&](Graph& d, std::string*) { return d.setCaps(a,"src","video/x-raw"); })));
     CHECK(p.lastChange().executionRevision > execRevision);
     Graph bad=p.graph();bad.links.push_back(bad.links.front());CHECK(!Pipeline::validate(bad));
@@ -67,25 +71,25 @@ void invariantsAndFragments() {
     CHECK(Graph::fromConf(saved,&loaded,&error));CHECK(p.reset(loaded));CHECK_EQ(p.graph().toConf(),saved);
 }
 void results() {
-    Pipeline p; DeferredBackend backend;
+    Pipeline p("pipeline", traits); DeferredBackend backend;
     p.editor().execute(EditAction([](Graph& g,std::string*) {g.addElement("source");return true;}));
     int received=0;
     {
         ExecutionCoordinator coordinator(p,backend);
-        coordinator.start(traits,[&](const ExecutionResult&){++received;});
-        coordinator.start(traits,[&](const ExecutionResult&){++received;});
+        coordinator.start([&](const ExecutionResult&){++received;});
+        coordinator.start([&](const ExecutionResult&){++received;});
         backend.finish(0); CHECK_EQ(received,0); CHECK(coordinator.active());
         backend.finish(1); CHECK_EQ(received,1); CHECK(!coordinator.active());
         backend.finish(1); CHECK_EQ(received,1);
         // Mutation after dispatch rejects stale observations, even after undo.
-        coordinator.start(traits,[&](const ExecutionResult&){++received;});
-        p.editor().execute(EditAction([](Graph& g,std::string*){g.addElement("filter");return true;}));
+        coordinator.start([&](const ExecutionResult&){++received;});
+        p.editor().execute(EditAction([](Graph& g,std::string*){auto f=g.addElement("filter");return g.linkExisting(g.elements[0].name,"src",f,"sink");}));
         p.editor().undo();backend.finish(2);CHECK_EQ(received,1);
-        coordinator.start(traits,[&](const ExecutionResult&){++received;});
+        coordinator.start([&](const ExecutionResult&){++received;});
         // Presentation edits do not invalidate a native run.
         p.editor().execute(EditAction([](Graph& g,std::string*){g.elements[0].x=-55;return true;}));
         backend.finish(3);CHECK_EQ(received,2);
-        coordinator.start(traits,[&](const ExecutionResult&){++received;});
+        coordinator.start([&](const ExecutionResult&){++received;});
     }
     backend.finish(4);CHECK_EQ(received,2); // callback after coordinator destruction
 }

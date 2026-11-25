@@ -214,22 +214,20 @@ private:
     struct Edit {
         QString action, linking;       // for the support report
         QString touched;               // the element it concerned: the suspect when the validator dies
-        std::optional<bool> validate;  // default: whether `touched` is fed by a source
         bool presentation = false;     // groups and positions only: committed without any validation
     };
     // The one path of an edit: refused while editing is blocked or when change returns false (nothing happened);
-    // otherwise one undo step, noted, and validated as the Edit says.
+    // otherwise one undo step, noted, and validated when it changed what runs (the Pipeline tells).
     bool transact(const std::function<bool(gps::Graph&, Edit&)>& change);
     void load(const QString& source, const QString& documentPath, bool dirty, const QString& action, const QString& libraryTemplate = {});
     void checkTemplates(bool ask);
     bool commitTemplateEdit(const QString& id);
-    bool anyTracked(const QStringList& elements) const;  // fed by a source in the plan as it is now
     bool infosReady(const gps::Graph& clip, std::function<void()> retry);
     static QPointF topLeft(const gps::Graph& clip);
     QString runFile(const QString& name);
     gps::Graph& editGraph() { return pipeline_.editor().draft(); }
     bool commitTransaction();
-    void edited(const QString& touchedElement, bool validate = true);  // dirty + optional update
+    void edited(const QString& touchedElement);  // dirty, and validated when the last change was an Execution change
     void alignAfterEdit();
     void alignOpened();
     void startUpdate();
@@ -243,7 +241,7 @@ private:
     void subgraphExternalPads(const QStringList& members, QList<PadView>* outSinks, QList<PadView>* outSrcs) const;
     bool linkOrderedInternal(const QStringList& expanded, QString* lastTouched = nullptr);
 
-    gps::Pipeline pipeline_;
+    gps::Pipeline pipeline_{"pipeline", [this](const std::string& factory) { return catalog_.traits()(factory); }};
     HelperExecutionBackend backend_;
     QTimer updateTimer_;
     gps::ExecutionCoordinator execution_{pipeline_, backend_};

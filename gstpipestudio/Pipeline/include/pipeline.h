@@ -96,7 +96,9 @@ private:
 
 class Pipeline {
 public:
-    explicit Pipeline(std::string name = "pipeline");
+    // traits tell which elements a source feeds: only those are executed, so only their changes are Execution changes.
+    // Without traits every element counts.
+    explicit Pipeline(std::string name = "pipeline", TraitsFn traits = {});
     Pipeline(const Pipeline&) = delete;
     Pipeline& operator=(const Pipeline&) = delete;
     const Graph& graph() const { return graph_; }
@@ -106,7 +108,7 @@ public:
     std::optional<PadAddress> peer(const PadAddress&) const;
     Change lastChange() const { return change_; }
     bool reset(Graph graph = {}, std::string* error = nullptr);
-    ExecutionPlan executionPlan(const TraitsFn&, std::uint64_t run) const;
+    ExecutionPlan executionPlan(std::uint64_t run) const;
     // The last validation of this document: the one owner of that result. status "" = not validated.
     const UpdateResult& observations() const { return observations_; }
     bool apply(const ExecutionResult&, ExecutionTicket expected);
@@ -116,12 +118,14 @@ public:
 private:
     friend class GraphEditor;
     void install(Graph);
+    Graph executed(const Graph&) const;  // the part of a graph that runs
     void clearObservations();
     void refreshPads();
     std::vector<Pad> padsOf(const Element&) const;
     const PadReport* report(const std::string& element, const Pad&, int ordinal) const;
     static void observe(Pad&, const PadReport&);
     std::map<std::string, FactoryDefinition> factories_;
+    TraitsFn traits_;
     Graph graph_;
     GraphEditor editor_;
     Change change_;
@@ -134,7 +138,7 @@ public:
     using Completion = std::function<void(const ExecutionResult&)>;
     ExecutionCoordinator(Pipeline& document, IExecutionBackend& backend);
     ~ExecutionCoordinator();
-    void start(const TraitsFn&, Completion);
+    void start(Completion);
     void cancel();
     void supersede();
     bool active() const { return active_; }

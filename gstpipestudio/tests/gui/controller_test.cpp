@@ -168,6 +168,19 @@ private slots:
         QVERIFY(v.sinks.isEmpty());
     }
 
+    // Work no source feeds does not run: adding it keeps the last validation, and saving stays open.
+    void looseWorkKeepsTheValidation() {
+        Chain ch = makeChain();
+        QVERIFY(c->canSave());
+        need(*c, "videoconvert");
+        QSignalSpy finished(c.get(), &Controller::updateFinished);
+        QVERIFY(c->addElement("videoconvert", {}));
+        QVERIFY(!c->busy());
+        QCOMPARE(finished.count(), 1);
+        QVERIFY(c->result().complete());
+        QVERIFY(c->canSave());
+    }
+
     void chainIsCompleteAndRuns() {
         Chain ch = makeChain();
         QVERIFY(!ch.sink.isEmpty());
