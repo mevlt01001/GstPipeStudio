@@ -461,6 +461,7 @@ private slots:
         QCOMPARE(again.tabs()->currentIndex(), 0);
         for (Document* d : again.documents()) QVERIFY(settle(*d->controller()));
         Settings::setSession({});
+        Settings::setWindow({}, {});  // the next windows start at their own size
         qunsetenv("GPS_USER_DIR");
     }
 
