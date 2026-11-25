@@ -78,8 +78,5 @@ void NewProjectDialog::check() {
 
 QString NewProjectDialog::ask(QWidget* parent) {
     NewProjectDialog dialog(parent);
-    if (dialog.exec() != QDialog::Accepted) return QString();
-    const QString conf = dialog.confPath();
-    if (!QDir().mkpath(QFileInfo(conf).absolutePath())) return QString();
-    return conf;
+    return dialog.exec() == QDialog::Accepted ? dialog.confPath() : QString();
 }

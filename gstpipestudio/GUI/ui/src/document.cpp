@@ -1,8 +1,6 @@
 // document.cpp – see document.h.
 #include "document.h"
 
-#include <QDir>
-#include <QFileInfo>
 #include <QHBoxLayout>
 #include <QStackedWidget>
 #include <QTimer>
@@ -14,6 +12,7 @@
 #include "drawer.h"
 #include "flows.h"
 #include "logpanel.h"
+#include "savetarget.h"
 #include "setuppage.h"
 #include "telemetrypanel.h"
 #include "updatepanel.h"
@@ -87,25 +86,23 @@ Document::~Document() {
 
 QList<QWidget*> Document::panelPages() const { return {log_, updates_, telemetry_, propsTab_, capsTab_}; }
 
+// An untitled tab a file is opening in reads the file's name already.
 QString Document::title() const {
-    if (!controller_->libraryTemplate().isEmpty()) return "Template: " + controller_->libraryTemplate();
-    if (!controller_->filePath().isEmpty()) return QFileInfo(controller_->filePath()).fileName();
-    return controller_->busy() && !opening_.isEmpty() ? opening_ : QString("untitled");
+    const SaveTarget& target = controller_->target();
+    return target.needsDestination() && controller_->busy() && !opening_.isEmpty() ? opening_ : target.title();
 }
 
-QString Document::path() const { return controller_->filePath(); }
+QString Document::path() const { return controller_->target().path(); }
 
 bool Document::pristine() const {
-    return controller_->filePath().isEmpty() && controller_->libraryTemplate().isEmpty() && controller_->plan().empty() &&
-           !controller_->dirty() && !controller_->busy();
+    return controller_->target().needsDestination() && controller_->plan().empty() && !controller_->modified() && !controller_->busy();
 }
 
-bool Document::showsFile(const QString& file) const {
-    return controller_->libraryTemplate().isEmpty() && !path().isEmpty() &&
-           QFileInfo(path()).absoluteFilePath() == QFileInfo(file).absoluteFilePath();
-}
+bool Document::showsFile(const QString& file) const { return controller_->target().sessionKey() == ProjectConfTarget::keyFor(file); }
 
-bool Document::showsTemplate(const QString& name) const { return controller_->libraryTemplate() == name; }
+bool Document::showsTemplate(const QString& name) const {
+    return controller_->target().sessionKey() == LibraryTemplateTarget::keyFor(name);
+}
 
 // The view fits the pipeline when its elements change, and once when a file has opened.
 void Document::rebuilt() {

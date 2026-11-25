@@ -43,7 +43,7 @@ public:
     ValidationIndicator* indicator() const { return indicator_; }
     QList<QWidget*> panelPages() const;  // what it shows in the panels, in their order
 
-    QString title() const;  // the file's name, "Template: <name>", or "untitled"
+    QString title() const;  // its target's: the file's name, "Template: <name>", or "Untitled-N"
     QString path() const;   // the file it is, "" when it has none yet
     bool pristine() const;  // untitled, empty and unchanged: opening a file may use it instead of a new tab
     bool showsFile(const QString& file) const;

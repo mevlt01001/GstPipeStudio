@@ -36,6 +36,7 @@
 #include "linkitem.h"
 #include "logpanel.h"
 #include "mainwindow.h"
+#include "saveflow.h"
 #include "panels.h"
 
 #include <QDockWidget>
@@ -569,7 +570,7 @@ private slots:
         // GStreamer 1.20 fails here (a libjpeg problem), newer ones decode fine: the failure path is checked when it happens.
         if (c->result().status == "error") {
             QCOMPARE(fromStd(c->result().errorElement), dec);
-            QVERIFY(!c->canSave());
+            QVERIFY(!c->canRun());
             QVERIFY(w->scene()->element(dec)->view().isError);
             QVERIFY(shot("03b_jpegdec_problem_on_element"));
             // the user's way out: Insert queue on that link
@@ -600,7 +601,7 @@ private slots:
 
         // Save, then Run through the toolbar
         QString conf = work.filePath("avi.conf");
-        QVERIFY(w->saveFile(conf));
+        QVERIFY(w->saveFlow()->saveAs(w->document(), conf));
         QVERIFY(w->findChild<QLabel*>("commandLabel")->text().contains("gst-launch-1.0 avi"));
         QSignalSpy ended(c.get(), &Controller::runFinished);
         QElapsedTimer clock;
@@ -769,7 +770,7 @@ private slots:
         QTest::qWait(50);
 
         // run it for real (saved through the window)
-        QVERIFY(w->saveFile(work.filePath("mix.conf")));
+        QVERIFY(w->saveFlow()->saveAs(w->document(), work.filePath("mix.conf")));
         QSignalSpy ended(c.get(), &Controller::runFinished);
         w->findChild<QAction*>("actionRun")->trigger();
         QVERIFY(waitFor([&] { return ended.count() == 1; }, 30000));
@@ -859,18 +860,16 @@ private slots:
     // 6. failed update keeps the change, disables Save; the fix brings it back
     // =================================================================================================================
 
-    void failedUpdateKeepsTheChangeAndDisablesSave() {
+    void failedUpdateKeepsTheChangeAndDisablesRun() {
         QString file = addSource("filesrc", [&](PropertyPage* d) { setText(d, "location", "/does/not/exist.avi"); });
         QVERIFY(!file.isEmpty());
         QVERIFY(c->plan().find(file.toStdString()));  // the change stayed
         QCOMPARE(fromStd(c->result().status), QString("error"));
         QCOMPARE(fromStd(c->result().errorElement), file);
         QVERIFY2(fromStd(c->result().message).contains("exist.avi") || fromStd(c->result().message).contains("not found"), c->result().message.c_str());
-        QVERIFY(!c->canSave());
-        QVERIFY(!w->findChild<QAction*>("actionSave")->isEnabled());
+        QVERIFY(c->canSave());  // Save always writes; validation gates Run
+        QVERIFY(w->findChild<QAction*>("actionSave")->isEnabled());
         QVERIFY(!w->findChild<QAction*>("actionRun")->isEnabled());
-        QVERIFY(!w->saveFile(work.filePath("must-not-exist.conf")));
-        QVERIFY(!QFile::exists(work.filePath("must-not-exist.conf")));
         QVERIFY(w->scene()->element(file)->view().isError);
         QCOMPARE(w->scene()->element(file)->view().note, c->result().message);
         QVERIFY(w->updatePanel()->findChild<QLabel*>("updateStatus")->text().startsWith("Problem"));
@@ -890,7 +889,7 @@ private slots:
         QVERIFY(c->canSave());
         QVERIFY(w->findChild<QAction*>("actionSave")->isEnabled());
         QVERIFY(!w->scene()->element(file)->view().isError);
-        QVERIFY(w->saveFile(work.filePath("fixed.conf")));
+        QVERIFY(w->saveFlow()->saveAs(w->document(), work.filePath("fixed.conf")));
     }
 
     void refusedLinkIsReportedAndNothingBreaks() {
@@ -939,7 +938,7 @@ private slots:
         QVERIFY(fromStd(c->result().pad(toStd(src), toStd("src"), true)->caps).contains("format=(string)I420"));
 
         QString conf = work.filePath("expose.conf");
-        QVERIFY(w->saveFile(conf));
+        QVERIFY(w->saveFlow()->saveAs(w->document(), conf));
         QString launch = w->findChild<QLabel*>("commandLabel")->text();
         QVERIFY2(launch.contains("gst-launch-1.0 expose"), qPrintable(launch));
         QFile f(conf);
@@ -985,14 +984,14 @@ private slots:
         QVERIFY(!p.asink.isEmpty());
         QVERIFY(c->result().complete());
         QString conf = work.filePath("roundtrip.conf");
-        QVERIFY(w->saveFile(conf));
+        QVERIFY(w->saveFlow()->saveAs(w->document(), conf));
         QString links = linkText();
         QString planText = text(c->plan().toConf());
         QStringList names;
         for (const gps::Element& e : c->plan().elements) names << text(e.name);
 
         // New: empty canvas
-        c->newPlan();
+        c->newPlan(std::make_unique<UntitledTarget>(1));
         idle();
         QVERIFY(c->plan().empty());
         QCOMPARE(w->scene()->items().size(), 0);
@@ -1012,12 +1011,12 @@ private slots:
         QVERIFY2(c->result().complete(), (c->result().status + ": " + c->result().message).c_str());
         QVERIFY(c->canRun());
         QCOMPARE(w->scene()->links().size(), int(c->plan().links.size()));
-        QVERIFY(!c->dirty());
+        QVERIFY(!c->modified());
         QVERIFY(w->windowTitle().contains("roundtrip.conf"));
         QVERIFY(shot("17_opened_file"));
 
         // saving the opened plan again writes the same text (names, links; positions are never saved)
-        QVERIFY(w->saveFile(work.filePath("roundtrip2.conf")));
+        QVERIFY(w->saveFlow()->saveAs(w->document(), work.filePath("roundtrip2.conf")));
         QFile a(conf), b(work.filePath("roundtrip2.conf"));
         QVERIFY(a.open(QIODevice::ReadOnly) && b.open(QIODevice::ReadOnly));
         QString first = QString::fromUtf8(a.readAll()), second = QString::fromUtf8(b.readAll());
@@ -1045,7 +1044,7 @@ private slots:
         QCOMPARE(fromStd(c->result().status), QString("crashed"));
         QVERIFY2(fromStd(c->result().message).contains(conv), c->result().message.c_str());
         QVERIFY(fromStd(c->result().message).contains("stop unexpectedly"));
-        QVERIFY(!c->canSave());
+        QVERIFY(!c->canRun());
         idle();
         QVERIFY(w->scene()->element(conv)->view().isError);
         QVERIFY(w->updatePanel()->findChild<QLabel*>("updateStatus")->text().contains("stopped unexpectedly"));
@@ -1073,8 +1072,8 @@ private slots:
         clock.start();
         QVERIFY(c->addAfter(src, "src", "videoconvert", "sink", {}));
         QVERIFY(c->busy());
-        // while the helper hangs, the GUI is still alive: it paints, and the actions are off
-        QVERIFY(!w->findChild<QAction*>("actionSave")->isEnabled());
+        // while the helper hangs, the GUI is still alive: it paints, Run is off and editing goes on
+        QVERIFY(!w->findChild<QAction*>("actionRun")->isEnabled());
         QVERIFY(w->findChild<QAction*>("actionAddElement")->isEnabled());
         QVERIFY(w->findChild<QLabel*>("stateLabel")->text().contains("keep editing"));
         QVERIFY(shot("19_validating_hung"));
@@ -1084,7 +1083,7 @@ private slots:
         QVERIFY2(took >= 2400 && took < 9000, qPrintable(QString::number(took)));
         QCOMPARE(fromStd(c->result().status), QString("hung"));
         QVERIFY(fromStd(c->result().message).contains("did not answer in time"));
-        QVERIFY(!c->canSave());
+        QVERIFY(!c->canRun());
         QVERIFY(w->isVisible());
         idle();
         QVERIFY(w->findChild<QAction*>("actionAddElement")->isEnabled());
@@ -1112,7 +1111,7 @@ private slots:
         QVERIFY(waitFor([&] { return !c->busy(); }, 15000));
         QCOMPARE(fromStd(c->result().status), QString("stopped"));
         QVERIFY(fromStd(c->result().message).contains("stopped unexpectedly"));
-        QVERIFY(!c->canSave());
+        QVERIFY(!c->canRun());
 
         // the real tools again: everything works
         qputenv("GPS_BIN_DIR", goodBin);
@@ -1151,7 +1150,7 @@ private slots:
     void aLongErrorTextIsFullyDrawnInsideTheBox() {
         for (int pathLength : {25, 45, 400}) {
             QString path = "/does/not/exist/" + QString("d").repeated(pathLength) + ".avi";
-            c->newPlan();
+            c->newPlan(std::make_unique<UntitledTarget>(1));
             QString file = addSource("filesrc", [&](PropertyPage* d) { setText(d, "location", path); });
             QVERIFY(!file.isEmpty());
             QCOMPARE(fromStd(c->result().status), QString("error"));

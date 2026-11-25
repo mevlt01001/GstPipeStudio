@@ -54,6 +54,7 @@
 #include "linkitem.h"
 #include "logpanel.h"
 #include "mainwindow.h"
+#include "saveflow.h"
 #include "paditem.h"
 #include "pickerpage.h"
 #include "propertypage.h"
@@ -119,6 +120,31 @@ void choose(QWidget* window, const char* action) {
     QVERIFY2(a, action);
     a->trigger();
     if (menu) menu->close();
+}
+
+// The next modal dialog that opens, once: act gets it (a message box, New project …).
+void whenModal(QObject* owner, std::function<void(QWidget*)> act) {
+    auto* poll = new QTimer(owner);
+    poll->setInterval(20);
+    QObject::connect(poll, &QTimer::timeout, [poll, act] {
+        QWidget* modal = QApplication::activeModalWidget();
+        if (!modal) return;
+        poll->stop();
+        poll->deleteLater();
+        act(modal);
+    });
+    poll->start();
+}
+
+// The next message box: its button of that object name is clicked, Cancel when it has none.
+void answer(QObject* owner, const char* button, QString* asked = nullptr) {
+    whenModal(owner, [button, asked](QWidget* modal) {
+        auto* box = qobject_cast<QMessageBox*>(modal);
+        if (!box) return;
+        if (asked) *asked = box->text() + "\n" + box->informativeText();
+        if (QPushButton* named = box->findChild<QPushButton*>(button)) named->click();
+        else box->button(QMessageBox::Cancel)->click();
+    });
 }
 
 QPoint viewPoint(CanvasView* view, const QPointF& scenePoint) { return view->mapFromScene(scenePoint); }
@@ -315,7 +341,7 @@ private slots:
         Controller* other = w.document()->controller();
         QVERIFY(other != c.get());
         QSignalSpy laidOut(&other->canvasLayout(), &CanvasLayout::aligned);  // an opened file is laid out once
-        QVERIFY(waitFor([&] { return other->libraryTemplate() == "Tail" && other->plan().elements.size() == 2; }, 30000));
+        QVERIFY(waitFor([&] { return other->target().libraryTemplate() == "Tail" && other->plan().elements.size() == 2; }, 30000));
         QVERIFY(settle(*other));
         QVERIFY(laidOut.count() || laidOut.wait(30000));
         QVERIFY(waitFor([&] { return !other->canvasLayout().applying(); }));
@@ -331,8 +357,7 @@ private slots:
 
         // Saved there, the first tab is asked about the newer version once it is in front again.
         QSignalSpy outdated(c.get(), &Controller::templatesOutdated);
-        QString error;
-        QVERIFY2(other->save(QString(), &error), qPrintable(error));
+        QVERIFY(saved(other->save()));
         QVERIFY(outdated.count() || outdated.wait(5000));
         QString asked;
         auto* poll = new QTimer(&w);
@@ -363,7 +388,7 @@ private slots:
         QVERIFY(dot(0)->dirty());
         QCOMPARE(dot(0)->text(), QString("●"));
         const QString conf = root.filePath("one.conf");
-        QVERIFY(w.saveFile(conf));
+        QVERIFY(w.saveFlow()->saveAs(w.document(), conf));
         QVERIFY(!dot(0)->dirty());
         QCOMPARE(dot(0)->text(), QString("×"));
         QCOMPARE(w.tabs()->tabText(0), QString("one.conf"));
@@ -371,7 +396,7 @@ private slots:
         // A new tab; the file already open comes to the front instead of opening twice.
         w.findChild<QAction*>("actionNew")->trigger();
         QCOMPARE(w.tabs()->count(), 2);
-        QCOMPARE(w.tabs()->tabText(1), QString("untitled"));
+        QCOMPARE(w.tabs()->tabText(1), QString("Untitled-1"));
         w.findChild<QAction*>("actionNew")->trigger();  // an untouched untitled tab is reused
         QCOMPARE(w.tabs()->count(), 2);
         w.openFile(conf);
@@ -385,29 +410,68 @@ private slots:
         Document* second = w.document();
         QVERIFY(addSource(*second->controller(), "videotestsrc").size());
         QVERIFY(dot(1)->dirty());
-        auto answer = [&w](const char* button) {
-            auto* poll = new QTimer(&w);
-            poll->setInterval(20);
-            connect(poll, &QTimer::timeout, [poll, button] {
-                auto* box = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
-                if (!box) return;
-                poll->stop();
-                if (QPushButton* named = box->findChild<QPushButton*>(button)) named->click();
-                else box->button(QMessageBox::Cancel)->click();
-            });
-            poll->start();
-        };
-        answer("cancel");
+        QString asked;
+        answer(&w, "cancel", &asked);
         w.findChild<QAction*>("actionCloseTab")->trigger();
         QCOMPARE(w.tabs()->count(), 2);
-        answer("saveChangesDiscard");
+        QVERIFY(asked.startsWith("Do you want to save the changes you made to Untitled-1?"));
+        // Undo back to where it was: nothing to ask about.
+        QVERIFY(second->controller()->undo());
+        QVERIFY(!dot(1)->dirty());
+        QVERIFY(addSource(*second->controller(), "videotestsrc").size());
+        answer(&w, "saveChangesDiscard");
         w.findChild<QAction*>("actionCloseTab")->trigger();
         QCOMPARE(w.tabs()->count(), 1);
         QCOMPARE(w.document(), w.documents().front());
         // The last tab closed leaves an untitled one: the window always has a canvas.
         QVERIFY(w.closeDocument(w.document()));
         QCOMPARE(w.tabs()->count(), 1);
-        QCOMPARE(w.tabs()->tabText(0), QString("untitled"));
+        QCOMPARE(w.tabs()->tabText(0), QString("Untitled-1"));
+    }
+
+    // Untitled tabs take the lowest free number; Save of one asks for a project, Save all writes every unsaved tab,
+    // and closing the window asks once about all of them.
+    void untitledTabsSaveAllAndCloseTogether() {
+        QTemporaryDir root;
+        Settings::setProjectsLocation(root.path());
+        auto w = std::make_unique<MainWindow>(c.get());
+        w->show();
+        QCOMPARE(w->tabs()->tabText(0), QString("Untitled-1"));
+        QVERIFY(!addSource(*c, "videotestsrc").isEmpty());
+        w->findChild<QAction*>("actionNew")->trigger();
+        QCOMPARE(w->tabs()->tabText(1), QString("Untitled-2"));
+        Document* second = w->document();
+        QVERIFY(!addSource(*second->controller(), "videotestsrc").isEmpty());
+
+        // Save of an untitled tab: New project names it, and the first save makes its folder.
+        whenModal(w.get(), [](QWidget* modal) {
+            QTest::keyClicks(modal->findChild<QLineEdit*>("projectName"), "door");
+            press(modal, "createProject");
+        });
+        w->findChild<QAction*>("actionSave")->trigger();
+        QVERIFY(QFile::exists(root.filePath("door/door.conf")));
+        QCOMPARE(w->tabs()->tabText(1), QString("door.conf"));
+        QVERIFY(!second->controller()->modified());
+        QVERIFY(w->saveFlow()->saveAs(w->documents().front(), root.filePath("yard.conf")));
+
+        // Both changed again: Save all writes both, and asks nothing.
+        for (Document* d : w->documents()) QVERIFY(!addSource(*d->controller(), "videotestsrc").isEmpty());
+        QVERIFY(w->findChild<QAction*>("actionSaveAll")->isEnabled());
+        w->findChild<QAction*>("actionSaveAll")->trigger();
+        for (Document* d : w->documents()) QVERIFY(!d->controller()->modified());
+        QVERIFY(!w->findChild<QAction*>("actionSaveAll")->isEnabled());
+
+        // Closing the window asks once, about every unsaved tab in one list: Cancel keeps it open, Save all closes it.
+        for (Document* d : w->documents()) QVERIFY(!addSource(*d->controller(), "videotestsrc").isEmpty());
+        QString asked;
+        answer(w.get(), "cancel", &asked);
+        QVERIFY(!w->close());
+        QVERIFY(asked.contains("the following 2 files") && asked.contains("yard.conf") && asked.contains("door.conf"));
+        answer(w.get(), "saveChangesSave");
+        QVERIFY(w->close());
+        for (Document* d : w->documents()) QVERIFY(!d->controller()->modified());
+        Settings::setSession({});
+        Settings::setProjectsLocation({});
     }
 
     // A new tab is ready at once: it shares the process's catalog and GStreamer check, and asks for neither again.
@@ -461,10 +525,10 @@ private slots:
             MainWindow w(c.get());
             w.show();
             QVERIFY(!addSource(*c, "videotestsrc").isEmpty());
-            QVERIFY(w.saveFile(a));
+            QVERIFY(w.saveFlow()->saveAs(w.document(), a));
             QVERIFY(QFile::copy(a, b));
             w.openFile(b);
-            QVERIFY(waitFor([&] { return w.document()->controller()->filePath() == b; }, 30000));
+            QVERIFY(waitFor([&] { return w.document()->controller()->target().path() == b; }, 30000));
             QVERIFY(settle(*w.document()->controller()));
             w.activate(w.documents().front());
             QVERIFY(w.close());
@@ -635,8 +699,8 @@ private slots:
         QVERIFY(!create->isEnabled());  // there is one already
         Settings::setProjectsLocation({});
 
-        c->newProject(root.filePath("back/back.conf"));
-        QCOMPARE(c->filePath(), root.filePath("back/back.conf"));
+        c->newPlan(std::make_unique<ProjectConfTarget>(root.filePath("back/back.conf")));
+        QCOMPARE(c->target().path(), root.filePath("back/back.conf"));
         QVERIFY(c->plan().empty());
     }
 
@@ -653,7 +717,7 @@ private slots:
         QVERIFY(settle(*c));
         const QString conf = root.filePath("door/door.conf");
         QVERIFY(QDir().mkpath(root.filePath("door")));
-        QVERIFY(w.saveFile(conf));
+        QVERIFY(w.saveFlow()->saveAs(w.document(), conf));
         QVERIFY(QDir().mkpath(root.filePath("yard")));
         QVERIFY(QFile::copy(conf, root.filePath("yard/yard.conf")));
 
@@ -678,7 +742,7 @@ private slots:
         QCOMPARE(opened.count(), 1);
         QCOMPARE(w.tabs()->count(), 2);  // a tab of its own
         Controller* yard = w.document()->controller();
-        QVERIFY(waitFor([&] { return yard->filePath() == root.filePath("yard/yard.conf"); }, 30000));
+        QVERIFY(waitFor([&] { return yard->target().path() == root.filePath("yard/yard.conf"); }, 30000));
         QVERIFY(settle(*yard));
         QVERIFY(waitFor([&] { return tree->topLevelItem(0)->text(0) == "Project · yard"; }));
         QObject::disconnect(w.explorer(), &Explorer::templateRequested, &w, nullptr);  // the window is tested on its own
@@ -1402,7 +1466,7 @@ private slots:
         QVERIFY(waitFor([&] { return c->plan().find(src.toStdString())->x != before.x(); }, 3000));
         QCOMPARE(c->plan().find(src.toStdString())->x, before.x() + 60);
         QCOMPARE(c->plan().find(src.toStdString())->y, before.y() + 90);
-        QVERIFY(c->dirty());
+        QVERIFY(c->modified());
     }
 
     void canvasZoomAndPan() {
@@ -1450,17 +1514,17 @@ private slots:
         auto label = [&] { return w.findChild<QLabel*>("stateLabel")->text(); };
         // empty canvas
         QVERIFY(act("actionNew")->isEnabled() && act("actionOpen")->isEnabled() && act("actionAddElement")->isEnabled());
-        QVERIFY(!act("actionSave")->isEnabled() && !act("actionRun")->isEnabled() && !act("actionUpdate")->isEnabled());
+        QVERIFY(act("actionSave")->isEnabled() && !act("actionRun")->isEnabled() && !act("actionUpdate")->isEnabled());
         QVERIFY(label().contains("Empty canvas"));
-        QVERIFY(act("actionSave")->toolTip().contains("The canvas is empty"));  // a disabled action says why
+        QVERIFY(act("actionRun")->toolTip().contains("The canvas is empty"));  // a disabled action says why
 
         // updating: document replacement waits; canvas edits stay available
         need(*c, "videotestsrc");
         QVERIFY(c->addElement("videotestsrc", {}));
         QVERIFY(!act("actionNew")->isEnabled() && !act("actionOpen")->isEnabled() && act("actionAddElement")->isEnabled());
-        QVERIFY(!act("actionSave")->isEnabled() && !act("actionRun")->isEnabled());
+        QVERIFY(act("actionSave")->isEnabled() && !act("actionRun")->isEnabled());
         QVERIFY(label().contains("keep editing"));
-        QVERIFY(act("actionSave")->toolTip().contains("Validation is running"));
+        QVERIFY(act("actionRun")->toolTip().contains("Validation is running"));
         QVERIFY(settle(*c));
 
         // ok but incomplete: Save yes, Run no
@@ -1476,10 +1540,10 @@ private slots:
         QVERIFY(act("actionRun")->isEnabled());
         QCOMPARE(label(), QString("Pipeline is complete"));
 
-        // failed: both off, red text
+        // failed: Run off, red text; Save still writes
         QVERIFY(c->editElement(sink, withProps({{"fake-error", "bad"}})));
         QVERIFY(settle(*c));
-        QVERIFY(!act("actionSave")->isEnabled() && !act("actionSaveAs")->isEnabled() && !act("actionRun")->isEnabled());
+        QVERIFY(act("actionSave")->isEnabled() && act("actionSaveAs")->isEnabled() && !act("actionRun")->isEnabled());
         QVERIFY(act("actionUpdate")->isEnabled());  // retrying is allowed
         QVERIFY(label().contains("reported a problem"));
         QVERIFY(w.findChild<QLabel*>("stateLabel")->styleSheet().contains(Theme::error().name()));
@@ -1493,13 +1557,13 @@ private slots:
         QString sink = addAfter(*c, src, "src", "fakesink");
         QCOMPARE(w.findChild<QLabel*>("commandLabel")->text(), QString());
         QTemporaryDir dir;
-        QVERIFY(w.saveFile(dir.filePath("demo.conf")));
+        QVERIFY(w.saveFlow()->saveAs(w.document(), dir.filePath("demo.conf")));
         QString shown = w.findChild<QLabel*>("commandLabel")->text();
         QVERIFY(shown.contains("gst-launch-1.0 demo"));
         QVERIFY(shown.contains("GPS_PIPELINE_PATH="));
         QVERIFY(w.windowTitle().contains("demo.conf"));
         QVERIFY(!w.windowTitle().endsWith("*"));
-        QVERIFY(w.saveFile(QString()));  // Save again, same file
+        QVERIFY(w.saveFlow()->save(w.document()));  // Save again, same file
     }
 
     void updateAndLogPanelsShowTheHelpersAnswer() {
@@ -1581,7 +1645,7 @@ private slots:
         press(picker, "cancelButton");
         QVERIFY(!w.drawer()->isOpen());
         QVERIFY(c->plan().empty());
-        QVERIFY(!c->dirty());
+        QVERIFY(!c->modified());
 
         // Picker (in right drawer) -> properties (in bottom Properties tab) -> Add element.
         w.findChild<QAction*>("actionAddElement")->trigger();
@@ -1992,8 +2056,7 @@ private slots:
             src = addSource(*c, "videotestsrc");
             convert = addAfter(*c, src, "src", "videoconvert");
             sink = addAfter(*c, convert, "src", "fakesink");
-            QString error;
-            QVERIFY(c->save(path, &error));
+            QVERIFY(saved(saveAs(*c, path)));
         }
         auto other = makeController();
         MainWindow w(other.get());

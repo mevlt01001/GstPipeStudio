@@ -58,6 +58,14 @@ inline std::unique_ptr<Controller> makeController() {
 
 inline bool settle(Controller& c) { return waitFor([&] { return !c.busy(); }); }
 
+// Save as a project conf at path, as File > Save as does.
+inline SaveResult saveAs(Controller& c, const QString& path) { return c.saveAs(std::make_unique<ProjectConfTarget>(path)); }
+// Whether a save wrote; why not goes to the test's output.
+inline bool saved(const SaveResult& r) {
+    if (!r.ok) qWarning() << r.error;
+    return r.ok;
+}
+
 inline const ElementInfo* need(Controller& c, const QString& factory) {
     const ElementInfo* found = nullptr;
     bool done = false;

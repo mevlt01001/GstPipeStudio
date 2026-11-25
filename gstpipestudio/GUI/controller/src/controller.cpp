@@ -5,7 +5,6 @@
 #include "actions.h"
 #include "projectfile.h"
 #include "templates.h"
-#include "versionhistory.h"
 
 #include <QClipboard>
 #include <QDir>
@@ -91,25 +90,25 @@ bool Controller::canSave() const { return saveBlockedReason().isEmpty(); }
 
 bool Controller::canRun() const { return runBlockedReason().isEmpty(); }
 
+// Save always writes: validation gates Run and Monitor only. A file saved before it was validated says complete=0.
 QString Controller::saveBlockedReason() const {
-    if (plan().empty()) return "The canvas is empty";
-    if (updating_) return "Validation is running";
+    if (opening_) return "A file is being opened";
     if (running_) return "The pipeline is running";
     if (monitoring_) return "Monitoring is running";
-    if (opening_) return "A file is being opened";
-    if (cancelled_) return "Validation was cancelled — press Validate";
-    // A library template has no source of its own to validate it with: it is validated where it is used.
-    if (!libraryTemplate_.isEmpty()) return QString();
-    if (!result().valid()) return "The pipeline is not validated yet — press Validate";
-    if (!result().ok()) return "The last validation reported a problem (see the Validation tab)";
+    if (cancelling_) return "Validation is being cancelled";
     return QString();
 }
 
 QString Controller::runBlockedReason() const {
-    if (!libraryTemplate_.isEmpty()) return "A template runs inside a pipeline: add it to one with Add template";
-    QString reason = saveBlockedReason();
-    if (reason.isEmpty() && !result().complete()) return "The pipeline is not complete: link every free src pad";
-    return reason;
+    if (const QString own = target_->runBlockedReason(); !own.isEmpty()) return own;
+    if (const QString busy = saveBlockedReason(); !busy.isEmpty()) return busy;
+    if (plan().empty()) return "The canvas is empty";
+    if (updating_) return "Validation is running";
+    if (cancelled_) return "Validation was cancelled — press Validate";
+    if (!result().valid()) return "The pipeline is not validated yet — press Validate";
+    if (!result().ok()) return "The last validation reported a problem (see the Validation tab)";
+    if (!result().complete()) return "The pipeline is not complete: link every free src pad";
+    return QString();
 }
 
 bool Controller::helperStopped() const { return result().status == "crashed" || result().status == "stopped"; }
@@ -160,8 +159,8 @@ void Controller::requestSupport(const QString& title) {
 }
 
 QString Controller::launchCommand() const {
-    if (path_.isEmpty()) return QString();
-    QFileInfo file(path_);
+    if (target_->projectConf().isEmpty()) return QString();
+    QFileInfo file(target_->projectConf());
     QString text = "GPS_PIPELINE_PATH=" + shellQuote(file.absolutePath()) + " gst-launch-1.0 " + shellQuote(file.completeBaseName());
     for (const gps::ExposedParam& p : plan().exposed) text += " " + fromStd(p.name) + "=VALUE";
     return text;
@@ -286,8 +285,8 @@ bool Controller::renameTemplate(const QString& from, const QString& to, QString*
 
 void Controller::editLibraryTemplate(const QString& name) {
     if (!services_.library().plan(name)) return;
-    const QString file = services_.library().file(name);
-    load(file, file, false, "Opened template " + name, name);
+    load(services_.library().file(name), std::make_shared<LibraryTemplateTarget>(name, services_.library()), Load::Open,
+         "Opened template " + name);
 }
 
 void Controller::setTemplateParameters(const std::vector<gps::ExposedParam>& params) {
@@ -721,7 +720,6 @@ bool Controller::transact(const std::function<bool(gps::Graph&, Edit&)>& change)
     note(edit.action, edit.linking);
     if (edit.presentation) {
         if (!commitTransaction()) return false;
-        dirty_ = true;
         emit changed();
         alignAfterEdit();
         checkTemplates(true);
@@ -863,7 +861,6 @@ bool Controller::commitTransaction() {
 
 void Controller::edited(const QString& touchedElement) {
     if (!commitTransaction()) return;
-    dirty_ = true;
     touched_ = touchedElement;
     emit changed();
     alignAfterEdit();
@@ -1398,42 +1395,41 @@ bool Controller::refresh() {
 
 // ---- files and runs
 
-void Controller::newPlan() {
+void Controller::newPlan(std::unique_ptr<SaveTarget> target) {
     if (busy()) return;
     pipeline_.reset();
     editingTemplates_.clear();
     knownModified_.clear();
     cancelled_ = false;
-    path_.clear();
-    libraryTemplate_.clear();
-    dirty_ = false;
+    target_ = std::move(target);
+    markSaved();
+    note("New " + target_->title());
     emit changed();
 }
 
-void Controller::newProject(const QString& confPath) {
-    newPlan();
-    if (busy()) return;
-    path_ = confPath;
-    note("New project " + QFileInfo(confPath).completeBaseName());
+void Controller::setTarget(std::unique_ptr<SaveTarget> target) {
+    target_ = std::move(target);
     emit changed();
 }
 
 void Controller::open(const QString& path, bool imported) {
-    load(path, imported ? QString() : path, imported, imported ? "Imported a gst-launch pipeline" : "Opened a plan file");
-    if (!imported && QFile::exists(ProjectFile::pathForConf(path))) ProjectRegistry::remember(ProjectFile::pathForConf(path));
+    if (imported) return load(path, nullptr, Load::Replace, "Imported a gst-launch pipeline");
+    load(path, std::make_shared<ProjectConfTarget>(path), Load::Open, "Opened a plan file");
+    if (QFile::exists(ProjectFile::pathForConf(path))) ProjectRegistry::remember(ProjectFile::pathForConf(path));
 }
 
-void Controller::restoreVersion(const QString& version) {
-    load(version, path_, true, "Restored an earlier version");
+void Controller::restoreVersion(const QString& version) { load(version, nullptr, Load::Replace, "Restored an earlier version"); }
+
+void Controller::revert() {
+    if (!target_->path().isEmpty()) load(target_->path(), nullptr, Load::Open, "Reverted to the saved file");
 }
 
-// The plan of source becomes the document at documentPath ("" = untitled), once every factory it uses is known.
-void Controller::load(const QString& source, const QString& documentPath, bool dirty, const QString& action, const QString& libraryTemplate) {
+void Controller::load(const QString& source, std::shared_ptr<SaveTarget> target, Load how, const QString& action) {
     if (busy()) return;
     auto loaded = std::make_shared<gps::Graph>();
     std::string error;
-    // Its templates: the document's own copies (an earlier version is read from elsewhere), then the library.
-    const std::vector<std::string> libraries{toStd(QFileInfo(documentPath).dir().filePath("templates")), toStd(TemplateLibrary::directory())};
+    std::vector<std::string> libraries;
+    for (const QString& folder : (target ? target : target_)->templateFolders()) libraries.push_back(toStd(folder));
     if (!gps::Graph::load(toStd(source), loaded.get(), &error, libraries)) {
         emit notice("Unable to open the file: " + fromStd(error));
         return;
@@ -1443,7 +1439,7 @@ void Controller::load(const QString& source, const QString& documentPath, bool d
         if (!factories.contains(fromStd(e.factory))) factories << fromStd(e.factory);
     }
     opening_ = true;
-    catalog().fetchInfos(factories, this, [this, loaded, documentPath, dirty, action, libraryTemplate](bool ok) {
+    catalog().fetchInfos(factories, this, [this, loaded, target, how, action](bool ok) {
         opening_ = false;
         if (!ok) {
             emit notice("Unable to open the file: the plan uses an element this installation does not have.");
@@ -1451,10 +1447,14 @@ void Controller::load(const QString& source, const QString& documentPath, bool d
             return;
         }
         std::string failure;
-        if (!pipeline_.reset(*loaded, &failure)) { emit notice(fromStd(failure)); return; }
-        path_ = documentPath;
-        dirty_ = dirty;
-        libraryTemplate_ = libraryTemplate;
+        if (how == Load::Open) {
+            if (!pipeline_.reset(*loaded, &failure)) { emit notice(fromStd(failure)); return; }
+            if (target) target_ = target;
+            markSaved();
+        } else {
+            pipeline_.editor().begin() = *loaded;
+            if (!commitTransaction()) { emit changed(); return; }
+        }
         note(action);
         alignWhenValidated_ = true;
         editingTemplates_.clear();
@@ -1492,46 +1492,31 @@ bool Controller::importLaunch(const QString& description) {
     return true;
 }
 
-bool Controller::save(const QString& path, QString* error) {
-    QString target = path.isEmpty() ? path_ : path;
-    if (!canSave() || target.isEmpty()) {
-        if (error) *error = "Unable to save: " + (saveBlockedReason().isEmpty() ? QString("no file name") : saveBlockedReason());
-        return false;
-    }
-    for (const QString& id : QSet<QString>(editingTemplates_)) commitTemplateEdit(id);  // saving ends every template edit
-    if (!libraryTemplate_.isEmpty() && target == path_) {  // a library template: its next revision
-        gps::Graph next = plan();
-        next.revision = services_.library().nextRevision(libraryTemplate_, plan().revision);
-        if (!wrote(services_.library().save(libraryTemplate_, next), error)) return false;
-        path_ = services_.library().file(libraryTemplate_);  // an older file name is replaced by the current one
+SaveResult Controller::save() { return write(target_); }
+
+SaveResult Controller::saveAs(std::unique_ptr<SaveTarget> target) { return write(std::move(target)); }
+
+// Saving ends every template edit; the target writes the plan, and the document is bound to it, saved there. A target
+// that counts revisions (a library template) gives the document the revision it wrote.
+SaveResult Controller::write(std::shared_ptr<SaveTarget> target) {
+    if (const QString why = saveBlockedReason(); !why.isEmpty()) return SaveResult::failed("Unable to save: " + why);
+    for (const QString& id : QSet<QString>(editingTemplates_)) commitTemplateEdit(id);
+    gps::Graph document = plan();
+    document.complete = result().complete();
+    const SaveResult r = target->write(document);
+    if (!r.ok) return r;
+    target_ = std::move(target);
+    if (r.revision > 0 && r.revision != plan().revision) {
         transact([&](gps::Graph& g, Edit& edit) {
-            g.revision = next.revision;
-            edit.action = QString("Saved template %1, revision %2").arg(libraryTemplate_).arg(next.revision);
+            g.revision = r.revision;
+            edit.action = QString("Saved %1, revision %2").arg(target_->title()).arg(r.revision);
             edit.presentation = true;
             return true;
         });
-        dirty_ = false;
-        emit changed();
-        return true;
     }
-    libraryTemplate_.clear();  // saved elsewhere, it is a pipeline of its own
-    gps::Graph saved = plan();
-    saved.complete = result().complete();
-    saved.name = toStd(QFileInfo(target).completeBaseName());
-    // The file as it was stays (File > Version history).
-    VersionHistory::keep(target, QByteArray::fromStdString(saved.toConf(gps::Graph::Form::Reference)));
-    std::string failure;
-    if (!saved.saveProject(toStd(target), &failure)) {
-        if (error) *error = fromStd(failure);
-        return false;
-    }
-    ProjectFile project = ProjectFile::load(ProjectFile::pathForConf(target));
-    project.record(target, saved);
-    if (project.save()) ProjectRegistry::remember(project.path());
-    path_ = target;
-    dirty_ = false;
+    markSaved();
     emit changed();
-    return true;
+    return r;
 }
 
 // The complete plan in a temporary file for gps-run or gps-monitor; "" (and a notice) when it cannot be written.

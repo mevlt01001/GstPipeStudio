@@ -25,6 +25,7 @@
 #include <QListWidget>
 #include <QDialogButtonBox>
 #include <QDialog>
+#include <algorithm>
 #include <tuple>
 #include <QActionGroup>
 
@@ -45,6 +46,8 @@
 #include "settings.h"
 #include "templates.h"
 #include "newprojectdialog.h"
+#include "saveflow.h"
+#include "savetarget.h"
 #include "panels.h"
 #include "tabclosebutton.h"
 #include "theme.h"
@@ -59,7 +62,8 @@
 #include <QVBoxLayout>
 #include <set>
 
-MainWindow::MainWindow(Controller* controller, QWidget* parent) : QMainWindow(parent), services_(controller->services()) {
+MainWindow::MainWindow(Controller* controller, QWidget* parent)
+    : QMainWindow(parent), services_(controller->services()), saveFlow_(new SaveFlow(this)) {
     setObjectName("mainWindow");
     setWindowFlag(Qt::FramelessWindowHint);
     setWindowIcon(QIcon(":/brand/gstpipestudio.png"));
@@ -143,10 +147,12 @@ void MainWindow::buildActions() {
     });
     auto* newProject = make("actionNewProject", "New &project…", {QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_N)}, [this] {
         const QString conf = NewProjectDialog::ask(this);
-        if (!conf.isEmpty()) target()->controller()->newProject(conf);
+        if (!conf.isEmpty()) target()->controller()->newPlan(std::make_unique<ProjectConfTarget>(conf));
     });
-    // A canvas never saved becomes a project: its name is asked, its folder made, and it is saved there.
-    auto* save = make("actionSave", "&Save", {QKeySequence::Save}, [this] { this->save(); });
+    // A canvas never saved becomes a project: its name is asked, and its first save makes the folder.
+    auto* save = make("actionSave", "&Save", {QKeySequence::Save}, [this] { saveFlow_->save(doc_); });
+    auto* saveAll = make("actionSaveAll", "Save a&ll", {QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_S)}, [this] { saveFlow_->saveAll(documents()); });
+    auto* revert = make("actionRevert", "Re&vert file", {}, [this] { controller_->revert(); });
     auto* closeTab = make("actionCloseTab", "&Close tab", {QKeySequence(Qt::CTRL | Qt::Key_W), QKeySequence(Qt::CTRL | Qt::Key_F4)},
                           [this] { closeDocument(doc_); });
     auto step = [this](int by) { tabs_->setCurrentIndex((tabs_->currentIndex() + by + tabs_->count()) % tabs_->count()); };
@@ -154,7 +160,7 @@ void MainWindow::buildActions() {
                          [step] { step(1); });
     auto* previousTab = make("actionPreviousTab", "Pre&vious tab",
                              {QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Backtab), QKeySequence(Qt::CTRL | Qt::Key_PageUp)}, [step] { step(-1); });
-    auto* saveAs = make("actionSaveAs", "Save &as…", {QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_S)}, [this] { this->saveAs(); });
+    auto* saveAs = make("actionSaveAs", "Save &as…", {QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_S)}, [this] { saveFlow_->saveAs(doc_); });
     auto* update = make("actionUpdate", "&Validate", {QKeySequence(Qt::CTRL | Qt::Key_R), QKeySequence(Qt::Key_F5)}, [this] { controller_->refresh(); });
     auto* run = make("actionRun", "&Run", {QKeySequence(Qt::CTRL | Qt::Key_Return)}, [this] { toggleRun(); });
     auto* addElement = make("actionAddElement", "Add &element…", {QKeySequence(Qt::CTRL | Qt::Key_E), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_E)},
@@ -205,9 +211,9 @@ void MainWindow::buildActions() {
         if (files.isEmpty()) recent->addAction("No recent files")->setEnabled(false);
     });
     file->addSeparator();
-    file->addActions({save, saveAs});
+    file->addActions({save, saveAs, saveAll});
     file->addSeparator();
-    file->addAction(closeTab);
+    file->addActions({revert, closeTab});
     file->addSeparator();
     file->addActions({import, history});
     file->addSeparator();
@@ -319,6 +325,11 @@ void MainWindow::showViewPreferences() {
 
 Document* MainWindow::addDocument(Controller* controller) {
     auto* d = new Document(services_, controller, this);
+    if (d->controller()->target().needsDestination()) {  // "Untitled-N": the lowest N no other tab has
+        QList<const SaveTarget*> open;
+        for (const Document* other : std::as_const(docs_)) open << &other->controller()->target();
+        d->controller()->setTarget(std::make_unique<UntitledTarget>(UntitledTarget::lowestFree(open)));
+    }
     for (auto [page, title, room] : {std::tuple{static_cast<QWidget*>(d->log()), "Log", 0}, {d->updates(), "Validation", 0},
                                      {d->telemetry(), "Live metrics", 400}, {d->propsTab(), "Properties", 400}, {d->capsTab(), "Caps", 400}})
         panels_->add(page, title, room);
@@ -395,7 +406,14 @@ void MainWindow::refreshTab(Document* d) {
     tabs_->setTabText(index, d->title());
     tabs_->setTabToolTip(index, d->path().isEmpty() ? d->title() : d->path());
     if (auto* close = qobject_cast<TabCloseButton*>(tabs_->tabButton(index, QTabBar::RightSide)))
-        close->setDirty(d->controller()->dirty() && !d->controller()->plan().empty());
+        close->setDirty(d->controller()->hasUnsavedWork());
+    showSaveAll();
+}
+
+// Save all is on while any tab has unsaved work: a change in any tab, or a closed one, can turn it on or off.
+void MainWindow::showSaveAll() {
+    if (auto* saveAll = findChild<QAction*>("actionSaveAll"))
+        saveAll->setEnabled(std::any_of(docs_.cbegin(), docs_.cend(), [](const Document* d) { return d->controller()->hasUnsavedWork(); }));
 }
 
 Document* MainWindow::docAt(int index) const {
@@ -408,12 +426,18 @@ int MainWindow::indexOf(Document* d) const {
     return -1;
 }
 
+QList<Document*> MainWindow::documents() const {
+    QList<Document*> out;
+    for (int i = 0; i < tabs_->count(); ++i) out << docAt(i);
+    return out;
+}
+
 Document* MainWindow::newDocument() { return addDocument(nullptr); }
 
 Document* MainWindow::target() { return doc_ && doc_->pristine() ? doc_ : newDocument(); }
 
 bool MainWindow::closeDocument(Document* d) {
-    if (!d || !docs_.contains(d) || !confirmClose(d)) return false;
+    if (!d || !docs_.contains(d) || !saveFlow_->confirmClose({d})) return false;
     if (d->controller()->running()) d->controller()->stopRun();
     if (docs_.size() == 1) newDocument();  // the window always has a canvas
     if (d == doc_) activate(docAt(indexOf(d) + 1) ? docAt(indexOf(d) + 1) : docAt(indexOf(d) - 1));
@@ -425,44 +449,13 @@ bool MainWindow::closeDocument(Document* d) {
     return true;
 }
 
-// As editors ask: the changes of this tab are saved, dropped, or the close does not happen.
-bool MainWindow::confirmClose(Document* d) {
-    if (!d->controller()->dirty() || d->controller()->plan().empty()) return true;
-    activate(d);
-    QMessageBox box(this);
-    box.setObjectName("saveChanges");
-    box.setIcon(QMessageBox::Warning);
-    box.setWindowTitle("Unsaved changes");
-    box.setText("Do you want to save the changes you made to " + d->title() + "?");
-    box.setInformativeText("Your changes will be lost if you don't save them.");
-    QPushButton* saveButton = box.addButton("Save", QMessageBox::AcceptRole);
-    QPushButton* dropButton = box.addButton("Don't save", QMessageBox::DestructiveRole);
-    QPushButton* cancel = box.addButton(QMessageBox::Cancel);
-    saveButton->setObjectName("saveChangesSave");
-    dropButton->setObjectName("saveChangesDiscard");
-    box.setDefaultButton(saveButton);
-    box.setEscapeButton(cancel);
-    box.exec();
-    if (box.clickedButton() == saveButton) return save();
-    return box.clickedButton() == dropButton;
-}
-
-bool MainWindow::save() {
-    if (!controller_->filePath().isEmpty()) return saveFile(QString());
-    const QString conf = NewProjectDialog::ask(this);
-    return !conf.isEmpty() && saveFile(conf);
-}
-
-// The tabs that were open, by file or template name, and the one in front.
+// The tabs that were open, by their targets' session keys, and the one in front. Untitled tabs are not kept.
 void MainWindow::saveSession() {
     Settings::Session session;
-    for (int i = 0; i < tabs_->count(); ++i) {
-        const Document* d = docAt(i);
-        const QString lib = d->controller()->libraryTemplate();
-        const QString entry = !lib.isEmpty() ? "template:" + lib : d->path().isEmpty() ? QString() : "file:" + d->path();
-        if (entry.isEmpty()) continue;
+    for (const Document* d : documents()) {
+        if (d->controller()->target().needsDestination()) continue;
         if (d == doc_) session.front = session.tabs.size();
-        session.tabs << entry;
+        session.tabs << d->controller()->target().sessionKey();
     }
     Settings::setSession(session);
 }
@@ -471,10 +464,11 @@ void MainWindow::restoreSession() {
     const Settings::Session session = Settings::session();
     QList<Document*> opened;
     for (const QString& entry : session.tabs) {
-        if (entry.startsWith("template:")) {
-            opened << openTemplate(entry.mid(9));
-        } else if (entry.startsWith("file:") && QFileInfo::exists(entry.mid(5))) {
-            openFile(entry.mid(5));
+        const QString kind = entry.section(':', 0, 0), value = entry.section(':', 1);
+        if (kind == LibraryTemplateTarget::kKind) {
+            opened << openTemplate(value);
+        } else if (kind == ProjectConfTarget::kKind && QFileInfo::exists(value)) {
+            openFile(value);
             opened << doc_;
         } else {
             opened << nullptr;
@@ -504,7 +498,7 @@ void MainWindow::refreshState() {
     auto act = [this](const char* name) { return findChild<QAction*>(name); };
     QStringList templates;
     for (const TemplateInfo& t : services_.library().list()) templates << t.name;
-    explorer_->present(controller_->libraryTemplate().isEmpty() ? controller_->filePath() : QString(), templates);
+    explorer_->present(controller_->target().projectConf(), templates);
     bool blocked = services_.environment().blocked();
     bool busy = controller_->busy();
     bool editBlocked = controller_->editingBlocked();
@@ -516,14 +510,15 @@ void MainWindow::refreshState() {
     act("actionAddElement")->setEnabled(!editBlocked && !blocked);
     act("actionAddTemplate")->setEnabled(!editBlocked && !blocked);
     act("actionSaveTemplateElement")->setEnabled(!editBlocked && !scene_->selectedElementNames().isEmpty());
-    act("actionTemplateParameters")->setEnabled(!editBlocked && !controller_->libraryTemplate().isEmpty());
+    act("actionTemplateParameters")->setEnabled(!editBlocked && !controller_->target().libraryTemplate().isEmpty());
     act("actionDelete")->setEnabled(!editBlocked && !scene_->selectedItems().isEmpty());
     act("actionUndo")->setEnabled(controller_->canUndo());
     act("actionRedo")->setEnabled(controller_->canRedo());
     act("actionSave")->setEnabled(controller_->canSave());
     act("actionSaveAs")->setEnabled(controller_->canSave());
-    act("actionVersionHistory")->setEnabled(!busy && !controller_->filePath().isEmpty() &&
-                                            !VersionHistory::versions(controller_->filePath()).isEmpty());
+    showSaveAll();
+    act("actionRevert")->setEnabled(!busy && controller_->modified() && !doc_->path().isEmpty());
+    act("actionVersionHistory")->setEnabled(!busy && !doc_->path().isEmpty() && !VersionHistory::versions(doc_->path()).isEmpty());
     act("actionUpdate")->setEnabled(!busy && hasPlan);
     act("actionArrange")->setEnabled(!editBlocked && hasPlan);
     act("actionRun")->setText(controller_->running() ? "&Stop" : "&Run");
@@ -548,9 +543,9 @@ void MainWindow::refreshState() {
     else if (controller_->running()) text = "Running…";
     else if (controller_->monitoring()) text = "Monitoring live metrics…";
     else if (!hasPlan) text = "Empty canvas: choose Add source to start";
-    else if (controller_->notValidated()) text = "Validation was cancelled — press Validate. Save and Run are off", colour = Theme::warning().name();
-    else if (r.valid() && !r.ok()) text = "Validation reported a problem. Save and Run are off", colour = Theme::error().name();
-    else if (r.valid() && !r.complete()) text = "Pipeline is not complete (free src pad). Save is on, Run is off", colour = Theme::warning().name();
+    else if (controller_->notValidated()) text = "Validation was cancelled — press Validate. Run is off", colour = Theme::warning().name();
+    else if (r.valid() && !r.ok()) text = "Validation reported a problem. Run is off", colour = Theme::error().name();
+    else if (r.valid() && !r.complete()) text = "Pipeline is not complete (free src pad). Run is off", colour = Theme::warning().name();
     else if (r.valid()) text = "Pipeline is complete", colour = Theme::accent().name();
     else text = "Not validated yet — press Validate";
     state_->setText(text);
@@ -565,9 +560,7 @@ void MainWindow::refreshState() {
     drawer_->setBusy(editBlocked);
     flows_->setBusy(editBlocked);
 
-    QString name = !controller_->libraryTemplate().isEmpty() ? "Template: " + controller_->libraryTemplate()
-                   : controller_->filePath().isEmpty() ? "untitled" : QFileInfo(controller_->filePath()).fileName();
-    setWindowTitle(BuildInfo::title() + " " + BuildInfo::version() + " – " + name + (controller_->dirty() ? " *" : ""));
+    setWindowTitle(BuildInfo::title() + " " + BuildInfo::version() + " – " + doc_->title() + (controller_->hasUnsavedWork() ? " *" : ""));
 }
 
 void MainWindow::onEnvironment() {
@@ -593,25 +586,6 @@ void MainWindow::openFile(const QString& path) {
     Settings::addRecent(path);
     d->controller()->open(path);
     refreshTab(d);
-}
-
-bool MainWindow::saveFile(const QString& path) {
-    QString error;
-    if (controller_->save(path, &error)) {
-        if (!controller_->filePath().isEmpty()) Settings::addRecent(controller_->filePath());
-        return true;
-    }
-    statusBar()->showMessage(error, 10000);
-    log_->append(error);
-    return false;
-}
-
-void MainWindow::saveAs() {
-    QString start = controller_->filePath().isEmpty() ? Settings::lastDir() : controller_->filePath();
-    QString path = PipelineFileDialog::choose(this, true, start);
-    if (path.isEmpty()) return;
-    if (!path.endsWith(".conf")) path += ".conf";
-    saveFile(path);
 }
 
 void MainWindow::toggleRun() {
@@ -907,7 +881,7 @@ void MainWindow::askTemplatesOutdated(const QStringList& ids) {
 
 // The earlier versions of the open file, newest first; the chosen one comes back as an unsaved change.
 void MainWindow::showVersionHistory() {
-    const QString file = controller_->filePath();
+    const QString file = doc_->path();
     const QList<VersionHistory::Version> versions = VersionHistory::versions(file);
     if (file.isEmpty() || versions.isEmpty()) return;
     QDialog dialog(this);
@@ -934,23 +908,14 @@ void MainWindow::showVersionHistory() {
     connect(list, &QListWidget::itemDoubleClicked, &dialog, &QDialog::accept);
     layout->addWidget(buttons);
     dialog.resize(460, 380);
-    if (dialog.exec() != QDialog::Accepted || !list->currentItem() || !confirmDiscard()) return;
+    if (dialog.exec() != QDialog::Accepted || !list->currentItem() || !saveFlow_->confirmClose({doc_})) return;
     controller_->restoreVersion(list->currentItem()->data(Qt::UserRole).toString());
 }
 
-bool MainWindow::confirmDiscard() {
-    if (!controller_->dirty() || controller_->plan().empty()) return true;
-    auto answer = QMessageBox::question(this, "Unsaved changes", "The changes on the canvas have not been saved. Discard them?",
-                                        QMessageBox::Discard | QMessageBox::Cancel, QMessageBox::Cancel);
-    return answer == QMessageBox::Discard;
-}
-
 void MainWindow::closeEvent(QCloseEvent* event) {
-    for (Document* d : std::as_const(docs_)) {
-        if (!confirmClose(d)) {
-            event->ignore();
-            return;
-        }
+    if (!saveFlow_->confirmClose(documents())) {
+        event->ignore();
+        return;
     }
     for (Document* d : std::as_const(docs_))
         if (d->controller()->running()) d->controller()->stopRun();

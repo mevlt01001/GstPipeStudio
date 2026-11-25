@@ -15,7 +15,7 @@ public:
 
     QString confPath() const;  // <location>/<name>/<name>.conf
 
-    // Asks, and makes the project's folder; "" when cancelled.
+    // Asks; "" when cancelled. Nothing is made yet: the first save writes the folder.
     static QString ask(QWidget* parent);
 
 private:

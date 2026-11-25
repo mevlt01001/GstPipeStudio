@@ -99,8 +99,7 @@ private slots:
         QVERIFY(fromStd(c->result().pad(toStd(src), toStd("src"), true)->caps).contains("width=(int)320"));
 
         QTemporaryDir dir;
-        QString error;
-        QVERIFY2(c->save(dir.filePath("real.conf"), &error), qPrintable(error));
+        QVERIFY(saved(saveAs(*c, dir.filePath("real.conf"))));
         QSignalSpy ended(c.get(), &Controller::runFinished);
         QVERIFY(c->run());
         QVERIFY(waitFor([&] { return ended.count() == 1; }, 30000));
@@ -108,7 +107,7 @@ private slots:
     }
 
     void importsARealLaunchPipelineIntoAnUnsavedCanvas() {
-        c->newPlan();
+        c->newPlan(std::make_unique<UntitledTarget>(1));
         MainWindow window(c.get());
         window.show();
         QVERIFY(window.findChild<QAction*>("actionImportLaunch"));
@@ -116,8 +115,8 @@ private slots:
         QVERIFY(waitFor([&] { return c->plan().elements.size() == 3 && !c->busy(); }, 15000));
         QVERIFY2(c->result().complete(), c->result().message.c_str());
         QCOMPARE(c->plan().links.size(), size_t(2));
-        QVERIFY(c->filePath().isEmpty());
-        QVERIFY(c->dirty());
+        QVERIFY(c->target().path().isEmpty());
+        QVERIFY(c->modified());
         window.scene()->rebuild();
         QVERIFY(window.scene()->items().size() >= 3);
         window.view()->fitAll();
@@ -131,7 +130,7 @@ private slots:
 
     // The same screenshots as with the fakes, but with the real catalog (hundreds of factories) and real caps.
     void screenshotsWithTheRealCatalog() {
-        c->newPlan();
+        c->newPlan(std::make_unique<UntitledTarget>(1));
         MainWindow w(c.get());
         w.show();
         QString src = addSource(*c, "videotestsrc", withProps({{"pattern", "ball"}}));
@@ -163,7 +162,7 @@ private slots:
     }
 
     void aBadPropertyShowsAsAnErrorOnTheElement() {
-        c->newPlan();
+        c->newPlan(std::make_unique<UntitledTarget>(1));
         QString src = addSource(*c, "filesrc", withProps({{"location", "/does/not/exist.avi"}}));
         QVERIFY(!src.isEmpty());
         qInfo() << "filesrc without file:" << c->result().status << c->result().message;

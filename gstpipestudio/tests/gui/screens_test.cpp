@@ -130,7 +130,7 @@ private slots:
         QString conv = addAfter(*c, src, "src", "videoconvert");
         addAfter(*c, conv, "src", "fakesink", "sink", withProps({{"fake-error", "Could not open resource for writing: /readonly/out.mp4"}}));
         settleWindow(w);
-        QVERIFY(!c->canSave());
+        QVERIFY(!c->canRun());
         save(&w, "ux_06_failed_validation");
     }
 

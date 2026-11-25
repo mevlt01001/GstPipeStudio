@@ -58,7 +58,7 @@ private slots:
 
     void emptyCanvas() {
         QVERIFY(c->plan().empty());
-        QVERIFY(!c->canSave());
+        QVERIFY(c->canSave());  // Save always writes
         QVERIFY(!c->canRun());
         QVERIFY(!c->result().valid());
         QCOMPARE(c->launchCommand(), QString());
@@ -147,12 +147,13 @@ private slots:
         QVERIFY(c->addElement("videotestsrc", withProps({{"pattern", "snow"}})));
         QVERIFY(c->updating());
         QVERIFY(c->busy());
-        QVERIFY(c->dirty());
-        // Preview keeps editing available; saving/running waits for the result.
+        QVERIFY(c->modified());
+        // Preview keeps editing and saving available; running waits for the result.
         QVERIFY(!c->editingBlocked());
         QVERIFY(!c->refresh());
         QVERIFY(!c->cut("videotestsrc_0", "src"));
-        QVERIFY(!c->canSave());
+        QVERIFY(c->canSave());
+        QVERIFY(!c->canRun());
         QVERIFY(settle(*c));
         QCOMPARE(finished.count(), 1);
         QCOMPARE(fromStd(c->result().status), QString("ok"));
@@ -451,14 +452,15 @@ private slots:
         QCOMPARE(fromStd(c->result().status), QString("error"));
         QCOMPARE(fromStd(c->result().errorElement), sink);
         QVERIFY(c->plan().find(sink.toStdString()));   // the change stays
-        QVERIFY(c->dirty());
-        QVERIFY(!c->canSave());                       // Save closes
-        QVERIFY(!c->canRun());                        // Run closes
+        QVERIFY(c->modified());
+        QVERIFY(c->canSave());                        // Save still writes ...
+        QVERIFY(!c->canRun());                        // ... Run closes
         QTemporaryDir dir;
-        QString error;
-        QVERIFY(!c->save(dir.filePath("x.conf"), &error));
-        QVERIFY(!error.isEmpty());
-        QVERIFY(!QFile::exists(dir.filePath("x.conf")));
+        QVERIFY(saved(saveAs(*c, dir.filePath("x.conf"))));
+        gps::Graph written;
+        QVERIFY(gps::Graph::load(toStd(dir.filePath("x.conf")), &written, nullptr));
+        QVERIFY(!written.complete);
+        QVERIFY(!c->modified());
         ElementView v = c->view(sink);
         QVERIFY(v.isError);
         QCOMPARE(v.note, QString("boom: cannot open"));
@@ -476,13 +478,14 @@ private slots:
         QCOMPARE(fromStd(c->result().errorElement), src);
         QVERIFY(fromStd(c->result().message).contains(src));
         QVERIFY(fromStd(c->result().message).contains("stop unexpectedly"));
-        QVERIFY(!c->canSave());
+        QVERIFY(!c->canRun());
         QVERIFY(c->view(src).isError);
         // Still alive: fix the element and carry on.
         QVERIFY(c->editElement(src, {}));
         QVERIFY(settle(*c));
         QCOMPARE(fromStd(c->result().status), QString("ok"));
         QVERIFY(c->canSave());
+        QVERIFY(!c->canRun());  // a source alone is not complete
     }
 
     void aHangingHelperIsKilled() {
@@ -494,7 +497,7 @@ private slots:
         QVERIFY(fromStd(c->result().message).contains("did not answer in time"));
         QVERIFY2(timer.elapsed() >= 2300, "killed before timeout + 2 s");
         QVERIFY2(timer.elapsed() < 6000, "watchdog too slow");
-        QVERIFY(!c->canSave());
+        QVERIFY(!c->canRun());
         QVERIFY(c->editElement(src, {}));
         QVERIFY(settle(*c));
         QCOMPARE(fromStd(c->result().status), QString("ok"));
@@ -555,10 +558,9 @@ private slots:
         QVERIFY(settle(*c));
         QTemporaryDir dir;
         QString path = dir.filePath("demo.conf");
-        QString error;
-        QVERIFY2(c->save(path, &error), qPrintable(error));
-        QVERIFY(!c->dirty());
-        QCOMPARE(c->filePath(), path);
+        QVERIFY(saved(saveAs(*c, path)));
+        QVERIFY(!c->modified());
+        QCOMPARE(c->target().path(), path);
         gps::Graph persisted; std::string loadError;
         QVERIFY(gps::Graph::load(path.toStdString(), &persisted, &loadError));
         QVERIFY(persisted.complete);
@@ -570,16 +572,16 @@ private slots:
         QVERIFY(waitFor([&] { return other->result().valid() && !other->busy(); }));
         QCOMPARE(text(other->plan().toConf()), text(persisted.toConf()));
         QVERIFY(other->result().complete());
-        QVERIFY(!other->dirty());
+        QVERIFY(!other->modified());
         QVERIFY(other->canRun());
-        QCOMPARE(other->filePath(), path);
+        QCOMPARE(other->target().path(), path);
         QCOMPARE(other->linkViews()[0].badge, QString("caps · 1"));
 
         // "Save" with no path writes to the same file.
         QVERIFY(other->addElement("videotestsrc", {}));
         QVERIFY(settle(*other));
-        QVERIFY(other->dirty());
-        QVERIFY(other->save("", &error));
+        QVERIFY(other->modified());
+        QVERIFY(saved(other->save()));
         QVERIFY(gps::Graph::load(path.toStdString(), &persisted, &loadError));
         QVERIFY(!persisted.complete);
     }
@@ -623,7 +625,7 @@ private slots:
         QVERIFY(waitFor([&] { return c->result().valid() && !c->busy(); }));
         QCOMPARE(fromStd(c->result().status), QString("pad-missing"));
         QCOMPARE(c->result().missing.size(), 1);
-        QVERIFY(!c->canSave());
+        QVERIFY(!c->modified());  // loading never makes a document modified
         QVERIFY(!c->canRun());
         QCOMPARE(c->plan().elements.size(), size_t(3));  // loaded as it was written
         // The pad the plan asks for is still drawn, linked, so the user can see what is wrong.
@@ -662,13 +664,12 @@ private slots:
         useUserDir(state.path());
         const QString conf = dir.filePath("demo.conf");
         const QString src = addSource(*c, "videotestsrc");
-        QString error;
-        QVERIFY(c->save(conf, &error));
+        QVERIFY(saved(saveAs(*c, conf)));
         QVERIFY(VersionHistory::versions(conf).isEmpty());  // nothing to keep the first time
         QVERIFY(!addAfter(*c, src, "src", "fakesink").isEmpty());
-        QVERIFY(c->save(QString(), &error));
+        QVERIFY(saved(c->save()));
         QCOMPARE(VersionHistory::versions(conf).size(), 1);
-        QVERIFY(c->save(QString(), &error));  // the same text again: no new version
+        QVERIFY(saved(c->save()));  // the same text again: no new version
         QCOMPARE(VersionHistory::versions(conf).size(), 1);
 
         // The folder is a project: its .gpsproj knows the conf, and the app knows the project.
@@ -680,8 +681,56 @@ private slots:
         // An earlier version comes back as an unsaved change to the same file.
         c->restoreVersion(VersionHistory::versions(conf).front().path);
         QVERIFY(waitFor([&] { return !c->busy() && c->plan().elements.size() == 1; }, 10000));
-        QVERIFY(c->dirty());
-        QCOMPARE(c->filePath(), conf);
+        QVERIFY(c->modified());
+        QCOMPARE(c->target().path(), conf);
+    }
+
+    // Modified means: not what the last save or load left. Undo back to the save point is not modified any more,
+    // and Revert reads the file again.
+    void undoBackToTheSavePointIsNotModified() {
+        QTemporaryDir dir;
+        const QString src = addSource(*c, "videotestsrc");
+        QVERIFY(saved(saveAs(*c, dir.filePath("p.conf"))));
+        QVERIFY(!c->modified());
+        QVERIFY(!addAfter(*c, src, "src", "fakesink").isEmpty());
+        QVERIFY(c->hasUnsavedWork());
+        QVERIFY(c->undo());
+        QVERIFY(!c->modified());
+        QVERIFY(c->redo());
+        QVERIFY(c->modified());
+        QVERIFY(settle(*c));
+        c->revert();
+        QVERIFY(waitFor([&] { return !c->busy() && c->plan().elements.size() == 1; }));
+        QVERIFY(!c->modified());
+        QCOMPARE(c->target().path(), QFileInfo(dir.filePath("p.conf")).absoluteFilePath());
+    }
+
+    // A library template keeps being the template it is when one of its versions comes back: Save writes its next
+    // revision, never a pipeline.
+    void restoringALibraryTemplateVersionKeepsItATemplate() {
+        QTemporaryDir state;
+        useUserDir(state.path());
+        const Chain chain = makeChain();
+        QVERIFY(settle(*c));
+        QVERIFY(c->saveTemplate("Tail", {chain.convert, chain.sink}));
+        c->editLibraryTemplate("Tail");
+        QVERIFY(waitFor([&] { return c->target().libraryTemplate() == "Tail" && !c->busy(); }));
+        const QString convert = fromStd(c->plan().elements.front().name);
+        QVERIFY(c->editElement(convert, withProps({{"qos", "false"}})));
+        QVERIFY(settle(*c));
+        QVERIFY(saved(c->save()));
+        TemplateLibrary& library = c->services().library();
+        QCOMPARE(library.content("Tail").revision, 2);
+        const QList<VersionHistory::Version> versions = VersionHistory::versions(c->target().path());
+        QCOMPARE(versions.size(), 1);
+        c->restoreVersion(versions.front().path);
+        QVERIFY(waitFor([&] { return !c->busy() && c->modified(); }));
+        QCOMPARE(c->target().libraryTemplate(), QString("Tail"));
+        QVERIFY(c->canUndo());  // the restore is one step back
+        QVERIFY(saved(c->save()));
+        QCOMPARE(library.content("Tail").revision, 3);
+        QCOMPARE(c->target().libraryTemplate(), QString("Tail"));
+        useUserDir({});
     }
 
     void aProjectKnowsTheTemplatesItUses() {
@@ -691,8 +740,7 @@ private slots:
         QVERIFY(settle(*c));
         QVERIFY(c->saveTemplate("Tail", {chain.convert, chain.sink}));
         QVERIFY(settle(*c));
-        QString error;
-        QVERIFY(c->save(dir.filePath("uses.conf"), &error));
+        QVERIFY(saved(saveAs(*c, dir.filePath("uses.conf"))));
         const QString project = ProjectFile::pathForConf(dir.filePath("uses.conf"));
         QCOMPARE(ProjectFile::load(project).templates().value("Tail"), 1);
         QCOMPARE(ProjectRegistry::usingTemplate("Tail"), QStringList{QFileInfo(project).absoluteFilePath()});
@@ -720,7 +768,7 @@ private slots:
         QVERIFY(settle(*c));
 
         c->editLibraryTemplate("Tail");
-        QVERIFY(waitFor([&] { return c->libraryTemplate() == "Tail"; }));
+        QVERIFY(waitFor([&] { return c->target().libraryTemplate() == "Tail"; }));
         QVERIFY(settle(*c));
         QCOMPARE(c->plan().elements.size(), size_t(2));
         const QString convert = fromStd(c->plan().elements.front().name);
@@ -733,11 +781,11 @@ private slots:
         c->setTemplateParameters(params);
         QVERIFY(settle(*c));
         QString error;
-        QVERIFY2(c->save(QString(), &error), qPrintable(error));
+        QVERIFY(saved(c->save()));
         TemplateLibrary& library = c->services().library();
         QCOMPARE(library.content("Tail").revision, 2);
         QCOMPARE(library.content("Tail").exposed.size(), size_t(1));
-        QVERIFY(!c->dirty());
+        QVERIFY(!c->modified());
 
         QVERIFY(c->renameTemplate("Tail", "End", &error));
         QVERIFY(library.content("Tail").elements.empty() && !library.content("End").elements.empty());
@@ -813,8 +861,7 @@ private slots:
         QVERIFY(!second.isEmpty());
         QVERIFY(settle(*c));
         const QString other = c->templateBox(second.first());
-        QString error;
-        QVERIFY2(c->save(dir.filePath("old.conf"), &error), qPrintable(error));  // holds revision 1
+        QVERIFY(saved(saveAs(*c, dir.filePath("old.conf"))));  // holds revision 1
 
         QSignalSpy asked(c.get(), &Controller::templateChanged);
         c->setTemplateExpanded(first, true);  // inside it, members are plain elements
@@ -854,14 +901,13 @@ private slots:
     void dragMovesTheBoxButSavesNothing() {
         QString src = addSource(*c, "videotestsrc");
         QTemporaryDir dir;
-        QString error;
-        QVERIFY(c->save(dir.filePath("p.conf"), &error));
+        QVERIFY(saved(saveAs(*c, dir.filePath("p.conf"))));
         QSignalSpy changed(c.get(), &Controller::changed);
         c->setPosition(src, 512, 384);
         QCOMPARE(changed.count(), 1);
         QCOMPARE(c->plan().find(toStd(src))->x, 512.0);
         QVERIFY(!text(c->plan().toConf()).contains("x=512"));  // nice alignment places boxes when a file opens
-        QVERIFY(!c->dirty());
+        QVERIFY(!c->modified());
         QVERIFY(c->canUndo());  // still one step back
         c->setPosition(src, 512, 384);  // same place: nothing to report
         QCOMPARE(changed.count(), 1);
@@ -913,11 +959,11 @@ private slots:
 
     void newPlanClearsEverything() {
         makeChain();
-        QVERIFY(c->dirty());
-        c->newPlan();
+        QVERIFY(c->modified());
+        c->newPlan(std::make_unique<UntitledTarget>(1));
         QVERIFY(c->plan().empty());
-        QVERIFY(!c->dirty());
-        QVERIFY(c->filePath().isEmpty());
+        QVERIFY(!c->modified());
+        QVERIFY(c->target().path().isEmpty());
         QVERIFY(!c->result().valid());
     }
 

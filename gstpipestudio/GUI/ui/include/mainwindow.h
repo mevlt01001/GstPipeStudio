@@ -20,6 +20,7 @@ class QMenu;
 class QStackedWidget;
 class QTabBar;
 class Panels;
+class SaveFlow;
 class SetupPage;
 class UpdatePanel;
 class TelemetryPanel;
@@ -40,6 +41,7 @@ public:
     LogPanel* logPanel() const { return log_; }
     Panels* panels() const { return panels_; }
     Explorer* explorer() const { return explorer_; }
+    SaveFlow* saveFlow() const { return saveFlow_; }
     QWidget* propertiesTab() const { return propsTab_; }
     QWidget* capsTab() const { return capsTab_; }
     SetupPage* setupPage() const { return setup_; }
@@ -49,9 +51,9 @@ public:
     // ---- the tabs: one Document each, the one in front is what the menus and panels act on
     QTabBar* tabs() const { return tabs_; }
     Document* document() const { return doc_; }
-    QList<Document*> documents() const { return docs_; }
+    QList<Document*> documents() const;  // in tab order
     Document* newDocument();                    // an untitled tab, in front
-    bool closeDocument(Document* document);     // asks to save unsaved changes; false when the user cancels
+    bool closeDocument(Document* document);     // asks to save unsaved changes (SaveFlow); false when the user cancels
     void activate(Document* document);          // brings its tab to the front
     void restoreSession();                      // the tabs open when the window last closed
 
@@ -59,7 +61,6 @@ public:
     void openFile(const QString& path);
     // A library template on a canvas tab of its own: Save writes its next revision, the other tabs are offered it.
     Document* openTemplate(const QString& name);
-    bool saveFile(const QString& path);  // "" = where the plan lives now
     void openPropertiesTab(const QString& element);
     void resetPropertiesTab();
     void openCapsTab(const QString& srcElement, const QString& srcIdentity);
@@ -73,11 +74,10 @@ private:
     Document* addDocument(Controller* controller);
     void wire(Document* document);
     void refreshTab(Document* document);
+    void showSaveAll();
     Document* docAt(int index) const;
     int indexOf(Document* document) const;
     Document* target();                 // where a file opens: the front tab when it is pristine, else a new one
-    bool confirmClose(Document* document);  // Save, Don't save or Cancel, as editors ask
-    bool save();                        // Save of the front tab; a never saved canvas becomes a project first
     void saveSession();
 
     void showVersionHistory();
@@ -88,8 +88,6 @@ private:
     void buildPanels();
     void refreshState();
     void onEnvironment();
-    bool confirmDiscard();  // true when it is fine to drop the plan on screen
-    void saveAs();
     void toggleRun();
     void showAbout();
     void showCanvasMenu(const QPoint& screenPos);
@@ -108,6 +106,7 @@ private:
     void setReason(QAction* action, const QString& text, const QString& reason);
 
     AppServices& services_;  // the process's, shared by every tab
+    SaveFlow* saveFlow_;      // every save the user asks for, and every question about unsaved changes
 
     // The front document's parts: the menus, panels and status bar act on these.
     Controller* controller_ = nullptr;

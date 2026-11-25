@@ -14,6 +14,7 @@
 #include <QTimer>
 #include <functional>
 #include <map>
+#include <memory>
 #include <optional>
 #include <limits>
 #include <cmath>
@@ -26,6 +27,7 @@
 #include "canvaslayout.h"
 #include "executionbackend.h"
 #include "pipeline.h"
+#include "savetarget.h"
 #include "slowwatch.h"
 #include "supportreport.h"
 
@@ -55,15 +57,19 @@ public:
     bool busy() const { return updating_ || running_ || monitoring_ || opening_; }
     bool editingBlocked() const { return running_ || monitoring_ || opening_ || cancelling_; }
     bool monitoring() const { return monitoring_; }
-    bool dirty() const { return dirty_; }
-    QString filePath() const { return path_; }
-    bool canSave() const;  // not empty, not busy, validated, last update did not fail
-    bool canRun() const;   // canSave and the pipeline is complete
+    bool canSave() const;  // Save always writes, unless a file is opening or the pipeline runs
+    bool canRun() const;   // validated, the last validation did not fail, and the pipeline is complete
     QString saveBlockedReason() const;  // why Save is off, "" when it is on
-    QString runBlockedReason() const;   // why Run is off, "" when it is on
+    QString runBlockedReason() const;   // why Run (and Monitor) is off, "" when it is on
     bool notValidated() const { return cancelled_; }  // the user cancelled the last validation
     bool helperStopped() const;                       // the last update's helper crashed or gave no usable answer
     QString launchCommand() const;  // the gst-launch-1.0 line for the saved file, "" before the first save
+
+    // ---- what the document is saved to, and whether it holds changes it has not saved
+    const SaveTarget& target() const { return *target_; }
+    void setTarget(std::unique_ptr<SaveTarget> target);  // binds the document to another target; the content stays
+    bool modified() const { return pipeline_.editor().state() != savedState_; }  // changed since its last save or load
+    bool hasUnsavedWork() const { return modified() && !plan().empty(); }       // what the window asks about
     void setUpdateTimeoutMs(int ms) { updateTimeoutMs_ = ms; }
 
     // ---- slow validation and cancel (UI_RULES 3.1 and 3.2)
@@ -103,7 +109,6 @@ public:
     // A library template on the canvas as the document: Save writes its next revision to the library, and its
     // parameters (the plan's exposed list) are set with setTemplateParameters.
     void editLibraryTemplate(const QString& name);
-    QString libraryTemplate() const { return libraryTemplate_; }  // the one being edited, "" for a pipeline
     void setTemplateParameters(const std::vector<gps::ExposedParam>& params);
     QStringList addTemplate(const QString& templateName, double x = std::numeric_limits<double>::quiet_NaN(), double y = std::numeric_limits<double>::quiet_NaN());
     QStringList addTemplateAfter(const QString& srcElement, const QString& srcPad, const QString& templateName);
@@ -166,13 +171,14 @@ public:
     gps::Removal previewReplace(const QString& element, const QString& pad) const;
     gps::Removal previewDeleteSource(const QString& element) const;
 
-    // ---- files and runs
-    void newPlan();
-    void newProject(const QString& confPath);  // an empty canvas whose Save writes there (its folder exists)
-    void open(const QString& path, bool imported = false);  // asynchronous: the plan is replaced when all its factories are known
-    void restoreVersion(const QString& version);  // an earlier version of the open file, as an unsaved change to it
+    // ---- files and runs. Opening is asynchronous: the plan is replaced when all its factories are known.
+    void newPlan(std::unique_ptr<SaveTarget> target);  // an empty canvas bound to target: untitled, or a new project
+    void open(const QString& path, bool imported = false);  // imported: an unsaved change of this document
+    void restoreVersion(const QString& version);  // an earlier version of the document, as one undoable change to it
+    void revert();                                // the target's file again, unmodified
     bool importLaunch(const QString& description); // brief native probe, then opens an unsaved canvas graph
-    bool save(const QString& path, QString* error);  // path "" saves where the plan was opened or saved
+    SaveResult save();                                     // to the target
+    SaveResult saveAs(std::unique_ptr<SaveTarget> target); // there; written, the document is bound to it
     bool refresh();                  // run the update again
     bool run();
     void stopRun();
@@ -204,7 +210,13 @@ private:
     // The one path of an edit: refused while editing is blocked or when change returns false (nothing happened);
     // otherwise one undo step, noted, and validated when it changed what runs (the Pipeline tells).
     bool transact(const std::function<bool(gps::Graph&, Edit&)>& change);
-    void load(const QString& source, const QString& documentPath, bool dirty, const QString& action, const QString& libraryTemplate = {});
+    // How a plan read from a file becomes the document: it is the document's file (Open: unmodified, the undo history
+    // starts again), or one undoable change of the document (Replace).
+    enum class Load { Open, Replace };
+    // target: what the document is bound to once it is open; null keeps the one it has.
+    void load(const QString& source, std::shared_ptr<SaveTarget> target, Load how, const QString& action);
+    SaveResult write(std::shared_ptr<SaveTarget> target);  // the one save path of save and saveAs
+    void markSaved() { savedState_ = pipeline_.editor().state(); }
     void checkTemplates(bool ask);
     void offerNewerTemplates();  // templatesOutdated soon, when the library holds newer versions of copies on this canvas
     void offerNow();
@@ -216,7 +228,7 @@ private:
     QString runFile(const QString& name);
     gps::Graph& editGraph() { return pipeline_.editor().draft(); }
     bool commitTransaction();
-    void edited(const QString& touchedElement);  // dirty, and validated when the last change was an Execution change
+    void edited(const QString& touchedElement);  // validated when the last change was an Execution change
     void alignAfterEdit();
     void alignOpened();
     void startUpdate();
@@ -239,8 +251,8 @@ private:
     HelperExecutionBackend backend_;
     QTimer updateTimer_;
     gps::ExecutionCoordinator execution_{pipeline_, backend_};
-    QString path_;
-    bool dirty_ = false;
+    std::shared_ptr<SaveTarget> target_ = std::make_shared<UntitledTarget>(1);
+    std::uint64_t savedState_ = 0;  // the editor's state at the last save or load
     bool updating_ = false;
     bool running_ = false;
     bool monitoring_ = false;
@@ -251,7 +263,6 @@ private:
     QTemporaryDir tmp_;
     CanvasLayout* layout_;
     bool alignWhenValidated_ = false;
-    QString libraryTemplate_;     // the library template the canvas is, while it is edited
     bool restoring_ = false;     // undo or redo is running
     bool alignQueued_ = false;   // automatic alignment follows the current burst of edits  // an opened file is laid out once its first validation tells every pad
     QSet<QString> editingTemplates_;   // copies whose changes go to their template (Update template was chosen)

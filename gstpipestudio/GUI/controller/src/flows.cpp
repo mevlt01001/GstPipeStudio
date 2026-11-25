@@ -307,12 +307,12 @@ void Flows::templateMenu(const QString& name, const QPoint& at) {
 void Flows::editTemplateParameters() {
     QStringList all;
     for (const gps::Element& e : controller_->plan().elements) all << fromStd(e.name);
-    auto* page = new TemplatePage({controller_->libraryTemplate(), controller_->parameterChoices(all), controller_->plan().exposed, true});
+    auto* page = new TemplatePage({controller_->target().libraryTemplate(), controller_->parameterChoices(all), controller_->plan().exposed, true});
     connect(page, &TemplatePage::confirmed, this, [this, page] {
         controller_->setTemplateParameters(page->params());
         closeProperties();
     });
-    presentProperties(page, "Template parameters · " + controller_->libraryTemplate());
+    presentProperties(page, "Template parameters · " + controller_->target().libraryTemplate());
 }
 
 void Flows::newElementProperties(const QString& factory) {

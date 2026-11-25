@@ -335,7 +335,7 @@ private slots:
         QVERIFY(body.contains("GStreamer: 1.20.3"));
         QVERIFY(body.contains("fake gps-update"));  // the log tail
 
-        // Cancel: the helper is gone, the plan keeps the change, Save and Run say why they are off.
+        // Cancel: the helper is gone, the plan keeps the change, Run says why it is off; Save still writes.
         QSignalSpy finished(c.get(), &Controller::updateFinished);
         QTest::mouseClick(ind->findChild<QPushButton*>("cancelValidationButton"), Qt::LeftButton);
         QVERIFY(waitFor([&] { return finished.count() == 1; }, 5000));
@@ -345,16 +345,13 @@ private slots:
         QVERIFY(!c->busy());
         QCOMPARE(c->plan().find(src.toStdString())->props.at("fake-slow"), std::string("30000"));
         QVERIFY(!ind->isVisible());
-        QVERIFY(!w.findChild<QAction*>("actionSave")->isEnabled());
+        QVERIFY(w.findChild<QAction*>("actionSave")->isEnabled());
         QVERIFY(!w.findChild<QAction*>("actionRun")->isEnabled());
-        QVERIFY(w.findChild<QAction*>("actionSave")->toolTip().contains("Validation was cancelled — press Validate"));
         QVERIFY(w.findChild<QAction*>("actionRun")->toolTip().contains("Validation was cancelled — press Validate"));
         QVERIFY(w.findChild<QLabel*>("stateLabel")->text().contains("Validation was cancelled — press Validate"));
         QVERIFY(w.findChild<QAction*>("actionUpdate")->isEnabled());
         QVERIFY(w.logPanel()->toPlainText().contains("Validation cancelled"));
-        QString error;
-        QVERIFY(!c->save(work.filePath("x.conf"), &error));
-        QVERIFY(error.contains("cancelled"));
+        QVERIFY(saved(saveAs(*c, work.filePath("x.conf"))));
         // The old pad information stays, dimmed.
         w.scene()->rebuild();
         QVERIFY(w.scene()->element(src)->opacity() < 1.0);
