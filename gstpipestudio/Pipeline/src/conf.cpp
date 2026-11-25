@@ -2,7 +2,6 @@
 #include <algorithm>
 #include <cctype>
 #include <fstream>
-#include <locale>
 #include <set>
 #include <sstream>
 
@@ -34,20 +33,6 @@ std::string unescape(const std::string& value) {
         out += next == 'n' ? '\n' : next == 'r' ? '\r' : next;
     }
     return out;
-}
-
-std::string number(double value) {
-    std::ostringstream out;
-    out.imbue(std::locale::classic());
-    out << value;
-    return out.str();
-}
-
-bool parseNumber(const std::string& text, double* value) {
-    std::istringstream in(text);
-    in.imbue(std::locale::classic());
-    in >> *value;
-    return !in.fail();
 }
 
 bool validName(const std::string& name) {
@@ -101,7 +86,6 @@ std::string Graph::toConf() const {
         out << "\n[element:" << e.name << "]\n";
         put(out, "factory", e.factory);
         if (!e.group.empty()) put(out, "group", e.group);
-        out << "x=" << number(e.x) << "\ny=" << number(e.y) << "\n";
         for (const auto& r : e.requestSrc) out << "request." << r.first << "=" << r.second << "\n";
         for (const auto& r : e.requestSink) out << "requestsink." << r.first << "=" << r.second << "\n";
         for (const auto& p : e.props) put(out, "prop." + p.first, p.second);
@@ -183,9 +167,8 @@ bool Graph::fromConf(const std::string& text, Graph* out, std::string* error) {
             e.name = s.name;
             e.factory = *factory;
             for (const auto& kv : s.keys) {
-                if (kv.first == "x") parseNumber(kv.second, &e.x);
-                else if (kv.first == "y") parseNumber(kv.second, &e.y);
-                else if (kv.first == "group") e.group = kv.second;
+                // x and y of files before 0.4 are left out: nice alignment places every box when the file opens.
+                if (kv.first == "group") e.group = kv.second;
                 else if (kv.first.rfind("prop.", 0) == 0) e.props[kv.first.substr(5)] = kv.second;
                 else if (kv.first.rfind("request.", 0) == 0) e.requestSrc[kv.first.substr(8)] = std::max(0, std::atoi(kv.second.c_str()));
                 else if (kv.first.rfind("requestsink.", 0) == 0) e.requestSink[kv.first.substr(12)] = std::max(0, std::atoi(kv.second.c_str()));

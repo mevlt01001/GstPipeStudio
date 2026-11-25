@@ -330,8 +330,8 @@ static void confRoundTrip() {
     CHECK(q.complete);
     CHECK_EQ(q.find(s)->props.at("note"), std::string("line1\nline2\\end"));
     CHECK_EQ(q.find(s)->props.at("location"), std::string("/data/my file=1.avi"));
-    CHECK_EQ(q.find(s)->x, 40.5);
-    CHECK_EQ(q.find(s)->y, -80.0);
+    CHECK_EQ(q.find(s)->x, 0.0);  // positions are not saved: nice alignment places the boxes
+    CHECK(text.find("\nx=") == std::string::npos);
     CHECK_EQ(q.links[1].caps, std::string("video/x-raw, width=(int)640, format=(string)\"A B\""));
     CHECK_EQ(q.links[1].sinkPadProps.at("alpha"), std::string("0.5"));
     CHECK_EQ(q.find(tee)->requestSrc.at("src_%u"), 2);

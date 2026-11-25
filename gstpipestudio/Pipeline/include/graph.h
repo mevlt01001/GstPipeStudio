@@ -54,7 +54,7 @@ struct Element {
     std::vector<Pad> pads; // Derived from factory templates and the current run; not serialized.
     std::map<std::string, int> requestSrc;   // Request src template -> how many pads to ask for before the run
     std::map<std::string, int> requestSink;  // Request sink template -> how many sink pads requested
-    double x = 0, y = 0;                     // canvas position, ignored by the engine
+    double x = 0, y = 0;                     // canvas position: presentation only, never saved (nice alignment places it)
 };
 
 struct Connection {

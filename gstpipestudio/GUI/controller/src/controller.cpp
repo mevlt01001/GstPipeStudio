@@ -949,7 +949,6 @@ bool Controller::move(const QList<QPair<QString, QPointF>>& placements) {
     std::vector<gps::Placement> moves;
     for (const auto& [element, at] : placements) moves.push_back({toStd(element), at.x(), at.y()});
     if (moves.empty() || !pipeline_.editor().execute(gps::MoveElementsAction(std::move(moves)))) return false;
-    dirty_ = true;
     emit changed();
     return true;
 }

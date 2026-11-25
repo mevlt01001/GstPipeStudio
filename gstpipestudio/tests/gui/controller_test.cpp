@@ -590,13 +590,18 @@ private slots:
         QCOMPARE(c->view(tee).srcs.size(), 3);
     }
 
-    void dragSavesThePosition() {
+    void dragMovesTheBoxButSavesNothing() {
         QString src = addSource(*c, "videotestsrc");
+        QTemporaryDir dir;
+        QString error;
+        QVERIFY(c->save(dir.filePath("p.conf"), &error));
         QSignalSpy changed(c.get(), &Controller::changed);
         c->setPosition(src, 512, 384);
         QCOMPARE(changed.count(), 1);
-        QVERIFY(text(c->plan().toConf()).contains("x=512"));
-        QVERIFY(text(c->plan().toConf()).contains("y=384"));
+        QCOMPARE(c->plan().find(toStd(src))->x, 512.0);
+        QVERIFY(!text(c->plan().toConf()).contains("x=512"));  // nice alignment places boxes when a file opens
+        QVERIFY(!c->dirty());
+        QVERIFY(c->canUndo());  // still one step back
         c->setPosition(src, 512, 384);  // same place: nothing to report
         QCOMPARE(changed.count(), 1);
     }

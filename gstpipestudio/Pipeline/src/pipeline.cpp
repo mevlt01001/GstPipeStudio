@@ -13,6 +13,13 @@ std::string executionKey(Graph graph) {
     graph.instances.clear();  // template instances are presentation: the engine never reads them
     return graph.toConf();
 }
+// Nothing changed: the saved text, and the canvas positions it leaves out.
+bool same(const Graph& a, const Graph& b) {
+    if (a.toConf() != b.toConf()) return false;
+    for (size_t i = 0; i < a.elements.size(); ++i)
+        if (a.elements[i].x != b.elements[i].x || a.elements[i].y != b.elements[i].y) return false;
+    return true;
+}
 bool fail(std::string* error, const std::string& message) {
     if (error) *error = message;
     return false;
@@ -213,7 +220,7 @@ void GraphEditor::rollback() { draft_.reset(); }
 bool GraphEditor::commit(std::string* error) {
     if (!draft_) return false;
     if (!Pipeline::validate(*draft_, error)) { rollback(); return false; }
-    if (draft_->toConf() == document_.graph_.toConf()) { rollback(); return false; }
+    if (same(*draft_, document_.graph_)) { rollback(); return false; }
     Graph next = std::move(*draft_); rollback();
     undo_.push_back({document_.graph_, next});
     if (undo_.size() > 64) undo_.erase(undo_.begin());

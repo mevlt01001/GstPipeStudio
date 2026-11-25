@@ -114,9 +114,9 @@ class IntegrationTest : public QObject {
         QTest::mouseClick(b, Qt::LeftButton);
     }
 
-    // The update is over and the canvas shows it.
+    // The update is over, a nice alignment it started has landed, and the canvas shows it.
     void idle() {
-        QVERIFY(waitFor([&] { return !c->busy(); }, 30000));
+        QVERIFY(waitFor([&] { return !c->busy() && !c->canvasLayout().busy(); }, 30000));
         QTest::qWait(30);
         w->scene()->rebuild();
         checkLayout();
@@ -1014,12 +1014,12 @@ private slots:
         QVERIFY(w->windowTitle().contains("roundtrip.conf"));
         QVERIFY(shot("17_opened_file"));
 
-        // saving the opened plan again writes the same text (names, links); opening lays the canvas out anew
+        // saving the opened plan again writes the same text (names, links; positions are never saved)
         QVERIFY(w->saveFile(work.filePath("roundtrip2.conf")));
         QFile a(conf), b(work.filePath("roundtrip2.conf"));
         QVERIFY(a.open(QIODevice::ReadOnly) && b.open(QIODevice::ReadOnly));
         QString first = QString::fromUtf8(a.readAll()), second = QString::fromUtf8(b.readAll());
-        for (QString* text : {&first, &second}) text->replace(QRegularExpression("(name|x|y)=.*\n"), "");
+        for (QString* text : {&first, &second}) text->replace(QRegularExpression("name=.*\n"), "");
         QCOMPARE(second, first);
         QVERIFY(planText.contains("[link:4]"));
     }

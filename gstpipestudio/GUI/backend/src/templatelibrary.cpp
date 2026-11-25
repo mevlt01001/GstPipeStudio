@@ -68,12 +68,6 @@ const gps::Graph* TemplateLibrary::plan(const QString& name) const {
 
 bool TemplateLibrary::save(const QString& name, gps::Graph preset, QString* error) {
     preset.name = toStd(name);
-    double left = preset.elements.front().x, top = preset.elements.front().y;
-    for (const gps::Element& e : preset.elements) left = std::min(left, e.x), top = std::min(top, e.y);
-    for (gps::Element& e : preset.elements) {
-        e.x -= left;
-        e.y -= top;
-    }
     std::string failure;
     if (preset.save(toStd(fileFor(name)), &failure)) return true;
     *error = fromStd(failure);
