@@ -440,10 +440,9 @@ private slots:
 
     void init() {
         qputenv("GPS_BIN_DIR", goodBin);
-        c = std::make_unique<Controller>();
+        c = makeController();
         c->setUpdateTimeoutMs(10000);
-        c->catalog().load();
-        QVERIFY(waitFor([&] { return c->catalog().loaded(); }, 30000));
+        QVERIFY(c->catalog().loaded());
         w = std::make_unique<MainWindow>(c.get());
         w->show();
     }

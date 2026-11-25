@@ -6,7 +6,9 @@
 #include <QtTest>
 #include <memory>
 
+#include "appservices.h"
 #include "controller.h"
+#include "settings.h"
 #include "theme.h"
 
 namespace support {
@@ -26,12 +28,23 @@ inline void isolateSettings() {
 
 inline bool waitFor(const std::function<bool()>& condition, int ms = 10000) { return QTest::qWaitFor(condition, ms); }
 
-// A Controller with the catalog loaded from the fake gps-inspect.
+// The services of the test process, as main() has one: the catalog is loaded once, from the gps-inspect GPS_BIN_DIR
+// names when it is first asked for.
+inline AppServices& services() {
+    static AppServices* shared = [] {
+        auto* made = new AppServices(qApp);
+        made->catalog().load();
+        waitFor([made] { return made->catalog().loaded(); }, 30000);
+        return made;
+    }();
+    return *shared;
+}
+
+// A Controller over the shared services. The library is read again: the test may have changed GPS_USER_DIR.
 inline std::unique_ptr<Controller> makeController() {
-    auto c = std::make_unique<Controller>();
+    auto c = std::make_unique<Controller>(services());
     c->setUpdateTimeoutMs(5000);
-    c->catalog().load();
-    waitFor([&] { return c->catalog().loaded(); });
+    services().library().reload();
     return c;
 }
 

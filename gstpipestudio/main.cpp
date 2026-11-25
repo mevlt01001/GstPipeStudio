@@ -2,6 +2,7 @@
 #include <QApplication>
 #include <QCommandLineParser>
 
+#include "appservices.h"
 #include "controller.h"
 #include "mainwindow.h"
 #include "theme.h"
@@ -19,7 +20,8 @@ int main(int argc, char** argv) {
     parser.process(app);
     Theme::apply(app);
 
-    Controller controller;
+    AppServices services;  // shared by every tab: the GStreamer check, the catalog, the template library
+    Controller controller(services);
     MainWindow window(&controller);  // checks GStreamer first; the catalog loads when it is fine
     window.show();
     window.restoreSession();  // the tabs open when it last closed, then the file asked for

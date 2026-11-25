@@ -17,7 +17,6 @@ public:
 
     // Asks, and makes the project's folder; "" when cancelled.
     static QString ask(QWidget* parent);
-    static QString location();  // where new projects go
 
 private:
     void check();

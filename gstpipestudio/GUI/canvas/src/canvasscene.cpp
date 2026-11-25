@@ -397,7 +397,7 @@ void CanvasScene::mouseMoveEvent(QGraphicsSceneMouseEvent* event) {
 
 void CanvasScene::beginConnectedMove(const QString& name) {
     finishConnectedMove();
-    if (!connectedMoveEnabled_ || locked_) return;
+    if (!controller_->services().view().connectedMove() || locked_) return;
     ElementItem* anchor = element(name);
     if (!anchor) return;
     movingAnchor_ = name; anchorStart_ = anchor->pos();

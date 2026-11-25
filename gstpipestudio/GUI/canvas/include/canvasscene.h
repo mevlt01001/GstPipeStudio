@@ -61,7 +61,7 @@ public:
     void frameExpanded(const QString& instanceId);
     void peekTemplate(const QString& instanceId);  // a quick look inside a collapsed template, near the pointer
     void updateLinks();
-    void setConnectedMoveEnabled(bool enabled) { connectedMoveEnabled_ = enabled; }
+    // With View > Move connected elements together, a drag moves the element's connected component.
     void beginConnectedMove(const QString& name);
     void followConnectedMove(const QString& name, const QPointF& position);
     void finishConnectedMove();
@@ -90,7 +90,7 @@ protected:
     void mouseMoveEvent(QGraphicsSceneMouseEvent* event) override;
 
 private:
-    bool connectedMoveEnabled_ = false, movingConnected_ = false;
+    bool movingConnected_ = false;
     QString movingAnchor_;
     QPointF anchorStart_;
     QHash<QString, QPointF> connectedStart_;

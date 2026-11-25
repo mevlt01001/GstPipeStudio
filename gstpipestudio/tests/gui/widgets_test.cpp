@@ -383,7 +383,6 @@ private slots:
 
         // An unsaved tab asks: Cancel keeps it, Don't save closes it.
         Document* second = w.document();
-        QVERIFY(waitFor([&] { return second->controller()->catalog().loaded(); }, 30000));
         QVERIFY(addSource(*second->controller(), "videotestsrc").size());
         QVERIFY(dot(1)->dirty());
         auto answer = [&w](const char* button) {
@@ -411,6 +410,31 @@ private slots:
         QCOMPARE(w.tabs()->tabText(0), QString("untitled"));
     }
 
+    // A new tab is ready at once: it shares the process's catalog and GStreamer check, and asks for neither again.
+    void aNewTabSharesTheCatalogAndNeedsNoCheck() {
+        MainWindow w(c.get());
+        w.show();
+        AppServices& shared = c->services();
+        QVERIFY(waitFor([&] { return shared.environment().result().state == StartupResult::Ready; }));
+        QVERIFY(!addSource(*c, "videotestsrc").isEmpty());  // the first tab is not pristine: New opens another
+        QSignalSpy checked(&shared.environment(), &EnvironmentService::checked);
+        QSignalSpy listed(&shared.catalog(), &FactoryCatalog::ready);
+        w.findChild<QAction*>("actionNew")->trigger();
+        Controller* second = w.document()->controller();
+        QVERIFY(second != c.get());
+        QCOMPARE(&second->services(), &shared);
+        QCOMPARE(&second->catalog(), &c->catalog());
+        QVERIFY(!w.showingSetup());
+        QVERIFY(w.findChild<QAction*>("actionAddElement")->isEnabled());
+        // A factory the first tab fetched is known here without asking gps-inspect again.
+        QVERIFY(second->addElement("videotestsrc", {}));
+        QVERIFY(settle(*second));
+        QVERIFY(second->result().ok());
+        QTest::qWait(300);
+        QCOMPARE(checked.count(), 0);
+        QCOMPARE(listed.count(), 0);
+    }
+
     // The tabs open when the window closed come back the next time, the one in front in front.
     void theTabsComeBackOnTheNextStart() {
         QTemporaryDir root, library;
@@ -436,7 +460,7 @@ private slots:
         QVERIFY(waitFor([&] { return again.tabs()->tabText(0) == "a.conf" && again.tabs()->tabText(1) == "b.conf"; }, 30000));
         QCOMPARE(again.tabs()->currentIndex(), 0);
         for (Document* d : again.documents()) QVERIFY(settle(*d->controller()));
-        QSettings().remove("session");
+        Settings::setSession({});
         qunsetenv("GPS_USER_DIR");
     }
 
@@ -484,8 +508,8 @@ private slots:
         QTest::keyClicks(page->findChild<QLineEdit*>("templateName"), "Tail");
         press(page, "saveButton");
         QVERIFY(waitFor([&] { return !w.flows()->propertyPage() && !visibleChild<TemplatePage>(&w); }));
-        QCOMPARE(c->templates().size(), 1);
-        QCOMPARE(c->templates().front().name, QString("Tail"));
+        QCOMPARE(c->services().library().list().size(), 1);
+        QCOMPARE(c->services().library().list().front().name, QString("Tail"));
         const auto params = c->templateParams(id);
         QCOMPARE(params.size(), size_t(2));
         QCOMPARE(params[0].name, shown.at(toStd(convert)) + ".caps.width");
@@ -515,7 +539,7 @@ private slots:
         QVERIFY(waitFor([&] { return c->plan().instances.empty(); }));
         QVERIFY(waitFor([&] { return !w.scene()->ghosts().isEmpty(); }));
         QCOMPARE(w.scene()->ghosts().front()->kind(), FrameGhost::Untrace);
-        QVERIFY(c->templates().isEmpty());
+        QVERIFY(c->services().library().list().isEmpty());
         QVERIFY(c->plan().find(toStd(convert))->group.empty());
     }
 
@@ -577,7 +601,7 @@ private slots:
     // A new project: a name, and its folder under the projects location; Save of a never saved canvas asks the same.
     void aNewProjectGetsAFolderOfItsOwn() {
         QTemporaryDir root;
-        QSettings().setValue("projects/location", root.path());
+        Settings::setProjectsLocation(root.path());
         NewProjectDialog dialog;
         auto* create = dialog.findChild<QPushButton*>("createProject");
         QVERIFY(!create->isEnabled());  // no name yet
@@ -591,7 +615,7 @@ private slots:
         dialog.findChild<QLineEdit*>("projectName")->clear();
         dialog.findChild<QLineEdit*>("projectName")->setText("front door");
         QVERIFY(!create->isEnabled());  // there is one already
-        QSettings().remove("projects/location");
+        Settings::setProjectsLocation({});
 
         c->newProject(root.filePath("back/back.conf"));
         QCOMPARE(c->filePath(), root.filePath("back/back.conf"));
@@ -602,7 +626,7 @@ private slots:
     void theExplorerShowsProjectsFilesAndTemplates() {
         QTemporaryDir root, library;
         qputenv("GPS_USER_DIR", library.path().toUtf8());
-        QSettings().setValue("projects/location", root.path());
+        Settings::setProjectsLocation(root.path());
         MainWindow w(c.get());
         w.show();
         QString src, convert, sink;
@@ -643,7 +667,7 @@ private slots:
         emit tree->itemActivated(tree->topLevelItem(2)->child(0), 0);
         QCOMPARE(edited.count(), 1);
         QCOMPARE(edited.first().first().toString(), QString("Tail"));
-        QSettings().remove("projects/location");
+        Settings::setProjectsLocation({});
         qunsetenv("GPS_USER_DIR");
     }
 
@@ -783,10 +807,11 @@ private slots:
         QString src, mid, sink; buildChain(window, &src, &mid, &sink);
         auto* scene = window.scene();
         const QPointF start = scene->element(src)->pos(), before = scene->element(mid)->pos();
-        scene->setConnectedMoveEnabled(true); scene->beginConnectedMove(src);
+        c->services().view().setConnectedMove(true); scene->beginConnectedMove(src);
         scene->element(src)->setPos(start+QPointF(120,60));
         QCOMPARE(scene->element(mid)->pos(), before+QPointF(120,60));
         scene->finishConnectedMove(); scene->elementDragged(src, start+QPointF(120,60));
+        c->services().view().setConnectedMove(false);
         QTest::qWait(100);
         QVERIFY(c->canUndo()); QVERIFY(c->undo());
         QTest::qWait(100);

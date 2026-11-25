@@ -4,15 +4,20 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QRegularExpression>
 #include <QStandardPaths>
 #include <algorithm>
 
 #include "apppaths.h"
 #include "contract.h"
 #include "factorycatalog.h"
+#include "projectfile.h"
 #include "templates.h"
 #include "versionhistory.h"
+
+TemplateLibrary::TemplateLibrary(const FactoryCatalog& catalog, QObject* parent) : QObject(parent), catalog_(catalog) {
+    connect(&catalog, &FactoryCatalog::ready, this, &TemplateLibrary::reload);
+    reload();
+}
 
 // Until 0.3 the library lived in the config folder as custom_elements/; its files move once.
 QString TemplateLibrary::directory() {
@@ -25,17 +30,15 @@ QString TemplateLibrary::directory() {
     return library;
 }
 
+// The same file name a conf's template reference is looked up by.
 QString TemplateLibrary::fileFor(const QString& name) {
-    QString safe = name;
-    safe.replace(QRegularExpression("[^A-Za-z0-9_.-]"), "_");
-    return QDir(directory()).filePath(safe + ".conf");
+    return QDir(directory()).filePath(fromStd(gps::templates::fileName(toStd(name))));
 }
 
-void TemplateLibrary::load(const FactoryCatalog& catalog) {
+void TemplateLibrary::reload() {
     list_.clear();
     plans_.clear();
     QDir dir(directory());
-    if (!dir.exists()) return;
     for (const QString& f : dir.entryList({"*.conf"}, QDir::Files, QDir::Name)) {
         gps::Graph sub;
         std::string err;
@@ -50,7 +53,7 @@ void TemplateLibrary::load(const FactoryCatalog& catalog) {
         QStringList factories;
         for (const gps::Element& e : sub.elements) {
             factories << fromStd(e.factory);
-            const FactoryEntry* entry = catalog.entry(fromStd(e.factory));
+            const FactoryEntry* entry = catalog_.entry(fromStd(e.factory));
             if (!(entry && entry->isSource) && sub.linksInto(e.name).empty()) ci.hasFreeSink = true;
             if (!(entry && entry->isSink) && sub.linksFromElement(e.name).empty()) ci.hasFreeSrc = true;
         }
@@ -60,6 +63,7 @@ void TemplateLibrary::load(const FactoryCatalog& catalog) {
         plans_[ci.name] = sub;
         list_ << ci;
     }
+    emit changed();
 }
 
 const gps::Graph* TemplateLibrary::plan(const QString& name) const {
@@ -67,13 +71,80 @@ const gps::Graph* TemplateLibrary::plan(const QString& name) const {
     return it == plans_.end() ? nullptr : &it->second;
 }
 
-bool TemplateLibrary::save(const QString& name, gps::Graph preset, QString* error) {
-    preset.name = toStd(name);
-    VersionHistory::keep(fileFor(name), QByteArray::fromStdString(preset.toConf()));  // a template keeps its history too
+gps::Graph TemplateLibrary::content(const QString& name) const {
+    const gps::Graph* found = plan(name);
+    return found ? *found : gps::Graph();
+}
+
+int TemplateLibrary::nextRevision(const QString& name, int base) const {
+    const gps::Graph* found = plan(name);
+    return std::max(found ? found->revision : 0, base) + 1;
+}
+
+QStringList TemplateLibrary::projectsUsing(const QString& name) const { return ProjectRegistry::usingTemplate(name); }
+
+bool TemplateLibrary::acceptName(const QString& wanted, QString* clean, QString* error, const QString& except) const {
+    *clean = wanted.trimmed();
+    clean->replace('#', '_');  // '#' separates a template's name from its copy's number
+    QString why;
+    if (clean->isEmpty()) why = "Give the template a name.";
+    else if (*clean != except && plan(*clean)) why = "A template named " + *clean + " already exists. Choose another name.";
+    if (error && !why.isEmpty()) *error = why;
+    return why.isEmpty();
+}
+
+bool TemplateLibrary::write(const QString& name, gps::Graph content, QString* error) {
+    content.name = toStd(name);
+    VersionHistory::keep(fileFor(name), QByteArray::fromStdString(content.toConf()));  // a template keeps its history too
     std::string failure;
-    if (preset.save(toStd(fileFor(name)), &failure)) return true;
-    *error = fromStd(failure);
+    if (content.save(toStd(fileFor(name)), &failure)) return true;
+    if (error) *error = "Unable to save the template: " + fromStd(failure);
     return false;
 }
 
-bool TemplateLibrary::remove(const QString& name) { return QFile::remove(fileFor(name)); }
+bool TemplateLibrary::save(const QString& name, gps::Graph content, QString* error) {
+    if (!write(name, std::move(content), error)) return false;
+    reload();
+    return true;
+}
+
+bool TemplateLibrary::rename(const QString& from, const QString& to, QString* clean, QString* error) {
+    const gps::Graph* old = plan(from);
+    if (!old) {
+        if (error) *error = "There is no template named " + from + ".";
+        return false;
+    }
+    if (!acceptName(to, clean, error, from)) return false;
+    if (*clean == from) return true;
+    if (!write(*clean, *old, error)) return false;
+    QFile::remove(fileFor(from));
+    reload();
+    return true;
+}
+
+bool TemplateLibrary::remove(const QString& name) {
+    if (!QFile::remove(fileFor(name))) return false;
+    reload();
+    return true;
+}
+
+bool TemplateLibrary::exportTo(const QString& name, const QString& file, QString* error) const {
+    const gps::Graph* t = plan(name);
+    std::string failure;
+    if (t && t->save(toStd(file), &failure)) return true;
+    if (error) *error = t ? fromStd(failure) : "There is no template named " + name + ".";
+    return false;
+}
+
+QString TemplateLibrary::importFrom(const QString& file, QString* error) {
+    gps::Graph t;
+    std::string failure;
+    if (!gps::Graph::load(toStd(file), &t, &failure, {toStd(directory())}) || t.elements.empty()) {
+        if (error) *error = "Not a template: " + (failure.empty() ? QString("it holds no elements") : fromStd(failure));
+        return QString();
+    }
+    QString name;
+    const QString wanted = t.name.empty() || t.name == "pipeline" ? QFileInfo(file).completeBaseName() : fromStd(t.name);
+    if (!acceptName(wanted, &name, error) || !save(name, t, error)) return QString();
+    return name;
+}

@@ -8,6 +8,10 @@ add_library(gps_gui STATIC
     backend/include/projectfile.h backend/src/projectfile.cpp
     backend/include/versionhistory.h backend/src/versionhistory.cpp
     backend/include/templatelibrary.h backend/src/templatelibrary.cpp
+    backend/include/settings.h backend/src/settings.cpp
+    backend/include/viewpreferences.h backend/src/viewpreferences.cpp
+    backend/include/environmentservice.h backend/src/environmentservice.cpp
+    backend/include/appservices.h
     backend/include/executionbackend.h backend/src/executionbackend.cpp
     backend/include/factorycatalog.h backend/src/factorycatalog.cpp
     backend/include/helperclient.h backend/src/helperclient.cpp

@@ -14,7 +14,6 @@
 #include <QLabel>
 #include <QMenuBar>
 #include <QMessageBox>
-#include <QSettings>
 #include <QStackedWidget>
 #include <QStatusBar>
 #include <QMouseEvent>
@@ -32,6 +31,7 @@
 #include "canvasscene.h"
 #include "canvasview.h"
 #include "capspage.h"
+#include "appservices.h"
 #include "controller.h"
 #include "drawer.h"
 #include "document.h"
@@ -42,6 +42,7 @@
 #include "logpanel.h"
 #include "propertypage.h"
 #include "setuppage.h"
+#include "settings.h"
 #include "templates.h"
 #include "newprojectdialog.h"
 #include "panels.h"
@@ -58,7 +59,7 @@
 #include <QVBoxLayout>
 #include <set>
 
-MainWindow::MainWindow(Controller* controller, QWidget* parent) : QMainWindow(parent) {
+MainWindow::MainWindow(Controller* controller, QWidget* parent) : QMainWindow(parent), services_(controller->services()) {
     setObjectName("mainWindow");
     setWindowFlag(Qt::FramelessWindowHint);
     setWindowIcon(QIcon(":/brand/gstpipestudio.png"));
@@ -103,10 +104,12 @@ MainWindow::MainWindow(Controller* controller, QWidget* parent) : QMainWindow(pa
     auto* chrome = new WindowChrome(this, menus);
     setMenuWidget(chrome);
 
-    QSettings settings;
-    restoreGeometry(settings.value("window/geometry").toByteArray());
-    restoreState(settings.value("window/state").toByteArray());
+    restoreGeometry(Settings::windowGeometry());
+    restoreState(Settings::windowState());
     built_ = true;
+    // GStreamer is checked once for the whole window; every tab shows the answer.
+    connect(&services_.environment(), &EnvironmentService::checked, this, &MainWindow::onEnvironment);
+    services_.environment().check();
     activate(doc_);
 }
 
@@ -124,8 +127,7 @@ void MainWindow::buildActions() {
         if (!doc_->pristine()) newDocument();
     });
     auto* open = make("actionOpen", "&Open…", {QKeySequence::Open}, [this] {
-        QSettings settings;
-        QString path = PipelineFileDialog::choose(this, false, settings.value("lastDir").toString());
+        QString path = PipelineFileDialog::choose(this, false, Settings::lastDir());
         if (!path.isEmpty()) openFile(path);
     });
     auto* history = make("actionVersionHistory", "Version &history…", {}, [this] { showVersionHistory(); });
@@ -187,7 +189,7 @@ void MainWindow::buildActions() {
     auto* support = make("actionSupport", "&Request support…", {}, [this] { controller_->requestSupport("Problem report"); });
     auto* about = make("actionAbout", "&About GstPipeStudio", {}, [this] { showAbout(); });
     auto* gstInfo = make("actionGstInfo", "&GStreamer information", {}, [this] {
-        const StartupResult& env = controller_->environment();
+        const StartupResult& env = services_.environment().result();
         QMessageBox::information(this, "GStreamer information", env.version.isEmpty() ? "GStreamer was not checked or not found." : env.statusText());
     });
 
@@ -198,7 +200,7 @@ void MainWindow::buildActions() {
     recent->setObjectName("menuRecent");
     connect(recent, &QMenu::aboutToShow, this, [this, recent] {
         recent->clear();
-        const QStringList files = QSettings().value("recentFiles").toStringList();
+        const QStringList files = Settings::recentFiles();
         for (const QString& path : files) recent->addAction(QFileInfo(path).fileName(), this, [this, path] { openFile(path); })->setToolTip(path);
         if (files.isEmpty()) recent->addAction("No recent files")->setEnabled(false);
     });
@@ -228,13 +230,14 @@ void MainWindow::buildActions() {
     viewMenu->addActions({zoomIn, zoomOut, fit});
     viewMenu->addSeparator();
     viewMenu->addAction(arrange);
+    // The view preferences are the process's: the menu sets them once, every tab follows.
+    ViewPreferences& preferences = services_.view();
     auto* automatic = viewMenu->addAction("&Auto alignment");
     automatic->setObjectName("actionAutoAlignment");
     automatic->setCheckable(true);
-    automatic->setChecked(controller_->canvasLayout().automatic());
     automatic->setToolTip("Align the whole canvas after every edit; a dragged box slides back into place");
-    connect(automatic, &QAction::toggled, this, [this](bool on) {
-        for (Document* d : std::as_const(docs_)) d->controller()->canvasLayout().setAutomatic(on);
+    connect(automatic, &QAction::triggered, this, [this, &preferences](bool on) {
+        preferences.setAutoAlign(on);
         if (on) controller_->niceAlign();
     });
     // Link style: the next nice alignment routes links as curves or right-angle lines.
@@ -245,19 +248,18 @@ void MainWindow::buildActions() {
         QAction* style = linkStyle->addAction(label);
         style->setObjectName(name);
         style->setCheckable(true);
-        style->setChecked(controller_->canvasLayout().routing() == routing);
         styles->addAction(style);
-        connect(style, &QAction::triggered, this, [this, routing = routing] {
-            for (Document* d : std::as_const(docs_)) d->controller()->canvasLayout().setRouting(routing);
+        connect(style, &QAction::triggered, this, [this, &preferences, routing = routing] {
+            preferences.setRouting(routing);
             controller_->niceAlign();
         });
     }
     auto* connectedMove = viewMenu->addAction("Move connected elements together");
     connectedMove->setObjectName("actionConnectedMove"); connectedMove->setCheckable(true);
     connectedMove->setToolTip("Drag an element to move its connected component; undo restores all positions");
-    connect(connectedMove, &QAction::toggled, this, [this](bool on) {
-        for (Document* d : std::as_const(docs_)) d->scene()->setConnectedMoveEnabled(on);
-    });
+    connect(connectedMove, &QAction::triggered, &preferences, &ViewPreferences::setConnectedMove);
+    showViewPreferences();
+    connect(&preferences, &ViewPreferences::changed, this, &MainWindow::showViewPreferences);
 
     QMenu* pipeline = menuBar()->addMenu("&Pipeline");
     pipeline->addActions({addElement, addTemplate, saveCustomAct, templateParams, connectSelAct});
@@ -306,8 +308,17 @@ void MainWindow::buildPanels() {
 
 // ---- documents
 
+// The View menu's checks: what the preferences are now.
+void MainWindow::showViewPreferences() {
+    const ViewPreferences& preferences = services_.view();
+    findChild<QAction*>("actionAutoAlignment")->setChecked(preferences.autoAlign());
+    findChild<QAction*>("actionLinkCurves")->setChecked(preferences.routing() == layout::Routing::Curves);
+    findChild<QAction*>("actionLinkRightAngles")->setChecked(preferences.routing() == layout::Routing::RightAngles);
+    findChild<QAction*>("actionConnectedMove")->setChecked(preferences.connectedMove());
+}
+
 Document* MainWindow::addDocument(Controller* controller) {
-    auto* d = new Document(controller, this);
+    auto* d = new Document(services_, controller, this);
     for (auto [page, title, room] : {std::tuple{static_cast<QWidget*>(d->log()), "Log", 0}, {d->updates(), "Validation", 0},
                                      {d->telemetry(), "Live metrics", 400}, {d->propsTab(), "Properties", 400}, {d->capsTab(), "Caps", 400}})
         panels_->add(page, title, room);
@@ -321,9 +332,7 @@ Document* MainWindow::addDocument(Controller* controller) {
     connect(close, &QToolButton::clicked, this, [this, d] { closeDocument(d); });
     tabs_->setTabButton(index, QTabBar::RightSide, close);
     wire(d);
-    if (built_) d->scene()->setConnectedMoveEnabled(findChild<QAction*>("actionConnectedMove")->isChecked());
     activate(d);
-    d->controller()->checkEnvironment();
     return d;
 }
 
@@ -343,16 +352,10 @@ void MainWindow::wire(Document* d) {
         if (front()) askTemplatesOutdated(ids);
         else d->deferOutdated(ids);
     }, Qt::QueuedConnection);
-    // A tab that writes the library: the others read it again (and offer the newer versions of their copies).
-    connect(c, &Controller::libraryChanged, this, [this, d] {
-        for (Document* other : std::as_const(docs_))
-            if (other != d) other->controller()->reloadLibrary();
-    });
     connect(c, &Controller::changed, this, [this, d, front] {
         refreshTab(d);
         if (front()) refreshState();
     });
-    connect(c, &Controller::environmentChecked, this, [this, front] { if (front()) onEnvironment(); });
     connect(c, &Controller::notice, this, [this, front](const QString& text) { if (front()) statusBar()->showMessage(text, 10000); });
 }
 
@@ -452,27 +455,22 @@ bool MainWindow::save() {
 
 // The tabs that were open, by file or template name, and the one in front.
 void MainWindow::saveSession() {
-    QStringList open;
-    int front = 0;
+    Settings::Session session;
     for (int i = 0; i < tabs_->count(); ++i) {
         const Document* d = docAt(i);
         const QString lib = d->controller()->libraryTemplate();
         const QString entry = !lib.isEmpty() ? "template:" + lib : d->path().isEmpty() ? QString() : "file:" + d->path();
         if (entry.isEmpty()) continue;
-        if (d == doc_) front = open.size();
-        open << entry;
+        if (d == doc_) session.front = session.tabs.size();
+        session.tabs << entry;
     }
-    QSettings settings;
-    settings.setValue("session/tabs", open);
-    settings.setValue("session/front", front);
+    Settings::setSession(session);
 }
 
 void MainWindow::restoreSession() {
-    QSettings settings;
-    const QStringList open = settings.value("session/tabs").toStringList();
-    const int front = settings.value("session/front").toInt();
+    const Settings::Session session = Settings::session();
     QList<Document*> opened;
-    for (const QString& entry : open) {
+    for (const QString& entry : session.tabs) {
         if (entry.startsWith("template:")) {
             opened << openTemplate(entry.mid(9));
         } else if (entry.startsWith("file:") && QFileInfo::exists(entry.mid(5))) {
@@ -482,7 +480,7 @@ void MainWindow::restoreSession() {
             opened << nullptr;
         }
     }
-    if (front >= 0 && front < opened.size() && opened[front]) activate(opened[front]);
+    if (session.front >= 0 && session.front < opened.size() && opened[session.front]) activate(opened[session.front]);
 }
 
 bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
@@ -505,9 +503,9 @@ void MainWindow::refreshState() {
     if (!built_) return;
     auto act = [this](const char* name) { return findChild<QAction*>(name); };
     QStringList templates;
-    for (const TemplateInfo& t : controller_->templates()) templates << t.name;
+    for (const TemplateInfo& t : services_.library().list()) templates << t.name;
     explorer_->present(controller_->libraryTemplate().isEmpty() ? controller_->filePath() : QString(), templates);
-    bool blocked = controller_->environmentBlocked();
+    bool blocked = services_.environment().blocked();
     bool busy = controller_->busy();
     bool editBlocked = controller_->editingBlocked();
     bool hasPlan = !controller_->plan().empty();
@@ -557,7 +555,7 @@ void MainWindow::refreshState() {
     else text = "Not validated yet — press Validate";
     state_->setText(text);
     state_->setStyleSheet("color: " + colour + ";");
-    const StartupResult& env = controller_->environment();
+    const StartupResult& env = services_.environment().result();
     environment_->setText(env.state == StartupResult::Ready ? env.statusText() : QString());
     command_->setText(controller_->launchCommand());
 
@@ -573,7 +571,7 @@ void MainWindow::refreshState() {
 }
 
 void MainWindow::onEnvironment() {
-    const StartupResult& env = controller_->environment();
+    const StartupResult& env = services_.environment().result();
     if (env.bad()) {
         setup_->show(env);
         centre_->setCurrentWidget(setup_);
@@ -586,24 +584,13 @@ void MainWindow::onEnvironment() {
     refreshState();
 }
 
-// File > Open recent: the last ten files opened or saved, newest first.
-void MainWindow::remember(const QString& path) {
-    QSettings settings;
-    QStringList files = settings.value("recentFiles").toStringList();
-    const QString file = QFileInfo(path).absoluteFilePath();
-    files.removeAll(file);
-    files.prepend(file);
-    settings.setValue("recentFiles", files.mid(0, 10));
-    settings.setValue("lastDir", QFileInfo(path).absolutePath());
-}
-
 void MainWindow::openFile(const QString& path) {
     for (Document* d : std::as_const(docs_)) {
         if (d->showsFile(path)) return activate(d);
     }
     Document* d = target();
     d->opening(QFileInfo(path).fileName());
-    remember(path);
+    Settings::addRecent(path);
     d->controller()->open(path);
     refreshTab(d);
 }
@@ -611,7 +598,7 @@ void MainWindow::openFile(const QString& path) {
 bool MainWindow::saveFile(const QString& path) {
     QString error;
     if (controller_->save(path, &error)) {
-        if (!controller_->filePath().isEmpty()) remember(controller_->filePath());
+        if (!controller_->filePath().isEmpty()) Settings::addRecent(controller_->filePath());
         return true;
     }
     statusBar()->showMessage(error, 10000);
@@ -620,8 +607,7 @@ bool MainWindow::saveFile(const QString& path) {
 }
 
 void MainWindow::saveAs() {
-    QSettings settings;
-    QString start = controller_->filePath().isEmpty() ? settings.value("lastDir").toString() : controller_->filePath();
+    QString start = controller_->filePath().isEmpty() ? Settings::lastDir() : controller_->filePath();
     QString path = PipelineFileDialog::choose(this, true, start);
     if (path.isEmpty()) return;
     if (!path.endsWith(".conf")) path += ".conf";
@@ -657,7 +643,7 @@ MainWindow::~MainWindow() {
 }
 
 void MainWindow::showCanvasMenu(const QPoint& screenPos) {
-    if (controller_->editingBlocked() || controller_->environmentBlocked()) return;
+    if (controller_->editingBlocked() || services_.environment().blocked()) return;
     auto* menu = new QMenu(this);
     menu->setObjectName("canvasMenu");
     menu->setAttribute(Qt::WA_DeleteOnClose);
@@ -731,7 +717,7 @@ void MainWindow::addEditTemplate(QMenu* menu, const QString& instanceId) {
     const QString name = QString::fromStdString(t->templateName);
     QAction* edit = menu->addAction("Edit template '" + name + "'", this, [this, name] { openTemplate(name); });
     edit->setObjectName("actionEditTemplate");
-    edit->setEnabled(!controller_->templateContent(name).empty());
+    edit->setEnabled(services_.library().plan(name) != nullptr);
     menu->addSeparator();
 }
 
@@ -853,7 +839,7 @@ void MainWindow::pasteClipboard() {
 }
 
 void MainWindow::showAbout() {
-    AboutDialog dialog(controller_->environment().statusText(), this);
+    AboutDialog dialog(services_.environment().result().statusText(), this);
     dialog.exec();
 }
 
@@ -864,7 +850,7 @@ void MainWindow::askTemplateChange(const QString& id) {
     if (!t) return;
     const QString name = QString::fromStdString(t->templateName);
     QStringList used;
-    for (const QString& project : controller_->projectsUsing(name)) used << QFileInfo(project).absolutePath();
+    for (const QString& project : services_.library().projectsUsing(name)) used << QFileInfo(project).absolutePath();
     QMessageBox box(this);
     box.setObjectName("templateChange");
     box.setWindowTitle("Template changes");
@@ -909,8 +895,7 @@ void MainWindow::askTemplatesOutdated(const QStringList& ids) {
         const gps::TemplateInstance* t = controller_->plan().instance(id.toStdString());
         if (!t) continue;
         const QString name = QString::fromStdString(t->templateName);
-        const gps::Graph newer = controller_->templateContent(name);
-        lines << QString("%1: revision %2 → %3%4").arg(name).arg(t->revision).arg(newer.revision)
+        lines << QString("%1: revision %2 → %3%4").arg(name).arg(t->revision).arg(services_.library().content(name).revision)
                      .arg(gps::templates::modified(controller_->plan(), t->id) ? "  (its changes here would be lost)" : "");
     }
     if (lines.isEmpty()) return;
@@ -970,14 +955,12 @@ void MainWindow::closeEvent(QCloseEvent* event) {
     for (Document* d : std::as_const(docs_))
         if (d->controller()->running()) d->controller()->stopRun();
     saveSession();
-    QSettings settings;
-    settings.setValue("window/geometry", saveGeometry());
-    settings.setValue("window/state", saveState());
+    Settings::setWindow(saveGeometry(), saveState());
     event->accept();
 }
 
 Document* MainWindow::openTemplate(const QString& name) {
-    if (controller_->templateContent(name).empty()) {
+    if (!services_.library().plan(name)) {
         statusBar()->showMessage("Template " + name + " is not in the library", 10000);
         return nullptr;
     }

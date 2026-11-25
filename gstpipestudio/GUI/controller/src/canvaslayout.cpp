@@ -1,7 +1,6 @@
 // canvaslayout.cpp – see canvaslayout.h.
 #include "canvaslayout.h"
 
-#include <QSettings>
 #include <QSet>
 #include <algorithm>
 
@@ -23,8 +22,6 @@ QRectF bounds(const QList<QRectF>& rects) {
 
 CanvasLayout::CanvasLayout(Controller& controller)
     : QObject(&controller), controller_(controller), runner_([] { return std::make_unique<layout::ElkEngine>(); }, this) {
-    routing_ = QSettings().value("view/linkStyle").toString() == "rightAngles" ? layout::Routing::RightAngles : layout::Routing::Curves;
-    automatic_ = QSettings().value("view/autoAlign", false).toBool();
     connect(&runner_, &layout::Runner::finished, this, &CanvasLayout::finished);
     // Loading ELK takes a moment: do it now, so the first real layout does not wait for it.
     layout::Node warm;
@@ -33,22 +30,14 @@ CanvasLayout::CanvasLayout(Controller& controller)
     one.id = "warm";
     one.width = one.height = 10;
     warm.children << one;
-    runner_.request(warm, routing_);
+    runner_.request(warm, preferences().routing());
 }
 
 QString CanvasLayout::padKey(const QString& element, const QString& identity, bool isSrc) {
     return element + "|" + identity + (isSrc ? "|src" : "|sink");
 }
 
-void CanvasLayout::setRouting(layout::Routing routing) {
-    routing_ = routing;
-    QSettings().setValue("view/linkStyle", routing == layout::Routing::RightAngles ? "rightAngles" : "curves");
-}
-
-void CanvasLayout::setAutomatic(bool on) {
-    automatic_ = on;
-    QSettings().setValue("view/autoAlign", on);
-}
+const ViewPreferences& CanvasLayout::preferences() const { return controller_.services().view(); }
 
 QString CanvasLayout::boxOf(const QString& element) const {
     QString box;
@@ -193,7 +182,7 @@ bool CanvasLayout::align(const QStringList& elements, std::optional<Pin> pin) {
     const layout::Node root = tree(elements);
     if (root.children.isEmpty()) return false;
     pin_ = std::move(pin);
-    pending_ = runner_.request(root, routing_);
+    pending_ = runner_.request(root, preferences().routing());
     return true;
 }
 

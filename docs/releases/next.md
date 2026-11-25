@@ -48,6 +48,7 @@ Processing time measures first sink arrival to first src departure, including wa
 - Log, Validation, Live metrics, Properties and Caps are dock panels: move, tab, split, float or close them; View > Panels brings one back, Reset layout restores the row under the canvas, and the window remembers the layout.
 - Every open file is a tab over the canvas, as in code editors: ● marks unsaved changes (× on hover closes), a file already open comes to the front, closing an unsaved tab asks Save / Don't save / Cancel, middle click or Ctrl+W closes, Ctrl+Tab and Ctrl+PgDn/PgUp switch. The panels and menus follow the tab in front, and the open tabs come back on the next start.
 - The Explorer, left of the canvas: the open project's files, every project in the projects folder and the template library. Double click a project or a .conf to open it in a tab, a template to edit it.
+- A new tab opens at once: every tab shares one GStreamer check, one element list and one template library, so a template saved in one tab is offered to the copies in all the others. The View menu's link style, auto alignment and connected move apply to every tab.
 - Validation follows what runs: adding or changing an element no source feeds keeps the last result (Save stays available); a change to the fed part is validated again.
 - Unified menu and window controls, animated About dialog, and visible version/build identity.
 - Development and release builds use separate settings; support reports include the real build version and commit.

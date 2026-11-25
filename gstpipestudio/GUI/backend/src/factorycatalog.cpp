@@ -28,6 +28,10 @@ const ElementInfo* FactoryCatalog::info(const QString& factory) const {
     return found == infos_.end() ? nullptr : &found->second;
 }
 
+void FactoryCatalog::forEachInfo(const std::function<void(const QString&, const ElementInfo&)>& visit) const {
+    for (const auto& [factory, info] : infos_) visit(factory, info);
+}
+
 const FactoryEntry* FactoryCatalog::entry(const QString& factory) const {
     if (const ElementInfo* i = info(factory)) return &i->entry;
     const std::string name = toStd(factory);

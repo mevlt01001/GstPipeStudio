@@ -76,6 +76,7 @@ private:
     void abandonPending();
     // The catalog's sources (true) or everything that is not a source (false), for a picker.
     std::vector<FactoryEntry> factories(bool sources) const;
+    TemplateLibrary& library() const { return controller_->services().library(); }
 
     Controller* controller_;
     Drawer* drawer_;

@@ -6,6 +6,7 @@
 #include <QObject>
 #include <QStringList>
 
+class AppServices;
 class CanvasScene;
 class CanvasView;
 class Controller;
@@ -22,8 +23,9 @@ class ValidationIndicator;
 class Document : public QObject {
     Q_OBJECT
 public:
-    // A document over the caller's controller (it stays the caller's), or over one of its own when controller is null.
-    Document(Controller* controller, QWidget* window);
+    // A document over the caller's controller (it stays the caller's), or over one of its own, with the same services,
+    // when controller is null.
+    Document(AppServices& services, Controller* controller, QWidget* window);
     ~Document() override;
 
     Controller* controller() const { return controller_; }

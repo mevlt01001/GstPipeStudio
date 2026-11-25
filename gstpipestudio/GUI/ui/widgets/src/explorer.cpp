@@ -6,7 +6,7 @@
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
-#include "newprojectdialog.h"
+#include "settings.h"
 #include "theme.h"
 
 namespace {
@@ -73,7 +73,7 @@ void Explorer::present(const QString& projectConf, const QStringList& templates)
 
 void Explorer::rebuild() {
     const QString folder = conf_.isEmpty() ? QString() : QFileInfo(conf_).absolutePath();
-    const QString location = NewProjectDialog::location();
+    const QString location = Settings::projectsLocation();
 
     clear(project_);
     if (folder.isEmpty()) {

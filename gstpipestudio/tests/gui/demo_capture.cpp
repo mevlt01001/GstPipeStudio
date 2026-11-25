@@ -57,7 +57,7 @@ int main(int argc, char** argv) {
     capture(20);
     controller->stopMonitoring();
     support::waitFor([&] { return !controller->monitoring(); }, 4000);
-    AboutDialog about(controller->environment().statusText(), &window);
+    AboutDialog about(controller->services().environment().result().statusText(), &window);
     about.show(); QTest::qWait(200); about.grab().save(output + "/../about.png"); about.close();
     PipelineFileDialog picker(&window, false, "/workspace/examples/monitoring");
     picker.show(); QTest::qWait(200); picker.grab().save(output + "/../files.png"); picker.close();

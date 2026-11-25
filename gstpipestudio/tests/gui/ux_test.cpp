@@ -277,9 +277,7 @@ private slots:
 
     void updateGetsTheLargeBackstopTimeout() {
         qunsetenv("GPS_UPDATE_TIMEOUT_MS");
-        Controller fresh;
-        fresh.catalog().load();
-        QVERIFY(waitFor([&] { return fresh.catalog().loaded(); }));
+        Controller fresh(services());
         QSignalSpy log(&fresh, &Controller::logLine);
         need(fresh, "videotestsrc");
         QVERIFY(fresh.addElement("videotestsrc", {}));
@@ -582,7 +580,7 @@ private slots:
         }
         MainWindow again(c.get());
         QCOMPARE(again.size(), QSize(960, 700));  // the default is 1360 x 860
-        QVERIFY(QSettings().contains("window/state"));
+        QVERIFY(!Settings::windowState().isEmpty());
         // The last folder is remembered too.
         QTemporaryDir dir;
         QString path = dir.filePath("p.conf");
@@ -591,7 +589,7 @@ private slots:
         f.write("");
         f.close();
         again.openFile(path);
-        QCOMPARE(QSettings().value("lastDir").toString(), dir.path());
+        QCOMPARE(Settings::lastDir(), dir.path());
     }
 
     void keyboardShortcutsFollowTheRules() {

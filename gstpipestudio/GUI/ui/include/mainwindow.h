@@ -5,8 +5,7 @@
 
 #include <QMainWindow>
 
-#include "startupcheck.h"
-
+class AppServices;
 class CanvasScene;
 class CanvasView;
 class Controller;
@@ -29,7 +28,7 @@ class ValidationIndicator;
 class MainWindow : public QMainWindow {
     Q_OBJECT
 public:
-    // The first tab shows the caller's controller; tabs opened later make their own.
+    // The first tab shows the caller's controller; tabs opened later make their own, with its services.
     explicit MainWindow(Controller* controller, QWidget* parent = nullptr);
     ~MainWindow() override;
 
@@ -85,12 +84,12 @@ private:
     void askTemplateChange(const QString& id);
     void askTemplatesOutdated(const QStringList& ids);
     void buildActions();
+    void showViewPreferences();
     void buildPanels();
     void refreshState();
     void onEnvironment();
     bool confirmDiscard();  // true when it is fine to drop the plan on screen
     void saveAs();
-    void remember(const QString& path);  // a file opened or saved: File > Open recent
     void toggleRun();
     void showAbout();
     void showCanvasMenu(const QPoint& screenPos);
@@ -107,6 +106,8 @@ private:
     void cutSelected();
     void pasteClipboard();
     void setReason(QAction* action, const QString& text, const QString& reason);
+
+    AppServices& services_;  // the process's, shared by every tab
 
     // The front document's parts: the menus, panels and status bar act on these.
     Controller* controller_ = nullptr;

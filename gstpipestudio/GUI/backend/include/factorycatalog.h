@@ -28,6 +28,7 @@ public:
     const std::vector<FactoryEntry>& entries() const { return entries_; }
 
     const ElementInfo* info(const QString& factory) const;  // nullptr until fetchInfo() brought it
+    void forEachInfo(const std::function<void(const QString&, const ElementInfo&)>& visit) const;  // every one fetched so far
     // The factory's row: from its fetched information, else from the list; nullptr when neither knows it.
     const FactoryEntry* entry(const QString& factory) const;
     void fetchInfo(const QString& factory, InfoCallback done);  // calls done at once when cached; nullptr on failure

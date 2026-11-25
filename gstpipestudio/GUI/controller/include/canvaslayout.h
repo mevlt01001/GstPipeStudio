@@ -16,6 +16,7 @@
 #include "layoutrunner.h"
 
 class Controller;
+class ViewPreferences;
 
 class CanvasLayout : public QObject {
     Q_OBJECT
@@ -38,12 +39,6 @@ public:
     bool busy() const { return pending_ != 0; }
     const std::optional<Pin>& pending() const { return pin_; }  // the pin of the answer on its way
     bool applying() const { return applying_; }  // its move is being made (not an edit of the user's)
-
-    layout::Routing routing() const { return routing_; }
-    void setRouting(layout::Routing routing);  // remembered; the next layout uses it
-    // Automatic alignment: every edit is followed by a nice alignment of the whole canvas. Remembered.
-    bool automatic() const { return automatic_; }
-    void setAutomatic(bool on);
 
     // The box an element is drawn in (itself, or the outermost collapsed template around it), and where it is drawn.
     QString boxOf(const QString& element) const;
@@ -72,13 +67,12 @@ signals:
     void applied(const QHash<QString, QPointF>& from);  // where the moved boxes were: the canvas animates from there
 
 private:
+    const ViewPreferences& preferences() const;  // the link style it routes with
     void finished(quint64 ticket, bool ok, const layout::Result& result, const QString& error);
     QStringList containers(const QString& element, QString* box) const;  // expanded templates around it, outermost first
 
     Controller& controller_;
     layout::Runner runner_;
-    layout::Routing routing_ = layout::Routing::Curves;
-    bool automatic_ = false;
     quint64 pending_ = 0;
     std::optional<Pin> pin_;
     bool applying_ = false;

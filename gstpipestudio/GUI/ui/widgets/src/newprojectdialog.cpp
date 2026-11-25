@@ -11,9 +11,9 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QRegularExpression>
-#include <QSettings>
 #include <QVBoxLayout>
 
+#include "settings.h"
 #include "theme.h"
 
 namespace {
@@ -24,11 +24,7 @@ QString safe(const QString& name) {
 }
 }  // namespace
 
-QString NewProjectDialog::location() {
-    return QSettings().value("projects/location", QDir::home().filePath("workspace/GstPipeStudio")).toString();
-}
-
-NewProjectDialog::NewProjectDialog(QWidget* parent) : QDialog(parent), location_(location()) {
+NewProjectDialog::NewProjectDialog(QWidget* parent) : QDialog(parent), location_(Settings::projectsLocation()) {
     setObjectName("newProjectDialog");
     setWindowTitle("New project");
     auto* root = new QVBoxLayout(this);
@@ -62,7 +58,7 @@ NewProjectDialog::NewProjectDialog(QWidget* parent) : QDialog(parent), location_
         const QString dir = QFileDialog::getExistingDirectory(this, "Where new projects go", location_);
         if (dir.isEmpty()) return;
         location_ = dir;
-        QSettings().setValue("projects/location", dir);
+        Settings::setProjectsLocation(dir);
         check();
     });
     connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);

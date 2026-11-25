@@ -28,7 +28,8 @@ QWidget* holder(const char* name, QWidget* parent) {
 }
 }  // namespace
 
-Document::Document(Controller* controller, QWidget* window) : QObject(window), controller_(controller ? controller : new Controller(this)) {
+Document::Document(AppServices& services, Controller* controller, QWidget* window)
+    : QObject(window), controller_(controller ? controller : new Controller(services, this)) {
     drawer_ = new Drawer(window);
     flows_ = new Flows(controller_, drawer_, window);
     scene_ = new CanvasScene(controller_, this);
@@ -70,7 +71,7 @@ Document::Document(Controller* controller, QWidget* window) : QObject(window), c
         else c->spliceElement(element, linkSrc, linkPad);
     }, Qt::QueuedConnection);
     connect(scene, &CanvasScene::rebuilt, this, &Document::rebuilt);
-    connect(setup_, &SetupPage::retry, c, &Controller::checkEnvironment);
+    connect(setup_, &SetupPage::retry, &services.environment(), &EnvironmentService::check);
     connect(c, &Controller::changed, scene, &CanvasScene::scheduleRebuild);
     connect(c, &Controller::logLine, log_, &LogPanel::append);
     connect(c, &Controller::notice, log_, &LogPanel::append);

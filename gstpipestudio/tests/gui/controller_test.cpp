@@ -130,10 +130,10 @@ private slots:
         QVERIFY(done.wait(30000));
         auto at = [&](const QString& name) { const auto* e = c->plan().find(toStd(name)); return QPointF(e->x, e->y); };
         const double line = at(chain.src).y();
-        c->canvasLayout().setAutomatic(true);
+        c->services().view().setAutoAlign(true);
         c->setPositions({{chain.convert, at(chain.convert) + QPointF(0, 400)}});
         QVERIFY(done.wait(30000));
-        c->canvasLayout().setAutomatic(false);
+        c->services().view().setAutoAlign(false);
         QVERIFY(qAbs(at(chain.convert).y() - at(chain.src).y()) < 1);
         // Off, nothing follows a drag.
         c->setPositions({{chain.convert, at(chain.convert) + QPointF(0, 400)}});
@@ -507,11 +507,11 @@ private slots:
             ~Restore() { qputenv("GPS_BIN_DIR", old); }
         } restore;
         qputenv("GPS_BIN_DIR", "/nonexistent-dir");
-        Controller lonely;
-        QSignalSpy notices(&lonely, &Controller::notice);
-        lonely.catalog().load();
+        FactoryCatalog lonely;
+        QSignalSpy notices(&lonely, &FactoryCatalog::notice);
+        lonely.load();
         QVERIFY(waitFor([&] { return notices.count() > 0; }));
-        QVERIFY(!lonely.catalog().loaded());
+        QVERIFY(!lonely.loaded());
         // The element info of the main controller is cached, the update helper is what is missing.
         QVERIFY(c->addElement("videotestsrc", {}));
         QVERIFY(settle(*c));
@@ -722,19 +722,20 @@ private slots:
         QVERIFY(settle(*c));
         QString error;
         QVERIFY2(c->save(QString(), &error), qPrintable(error));
-        QCOMPARE(c->templateContent("Tail").revision, 2);
-        QCOMPARE(c->templateContent("Tail").exposed.size(), size_t(1));
+        TemplateLibrary& library = c->services().library();
+        QCOMPARE(library.content("Tail").revision, 2);
+        QCOMPARE(library.content("Tail").exposed.size(), size_t(1));
         QVERIFY(!c->dirty());
 
         QVERIFY(c->renameTemplate("Tail", "End", &error));
-        QVERIFY(c->templateContent("Tail").elements.empty() && !c->templateContent("End").elements.empty());
+        QVERIFY(library.content("Tail").elements.empty() && !library.content("End").elements.empty());
         QVERIFY(!c->renameTemplate("Nope", "Other", &error));
-        QVERIFY(c->exportTemplate("End", dir.filePath("End.conf"), &error));
-        QVERIFY(!c->importTemplate(dir.filePath("End.conf"), &error).size());  // the name is taken
-        QVERIFY(c->deleteTemplate("End"));
-        QVERIFY(c->templateContent("End").elements.empty());
-        QCOMPARE(c->importTemplate(dir.filePath("End.conf"), &error), QString("End"));
-        QCOMPARE(c->templateContent("End").revision, 2);
+        QVERIFY(library.exportTo("End", dir.filePath("End.conf"), &error));
+        QVERIFY(!library.importFrom(dir.filePath("End.conf"), &error).size());  // the name is taken
+        QVERIFY(library.remove("End"));
+        QVERIFY(library.content("End").elements.empty());
+        QCOMPARE(library.importFrom(dir.filePath("End.conf"), &error), QString("End"));
+        QCOMPARE(library.content("End").revision, 2);
     }
 
     void aChangedTemplateCopyAsksThenUpdatesTheLibraryAndTheOtherCopies() {
@@ -764,7 +765,7 @@ private slots:
         QVERIFY(settle(*c));
 
         c->setTemplateExpanded(first, false);  // collapsing ends the session: the library gets revision 2
-        QCOMPARE(c->templateContent("Tail").revision, 2);
+        QCOMPARE(c->services().library().content("Tail").revision, 2);
         QVERIFY(waitFor([&] { return c->plan().instance(toStd(other)) && c->plan().instance(toStd(other))->revision == 2; }, 5000));
         bool followed = false;
         for (const QString& m : c->templateMembers(other)) {
@@ -969,11 +970,12 @@ private slots:
 
         // 4. Save the connected pair (conv -> scale) as a reusable Template ("ScaleConvert").
         QVERIFY(c->saveTemplate("ScaleConvert", {conv, scale}));
-        QCOMPARE(c->templates().size(), 1);
-        QCOMPARE(c->templates().first().name, QString("ScaleConvert"));
-        QCOMPARE(c->templates().first().elementCount, 2);
-        QVERIFY(c->templates().first().hasFreeSink);
-        QVERIFY(c->templates().first().hasFreeSrc);
+        const QList<TemplateInfo>& templates = c->services().library().list();
+        QCOMPARE(templates.size(), 1);
+        QCOMPARE(templates.first().name, QString("ScaleConvert"));
+        QCOMPARE(templates.first().elementCount, 2);
+        QVERIFY(templates.first().hasFreeSink);
+        QVERIFY(templates.first().hasFreeSrc);
 
         // The pair on canvas is now grouped as a collapsed Template with 1 external sink and 1 external src!
         QString grp = c->templateBox(conv);

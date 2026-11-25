@@ -6,7 +6,6 @@
 #include <QMessageBox>
 #include <QDir>
 #include "panels.h"
-#include "projectfile.h"
 
 #include <QAction>
 #include <memory>
@@ -249,14 +248,14 @@ void Flows::chooseElement() {
 void Flows::chooseTemplate() {
     if (controller_->editingBlocked()) return;
     PickerData data;
-    data.templates = controller_->templates();
-    data.templateContent = [this](const QString& name) { return controller_->templateContent(name); };
+    data.templates = library().list();
+    data.templateContent = [this](const QString& name) { return library().content(name); };
     data.templateMenu = [this](const QString& name, const QPoint& at) { templateMenu(name, at); };
     data.importTemplate = [this] {
         const QString file = QFileDialog::getOpenFileName(window_, "Import template", QDir::homePath(), "Templates (*.conf)");
         if (file.isEmpty()) return;
         QString error;
-        if (controller_->importTemplate(file, &error).isEmpty()) QMessageBox::warning(window_, "Import template", error);
+        if (library().importFrom(file, &error).isEmpty()) QMessageBox::warning(window_, "Import template", error);
         else chooseTemplate();  // the list again, with it
     };
     auto* page = new PickerPage(data);
@@ -289,16 +288,16 @@ void Flows::templateMenu(const QString& name, const QPoint& at) {
     menu.addAction("Export…", this, [this, name] {
         const QString file = QFileDialog::getSaveFileName(window_, "Export template", QDir::home().filePath(name + ".conf"), "Templates (*.conf)");
         QString error;
-        if (!file.isEmpty() && !controller_->exportTemplate(name, file, &error)) QMessageBox::warning(window_, "Export template", error);
+        if (!file.isEmpty() && !library().exportTo(name, file, &error)) QMessageBox::warning(window_, "Export template", error);
     });
     menu.addSeparator();
     menu.addAction("Delete…", this, [this, name] {
-        const int projects = ProjectRegistry::usingTemplate(name).size();
+        const int projects = library().projectsUsing(name).size();
         const QString note = projects ? QString("\n\n%1 project(s) use it; each keeps its own copy.").arg(projects) : QString();
         if (QMessageBox::question(window_, "Delete template", "Delete the template " + name + " from the library?" + note,
                                   QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
             return;
-        controller_->deleteTemplate(name);
+        library().remove(name);
         chooseTemplate();
     })->setObjectName("actionDeleteLibraryTemplate");
     menu.exec(at);
@@ -339,7 +338,7 @@ void Flows::fromFreePad(const QString& element, const QString& identity) {
     controller_->catalog().fetchCompatible(allowed, [this, element, identity, allowed](const QStringList& compatible) {
         PickerData data;
         data.existing = controller_->existingTargets(element, identity);
-        for (const TemplateInfo& c : controller_->templates()) {
+        for (const TemplateInfo& c : library().list()) {
             if (c.hasFreeSink) data.templates << c;
         }
         data.compatible = compatible;

@@ -18,17 +18,15 @@
 #include <limits>
 #include <cmath>
 
+#include "appservices.h"
 #include "elementedit.h"
 #include "contract.h"
 #include "elementview.h"
 #include "helperclient.h"
 #include "canvaslayout.h"
-#include "templatelibrary.h"
 #include "executionbackend.h"
-#include "factorycatalog.h"
 #include "pipeline.h"
 #include "slowwatch.h"
-#include "startupcheck.h"
 #include "supportreport.h"
 
 // A place a free src pad can be linked to inside the plan.
@@ -44,7 +42,9 @@ class Controller : public QObject {
     Q_OBJECT
 public:
 
-    explicit Controller(QObject* parent = nullptr);
+    // One per document; the services are the process's, shared with the other documents.
+    explicit Controller(AppServices& services, QObject* parent = nullptr);
+    AppServices& services() const { return services_; }
 
     // ---- state
     const gps::Graph& plan() const { return pipeline_.editor().view(); }
@@ -73,20 +73,15 @@ public:
     void cancelUpdate();  // SIGTERM, SIGKILL after 2 s; the plan keeps its change and is "not validated"
     void waitMore();      // the user chose Wait: the next question comes 15 s later
 
-    // ---- first run and support
-    void checkEnvironment();
-    const StartupResult& environment() const { return startup_->result(); }
-    bool environmentBlocked() const { return startup_->result().bad(); }
+    // ---- support
     void setUrlOpener(UrlOpener* opener) { opener_ = opener; }
     SupportInfo supportInfo(const QString& title) const;
     void requestSupport(const QString& title);  // opens the prefilled issue in the browser
 
     // ---- what GStreamer offers (gps-inspect); the Controller registers each fetched factory with the Pipeline
-    FactoryCatalog& catalog() { return catalog_; }
-    const FactoryCatalog& catalog() const { return catalog_; }
+    FactoryCatalog& catalog() const { return services_.catalog(); }
 
-    // ---- templates (saved multi-element presets & canvas groups)
-    const QList<TemplateInfo>& templates() const { return library_.list(); }
+    // ---- templates (saved multi-element presets & canvas groups); the library itself is services().library()
     // Making a template: the selection becomes an expanded instance at once, so its border is drawn and the canvas
     // makes room; finish names it, gives it its parameters and writes it to the library; cancel takes it back.
     QString beginTemplate(const QStringList& elements);  // the new instance, "" when refused
@@ -99,26 +94,18 @@ public:
     void keepEditingTemplate(const QString& id);
     bool isEditingTemplate(const QString& id) const { return editingTemplates_.contains(id); }
     bool saveTemplateAsNew(const QString& id, const QString& name, QString* error);
-    QStringList projectsUsing(const QString& templateName) const;  // .gpsproj files of the projects it is used in
     QStringList outdatedTemplates() const;           // copies whose library template is newer
     bool updateTemplates(const QStringList& ids);    // they take the library's newer content: one undo step
     QString lastAction() const { return action_; }   // what the last edit did, in words
     // A placed template's parameters: the collapsed box shows these as its properties.
     std::vector<gps::ExposedParam> templateParams(const QString& id) const;
     bool setTemplateParams(const QString& id, const std::map<std::string, std::string>& values);  // name -> value, "" = default
-    bool removeTemplate(const QString& templateName);
-    gps::Graph templateContent(const QString& name) const;  // the library template, empty when there is none
 
     // ---- the template library, like a folder of modules: what a project imports
-    bool renameTemplate(const QString& from, const QString& to, QString* error);  // copies on the canvas follow
-    bool deleteTemplate(const QString& name);  // projects that use it keep their own copy in their templates folder
-    bool exportTemplate(const QString& name, const QString& file, QString* error);
-    QString importTemplate(const QString& file, QString* error);  // the name it got, "" when refused
+    bool renameTemplate(const QString& from, const QString& to, QString* error);  // the library renames it; copies here follow
     // A library template on the canvas as the document: Save writes its next revision to the library, and its
     // parameters (the plan's exposed list) are set with setTemplateParameters.
     void editLibraryTemplate(const QString& name);
-    // Another window wrote the library: read it again, and offer the newer versions of templates on this canvas.
-    void reloadLibrary();
     QString libraryTemplate() const { return libraryTemplate_; }  // the one being edited, "" for a pipeline
     void setTemplateParameters(const std::vector<gps::ExposedParam>& params);
     QStringList addTemplate(const QString& templateName, double x = std::numeric_limits<double>::quiet_NaN(), double y = std::numeric_limits<double>::quiet_NaN());
@@ -200,12 +187,10 @@ signals:
     void updateFinished(bool ok);
     void logLine(const QString& line);      // helper stderr and events
     void notice(const QString& text);       // something the user must be told (helper missing, open failed ...)
-    void environmentChecked();
     void runFinished(const QString& status);
     void telemetryReceived(const gps::TelemetrySample& sample);
     void templateChanged(const QString& id);              // its content no longer matches its template: what now?
-    void templatesOutdated(const QStringList& ids);       // an opened file holds older versions of library templates
-    void libraryChanged();                                // this controller wrote the library
+    void templatesOutdated(const QStringList& ids);       // the library holds newer versions of copies on this canvas
 
 private:
     void log(const QString& line);
@@ -224,9 +209,9 @@ private:
     bool transact(const std::function<bool(gps::Graph&, Edit&)>& change);
     void load(const QString& source, const QString& documentPath, bool dirty, const QString& action, const QString& libraryTemplate = {});
     void checkTemplates(bool ask);
-    void libraryWritten();       // after every write to the library: read it again and tell the other windows
-    void offerNewerTemplates();  // templatesOutdated, when the library holds newer versions of copies on this canvas
+    void offerNewerTemplates();  // templatesOutdated soon, when the library holds newer versions of copies on this canvas
     bool commitTemplateEdit(const QString& id);
+    bool onCanvas(const QString& instanceId, QString* error) const;  // false, with the reason, when it is gone
     bool infosReady(const gps::Graph& clip, std::function<void()> retry);
     static QPointF topLeft(const gps::Graph& clip);
     QString runFile(const QString& name);
@@ -246,7 +231,10 @@ private:
     void subgraphExternalPads(const QStringList& members, QList<PadView>* outSinks, QList<PadView>* outSrcs) const;
     bool linkOrderedInternal(const QStringList& expanded, QString* lastTouched = nullptr);
 
-    gps::Pipeline pipeline_{"pipeline", [this](const std::string& factory) { return catalog_.traits()(factory); }};
+    void registerFactory(const QString& factory);  // its definition, from the catalog, for the Pipeline
+
+    AppServices& services_;
+    gps::Pipeline pipeline_{"pipeline", [this](const std::string& factory) { return catalog().traits()(factory); }};
     HelperExecutionBackend backend_;
     QTimer updateTimer_;
     gps::ExecutionCoordinator execution_{pipeline_, backend_};
@@ -260,7 +248,6 @@ private:
     QString touched_;  // the element the last edit concerned; the suspect when the helper dies
 
     QTemporaryDir tmp_;
-    FactoryCatalog catalog_;
     CanvasLayout* layout_;
     bool alignWhenValidated_ = false;
     QString libraryTemplate_;     // the library template the canvas is, while it is edited
@@ -268,7 +255,6 @@ private:
     bool alignQueued_ = false;   // automatic alignment follows the current burst of edits  // an opened file is laid out once its first validation tells every pad
     QSet<QString> editingTemplates_;   // copies whose changes go to their template (Update template was chosen)
     QSet<QString> knownModified_;      // copies already known to differ from their template
-    TemplateLibrary library_;
     QSet<QString> expandedTemplates_;
     HelperClient* runClient_ = nullptr;
     QProcess* monitorClient_ = nullptr;
@@ -277,7 +263,7 @@ private:
     bool cancelled_ = false;
     bool cancelling_ = false;
 
-    StartupCheck* startup_;
+    QTimer offerTimer_;  // coalesces the templatesOutdated offers of one burst of library changes
     DesktopUrlOpener desktopOpener_;
     UrlOpener* opener_ = &desktopOpener_;
     QString action_, linking_;

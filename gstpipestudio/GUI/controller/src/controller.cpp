@@ -3,7 +3,6 @@
 
 #include "capstext.h"
 #include "actions.h"
-#include "apppaths.h"
 #include "projectfile.h"
 #include "templates.h"
 #include "versionhistory.h"
@@ -52,12 +51,11 @@ QStringList limitedLines(const QStringList& lines) {
 
 }  // namespace
 
-Controller::Controller(QObject* parent)
-    : QObject(parent), layout_(new CanvasLayout(*this)), watch_(new SlowWatch(this)), startup_(new StartupCheck(this)) {
+Controller::Controller(AppServices& services, QObject* parent)
+    : QObject(parent), services_(services), layout_(new CanvasLayout(*this)), watch_(new SlowWatch(this)) {
     bool ok = false;
     int ms = qEnvironmentVariableIntValue("GPS_UPDATE_TIMEOUT_MS", &ok);
     if (ok && ms > 0) updateTimeoutMs_ = ms;
-    library_.load(catalog_);
     updateTimer_.setSingleShot(true);
     updateTimer_.setInterval(35);
     connect(&updateTimer_, &QTimer::timeout, this, &Controller::dispatchUpdate);
@@ -66,24 +64,29 @@ Controller::Controller(QObject* parent)
         log("Validation is taking longer than expected");
         emit changed();
     });
-    connect(&catalog_, &FactoryCatalog::ready, this, [this] {
-        library_.load(catalog_);
-        emit changed();
-    });
-    connect(&catalog_, &FactoryCatalog::infoArrived, this, [this](const QString& factory) {
-        pipeline_.registerFactory(toStd(factory), gps::definitionOf(*catalog_.info(factory)));
-    });
-    connect(&catalog_, &FactoryCatalog::notice, this, &Controller::notice);
-    connect(&catalog_, &FactoryCatalog::logLine, this, logger());
-    connect(startup_, &StartupCheck::finished, this, [this](const StartupResult& r) {
+    // The shared catalog already knows the factories other documents asked for; the Pipeline learns them now.
+    catalog().forEachInfo([this](const QString& factory, const ElementInfo&) { registerFactory(factory); });
+    connect(&catalog(), &FactoryCatalog::infoArrived, this, &Controller::registerFactory);
+    connect(&catalog(), &FactoryCatalog::notice, this, &Controller::notice);
+    connect(&catalog(), &FactoryCatalog::logLine, this, logger());
+    connect(&services_.environment(), &EnvironmentService::checked, this, [this](const StartupResult& r) {
         log(r.state == StartupResult::Ready ? r.statusText() : "GStreamer check: the environment is not ready");
-        if (r.state == StartupResult::Ready && !catalog_.loaded()) catalog_.load();
-        emit environmentChecked();
+    });
+    // Any tab wrote the library: this canvas shows it, and offers the newer versions of its copies.
+    connect(&services_.library(), &TemplateLibrary::changed, this, [this] {
         emit changed();
+        offerNewerTemplates();
+    });
+    offerTimer_.setSingleShot(true);
+    connect(&offerTimer_, &QTimer::timeout, this, [this] {
+        const QStringList outdated = outdatedTemplates();
+        if (!outdated.isEmpty()) emit templatesOutdated(outdated);
     });
 }
 
-void Controller::checkEnvironment() { startup_->start(); }
+void Controller::registerFactory(const QString& factory) {
+    pipeline_.registerFactory(toStd(factory), gps::definitionOf(*catalog().info(factory)));
+}
 
 // ---- state
 
@@ -142,7 +145,7 @@ SupportInfo Controller::supportInfo(const QString& title) const {
     if (result().valid()) i.validation = statusText(result()) + (result().message.empty() ? QString() : " – " + fromStd(result().message));
     else if (cancelled_) i.validation = "cancelled";
     i.logTail = logTail_.mid(qMax(0, logTail_.size() - 15));
-    const StartupResult& env = startup_->result();
+    const StartupResult& env = services_.environment().result();
     if (env.state == StartupResult::Ready || env.state == StartupResult::TooOld) i.gstreamer = env.version;
     if (env.state == StartupResult::Ready) i.nvidiaElements = env.nvidia ? env.nvidiaElements : 0;
     return i;
@@ -249,15 +252,8 @@ QString Controller::beginTemplate(const QStringList& elementNames) {
 }
 
 bool Controller::finishTemplate(const QString& id, const QString& name, const std::vector<gps::ExposedParam>& params, QString* error) {
-    QString clean = name.trimmed();
-    clean.replace('#', '_');
-    auto refuse = [&](const QString& why) {
-        if (error) *error = why;
-        return false;
-    };
-    if (clean.isEmpty()) return refuse("Give the template a name.");
-    if (library_.plan(clean)) return refuse("A template named " + clean + " already exists. Choose another name.");
-    if (!plan().instance(toStd(id))) return refuse("The template is no longer on the canvas.");
+    QString clean;
+    if (!services_.library().acceptName(name, &clean, error) || !onCanvas(id, error)) return false;
     transact([&](gps::Graph& g, Edit& edit) {
         gps::TemplateInstance* t = g.instance(toStd(id));
         t->templateName = toStd(clean);
@@ -270,31 +266,15 @@ bool Controller::finishTemplate(const QString& id, const QString& name, const st
         edit.presentation = true;
         return true;
     });
-    QString failure;
-    if (!library_.save(clean, gps::templates::extract(plan(), toStd(id)), &failure)) return refuse("Unable to save the template: " + failure);
-    libraryWritten();
-    emit changed();
-    return true;
+    return services_.library().save(clean, gps::templates::extract(plan(), toStd(id)), error);
 }
 
 void Controller::cancelTemplate(const QString& id) { detachTemplate(id); }
 
 bool Controller::renameTemplate(const QString& from, const QString& to, QString* error) {
-    QString clean = to.trimmed();
-    clean.replace('#', '_');
-    const gps::Graph* old = library_.plan(from);
-    auto refuse = [&](const QString& why) {
-        if (error) *error = why;
-        return false;
-    };
-    if (!old) return refuse("There is no template named " + from + ".");
-    if (clean.isEmpty()) return refuse("Give the template a name.");
+    QString clean;
+    if (!services_.library().rename(from, to, &clean, error)) return false;
     if (clean == from) return true;
-    if (library_.plan(clean)) return refuse("A template named " + clean + " already exists. Choose another name.");
-    QString failure;
-    if (!library_.save(clean, *old, &failure)) return refuse("Unable to save the template: " + failure);
-    library_.remove(from);
-    libraryWritten();
     transact([&](gps::Graph& g, Edit& edit) {
         bool any = false;
         for (gps::TemplateInstance& t : g.instances) {
@@ -304,51 +284,12 @@ bool Controller::renameTemplate(const QString& from, const QString& to, QString*
         edit.presentation = true;
         return any;
     });
-    emit changed();
     return true;
-}
-
-bool Controller::deleteTemplate(const QString& name) {
-    if (!library_.remove(name)) return false;
-    libraryWritten();
-    emit changed();
-    return true;
-}
-
-bool Controller::exportTemplate(const QString& name, const QString& file, QString* error) {
-    const gps::Graph* t = library_.plan(name);
-    std::string failure;
-    if (t && t->save(toStd(file), &failure)) return true;
-    if (error) *error = t ? fromStd(failure) : "There is no template named " + name + ".";
-    return false;
-}
-
-QString Controller::importTemplate(const QString& file, QString* error) {
-    gps::Graph t;
-    std::string failure;
-    if (!gps::Graph::load(toStd(file), &t, &failure, {toStd(AppPaths::templates())}) || t.elements.empty()) {
-        if (error) *error = "Not a template: " + (failure.empty() ? QString("it holds no elements") : fromStd(failure));
-        return QString();
-    }
-    QString name = t.name.empty() || t.name == "pipeline" ? QFileInfo(file).completeBaseName() : fromStd(t.name);
-    name.replace('#', '_');
-    if (library_.plan(name)) {
-        if (error) *error = "A template named " + name + " already exists. Rename it first.";
-        return QString();
-    }
-    QString saveError;
-    if (!library_.save(name, t, &saveError)) {
-        if (error) *error = saveError;
-        return QString();
-    }
-    libraryWritten();
-    emit changed();
-    return name;
 }
 
 void Controller::editLibraryTemplate(const QString& name) {
-    if (!library_.plan(name)) return;
-    const QString file = QDir(AppPaths::templates()).filePath(fromStd(gps::templates::fileName(toStd(name))));
+    if (!services_.library().plan(name)) return;
+    const QString file = TemplateLibrary::fileFor(name);
     load(file, file, false, "Opened template " + name, name);
 }
 
@@ -387,7 +328,7 @@ std::vector<gps::ExposedParam> Controller::parameterChoices(const QStringList& e
     for (const QString& member : elements) {
         const gps::Element* e = plan().find(toStd(member));
         if (!e) continue;
-        if (const ElementInfo* inf = catalog_.info(fromStd(e->factory))) {
+        if (const ElementInfo* inf = catalog().info(fromStd(e->factory))) {
             for (const PropertyInfo& p : inf->properties) {
                 if (p.writable && !p.deprecated) offer(e->name, p.name);
             }
@@ -427,20 +368,8 @@ bool Controller::setTemplateParams(const QString& id, const std::map<std::string
     });
 }
 
-gps::Graph Controller::templateContent(const QString& name) const {
-    const gps::Graph* found = library_.plan(name);
-    return found ? *found : gps::Graph();
-}
-
-bool Controller::removeTemplate(const QString& templateName) {
-    const bool removed = library_.remove(templateName);
-    libraryWritten();
-    emit changed();
-    return removed;
-}
-
 QStringList Controller::addTemplate(const QString& templateName, double x, double y) {
-    const gps::Graph* tmpl = library_.plan(templateName);
+    const gps::Graph* tmpl = services_.library().plan(templateName);
     if (!tmpl || tmpl->elements.empty() || editingBlocked()) return {};
     if (!infosReady(*tmpl, [=] { addTemplate(templateName, x, y); })) return {};
     const QPointF at = (std::isfinite(x) && std::isfinite(y)) ? QPointF(x, y) : freeSpot();
@@ -458,7 +387,7 @@ QStringList Controller::addTemplate(const QString& templateName, double x, doubl
 }
 
 QStringList Controller::addTemplateAfter(const QString& srcElement, const QString& srcPad, const QString& templateName) {
-    const gps::Graph* tmpl = library_.plan(templateName);
+    const gps::Graph* tmpl = services_.library().plan(templateName);
     const gps::Element* from = plan().find(toStd(srcElement));
     if (!tmpl || !from || editingBlocked()) return {};
     if (!infosReady(*tmpl, [=] { addTemplateAfter(srcElement, srcPad, templateName); })) return {};
@@ -515,7 +444,7 @@ ElementView Controller::view(const QString& name) const {
     v.displayTitle = displayName(name);
     v.groupId = fromStd(element->group);
     if (!v.groupId.isEmpty()) v.templateMembers = templateMembers(v.groupId);
-    if (const FactoryEntry* e = catalog_.entry(v.factory)) {
+    if (const FactoryEntry* e = catalog().entry(v.factory)) {
         v.nvidia = e->nvidia;
         v.longName = fromStd(e->longName);
     }
@@ -532,11 +461,11 @@ ElementView Controller::view(const QString& name) const {
     v.propLines = limitedLines(lines);
     v.note = elementNote(name, &v.isError);
 
-    const ElementInfo* inf = catalog_.info(v.factory);
+    const ElementInfo* inf = catalog().info(v.factory);
     if (!inf) return v;
     v.isSource = inf->entry.isSource;
     v.isSink = inf->entry.isSink;
-    v.isTracked = plan().isElementTracked(element->name, catalog_.traits());
+    v.isTracked = plan().isElementTracked(element->name, catalog().traits());
     if (!v.isTracked && v.note.isEmpty()) {
         v.isInfo = true;
         v.note = "ℹ Unlinked sink pad — not tracked until fed by a source.";
@@ -709,7 +638,7 @@ const PadTemplateInfo* Controller::linkSinkTemplate(int link) const {
     if (link < 0 || link >= static_cast<int>(plan().links.size())) return nullptr;
     const gps::Connection& l = plan().links[link];
     const gps::Element* sink = plan().find(l.sinkElement);
-    const ElementInfo* inf = sink ? catalog_.info(fromStd(sink->factory)) : nullptr;
+    const ElementInfo* inf = sink ? catalog().info(fromStd(sink->factory)) : nullptr;
     return inf ? inf->padTemplate(l.sinkPad, "sink") : nullptr;
 }
 
@@ -717,7 +646,7 @@ QList<ExistingTarget> Controller::existingTargets(const QString& element, const 
     QList<ExistingTarget> out;
     std::vector<StructureInfo> allowed = padStructures(element, identity);
     for (const gps::Element& e : plan().elements) {
-        const ElementInfo* inf = catalog_.info(fromStd(e.factory));
+        const ElementInfo* inf = catalog().info(fromStd(e.factory));
         if (!inf || plan().wouldCycle(toStd(element), e.name)) continue;
         for (const PadTemplateInfo& t : inf->sinkTemplates()) {
             if (!gps::structuresMeet(allowed, t.structures)) continue;
@@ -838,8 +767,7 @@ bool Controller::commitTemplateEdit(const QString& id) {
     const gps::TemplateInstance* t = plan().instance(toStd(id));
     if (!t || !gps::templates::modified(plan(), t->id)) return false;
     const QString name = fromStd(t->templateName);
-    const gps::Graph* library = library_.plan(name);
-    const int revision = std::max(library ? library->revision : 0, t->revision) + 1;
+    const int revision = services_.library().nextRevision(name, t->revision);
     transact([&](gps::Graph& g, Edit& edit) {
         gps::templates::sync(g, toStd(id), revision);
         edit.action = QString("Updated template %1 to revision %2").arg(name).arg(revision);
@@ -847,11 +775,10 @@ bool Controller::commitTemplateEdit(const QString& id) {
         return true;
     });
     QString error;
-    if (!library_.save(name, gps::templates::extract(plan(), toStd(id)), &error)) {
-        emit notice("Unable to update the template: " + error);
+    if (!services_.library().save(name, gps::templates::extract(plan(), toStd(id)), &error)) {
+        emit notice(error);
         return false;
     }
-    libraryWritten();
     QStringList others;
     for (const gps::TemplateInstance& other : plan().instances) {
         if (fromStd(other.id) != id && fromStd(other.templateName) == name && !gps::templates::modified(plan(), other.id)) others << fromStd(other.id);
@@ -862,15 +789,8 @@ bool Controller::commitTemplateEdit(const QString& id) {
 }
 
 bool Controller::saveTemplateAsNew(const QString& id, const QString& name, QString* error) {
-    QString clean = name.trimmed();
-    clean.replace('#', '_');
-    auto refuse = [&](const QString& why) {
-        if (error) *error = why;
-        return false;
-    };
-    if (clean.isEmpty()) return refuse("Give the template a name.");
-    if (library_.plan(clean)) return refuse("A template named " + clean + " already exists. Choose another name.");
-    if (!plan().instance(toStd(id))) return refuse("The template is no longer on the canvas.");
+    QString clean;
+    if (!services_.library().acceptName(name, &clean, error) || !onCanvas(id, error)) return false;
     editingTemplates_.remove(id);
     transact([&](gps::Graph& g, Edit& edit) {
         g.instance(toStd(id))->templateName = toStd(clean);
@@ -879,35 +799,22 @@ bool Controller::saveTemplateAsNew(const QString& id, const QString& name, QStri
         edit.presentation = true;
         return true;
     });
-    QString failure;
-    if (!library_.save(clean, gps::templates::extract(plan(), toStd(id)), &failure)) return refuse("Unable to save the template: " + failure);
-    libraryWritten();
-    emit changed();
-    return true;
+    return services_.library().save(clean, gps::templates::extract(plan(), toStd(id)), error);
 }
 
-QStringList Controller::projectsUsing(const QString& templateName) const { return ProjectRegistry::usingTemplate(templateName); }
-
-void Controller::libraryWritten() {
-    library_.load(catalog_);
-    emit libraryChanged();
+bool Controller::onCanvas(const QString& id, QString* error) const {
+    if (plan().instance(toStd(id))) return true;
+    if (error) *error = "The template is no longer on the canvas.";
+    return false;
 }
 
-void Controller::reloadLibrary() {
-    library_.load(catalog_);
-    emit changed();
-    offerNewerTemplates();
-}
-
-void Controller::offerNewerTemplates() {
-    const QStringList outdated = outdatedTemplates();
-    if (!outdated.isEmpty()) QTimer::singleShot(0, this, [this, outdated] { emit templatesOutdated(outdated); });
-}
+// Asked when the current edit or write is over, so the offer is about the canvas as it is then.
+void Controller::offerNewerTemplates() { offerTimer_.start(0); }
 
 QStringList Controller::outdatedTemplates() const {
     QStringList out;
     for (const gps::TemplateInstance& t : plan().instances) {
-        const gps::Graph* library = library_.plan(fromStd(t.templateName));
+        const gps::Graph* library = services_.library().plan(fromStd(t.templateName));
         if (library && library->revision > t.revision) out << fromStd(t.id);
     }
     return out;
@@ -919,7 +826,7 @@ bool Controller::updateTemplates(const QStringList& ids) {
         bool any = false;
         for (const QString& id : ids) {
             const gps::TemplateInstance* t = g.instance(toStd(id));
-            const gps::Graph* library = t ? library_.plan(fromStd(t->templateName)) : nullptr;
+            const gps::Graph* library = t ? services_.library().plan(fromStd(t->templateName)) : nullptr;
             if (library && gps::templates::replaceContent(g, toStd(id), *library)) any = true;
         }
         for (const QString& id : ids) {
@@ -1000,10 +907,10 @@ bool Controller::infosReady(const gps::Graph& clip, std::function<void()> retry)
     QStringList missing;
     for (const gps::Element& e : clip.elements) {
         QString factory = fromStd(e.factory);
-        if (!catalog_.info(factory) && !missing.contains(factory)) missing << factory;
+        if (!catalog().info(factory) && !missing.contains(factory)) missing << factory;
     }
     if (missing.isEmpty()) return true;
-    catalog_.fetchInfos(missing, [retry](bool ok) {
+    catalog().fetchInfos(missing, [retry](bool ok) {
         if (ok) retry();
     });
     return false;
@@ -1024,7 +931,7 @@ QStringList Controller::duplicateElements(const QStringList& names) {
 }
 
 bool Controller::addElement(const QString& factory, const ElementEdit& edit, double x, double y) {
-    if (!catalog_.info(factory)) return false;
+    if (!catalog().info(factory)) return false;
     return transact([&](gps::Graph& g, Edit& e) {
         QPointF at = (std::isfinite(x) && std::isfinite(y)) ? QPointF(x, y) : freeSpot();
         std::string name = g.addElement(toStd(factory), edit.props, at.x(), at.y());
@@ -1038,7 +945,7 @@ bool Controller::addElement(const QString& factory, const ElementEdit& edit, dou
 bool Controller::addAfter(const QString& element, const QString& pad, const QString& factory, const QString& sinkPad,
                           const ElementEdit& edit) {
     const gps::Element* from = plan().find(toStd(element));
-    if (!catalog_.info(factory) || !from) return false;
+    if (!catalog().info(factory) || !from) return false;
     return transact([&](gps::Graph& g, Edit& e) {
         std::string name = g.addAfter(toStd(element), toStd(pad), toStd(factory), toStd(sinkPad), edit.props,
                                       from->x + metrics::kColumn, from->y);
@@ -1094,7 +1001,7 @@ bool Controller::cut(const QString& element, const QString& pad) {
     const QString linking = padText(element, pad);
     return transact([&](gps::Graph& g, Edit& e) {
         e = {"Cut the link at " + element + "." + pad, linking, element};
-        return g.cut(toStd(element), toStd(pad), catalog_.traits()).links > 0;
+        return g.cut(toStd(element), toStd(pad), catalog().traits()).links > 0;
     });
 }
 
@@ -1111,10 +1018,10 @@ bool Controller::disconnectLink(const QString& element, const QString& pad) {
 
 bool Controller::replace(const QString& element, const QString& pad, const QString& factory, const QString& sinkPad,
                          const ElementEdit& edit) {
-    if (!catalog_.info(factory)) return false;
+    if (!catalog().info(factory)) return false;
     const QString linking = padText(element, pad);
     return transact([&](gps::Graph& g, Edit& e) {
-        gps::Addition added = g.replace(toStd(element), toStd(pad), toStd(factory), toStd(sinkPad), edit.props, catalog_.traits());
+        gps::Addition added = g.replace(toStd(element), toStd(pad), toStd(factory), toStd(sinkPad), edit.props, catalog().traits());
         if (added.element.empty()) return false;
         applyEdit(added.element, edit);
         e.action = "Replaced the element behind " + element + "." + pad + " with " + factory;
@@ -1177,7 +1084,7 @@ bool Controller::spliceElements(const QStringList& elements, const QString& link
     }
     if (expanded.size() == 1) {
         const QString& only = expanded.first();
-        if (const ElementInfo* inf = catalog_.info(view(only).factory)) {
+        if (const ElementInfo* inf = catalog().info(view(only).factory)) {
             for (const PadTemplateInfo& t : inf->sinkTemplates()) {
                 if (t.isRequest()) {
                     std::pair<std::string, std::string> cand{toStd(only), t.name};
@@ -1208,7 +1115,7 @@ bool Controller::spliceElements(const QStringList& elements, const QString& link
 }
 
 bool Controller::insertQueue(const QString& element, const QString& pad) {
-    if (!catalog_.info(fromStd(gps::kQueueFactory))) return false;
+    if (!catalog().info(fromStd(gps::kQueueFactory))) return false;
     return transact([&](gps::Graph& g, Edit& e) {
         std::string name = g.insertQueue(toStd(element), toStd(pad));
         if (name.empty()) return false;
@@ -1326,7 +1233,7 @@ bool Controller::linkOrderedInternal(const QStringList& expanded, QString* lastT
             }
         }
         if (sinkPad.isEmpty()) {
-            if (const ElementInfo* inf = catalog_.info(dv.factory)) {
+            if (const ElementInfo* inf = catalog().info(dv.factory)) {
                 for (const PadTemplateInfo& t : inf->sinkTemplates()) {
                     if (t.isRequest()) {
                         sinkPad = fromStd(t.name);
@@ -1377,7 +1284,7 @@ bool Controller::niceAlign(const QStringList& elements) {
 
 // An edit of the user's, with automatic alignment on: the whole canvas follows, once for a burst of edits.
 void Controller::alignAfterEdit() {
-    if (!layout_->automatic() || layout_->applying() || restoring_ || alignQueued_) return;
+    if (!services_.view().autoAlign() || layout_->applying() || restoring_ || alignQueued_) return;
     alignQueued_ = true;
     QTimer::singleShot(0, this, [this] {
         alignQueued_ = false;
@@ -1391,15 +1298,15 @@ void Controller::alignOpened() {
 }
 
 gps::Removal Controller::previewCut(const QString& element, const QString& pad) const {
-    return plan().previewCut(toStd(element), toStd(pad), catalog_.traits());
+    return plan().previewCut(toStd(element), toStd(pad), catalog().traits());
 }
 
 gps::Removal Controller::previewReplace(const QString& element, const QString& pad) const {
-    return plan().previewReplace(toStd(element), toStd(pad), catalog_.traits());
+    return plan().previewReplace(toStd(element), toStd(pad), catalog().traits());
 }
 
 gps::Removal Controller::previewDeleteSource(const QString& element) const {
-    return plan().previewDeleteSource(toStd(element), catalog_.traits());
+    return plan().previewDeleteSource(toStd(element), catalog().traits());
 }
 
 // ---- update
@@ -1415,7 +1322,7 @@ void Controller::startUpdate() {
 
 void Controller::dispatchUpdate() {
     cancelled_ = false;
-    if (plan().empty() || plan().trackedSubplan(catalog_.traits()).empty()) {
+    if (plan().empty() || plan().trackedSubplan(catalog().traits()).empty()) {
         updating_ = false; watch_->stop();
         pipeline_.observeIdle();
         emit changed();
@@ -1513,7 +1420,7 @@ void Controller::load(const QString& source, const QString& documentPath, bool d
     auto loaded = std::make_shared<gps::Graph>();
     std::string error;
     // Its templates: the document's own copies (an earlier version is read from elsewhere), then the library.
-    const std::vector<std::string> libraries{toStd(QFileInfo(documentPath).dir().filePath("templates")), toStd(AppPaths::templates())};
+    const std::vector<std::string> libraries{toStd(QFileInfo(documentPath).dir().filePath("templates")), toStd(TemplateLibrary::directory())};
     if (!gps::Graph::load(toStd(source), loaded.get(), &error, libraries)) {
         emit notice("Unable to open the file: " + fromStd(error));
         return;
@@ -1523,7 +1430,7 @@ void Controller::load(const QString& source, const QString& documentPath, bool d
         if (!factories.contains(fromStd(e.factory))) factories << fromStd(e.factory);
     }
     opening_ = true;
-    catalog_.fetchInfos(factories, [this, loaded, documentPath, dirty, action, libraryTemplate](bool ok) {
+    catalog().fetchInfos(factories, [this, loaded, documentPath, dirty, action, libraryTemplate](bool ok) {
         opening_ = false;
         if (!ok) {
             emit notice("Unable to open the file: the plan uses an element this installation does not have.");
@@ -1580,13 +1487,8 @@ bool Controller::save(const QString& path, QString* error) {
     for (const QString& id : QSet<QString>(editingTemplates_)) commitTemplateEdit(id);  // saving ends every template edit
     if (!libraryTemplate_.isEmpty() && target == path_) {  // a library template: its next revision
         gps::Graph next = plan();
-        next.revision = plan().revision + 1;
-        QString failure;
-        if (!library_.save(libraryTemplate_, next, &failure)) {
-            if (error) *error = "Unable to save the template: " + failure;
-            return false;
-        }
-        libraryWritten();
+        next.revision = services_.library().nextRevision(libraryTemplate_, plan().revision);
+        if (!services_.library().save(libraryTemplate_, next, error)) return false;
         transact([&](gps::Graph& g, Edit& edit) {
             g.revision = next.revision;
             edit.action = QString("Saved template %1, revision %2").arg(libraryTemplate_).arg(next.revision);
