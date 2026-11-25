@@ -17,6 +17,31 @@ constexpr double kRadius = 14;
 constexpr double kBand = 14;  // how wide the border is for the mouse
 }  // namespace
 
+FrameGhost::FrameGhost(const QRectF& from, const QRectF& to) : from_(from), to_(to) {
+    setZValue(0.5);
+    setAcceptedMouseButtons(Qt::NoButton);
+    animation_.setDuration(260);
+    animation_.setEasingCurve(QEasingCurve::OutCubic);
+    animation_.setStartValue(0.0);
+    animation_.setEndValue(1.0);
+    connect(&animation_, &QVariantAnimation::valueChanged, this, [this](const QVariant& v) {
+        t_ = v.toDouble();
+        update();
+    });
+    animation_.start();
+}
+
+void FrameGhost::paint(QPainter* p, const QStyleOptionGraphicsItem*, QWidget*) {
+    auto mix = [this](double a, double b) { return a + (b - a) * t_; };
+    const QRectF r(QPointF(mix(from_.left(), to_.left()), mix(from_.top(), to_.top())),
+                   QPointF(mix(from_.right(), to_.right()), mix(from_.bottom(), to_.bottom())));
+    p->setRenderHint(QPainter::Antialiasing);
+    p->setOpacity(1 - t_);
+    p->setPen(QPen(Theme::accent(), 2));
+    p->setBrush(Qt::NoBrush);
+    p->drawRoundedRect(r, kRadius, kRadius);
+}
+
 TemplateFrameItem::TemplateFrameItem(const FrameView& view, CanvasScene* canvas) : view_(view), canvas_(canvas) {
     setFlags(ItemIsSelectable);
     setAcceptedMouseButtons(Qt::LeftButton | Qt::RightButton);

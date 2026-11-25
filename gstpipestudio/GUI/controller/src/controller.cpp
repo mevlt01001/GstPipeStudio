@@ -14,6 +14,7 @@
 #include <QGuiApplication>
 #include <QRectF>
 #include <QRegularExpression>
+#include <QScopedValueRollback>
 #include <algorithm>
 #include <memory>
 #include <set>
@@ -205,11 +206,13 @@ QStringList Controller::expandSelection(const QStringList& elementNames) const {
 void Controller::setTemplateExpanded(const QString& groupId, bool expanded) {
     if (groupId.isEmpty() || isTemplateExpanded(groupId) == expanded) return;
     if (!expanded && editingTemplates_.contains(groupId)) commitTemplateEdit(groupId);  // collapsing ends its editing
+    // The box grows into its frame from its centre, or the frame shrinks into it; everything around it makes room.
+    const CanvasLayout::Pin pin = layout_->pinOf(templateMembers(groupId), true);
     if (expanded) expandedTemplates_.insert(groupId);
     else expandedTemplates_.remove(groupId);
     layout_->invalidate();
+    layout_->align({}, pin);
     emit changed();
-    niceAlign();  // the box grows into its frame or shrinks back: everything around it makes room
 }
 
 bool Controller::detachTemplate(const QString& groupId) {
@@ -697,6 +700,7 @@ bool Controller::transact(const std::function<bool(gps::Graph&, Edit&)>& change)
         if (!commitTransaction()) return false;
         dirty_ = true;
         emit changed();
+        alignAfterEdit();
         checkTemplates(true);
         return true;
     }
@@ -830,6 +834,7 @@ void Controller::edited(const QString& touchedElement, bool validate) {
     dirty_ = true;
     touched_ = touchedElement;
     emit changed();
+    alignAfterEdit();
     if (validate || updating_) {
         startUpdate();
     } else {
@@ -840,6 +845,7 @@ void Controller::edited(const QString& touchedElement, bool validate) {
 bool Controller::undo() {
     if (!canUndo() || !pipeline_.editor().undo()) return false;
     note("Undo");
+    const QScopedValueRollback restoring(restoring_, true);  // going back is not an edit to follow
     edited(QString(), pipeline_.lastChange().kind == gps::ChangeKind::Execution);
     checkTemplates(false);
     return true;
@@ -848,6 +854,7 @@ bool Controller::undo() {
 bool Controller::redo() {
     if (!canRedo() || !pipeline_.editor().redo()) return false;
     note("Redo");
+    const QScopedValueRollback restoring(restoring_, true);
     edited(QString(), pipeline_.lastChange().kind == gps::ChangeKind::Execution);
     checkTemplates(false);
     return true;
@@ -1178,6 +1185,7 @@ bool Controller::move(const QList<QPair<QString, QPointF>>& placements) {
     for (const auto& [element, at] : placements) moves.push_back({toStd(element), at.x(), at.y()});
     if (moves.empty() || !pipeline_.editor().execute(gps::MoveElementsAction(std::move(moves)))) return false;
     emit changed();
+    alignAfterEdit();  // with automatic alignment a dragged box slides back into place
     return true;
 }
 
@@ -1264,7 +1272,25 @@ bool Controller::disconnectBetweenElements(const QStringList& names) {
 }
 
 bool Controller::niceAlign(const QStringList& elements) {
-    return layout_->align(elements.isEmpty() ? QStringList() : expandSelection(elements));
+    const QStringList chosen = elements.isEmpty() ? QStringList() : expandSelection(elements);
+    QStringList all;
+    for (const gps::Element& e : plan().elements) all << fromStd(e.name);
+    return layout_->align(chosen, layout_->pinOf(chosen.isEmpty() ? all : chosen));  // what is on screen stays there
+}
+
+// An edit of the user's, with automatic alignment on: the whole canvas follows, once for a burst of edits.
+void Controller::alignAfterEdit() {
+    if (!layout_->automatic() || layout_->applying() || restoring_ || alignQueued_) return;
+    alignQueued_ = true;
+    QTimer::singleShot(0, this, [this] {
+        alignQueued_ = false;
+        niceAlign();
+    });
+}
+
+// An opened file has no positions: it is laid out from the top left corner once its first validation tells every pad.
+void Controller::alignOpened() {
+    if (std::exchange(alignWhenValidated_, false)) layout_->align();
 }
 
 gps::Removal Controller::previewCut(const QString& element, const QString& pad) const {
@@ -1297,7 +1323,7 @@ void Controller::dispatchUpdate() {
         pipeline_.observeIdle();
         emit changed();
         emit updateFinished(true);
-        if (std::exchange(alignWhenValidated_, false)) niceAlign();
+        alignOpened();
         return;
     }
     updating_ = true;
@@ -1343,7 +1369,7 @@ void Controller::finishUpdate(const gps::ExecutionResult& r) {
     log("Validation: " + statusText(result()) + (result().message.empty() ? QString() : " – " + fromStd(result().message)));
     emit changed();
     emit updateFinished(result().ok());
-    if (std::exchange(alignWhenValidated_, false)) niceAlign();
+    alignOpened();
 }
 
 bool Controller::refresh() {

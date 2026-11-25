@@ -18,6 +18,7 @@ class Controller;
 class ElementItem;
 class LinkItem;
 class PadItem;
+class FrameGhost;
 class TemplateFrameItem;
 struct PadView;
 
@@ -98,6 +99,7 @@ private:
     QHash<QString, PadItem*> pads_;
     QHash<QString, TemplateFrameItem*> frames_;
     QSet<QString> shownFrames_;  // frames of the last rebuild: a frame not among them grows in
+    QList<QPointer<FrameGhost>> ghosts_;  // frames that just closed, shrinking: they outlive a rebuild
     QList<LinkItem*> links_;
     QSet<QString> selectedElements_;
     bool hasExplicitSelection_ = false;

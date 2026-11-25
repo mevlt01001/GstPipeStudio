@@ -24,6 +24,7 @@ QRectF bounds(const QList<QRectF>& rects) {
 CanvasLayout::CanvasLayout(Controller& controller)
     : QObject(&controller), controller_(controller), runner_([] { return std::make_unique<layout::ElkEngine>(); }, this) {
     routing_ = QSettings().value("view/linkStyle").toString() == "rightAngles" ? layout::Routing::RightAngles : layout::Routing::Curves;
+    automatic_ = QSettings().value("view/autoAlign", false).toBool();
     connect(&runner_, &layout::Runner::finished, this, &CanvasLayout::finished);
     // Loading ELK takes a moment: do it now, so the first real layout does not wait for it.
     layout::Node warm;
@@ -42,6 +43,43 @@ QString CanvasLayout::padKey(const QString& element, const QString& identity, bo
 void CanvasLayout::setRouting(layout::Routing routing) {
     routing_ = routing;
     QSettings().setValue("view/linkStyle", routing == layout::Routing::RightAngles ? "rightAngles" : "curves");
+}
+
+void CanvasLayout::setAutomatic(bool on) {
+    automatic_ = on;
+    QSettings().setValue("view/autoAlign", on);
+}
+
+QString CanvasLayout::boxOf(const QString& element) const {
+    QString box;
+    containers(element, &box);
+    return box;
+}
+
+QString CanvasLayout::anchorOf(const QString& box) const {
+    return controller_.plan().find(toStd(box)) ? box : controller_.templateMembers(box).value(0);
+}
+
+QStringList CanvasLayout::boxesOf(const QStringList& elements) const {
+    QStringList out;
+    for (const QString& e : elements) {
+        const QString box = boxOf(e);
+        if (!out.contains(box)) out << box;
+    }
+    return out;
+}
+
+QRectF CanvasLayout::boxRect(const QString& box) const {
+    const gps::Element* at = controller_.plan().find(toStd(anchorOf(box)));
+    if (!at) return QRectF();
+    const ElementView v = at->name == toStd(box) ? controller_.view(box) : controller_.templateView(box);
+    return QRectF(at->x, at->y, metrics::kBoxWidth, v.height());
+}
+
+CanvasLayout::Pin CanvasLayout::pinOf(const QStringList& elements, bool gather) const {
+    QList<QRectF> drawn;
+    for (const QString& box : boxesOf(elements)) drawn << boxRect(box);
+    return {elements, bounds(drawn).center(), gather};
 }
 
 QStringList CanvasLayout::containers(const QString& element, QString* box) const {
@@ -150,11 +188,11 @@ layout::Node CanvasLayout::tree(const QStringList& elements) const {
     return build(QString());
 }
 
-bool CanvasLayout::align(const QStringList& elements) {
+bool CanvasLayout::align(const QStringList& elements, std::optional<Pin> pin) {
     if (controller_.editingBlocked() || controller_.plan().empty()) return false;
     const layout::Node root = tree(elements);
     if (root.children.isEmpty()) return false;
-    only_ = elements;
+    pin_ = std::move(pin);
     pending_ = runner_.request(root, routing_);
     return true;
 }
@@ -162,30 +200,29 @@ bool CanvasLayout::align(const QStringList& elements) {
 void CanvasLayout::finished(quint64 ticket, bool ok, const layout::Result& result, const QString& error) {
     if (ticket != pending_) return;  // the warm-up, or an answer nobody waits for any more
     pending_ = 0;
+    const std::optional<Pin> pin = std::exchange(pin_, std::nullopt);
     if (!ok) {
         emit controller_.logLine("Layout failed: " + error);
         emit aligned(false);
         return;
     }
-    // Where the laid-out boxes go: the whole canvas from the top left corner, a selection where it already was.
+    // Where the laid-out boxes go: around the pin's centre, or without one from the top left corner.
     const gps::Graph& g = controller_.plan();
-    QList<QRectF> laid, before;
+    QList<QRectF> laid, pinned;
     QHash<QString, QString> anchor;  // box -> the element whose position the canvas draws it at
+    const QStringList pinnedBoxes = pin ? boxesOf(pin->elements) : QStringList();
     for (const gps::Element& e : g.elements) {
-        const QString name = fromStd(e.name);
-        QString box;
-        containers(name, &box);
+        const QString box = boxOf(fromStd(e.name));
         if (!result.nodes.contains(box) || anchor.contains(box)) continue;
-        anchor[box] = name;
+        anchor[box] = anchorOf(box);
         laid << result.nodes[box];
-        before << QRectF(QPointF(e.x, e.y), result.nodes[box].size());
+        if (pinnedBoxes.contains(box)) pinned << result.nodes[box];
     }
     if (anchor.isEmpty()) {
         emit aligned(false);
         return;
     }
-    const QPointF origin = only_.isEmpty() ? QPointF(kMargin, kMargin) : bounds(before).topLeft();
-    const QPointF shift = origin - bounds(laid).topLeft();
+    const QPointF shift = pin && !pinned.isEmpty() ? pin->centre - bounds(pinned).center() : QPointF(kMargin, kMargin) - bounds(laid).topLeft();
     result_ = result;
     for (QRectF& r : result_.nodes) r.translate(shift);
     for (QPointF& p : result_.ports) p += shift;
@@ -194,13 +231,16 @@ void CanvasLayout::finished(quint64 ticket, bool ok, const layout::Result& resul
             for (QPointF& p : piece) p += shift;
 
     QList<QPair<QString, QPointF>> moves;
-    QHash<QString, QPointF> from;
+    QHash<QString, QPointF> from;  // gathered boxes come from the pin's centre, where the canvas drew them
     for (auto it = anchor.cbegin(); it != anchor.cend(); ++it) {
         const gps::Element* e = g.find(toStd(it.value()));
-        from[it.value()] = QPointF(e->x, e->y);
-        moves.append({it.value(), result_.nodes[it.key()].topLeft()});
+        const QRectF to = result_.nodes[it.key()];
+        from[it.value()] = pin && pin->gather && pinnedBoxes.contains(it.key()) ? pin->centre - QPointF(to.width(), to.height()) / 2 : QPointF(e->x, e->y);
+        moves.append({it.value(), to.topLeft()});
     }
+    applying_ = true;
     controller_.setPositions(moves);
+    applying_ = false;
     revision_ = controller_.pipeline().lastChange().revision;
     valid_ = true;
     emit applied(from);

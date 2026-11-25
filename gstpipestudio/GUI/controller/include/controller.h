@@ -217,6 +217,8 @@ private:
     gps::Graph& editGraph() { return pipeline_.editor().draft(); }
     bool commitTransaction();
     void edited(const QString& touchedElement, bool validate = true);  // dirty + optional update
+    void alignAfterEdit();
+    void alignOpened();
     void startUpdate();
     void dispatchUpdate();
     void finishUpdate(const gps::ExecutionResult& r);
@@ -244,7 +246,9 @@ private:
     QTemporaryDir tmp_;
     FactoryCatalog catalog_;
     CanvasLayout* layout_;
-    bool alignWhenValidated_ = false;  // an opened file is laid out once its first validation tells every pad
+    bool alignWhenValidated_ = false;
+    bool restoring_ = false;     // undo or redo is running
+    bool alignQueued_ = false;   // automatic alignment follows the current burst of edits  // an opened file is laid out once its first validation tells every pad
     QSet<QString> editingTemplates_;   // copies whose changes go to their template (Update template was chosen)
     QSet<QString> knownModified_;      // copies already known to differ from their template
     TemplateLibrary library_;

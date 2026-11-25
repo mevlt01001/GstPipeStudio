@@ -2,6 +2,7 @@
 // tree (Composite): a plain element and a collapsed template are boxes with their pads as ports, an expanded template is
 // a frame whose inside is built by the same rule, with the template's free pads on its border. The engine's answer comes
 // back as one undoable move, plus the link routes and frame borders the canvas draws while nothing has moved since.
+// Nothing on screen jumps: the answer is moved so the boxes it was asked about keep their centre (a pin).
 #pragma once
 
 #include <QHash>
@@ -21,13 +22,34 @@ class CanvasLayout : public QObject {
 public:
     explicit CanvasLayout(Controller& controller);
 
+    // Where the answer lands: the boxes of these elements keep the centre they are drawn around now. Gathered, the
+    // canvas draws them at that centre while the answer is on its way and they slide out of it: a template grows out of
+    // its centre, or shrinks into it.
+    struct Pin {
+        QStringList elements;
+        QPointF centre;
+        bool gather = false;
+    };
+    Pin pinOf(const QStringList& elements, bool gather = false) const;  // their centre now
     // Lays out the selected elements (with the templates they are in), or the whole canvas when the list is empty.
-    // Asynchronous: aligned() follows. False when there is nothing to lay out or editing is blocked.
-    bool align(const QStringList& elements = {});
+    // Without a pin the canvas starts at the top left corner (a file just opened). Asynchronous: aligned() follows.
+    // False when there is nothing to lay out or editing is blocked.
+    bool align(const QStringList& elements = {}, std::optional<Pin> pin = std::nullopt);
     bool busy() const { return pending_ != 0; }
+    const std::optional<Pin>& pending() const { return pin_; }  // the pin of the answer on its way
+    bool applying() const { return applying_; }  // its move is being made (not an edit of the user's)
 
     layout::Routing routing() const { return routing_; }
     void setRouting(layout::Routing routing);  // remembered; the next layout uses it
+    // Automatic alignment: every edit is followed by a nice alignment of the whole canvas. Remembered.
+    bool automatic() const { return automatic_; }
+    void setAutomatic(bool on);
+
+    // The box an element is drawn in (itself, or the outermost collapsed template around it), and where it is drawn.
+    QString boxOf(const QString& element) const;
+    QString anchorOf(const QString& box) const;  // the element whose position the canvas draws the box at
+    QStringList boxesOf(const QStringList& elements) const;
+    QRectF boxRect(const QString& box) const;
 
     // The last answer, while the canvas is as it left it.
     bool fresh() const;
@@ -56,8 +78,10 @@ private:
     Controller& controller_;
     layout::Runner runner_;
     layout::Routing routing_ = layout::Routing::Curves;
+    bool automatic_ = false;
     quint64 pending_ = 0;
-    QStringList only_;            // the selection the pending request lays out, empty for the whole canvas
+    std::optional<Pin> pin_;
+    bool applying_ = false;
     layout::Result result_;       // in canvas coordinates
     std::uint64_t revision_ = 0;  // the document revision the result belongs to
     bool valid_ = false;

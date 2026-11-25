@@ -191,7 +191,7 @@ void MainWindow::buildActions() {
     auto* showProps = make("actionShowProperties", "&Properties", {}, [this] { tabs_->setCurrentWidget(propsTab_); });
     auto* showCaps = make("actionShowCaps", "&Caps", {}, [this] { tabs_->setCurrentWidget(capsTab_); });
     auto* fit = make("actionFit", "Zoom to &fit", {QKeySequence(Qt::CTRL | Qt::Key_0)}, [this] { view_->fitAll(); });
-    auto* arrange = make("actionArrange", "Arrange &pipeline", {QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_L)}, [this] { arrangeAll(); });
+    auto* arrange = make("actionArrange", "Arrange &pipeline", {QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_L)}, [this] { controller_->niceAlign(); });
     auto* zoomIn = make("actionZoomIn", "Zoom &in", {QKeySequence::ZoomIn}, [this] { view_->zoomBy(1.25); });
     auto* zoomOut = make("actionZoomOut", "Zoom &out", {QKeySequence::ZoomOut}, [this] { view_->zoomBy(0.8); });
     auto* quit = make("actionQuit", "&Quit", {QKeySequence::Quit}, [this] { close(); });
@@ -230,9 +230,18 @@ void MainWindow::buildActions() {
         styles->addAction(style);
         connect(style, &QAction::triggered, this, [this, routing = routing] {
             controller_->canvasLayout().setRouting(routing);
-            arrangeAll();
+            controller_->niceAlign();
         });
     }
+    auto* automatic = viewMenu->addAction("&Auto alignment");
+    automatic->setObjectName("actionAutoAlignment");
+    automatic->setCheckable(true);
+    automatic->setChecked(controller_->canvasLayout().automatic());
+    automatic->setToolTip("Align the whole canvas after every edit; a dragged box slides back into place");
+    connect(automatic, &QAction::toggled, this, [this](bool on) {
+        controller_->canvasLayout().setAutomatic(on);
+        if (on) controller_->niceAlign();
+    });
     auto* connectedMove = viewMenu->addAction("Move connected elements together");
     connectedMove->setObjectName("actionConnectedMove"); connectedMove->setCheckable(true);
     connectedMove->setToolTip("Drag an element to move its connected component; undo restores all positions");
@@ -456,15 +465,6 @@ void MainWindow::openCapsTab(const QString& srcElement, const QString& srcIdenti
 // The scene is a child: while Qt deletes it, it reports its items leaving the selection. Nobody listens by then.
 MainWindow::~MainWindow() { disconnect(scene_, nullptr, this, nullptr); }
 
-void MainWindow::arrangeAll() {
-    if (!controller_->niceAlign()) return;
-    auto* once = new QObject(this);
-    connect(&controller_->canvasLayout(), &CanvasLayout::aligned, once, [this, once](bool ok) {
-        if (ok) QTimer::singleShot(300, view_, &CanvasView::fitAll);  // after the boxes slid into place
-        once->deleteLater();
-    });
-}
-
 void MainWindow::showCanvasMenu(const QPoint& screenPos) {
     if (controller_->editingBlocked() || controller_->environmentBlocked()) return;
     auto* menu = new QMenu(this);
@@ -496,7 +496,7 @@ void MainWindow::showCanvasMenu(const QPoint& screenPos) {
     menu->addSeparator();
     menu->addAction("Select all", this, [this] { selectAll(); });
     menu->addAction("Zoom to fit", this, [this] { view_->fitAll(); });
-    menu->addAction("Arrange pipeline", this, [this] { arrangeAll(); });
+    menu->addAction("Arrange pipeline", this, [this] { controller_->niceAlign(); });
     auto* v = menu->addAction("Validate", this, [this] { controller_->refresh(); });
     v->setEnabled(!controller_->plan().empty());
     menu->popup(screenPos);

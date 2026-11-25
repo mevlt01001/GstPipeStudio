@@ -9,6 +9,8 @@
 ## Layout
 
 - Nice alignment (ELK in QuickJS, on its own thread) places the canvas when a file opens, when a template expands or collapses, and on Arrange pipeline or Auto align. Links avoid boxes and crossings, and start and end on their pads in both link styles.
+- Nothing on screen jumps: a layout keeps the centre of what it was asked about. A template opens out of its centre and closes back into it, and the boxes around it slide aside.
+- View > Auto alignment: every edit is followed by a nice alignment, and a dragged box slides back into place. Off, only opening or closing a template and adding one move other boxes.
 - View > Link style: curves or right-angle lines. A conf no longer stores positions.
 
 ## Projects and history

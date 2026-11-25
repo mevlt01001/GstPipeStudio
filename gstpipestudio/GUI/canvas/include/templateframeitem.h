@@ -15,6 +15,20 @@
 class CanvasScene;
 class PadItem;
 
+// A frame that just closed: its border shrinks into the box the template became, and fades.
+class FrameGhost : public QGraphicsObject {
+public:
+    FrameGhost(const QRectF& from, const QRectF& to);
+    QRectF boundingRect() const override { return from_.united(to_).adjusted(-4, -4, 4, 4); }
+    void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
+    bool done() const { return animation_.state() == QAbstractAnimation::Stopped; }
+
+private:
+    QRectF from_, to_;
+    double t_ = 0;
+    QVariantAnimation animation_;
+};
+
 class TemplateFrameItem : public QGraphicsObject {
 public:
     static constexpr int kCollapseAfterMs = 5000;

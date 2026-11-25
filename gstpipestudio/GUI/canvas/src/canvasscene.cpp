@@ -137,6 +137,13 @@ void CanvasScene::rebuild() {
     }
     hasExplicitSelection_ = false;
 
+    QHash<QString, QRectF> closing;  // frames drawn now, in case they close
+    for (auto it = frames_.cbegin(); it != frames_.cend(); ++it) closing[it.key()] = it.value()->frameRect();
+    ghosts_.removeIf([this](const QPointer<FrameGhost>& g) {
+        if (g && !g->done()) removeItem(g);  // kept for after the rebuild
+        else if (g) delete g.data();
+        return !g;
+    });
     {
         // Deleting the items takes them out of the selection; nobody should hear about it half way through.
         const QSignalBlocker quiet(this);
@@ -178,6 +185,14 @@ void CanvasScene::rebuild() {
             for (PadItem* p : item->pads()) pads_.insert(key(p->view().element, p->view().identity, p->view().isSrc), p);
         }
     }
+    // A template opening or closing is drawn gathered at its centre until the layout's answer slides it out of there.
+    const auto& pin = controller_->canvasLayout().pending();
+    if (pin && pin->gather) {
+        for (const QString& box : controller_->canvasLayout().boxesOf(pin->elements)) {
+            ElementItem* item = elements_.value(controller_->canvasLayout().anchorOf(box));
+            if (item) item->setPos(pin->centre - QPointF(metrics::kBoxWidth, item->view().height()) / 2);
+        }
+    }
     // Expanded templates: a frame around their members, with the template's pads on its border. Inner frames first, so
     // a pad shown on several borders belongs to the outermost one, where its outside link attaches.
     QList<FrameView> shown;
@@ -201,6 +216,15 @@ void CanvasScene::rebuild() {
             frame->setSelected(true);
     }
     shownFrames_ = nowShown;
+    for (const QPointer<FrameGhost>& g : std::as_const(ghosts_)) addItem(g);
+    for (auto it = closing.cbegin(); it != closing.cend(); ++it) {
+        if (nowShown.contains(it.key())) continue;
+        ElementItem* box = elements_.value(controller_->templateMembers(it.key()).value(0));
+        if (!box || !box->view().isTemplate) continue;  // deleted or detached: nothing to shrink into
+        auto* ghost = new FrameGhost(it.value(), box->sceneBoundingRect());
+        addItem(ghost);
+        ghosts_ << ghost;
+    }
     for (const LinkView& l : controller_->linkViews()) {
         if (elements_.value(l.srcElement) && elements_.value(l.srcElement) == elements_.value(l.sinkElement)) {
             continue;  // internal link inside a collapsed template

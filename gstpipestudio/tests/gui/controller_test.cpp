@@ -1,4 +1,5 @@
 // controller_test.cpp – every flow of SPEC 8 driven through the Controller against the fake helpers.
+#include <QLineF>
 #include <QSignalSpy>
 #include <QFileInfo>
 #include <QTemporaryDir>
@@ -94,12 +95,50 @@ private slots:
         c->setPositions({{chain.src, QPointF(1000, 1000)}, {chain.convert, QPointF(300, 0)}, {chain.sink, QPointF(0, 40)}});
         auto at = [&](const QString& name) { const auto* e = c->plan().find(toStd(name)); return QPointF(e->x, e->y); };
         QSignalSpy done(&c->canvasLayout(), &CanvasLayout::aligned);
+        const QPointF centre = c->canvasLayout().pinOf({chain.convert, chain.sink}).centre;
         QVERIFY(c->niceAlign({chain.convert, chain.sink}));
         QVERIFY(done.wait(30000));
         QCOMPARE(at(chain.src), QPointF(1000, 1000));  // not selected: untouched
         QVERIFY(at(chain.sink).x() >= at(chain.convert).x() + metrics::kBoxWidth);
-        QCOMPARE(qMin(at(chain.convert).x(), at(chain.sink).x()), 0.0);  // the selection starts where it started
-        QCOMPARE(qMin(at(chain.convert).y(), at(chain.sink).y()), 0.0);
+        QVERIFY(QLineF(c->canvasLayout().pinOf({chain.convert, chain.sink}).centre, centre).length() < 1);  // stays put
+    }
+
+    // Opening or closing a template keeps it where it is on screen: its centre stays, everything else makes room.
+    void aTemplateOpensAndClosesAroundItsCentre() {
+        const Chain chain = makeChain();
+        QVERIFY(settle(*c));
+        QVERIFY(c->saveTemplate("Tail", {chain.convert, chain.sink}));
+        QVERIFY(settle(*c));
+        const QString id = c->templateBox(chain.convert);
+        const QStringList members = c->templateMembers(id);
+        QSignalSpy done(&c->canvasLayout(), &CanvasLayout::aligned);
+        for (bool open : {true, false}) {
+            const QPointF centre = c->canvasLayout().pinOf(members).centre;
+            c->setTemplateExpanded(id, open);
+            QVERIFY(c->canvasLayout().pending() && c->canvasLayout().pending()->gather);  // drawn gathered meanwhile
+            QVERIFY(done.wait(30000));
+            QVERIFY2(QLineF(c->canvasLayout().pinOf(members).centre, centre).length() < 1, open ? "opened" : "closed");
+        }
+    }
+
+    // With automatic alignment, an edit is followed by a nice alignment: a dragged box slides back into line.
+    void automaticAlignmentFollowsADrag() {
+        const Chain chain = makeChain();
+        QVERIFY(settle(*c));
+        QSignalSpy done(&c->canvasLayout(), &CanvasLayout::aligned);
+        QVERIFY(c->niceAlign());
+        QVERIFY(done.wait(30000));
+        auto at = [&](const QString& name) { const auto* e = c->plan().find(toStd(name)); return QPointF(e->x, e->y); };
+        const double line = at(chain.src).y();
+        c->canvasLayout().setAutomatic(true);
+        c->setPositions({{chain.convert, at(chain.convert) + QPointF(0, 400)}});
+        QVERIFY(done.wait(30000));
+        c->canvasLayout().setAutomatic(false);
+        QVERIFY(qAbs(at(chain.convert).y() - at(chain.src).y()) < 1);
+        // Off, nothing follows a drag.
+        c->setPositions({{chain.convert, at(chain.convert) + QPointF(0, 400)}});
+        QVERIFY(!done.wait(1000));
+        QVERIFY(at(chain.convert).y() > line + 300);
     }
 
     void addSourceRunsAnUpdate() {
