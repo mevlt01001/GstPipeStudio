@@ -3,12 +3,12 @@
 
 #include "controller.h"
 
-DocumentBackup::DocumentBackup(BackupService& backups, Controller* controller, QObject* parent)
-    : QObject(parent), backups_(backups), controller_(controller), id_(BackupService::newId()) {
+DocumentBackup::DocumentBackup(BackupService& backups, Controller& controller, int delayMs)
+    : backups_(backups), controller_(controller), id_(BackupService::newId()) {
     due_.setSingleShot(true);
-    due_.setInterval(kDelayMs);
+    due_.setInterval(delayMs);
     connect(&due_, &QTimer::timeout, this, &DocumentBackup::write);
-    connect(controller, &Controller::changed, this, &DocumentBackup::follow);
+    connect(&controller_, &Controller::changed, this, &DocumentBackup::follow);
 }
 
 // It becomes this document's once the document holds the unsaved work: a backup that failed to open is left alone.
@@ -34,9 +34,9 @@ void DocumentBackup::discard() {
     active_ = false;
 }
 
-// The timer is not restarted by every change: a long burst of edits is still backed up about every second.
+// The first edit starts the timer, so a continuous burst still gets backed up at the configured interval.
 void DocumentBackup::follow() {
-    if (controller_->hasUnsavedWork()) {
+    if (controller_.hasUnsavedWork()) {
         active_ = true;
         if (!due_.isActive()) due_.start();
     } else if (active_) {
@@ -45,7 +45,7 @@ void DocumentBackup::follow() {
 }
 
 void DocumentBackup::write() {
-    if (!controller_->hasUnsavedWork()) return;
-    const SaveTarget& target = controller_->target();
-    backups_.write({id_, target.sessionKey(), target.title(), base_}, QByteArray::fromStdString(controller_->plan().toConf()));
+    if (!controller_.hasUnsavedWork()) return;
+    const SaveTarget& target = controller_.target();
+    backups_.write({id_, target.sessionKey(), target.title(), base_}, QByteArray::fromStdString(controller_.plan().toConf()));
 }

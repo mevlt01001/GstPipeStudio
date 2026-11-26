@@ -22,9 +22,17 @@ cmake --build build --parallel 4
 (cd build && ctest --output-on-failure)
 ```
 
-`GPS_USER_DIR` replaces the per-user config, data (template library) and state (project list) folders with subfolders of one directory: tests use it, and so can a portable setup.
+`GPS_USER_DIR` places template data and project state under one directory for tests or portable use. Qt continues to manage application preferences.
 
-`GPS_DIRS` can select `Pipeline;GstEngine;tools;plugin;GUI;packaging;tests`; invalid directory names fail configuration. `GPS_TEST_DIRS` selects test groups. `GPS_SWEEP_ALL=ON` opts into the long all-factory survey. Test screenshots/logs go under the build directory, so a read-only source checkout is supported.
+Document timing is read when the application starts. Set a positive integer in milliseconds to override a default.
+
+| Variable | Default | Effect |
+| --- | ---: | --- |
+| `GPS_VALIDATION_DEBOUNCE_MS` | 35 | Time to collect successive edits before validating. |
+| `GPS_UPDATE_TIMEOUT_MS` | 600000 | Time limit passed to the validation helper. |
+| `GPS_BACKUP_DELAY_MS` | 1000 | Delay before first saving a modified document's recovery copy. |
+
+`GPS_DIRS` can select `Pipeline;GstEngine;tools;plugin;Application;GUI;packaging;tests`; invalid directory names fail configuration. `GPS_TEST_DIRS` selects test groups. `GPS_SWEEP_ALL=ON` opts into the long all-factory survey. Test screenshots/logs go under the build directory, so a read-only source checkout is supported.
 
 | Change | Relevant checks |
 |---|---|

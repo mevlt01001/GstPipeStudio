@@ -9,6 +9,7 @@ add_subdirectory(${GPS_ROOT}/third_party/quickjs ${CMAKE_BINARY_DIR}/third_party
 
 add_library(gps_application STATIC
     include/documentsession.h src/documentsession.cpp
+    include/documenttiming.h src/documenttiming.cpp
     model/include/buildinfo.h
     model/include/canvasmetrics.h
     backend/include/apppaths.h backend/src/apppaths.cpp

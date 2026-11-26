@@ -4,7 +4,7 @@
 
 DocumentSession::DocumentSession(AppServices& services, Controller* borrowed)
     : ownedController_(borrowed ? nullptr : std::make_unique<Controller>(services)),
-      controller_(borrowed ? *borrowed : *ownedController_), backup_(services.backups(), &controller_, nullptr) {}
+      controller_(borrowed ? *borrowed : *ownedController_), backup_(services.backups(), controller_, services.timing().backupDelayMs) {}
 
 DocumentSession& DocumentSessions::open(Controller* borrowed) {
     auto session = std::unique_ptr<DocumentSession>(new DocumentSession(services_, borrowed));

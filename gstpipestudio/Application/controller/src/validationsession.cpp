@@ -4,13 +4,10 @@
 #include "contract.h"
 #include "slowwatch.h"
 
-ValidationSession::ValidationSession(gps::Pipeline& pipeline, QObject* parent)
-    : QObject(parent), pipeline_(pipeline), watch_(new SlowWatch(this)) {
-    bool ok = false;
-    const int ms = qEnvironmentVariableIntValue("GPS_UPDATE_TIMEOUT_MS", &ok);
-    if (ok && ms > 0) timeoutMs_ = ms;
+ValidationSession::ValidationSession(gps::Pipeline& pipeline, const DocumentTiming& timing, QObject* parent)
+    : QObject(parent), pipeline_(pipeline), backend_(timing.validationTimeoutMs), watch_(new SlowWatch(this)) {
     pause_.setSingleShot(true);
-    pause_.setInterval(35);
+    pause_.setInterval(timing.validationDebounceMs);
     connect(&pause_, &QTimer::timeout, this, &ValidationSession::dispatch);
     connect(&backend_, &HelperExecutionBackend::logLine, this, [this](const QString& line) { emit logLine("[gps-update] " + line); });
     connect(watch_, &SlowWatch::slow, this, [this] {
@@ -44,7 +41,6 @@ void ValidationSession::dispatch() {
     updating_ = true;
     watch_->start();
     emit changed();
-    backend_.setTimeout(timeoutMs_);
     backend_.setSuspect(suspect_.toStdString());
     execution_.start([this](const gps::ExecutionResult& result) { finish(result); });
 }

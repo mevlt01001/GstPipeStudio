@@ -96,7 +96,7 @@ The coordinator produces an immutable execution graph with an execution revision
 
 Only matching results are applied. Old runs, duplicate completions, results after a graph change and callbacks after coordinator destruction are ignored. Runtime observations cannot create authored elements or trigger another edit. Coordinate/group presentation changes leave the execution revision unchanged.
 
-The GUI coalesces edits over a 35 ms window and supersedes older runs. Canvas and property edits remain available during preview; new/open/save/run wait for a settled document. The process adapter waits for a cancelled helper to exit before launching its replacement, avoiding overlapping device sessions. Explicit cancellation and real playback temporarily block edits.
+The GUI coalesces edits over a window of 35 ms by default and supersedes older runs. Canvas and property edits remain available during preview; new/open/save/run wait for a settled document. The process adapter waits for a cancelled helper to exit before launching its replacement, avoiding overlapping device sessions. Explicit cancellation and real playback temporarily block edits.
 
 An explicit capsfilter remains an authored element. A connection's caps choice is stored on that connection; Builder materializes its native capsfilter. Open outputs use the existing temporary preview-end implementation. Synthetic native elements never enter the authored graph. Negotiated caps are media-format observations; they do not expose buffer contents or prove GPU hardware support.
 

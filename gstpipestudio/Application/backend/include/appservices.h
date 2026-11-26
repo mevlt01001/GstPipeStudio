@@ -8,6 +8,7 @@
 #include <QObject>
 
 #include "backupservice.h"
+#include "documenttiming.h"
 #include "environmentservice.h"
 #include "factorycatalog.h"
 #include "pluginlibrary.h"
@@ -17,7 +18,10 @@
 class AppServices : public QObject {
     Q_OBJECT
 public:
-    explicit AppServices(QObject* parent = nullptr) : QObject(parent) {}
+    explicit AppServices(QObject* parent = nullptr) : AppServices(DocumentTiming::fromEnvironment(), parent) {}
+    explicit AppServices(DocumentTiming timing, QObject* parent = nullptr) : QObject(parent), timing_(timing) {}
+
+    const DocumentTiming& timing() const { return timing_; }
 
     EnvironmentService& environment() { return environment_; }
     FactoryCatalog& catalog() { return catalog_; }
@@ -29,6 +33,7 @@ public:
     BackupService& backups() { return backups_; }
 
 private:
+    DocumentTiming timing_;
     FactoryCatalog catalog_;
     EnvironmentService environment_{catalog_};
     TemplateLibrary library_{catalog_};

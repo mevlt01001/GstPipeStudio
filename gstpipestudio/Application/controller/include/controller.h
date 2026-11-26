@@ -224,7 +224,7 @@ private:
     gps::Pipeline pipeline_{"pipeline", [this](const std::string& factory) { return catalog().traits()(factory); }};
     std::shared_ptr<SaveTarget> target_ = std::make_shared<UntitledTarget>(1);
     EditSession edits_{pipeline_};
-    ValidationSession validation_{pipeline_};
+    ValidationSession validation_{pipeline_, services_.timing()};
     RunSession runs_;
     CanvasLayout* layout_;
     TemplateInstances templates_;

@@ -2,6 +2,8 @@
 #include "contract.h"
 #include <QFile>
 #include <QTimer>
+#include <algorithm>
+#include <limits>
 
 void HelperExecutionBackend::execute(const gps::ExecutionPlan& plan, Completion done) {
     if (client_) {
@@ -50,7 +52,9 @@ void HelperExecutionBackend::execute(const gps::ExecutionPlan& plan, Completion 
             execute(next.plan, std::move(next.done));
         }
     });
-    client->start(findHelper("gps-update"), {path, "--timeout-ms", QString::number(timeoutMs_)}, timeoutMs_ + 2000);
+    constexpr int exitGraceMs = 2000;
+    const int watchdogMs = std::min(timeoutMs_, std::numeric_limits<int>::max() - exitGraceMs) + exitGraceMs;
+    client->start(findHelper("gps-update"), {path, "--timeout-ms", QString::number(timeoutMs_)}, watchdogMs);
 }
 void HelperExecutionBackend::cancel() {
     if (pending_) {

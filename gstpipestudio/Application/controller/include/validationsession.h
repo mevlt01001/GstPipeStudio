@@ -7,18 +7,16 @@
 #include <QString>
 #include <QTimer>
 
+#include "documenttiming.h"
 #include "executionbackend.h"
 #include "pipeline.h"
 
 class SlowWatch;
 
-// gps-update gets this as --timeout-ms: only a backstop. The user decides about slow runs (SlowWatch).
-constexpr int kUpdateBackstopMs = 600000;
-
 class ValidationSession : public QObject {
     Q_OBJECT
 public:
-    explicit ValidationSession(gps::Pipeline& pipeline, QObject* parent = nullptr);
+    ValidationSession(gps::Pipeline& pipeline, const DocumentTiming& timing, QObject* parent = nullptr);
 
     // A validation soon; suspect is the element the last edit concerned, named when the validator dies.
     void request(const QString& suspect = QString());
@@ -30,7 +28,7 @@ public:
     bool cancelled() const { return cancelled_; }  // the user cancelled the last one
     SlowWatch* slowWatch() const { return watch_; }
     bool slowAsked() const;
-    void setTimeoutMs(int ms) { timeoutMs_ = ms; }
+    void setTimeoutMs(int ms) { backend_.setTimeout(ms); }
 
 signals:
     void changed();
@@ -48,7 +46,6 @@ private:
     QTimer pause_;  // the short pause that gathers a burst of edits into one validation
     SlowWatch* watch_;
     QString suspect_;
-    int timeoutMs_ = kUpdateBackstopMs;
     bool updating_ = false;
     bool cancelling_ = false;
     bool cancelled_ = false;

@@ -9,7 +9,7 @@
 class HelperExecutionBackend final : public QObject, public gps::IExecutionBackend {
     Q_OBJECT
 public:
-    explicit HelperExecutionBackend(QObject* parent = nullptr) : QObject(parent) {}
+    explicit HelperExecutionBackend(int timeoutMs, QObject* parent = nullptr) : QObject(parent), timeoutMs_(timeoutMs) {}
     void setTimeout(int ms) { timeoutMs_ = ms; }
     // The element the last edit touched: named as the cause when the helper crashes or hangs.
     void setSuspect(const std::string& element) { suspect_ = element; }
@@ -22,6 +22,6 @@ private:
     std::optional<Pending> pending_;
     QTemporaryDir temporary_;
     QPointer<HelperClient> client_;
-    int timeoutMs_ = 10000;
+    int timeoutMs_;
     std::string suspect_;
 };
