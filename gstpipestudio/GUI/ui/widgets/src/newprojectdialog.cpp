@@ -20,7 +20,7 @@ namespace {
 QString safe(const QString& name) { return QString::fromStdString(gps::files::safeName(name.trimmed().toStdString())); }
 }  // namespace
 
-NewProjectDialog::NewProjectDialog(QWidget* parent, const QStringList& open) : QDialog(parent), open_(open), location_(Settings::projectsLocation()) {
+NewProjectDialog::NewProjectDialog(QWidget* parent, const QStringList& open) : QDialog(parent), location_(Settings::projectsLocation()), open_(open) {
     setObjectName("newProjectDialog");
     setWindowTitle("New project");
     auto* root = new QVBoxLayout(this);

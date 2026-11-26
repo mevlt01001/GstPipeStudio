@@ -11,10 +11,13 @@
 #include <QString>
 #include <memory>
 #include <optional>
+#include <utility>
 
 #include "settings.h"
 
 struct Backup {
+    Backup(QString id = {}, QString key = {}, QString title = {}, QByteArray base = {}, QString owner = {})
+        : id(std::move(id)), key(std::move(key)), title(std::move(title)), base(std::move(base)), owner(std::move(owner)) {}
     QString id;     // "" for a tab to reopen that has no unsaved changes
     QString key;    // its target's session key: "file:…", "template:…", "untitled:N"
     QString title;  // its tab's text when it was written
