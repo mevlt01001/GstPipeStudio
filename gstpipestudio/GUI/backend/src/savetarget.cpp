@@ -38,8 +38,10 @@ QString ProjectConfTarget::title() const { return QFileInfo(path_).fileName(); }
 
 // Its own copies first: an earlier version is read from elsewhere, and still finds them.
 QStringList ProjectConfTarget::templateFolders() const {
-    return QStringList{QFileInfo(path_).dir().filePath("templates")} + SaveTarget::templateFolders();
+    return QStringList{ProjectFile::templatesFolder(path_)} + SaveTarget::templateFolders();
 }
+
+void ProjectConfTarget::opened() { ProjectFile::opened(path_); }
 
 SaveResult ProjectConfTarget::write(const gps::Graph& plan) {
     gps::Graph saved = plan;

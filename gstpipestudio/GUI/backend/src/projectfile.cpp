@@ -22,6 +22,17 @@ QString ProjectFile::pathForConf(const QString& conf) {
     return folder.filePath(folder.dirName() + ".gpsproj");
 }
 
+QString ProjectFile::mainConf(const QString& folder) {
+    const QDir dir(folder);
+    return dir.filePath(dir.dirName() + ".conf");
+}
+
+QString ProjectFile::templatesFolder(const QString& conf) { return fromStd(gps::Graph::templatesFolder(toStd(conf))); }
+
+void ProjectFile::opened(const QString& conf) {
+    if (const QString manifest = pathForConf(conf); QFile::exists(manifest)) ProjectRegistry::remember(manifest);
+}
+
 ProjectFile ProjectFile::load(const QString& path) {
     ProjectFile p;
     p.path_ = path;

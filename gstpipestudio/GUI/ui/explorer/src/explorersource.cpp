@@ -56,7 +56,7 @@ void markOutdated(ExplorerEntry& e, const QMap<QString, int>& held, const Templa
 // A project's conf: <folder>/<folder name>.conf, or else the first conf its manifest lists that is there.
 QString mainConf(const QString& folder) {
     const QDir dir(folder);
-    const QString own = dir.filePath(dir.dirName() + ".conf");
+    const QString own = ProjectFile::mainConf(folder);
     if (QFileInfo::exists(own)) return own;
     for (const QString& conf : ProjectFile::load(ProjectFile::pathForConf(own)).confs()) {
         if (QFileInfo::exists(dir.filePath(conf))) return dir.filePath(conf);
@@ -142,7 +142,7 @@ QList<ExplorerEntry> ProjectSection::entries(const EditorState& editor) const {
 
 QStringList ProjectSection::watched(const EditorState& editor) const {
     const QString folder = folderOf(editor.projectConf);
-    return folder.isEmpty() ? QStringList() : QStringList{folder, QDir(folder).filePath("templates")};
+    return folder.isEmpty() ? QStringList() : QStringList{folder, ProjectFile::templatesFolder(editor.projectConf)};
 }
 
 QList<ExplorerAction> ProjectSection::sectionActions() const { return {ExplorerAction::NewProject, ExplorerAction::Refresh}; }

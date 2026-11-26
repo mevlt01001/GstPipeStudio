@@ -13,6 +13,7 @@
 #include <QVBoxLayout>
 
 #include "files.h"
+#include "projectfile.h"
 #include "settings.h"
 #include "theme.h"
 
@@ -64,7 +65,7 @@ NewProjectDialog::NewProjectDialog(QWidget* parent, const QStringList& open) : Q
 
 QString NewProjectDialog::confPath() const {
     const QString name = safe(name_->text());
-    return QDir(location_).filePath(name + "/" + name + ".conf");
+    return ProjectFile::mainConf(QDir(location_).filePath(name));
 }
 
 void NewProjectDialog::check() {

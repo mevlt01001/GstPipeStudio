@@ -26,6 +26,7 @@ public:
     virtual QString runBlockedReason() const { return QString(); } // why it cannot run on its own, "" when it can
     virtual QString saveAsBlockedReason() const { return QString(); }  // why Save as (a conf elsewhere) is off, "" when on
     virtual QStringList templateFolders() const;             // where its template references are read from
+    virtual void opened() {}                                 // the document read it: its own side effects (a project is remembered)
     virtual SaveResult write(const gps::Graph& plan) = 0;    // the plan as the document holds it
 
     // A session key is "<kind>:<value>", the kind being a target's kKind.
@@ -65,6 +66,7 @@ public:
     QString sessionKey() const override { return keyFor(path_); }
     QString projectConf() const override { return path_; }
     QStringList templateFolders() const override;
+    void opened() override;
     SaveResult write(const gps::Graph& plan) override;
 
 private:

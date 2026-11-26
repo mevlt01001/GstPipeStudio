@@ -12,7 +12,11 @@
 
 class ProjectFile {
 public:
-    static QString pathForConf(const QString& conf);  // <folder>/<folder name>.gpsproj
+    // The layout of a project folder, spelled here only.
+    static QString pathForConf(const QString& conf);         // <folder>/<folder name>.gpsproj
+    static QString mainConf(const QString& folder);          // <folder>/<folder name>.conf: the conf it is named after
+    static QString templatesFolder(const QString& conf);     // <folder>/templates: its copies of the templates it uses
+    static void opened(const QString& conf);                 // a conf was opened: its project is remembered, when it has one
     static ProjectFile load(const QString& path);     // empty when it does not exist yet
 
     QString path() const { return path_; }

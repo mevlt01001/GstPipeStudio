@@ -4,11 +4,9 @@
 
 #include "actions.h"
 #include "canvasmetrics.h"
-#include "projectfile.h"
 #include "templates.h"
 
 #include <QClipboard>
-#include <QFile>
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QRectF>
@@ -624,11 +622,10 @@ void Controller::restoreSavePoint() {
 }
 
 void Controller::open(std::unique_ptr<SaveTarget> target, const QString& backup) {
-    const QString manifest = target->projectConf().isEmpty() ? QString() : ProjectFile::pathForConf(target->projectConf());
     std::shared_ptr<SaveTarget> bound = std::move(target);
     if (backup.isEmpty()) load(bound->path(), bound, Load::Open, "Opened " + bound->title());
     else load(backup, bound, Load::Recover, "Recovered the unsaved changes of " + bound->title());
-    if (QFile::exists(manifest)) ProjectRegistry::remember(manifest);
+    bound->opened();
 }
 
 void Controller::restoreVersion(const QString& version) { load(version, nullptr, Load::Replace, "Restored an earlier version"); }
