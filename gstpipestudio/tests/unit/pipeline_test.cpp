@@ -142,4 +142,22 @@ void savePoint() {
     CHECK_EQ(editor.state(), before);
     CHECK(document.reset()); CHECK(editor.state() != saved); CHECK(editor.state() != loaded);
 }
-int main(){transactions();invariantsAndFragments();results();pads();savePoint();return finish("pipeline_test");}
+// A pad's key is the one string form of its address: it reads back as the same pad, and a link names it by linkName().
+void padRefs() {
+    using D = Pad::Direction;
+    const PadRef src{"tee_1", "src_%u#2", D::Source}, sink{"mix_3", "sink_%u#1", D::Sink}, plain{"conv_2", "sink", D::Sink};
+    for (const PadRef& p : {src, sink, plain}) CHECK(PadRef::fromKey(p.key()).value() == p);
+    CHECK_EQ(src.key(), std::string("tee_1|src_%u#2|src"));
+    CHECK_EQ(src.linkName(), std::string("src_%u#2"));   // a src pad is linked by its identity
+    CHECK_EQ(sink.linkName(), std::string("sink_%u"));   // a Request sink pad by its template
+    CHECK_EQ(plain.linkName(), std::string("sink"));
+    CHECK(!PadRef::fromKey("tee_1|src").has_value());
+    CHECK(!PadRef::fromKey("tee_1|src|up").has_value());
+    CHECK_EQ(LinkRef{src}.id(), std::string("tee_1|src_%u#2"));
+    Graph g;
+    const std::string a = g.addElement("a"), b = g.addElement("b");
+    CHECK(g.linkExisting(a, "src", b, "sink_%u"));
+    CHECK(g.srcOf(0) == (PadRef{a, "src", D::Source}));
+    CHECK(g.sinkOf(0) == (PadRef{b, "sink_%u#0", D::Sink}));
+}
+int main(){transactions();invariantsAndFragments();results();pads();savePoint();padRefs();return finish("pipeline_test");}

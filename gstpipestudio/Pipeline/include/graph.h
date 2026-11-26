@@ -4,6 +4,7 @@
 
 #include <functional>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <utility>
@@ -37,9 +38,25 @@ struct Pad {
     std::string nativeName;    // what the last run called it ("video_0"), "" when it did not report the pad
     bool unknownData = false;  // the last run could not tell what flows out of it
 };
-struct PadAddress {
-    std::string element, pad;
+// A pad's address in a graph, and the one encoder of the strings that name it: the canvas and the layout key pads by
+// key(), and a link names its sink pad by linkName().
+struct PadRef {
+    std::string element;
+    std::string identity;  // the pad's identity (Pad::identity): "src", "src_%u#0", a Request sink's "sink_%u#1"
     Pad::Direction direction = Pad::Direction::Source;
+
+    bool isSrc() const { return direction == Pad::Direction::Source; }
+    std::string templateName() const;  // "sink_%u#1" -> "sink_%u"; a plain pad name is its own template
+    std::string linkName() const;      // what a Connection holds: a src pad's identity, a sink pad's templateName()
+    std::string key() const;           // "<element>|<identity>|src" or "...|sink"
+    static std::optional<PadRef> fromKey(const std::string& key);
+    bool operator==(const PadRef& other) const;
+    bool operator<(const PadRef& other) const;
+};
+// A link's address: its src pad, which has at most one link. id() names it to the layout and the canvas.
+struct LinkRef {
+    PadRef src;
+    std::string id() const;  // "<src element>|<src pad>"
 };
 struct FactoryDefinition {
     bool isSource = false;
@@ -122,6 +139,8 @@ public:
     const TemplateInstance* instance(const std::string& id) const;
     TemplateInstance* instance(const std::string& id);
     std::string sinkIdentity(size_t link) const;
+    PadRef srcOf(size_t link) const;   // the pads at the two ends of a link
+    PadRef sinkOf(size_t link) const;
     int linkFrom(const std::string& srcElement, const std::string& srcPad) const;  // index, or -1 for a free src pad
     int linkInto(const std::string& sinkElement, const std::string& sinkIdentity) const;  // index, or -1 for a free sink pad
     std::vector<int> linksFromElement(const std::string& srcElement) const;

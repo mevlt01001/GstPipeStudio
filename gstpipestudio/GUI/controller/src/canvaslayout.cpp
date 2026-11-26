@@ -33,10 +33,6 @@ CanvasLayout::CanvasLayout(Controller& controller)
     runner_.request(warm, preferences().routing());
 }
 
-QString CanvasLayout::padKey(const QString& element, const QString& identity, bool isSrc) {
-    return element + "|" + identity + (isSrc ? "|src" : "|sink");
-}
-
 const ViewPreferences& CanvasLayout::preferences() const { return controller_.services().view(); }
 
 QString CanvasLayout::boxOf(const QString& element) const {
@@ -133,7 +129,7 @@ layout::Node CanvasLayout::tree(const QStringList& elements) const {
         auto pads = [&](const QList<PadView>& list, bool east) {
             for (int i = 0; i < list.size(); ++i) {
                 const PadView& p = list[i];
-                const QString key = padKey(p.element, p.identity, p.isSrc);
+                const QString key = fromStd(p.ref.key());
                 leaf.ports.append({key, east, metrics::padY(i)});
                 if (p.state != PadView::Linked && !path.isEmpty()) outward(path, 0, key, east, "free|" + key, key);
             }
@@ -151,10 +147,10 @@ layout::Node CanvasLayout::tree(const QStringList& elements) const {
         if (srcBox == sinkBox || !placed.contains(srcBox) || !placed.contains(sinkBox)) continue;
         int shared = 0;
         while (shared < from.size() && shared < to.size() && from[shared] == to[shared]) ++shared;
-        const QString id = linkId(src, fromStd(l.srcPad));
-        const QString a = outward(from, shared, padKey(src, fromStd(l.srcPad), true), true, id, padKey(src, fromStd(l.srcPad), true));
-        const QString b = outward(to, shared, padKey(sink, fromStd(g.sinkIdentity(i)), false), false, id,
-                                  padKey(sink, fromStd(g.sinkIdentity(i)), false));
+        const QString id = fromStd(gps::LinkRef{g.srcOf(i)}.id());
+        const QString srcKey = fromStd(g.srcOf(i).key()), sinkKey = fromStd(g.sinkOf(i).key());
+        const QString a = outward(from, shared, srcKey, true, id, srcKey);
+        const QString b = outward(to, shared, sinkKey, false, id, sinkKey);
         edges[shared ? from[shared - 1] : QString()].append({id, a, b});
     }
 

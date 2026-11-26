@@ -125,7 +125,6 @@ public:
     FrameView frameView(const QString& instanceId) const;
     QStringList visibleFrames() const;  // expanded templates whose every enclosing template is expanded too
     QList<LinkView> linkViews() const;
-    QString linkSinkIdentity(int link) const;
     std::vector<StructureInfo> padStructures(const QString& element, const QString& identity) const;  // allowed by a src pad
     QString padAllowed(const QString& element, const QString& identity) const;
     QList<ExistingTarget> existingTargets(const QString& element, const QString& identity) const;
@@ -145,7 +144,7 @@ public:
                  const ElementEdit& edit);
     bool deleteSource(const QString& element);
     bool deleteElement(const QString& element, bool autoHeal = true);
-    bool deleteSelection(const QStringList& elementNames, const QList<QPair<QString, QString>>& links = {}, bool autoHeal = true);
+    bool deleteSelection(const QStringList& elementNames, const QList<gps::LinkRef>& links = {}, bool autoHeal = true);
     bool spliceElement(const QString& element, const QString& linkSrcElement, const QString& linkSrcPad);
     bool spliceElements(const QStringList& elements, const QString& linkSrcElement, const QString& linkSrcPad);
     bool insertQueue(const QString& element, const QString& pad);

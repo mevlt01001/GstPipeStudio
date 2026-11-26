@@ -117,13 +117,13 @@ void TemplateFrameItem::updateGeometry() {
                         qAbs(laid->rect.width() - rect_.width()) < 2;
     for (PadItem* pad : std::as_const(pads_)) {
         const PadView& p = pad->view();
-        const QString key = CanvasLayout::padKey(p.element, p.identity, p.isSrc);
+        const QString key = fromStd(p.ref.key());
         if (asLaid && laid->ports.contains(key)) {
             pad->setPos(laid->ports.value(key));
             continue;
         }
         PadItem* inner = inner_.value(pad);
-        pad->setPos(p.isSrc ? rect_.right() : rect_.left(), inner ? inner->center().y() : rect_.center().y());
+        pad->setPos(p.ref.isSrc() ? rect_.right() : rect_.left(), inner ? inner->center().y() : rect_.center().y());
     }
     update();
 }
@@ -194,7 +194,7 @@ void TemplateFrameItem::paint(QPainter* p, const QStyleOptionGraphicsItem*, QWid
         const QPointF a = inner->center(), z = pad->center();
         QPainterPath line(a);
         const double reach = qAbs(z.x() - a.x()) / 2;
-        const double dir = pad->view().isSrc ? 1 : -1;
+        const double dir = pad->view().ref.isSrc() ? 1 : -1;
         line.cubicTo(a + QPointF(dir * reach, 0), z - QPointF(dir * reach, 0), z);
         p->drawPath(line);
     }

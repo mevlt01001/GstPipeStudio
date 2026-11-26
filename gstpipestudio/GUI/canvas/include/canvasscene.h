@@ -12,6 +12,7 @@
 #include <QSet>
 #include <QStringList>
 
+#include "graph.h"
 #include "runtime.h"
 
 namespace gps { class Pipeline; }
@@ -34,6 +35,7 @@ public:
     TemplateFrameItem* frame(const QString& instanceId) const { return frames_.value(instanceId); }
     QList<TemplateFrameItem*> frames() const { return frames_.values(); }
     QList<FrameGhost*> ghosts() const;  // frames on their way out
+    PadItem* pad(const gps::PadRef& ref) const;
     PadItem* pad(const QString& element, const QString& identity, bool isSrc) const;
     const QList<LinkItem*>& links() const { return links_; }
     QStringList selectedElementNames() const;
@@ -94,7 +96,6 @@ private:
     QString movingAnchor_;
     QPointF anchorStart_;
     QHash<QString, QPointF> connectedStart_;
-    static QString key(const QString& element, const QString& identity, bool isSrc);
 
     Controller* controller_;
     QHash<QString, ElementItem*> elements_;

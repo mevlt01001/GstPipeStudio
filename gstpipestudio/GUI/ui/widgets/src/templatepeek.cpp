@@ -19,10 +19,6 @@ namespace {
 constexpr double kBoxW = 150, kHead = 26, kRow = 18, kMargin = 14, kTitle = 26, kParamLine = 16, kFramePad = 10;
 constexpr double kMaxW = 620, kMaxH = 420;  // the picture is scaled down to fit
 
-QString port(const std::string& element, const std::string& pad, bool src) {
-    return fromStd(element + "|" + pad + (src ? "|src" : "|sink"));
-}
-
 // Its own engine on its own thread: a peek never waits for, nor delays, a canvas layout.
 layout::Runner& runner() {
     static auto* shared = new layout::Runner([] { return std::make_unique<layout::ElkEngine>(); }, qApp);
@@ -48,7 +44,7 @@ layout::Node TemplatePeek::tree(const gps::Graph& content) {
         const gps::Connection& l = content.links[i];
         const QString from = fromStd(l.srcElement), to = fromStd(l.sinkElement);
         if (!boxes.contains(from) || !boxes.contains(to)) continue;
-        const QString a = port(l.srcElement, l.srcPad, true), b = port(l.sinkElement, content.sinkIdentity(i), false);
+        const QString a = fromStd(content.srcOf(i).key()), b = fromStd(content.sinkOf(i).key());
         boxes[from].ports.append({a, true, kHead + (srcRows[from]++ + 0.5) * kRow});
         boxes[to].ports.append({b, false, kHead + (sinkRows[to]++ + 0.5) * kRow});
         root.edges.append({QString::number(i), a, b});

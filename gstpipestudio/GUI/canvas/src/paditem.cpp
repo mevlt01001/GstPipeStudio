@@ -18,7 +18,7 @@ PadItem::PadItem(const PadView& view, QGraphicsItem* parent) : QGraphicsObject(p
     setAcceptedMouseButtons(Qt::LeftButton | Qt::RightButton);
     setZValue(2);
     if (!view.tip.isEmpty()) setToolTip(view.tip);
-    bool clickable = view.isSrc && view.state != PadView::Linked;
+    bool clickable = view.ref.isSrc() && view.state != PadView::Linked;
     if (clickable) setCursor(Qt::PointingHandCursor);
 }
 
@@ -31,7 +31,7 @@ QPainterPath PadItem::shape() const {
 void PadItem::paint(QPainter* p, const QStyleOptionGraphicsItem*, QWidget*) {
     QColor colour = Theme::muted();
     bool filled = view_.state == PadView::Linked;
-    if (view_.isSrc) {
+    if (view_.ref.isSrc()) {
         colour = view_.state == PadView::Unknown ? Theme::warning() : (hover_ ? Theme::accentHover() : Theme::accent());
     }
     double r = metrics::kPadRadius + (hoverProgress_ * 1.5);
@@ -87,7 +87,7 @@ void PadItem::mouseReleaseEvent(QGraphicsSceneMouseEvent* event) {
         for (QGraphicsItem* item : canvas->items(event->scenePos())) {
             if (auto* elem = dynamic_cast<ElementItem*>(item)) {
                 for (PadItem* p : elem->pads()) {
-                    if (p->view().isSrc != view_.isSrc && p->view().state != PadView::Linked) {
+                    if (p->view().ref.isSrc() != view_.ref.isSrc() && p->view().state != PadView::Linked) {
                         canvas->padDroppedOnPad(view_, p->view());
                         return;
                     }

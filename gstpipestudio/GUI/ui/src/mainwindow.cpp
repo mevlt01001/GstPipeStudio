@@ -811,11 +811,9 @@ void MainWindow::connectSelected() {
 // Delete on the canvas: a single selected source asks confirmation; multi-selection or non-source elements/links delete atomically.
 void MainWindow::deleteSelected() {
     QStringList selectedElements = scene_->selectedElementNames();
-    QList<QPair<QString, QString>> selectedLinks;
+    QList<gps::LinkRef> selectedLinks;
     for (QGraphicsItem* item : scene_->selectedItems()) {
-        if (auto* link = dynamic_cast<LinkItem*>(item)) {
-            selectedLinks.append({link->view().srcElement, link->view().srcIdentity});
-        }
+        if (auto* link = dynamic_cast<LinkItem*>(item)) selectedLinks.append({link->view().src});
     }
     if (selectedElements.size() == 1 && selectedLinks.isEmpty()) {
         const QString& only = selectedElements.first();

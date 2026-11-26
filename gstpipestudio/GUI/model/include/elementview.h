@@ -7,18 +7,16 @@
 #include <QString>
 
 #include "canvasmetrics.h"
+#include "graph.h"
 
 struct PadView {
     enum State { Free, Linked, Unknown, Empty };  // Free/Unknown/Linked for src pads, Empty/Linked for sink pads
 
-    QString element;
-    QString identity;      // src: pad name or "<template>#<k>"; sink: pad name or "<template>#<k>" for Request
+    gps::PadRef ref;       // which pad it is: element, identity and side
     QString label;         // the name to show (the real pad name when the last update knew it)
-    QString templateName;
     QString media;         // media type of the caps, "" when unknown
     QString tip;           // full caps text for the tooltip
     QString caps;          // live negotiated caps or user filter
-    bool isSrc = false;
     State state = Free;
     int link = -1;         // index in Graph::links, -1 when free
 };
@@ -66,9 +64,9 @@ struct FrameView {
 
 struct LinkView {
     int index = -1;
-    QString id;             // "<src element>|<src pad>": the name the layout gives its route
+    QString id;             // gps::LinkRef::id(): the name the layout gives its route
     QList<QList<QPointF>> route;  // pieces of the route of the last nice alignment, empty when the canvas changed since
-    QString srcElement, srcIdentity, sinkElement, sinkIdentity;
+    gps::PadRef src, sink;  // the pads at its two ends
     QString badge;          // "caps · 2": the link carries a caps choice with 2 pinned fields; "" when Auto
     QString tip;            // the choice itself
     QString negotiatedCaps; // live negotiated caps from GStreamer (or user caps filter)

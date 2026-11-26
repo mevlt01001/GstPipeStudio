@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cctype>
 #include <set>
+#include <tuple>
 
 namespace gps {
 
@@ -39,6 +40,34 @@ std::map<std::string, int> defaultRequestSrc(const std::vector<std::pair<std::st
     return counts;
 }
 
+// ---- addresses
+
+std::string PadRef::templateName() const {
+    std::string name;
+    return splitPadIdentity(identity, &name, nullptr) ? name : identity;
+}
+
+std::string PadRef::linkName() const { return isSrc() ? identity : templateName(); }
+
+std::string PadRef::key() const { return element + "|" + identity + (isSrc() ? "|src" : "|sink"); }
+
+std::optional<PadRef> PadRef::fromKey(const std::string& key) {
+    const size_t first = key.find('|'), last = key.rfind('|');
+    if (first == std::string::npos || first == last || first == 0 || last == first + 1) return std::nullopt;
+    const std::string side = key.substr(last + 1);
+    if (side != "src" && side != "sink") return std::nullopt;
+    return PadRef{key.substr(0, first), key.substr(first + 1, last - first - 1),
+                  side == "src" ? Pad::Direction::Source : Pad::Direction::Sink};
+}
+
+bool PadRef::operator==(const PadRef& o) const { return element == o.element && identity == o.identity && direction == o.direction; }
+
+bool PadRef::operator<(const PadRef& o) const {
+    return std::tie(element, identity, direction) < std::tie(o.element, o.identity, o.direction);
+}
+
+std::string LinkRef::id() const { return src.element + "|" + src.identity; }
+
 // ---- lookup
 
 const Element* Graph::find(const std::string& name) const {
@@ -71,6 +100,10 @@ std::string Graph::sinkIdentity(size_t index) const {
         if (links[i].sinkElement == link.sinkElement && links[i].sinkPad == link.sinkPad) ++ordinal;
     return padIdentity(link.sinkPad, ordinal);
 }
+
+PadRef Graph::srcOf(size_t link) const { return {links.at(link).srcElement, links.at(link).srcPad, Pad::Direction::Source}; }
+
+PadRef Graph::sinkOf(size_t link) const { return {links.at(link).sinkElement, sinkIdentity(link), Pad::Direction::Sink}; }
 
 int Graph::linkFrom(const std::string& srcElement, const std::string& srcPad) const {
     for (size_t i = 0; i < links.size(); ++i) {

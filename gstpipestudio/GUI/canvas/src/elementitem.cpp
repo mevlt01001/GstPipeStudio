@@ -145,8 +145,8 @@ void ElementItem::paint(QPainter* p, const QStyleOptionGraphicsItem*, QWidget*) 
     auto label = [&](const PadView& pad, int row) {
         PadLabel text = padLabel(pad);
         double y = padY(row) - kPadRow / 2;
-        double x = pad.isSrc ? kBoxWidth / 2 + 4 : 12;
-        int align = (pad.isSrc ? Qt::AlignRight : Qt::AlignLeft) | Qt::AlignVCenter;
+        double x = pad.ref.isSrc() ? kBoxWidth / 2 + 4 : 12;
+        int align = (pad.ref.isSrc() ? Qt::AlignRight : Qt::AlignLeft) | Qt::AlignVCenter;
         bool linked = pad.state == PadView::Linked;
         if (text.media.isEmpty()) {
             p->setPen(linked ? Theme::text() : Theme::muted());

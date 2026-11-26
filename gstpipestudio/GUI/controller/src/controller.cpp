@@ -389,7 +389,7 @@ QStringList Controller::addTemplateAfter(const QString& srcElement, const QStrin
         // srcElement.srcPad feeds the first free sink pad of the new group
         for (const PadView& p : templateView(groupId).sinks) {
             if (p.state != PadView::Linked) {
-                g.linkExisting(toStd(srcElement), toStd(srcPad), toStd(p.element), toStd(p.templateName));
+                g.linkExisting(toStd(srcElement), toStd(srcPad), p.ref.element, p.ref.linkName());
                 break;
             }
         }
@@ -469,12 +469,9 @@ ElementView Controller::view(const QString& name) const {
         int k = 0;
         gps::splitPadIdentity(pad.identity, &templateName, &k);
         PadView p;
-        p.element = name;
-        p.identity = fromStd(pad.identity);
-        p.templateName = fromStd(pad.templateName);
-        p.isSrc = src;
+        p.ref = {element->name, pad.identity, pad.direction};
         p.label = !pad.nativeName.empty() ? fromStd(pad.nativeName)
-                  : pad.identity == pad.templateName ? p.templateName : fillTemplate(p.templateName, k);
+                  : pad.identity == pad.templateName ? fromStd(pad.templateName) : fillTemplate(fromStd(pad.templateName), k);
         if (src) {
             p.link = plan().linkFrom(element->name, pad.identity);
             const std::string& caps = pad.negotiatedCaps.empty() ? pad.allowedCaps : pad.negotiatedCaps;
@@ -586,19 +583,15 @@ QStringList Controller::visibleFrames() const {
     return out;
 }
 
-QString Controller::linkSinkIdentity(int link) const { return fromStd(plan().sinkIdentity(static_cast<size_t>(link))); }
-
 QList<LinkView> Controller::linkViews() const {
     QList<LinkView> out;
     for (size_t i = 0; i < plan().links.size(); ++i) {
         const gps::Connection& l = plan().links[i];
         LinkView v;
         v.index = static_cast<int>(i);
-        v.srcElement = fromStd(l.srcElement);
-        v.srcIdentity = fromStd(l.srcPad);
-        v.sinkElement = fromStd(l.sinkElement);
-        v.sinkIdentity = linkSinkIdentity(v.index);
-        v.id = CanvasLayout::linkId(v.srcElement, v.srcIdentity);
+        v.src = plan().srcOf(i);
+        v.sink = plan().sinkOf(i);
+        v.id = fromStd(gps::LinkRef{v.src}.id());
         v.route = layout_->route(v.id);
         v.badge = l.caps.empty() ? QString() : badgeOf(fromStd(l.caps));
         v.tip = fromStd(l.caps);
@@ -1043,11 +1036,11 @@ bool Controller::deleteElement(const QString& element, bool autoHeal) {
     return deleteSelection({element}, {}, autoHeal);
 }
 
-bool Controller::deleteSelection(const QStringList& elementNames, const QList<QPair<QString, QString>>& links, bool autoHeal) {
+bool Controller::deleteSelection(const QStringList& elementNames, const QList<gps::LinkRef>& links, bool autoHeal) {
     QStringList expanded = expandSelection(elementNames);
     if (expanded.isEmpty() && links.isEmpty()) return false;
     QStringList touched = expanded;
-    for (const auto& link : links) touched << link.first;
+    for (const gps::LinkRef& link : links) touched << fromStd(link.src.element);
 
     QList<PadView> extSrcs;
     subgraphExternalPads(expanded, nullptr, &extSrcs);
@@ -1057,7 +1050,7 @@ bool Controller::deleteSelection(const QStringList& elementNames, const QList<QP
 
     return transact([&](gps::Graph& g, Edit& e) {
         bool changedAny = false;
-        for (const auto& [srcEl, srcPad] : links) changedAny = g.disconnectLink(toStd(srcEl), toStd(srcPad)) || changedAny;
+        for (const gps::LinkRef& link : links) changedAny = g.disconnectLink(link.src.element, link.src.identity) || changedAny;
         if (!names.empty()) changedAny = g.deleteElements(names, autoHeal, exitTotalSrcPads) || changedAny;
         e.action = expanded.size() == 1 ? "Deleted element " + expanded.first() : QString("Deleted selection (%1 elements)").arg(expanded.size());
         return changedAny;
@@ -1084,7 +1077,7 @@ bool Controller::spliceElements(const QStringList& elements, const QString& link
 
     std::vector<std::pair<std::string, std::string>> freeSinks, freeSrcs;
     for (const PadView& p : extSinks) {
-        if (p.state != PadView::Linked) freeSinks.emplace_back(toStd(p.element), toStd(p.templateName));
+        if (p.state != PadView::Linked) freeSinks.emplace_back(p.ref.element, p.ref.linkName());
     }
     if (expanded.size() == 1) {
         const QString& only = expanded.first();
@@ -1100,7 +1093,7 @@ bool Controller::spliceElements(const QStringList& elements, const QString& link
         }
     }
     for (const PadView& p : extSrcs) {
-        if (p.state != PadView::Linked) freeSrcs.emplace_back(toStd(p.element), toStd(p.identity));
+        if (p.state != PadView::Linked) freeSrcs.emplace_back(p.ref.element, p.ref.identity);
     }
 
     std::vector<std::string> ids;
@@ -1225,14 +1218,14 @@ bool Controller::linkOrderedInternal(const QStringList& expanded, QString* lastT
         QString srcPad;
         for (const PadView& p : sv.srcs) {
             if (p.state != PadView::Linked) {
-                srcPad = p.identity;
+                srcPad = fromStd(p.ref.identity);
                 break;
             }
         }
         QString sinkPad;
         for (const PadView& p : dv.sinks) {
             if (p.state != PadView::Linked) {
-                sinkPad = p.templateName;
+                sinkPad = fromStd(p.ref.linkName());
                 break;
             }
         }

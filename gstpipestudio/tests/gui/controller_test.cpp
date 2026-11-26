@@ -249,7 +249,7 @@ private slots:
         QVERIFY(settle(*c));
         ElementView view = c->view(mix);
         QCOMPARE(view.sinks.size(), 2);
-        QCOMPARE(view.sinks[1].identity, QString("sink_%u#1"));
+        QCOMPARE(fromStd(view.sinks[1].ref.identity), QString("sink_%u#1"));
         QCOMPARE(view.sinks[1].state, PadView::Linked);
 
         // The pad settings live on the link (xpos, ypos, alpha).
@@ -313,10 +313,10 @@ private slots:
         QVERIFY(settle(*c));
         ElementView v = c->view(demux);
         QCOMPARE(v.srcs.size(), 2);
-        QCOMPARE(v.srcs[0].identity, QString("video_%u#0"));
+        QCOMPARE(fromStd(v.srcs[0].ref.identity), QString("video_%u#0"));
         QCOMPARE(v.srcs[0].label, QString("video_0"));
         QCOMPARE(v.srcs[0].media, QString("image/jpeg"));
-        QCOMPARE(v.srcs[1].identity, QString("audio_%u#0"));
+        QCOMPARE(fromStd(v.srcs[1].ref.identity), QString("audio_%u#0"));
         QCOMPARE(v.srcs[1].media, QString("audio/x-raw"));
         QVERIFY(!c->result().complete());
 
@@ -630,7 +630,7 @@ private slots:
         QCOMPARE(c->plan().elements.size(), size_t(3));  // loaded as it was written
         // The pad the plan asks for is still drawn, linked, so the user can see what is wrong.
         bool drawn = false;
-        for (const PadView& p : c->view("avidemux_1").srcs) drawn |= p.identity == "video_%u#3" && p.state == PadView::Linked;
+        for (const PadView& p : c->view("avidemux_1").srcs) drawn |= p.ref.identity == "video_%u#3" && p.state == PadView::Linked;
         QVERIFY(drawn);
     }
 
@@ -1103,8 +1103,8 @@ private slots:
         QCOMPARE(gv.displayTitle, QString("ScaleConvert"));
         QCOMPARE(gv.sinks.size(), 1);
         QCOMPARE(gv.srcs.size(), 1);
-        QCOMPARE(gv.sinks.first().element, conv);
-        QCOMPARE(gv.srcs.first().element, scale);
+        QCOMPARE(fromStd(gv.sinks.first().ref.element), conv);
+        QCOMPARE(fromStd(gv.srcs.first().ref.element), scale);
 
         // 5. Add a connected pipeline src -> snk, then splice the entire 2-element Template onto that wire!
         QString src = addSource(*c, "videotestsrc");

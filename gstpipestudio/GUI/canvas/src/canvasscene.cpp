@@ -74,12 +74,10 @@ void CanvasScene::applyTelemetry(const gps::TelemetrySample& sample) {
 
 const gps::Pipeline& CanvasScene::pipeline() const { return controller_->pipeline(); }
 
-QString CanvasScene::key(const QString& element, const QString& identity, bool isSrc) {
-    return element + "|" + identity + (isSrc ? "|src" : "|sink");
-}
+PadItem* CanvasScene::pad(const gps::PadRef& ref) const { return pads_.value(fromStd(ref.key())); }
 
 PadItem* CanvasScene::pad(const QString& element, const QString& identity, bool isSrc) const {
-    return pads_.value(key(element, identity, isSrc));
+    return pad(gps::PadRef{toStd(element), toStd(identity), isSrc ? gps::Pad::Direction::Source : gps::Pad::Direction::Sink});
 }
 
 QStringList CanvasScene::selectedElementNames() const {
@@ -181,7 +179,7 @@ void CanvasScene::rebuild() {
                 if (selectedElements_.contains(m)) anySelected = true;
             }
             if (anySelected) item->setSelected(true);
-            for (PadItem* p : item->pads()) pads_.insert(key(p->view().element, p->view().identity, p->view().isSrc), p);
+            for (PadItem* p : item->pads()) pads_.insert(fromStd(p->view().ref.key()), p);
         } else {
             auto* item = new ElementItem(controller_->view(name));
             item->setPos(e.x, e.y);
@@ -190,7 +188,7 @@ void CanvasScene::rebuild() {
             addItem(item);
             elements_.insert(item->view().name, item);
             if (selectedElements_.contains(name)) item->setSelected(true);
-            for (PadItem* p : item->pads()) pads_.insert(key(p->view().element, p->view().identity, p->view().isSrc), p);
+            for (PadItem* p : item->pads()) pads_.insert(fromStd(p->view().ref.key()), p);
         }
     }
     // A template opening or closing is drawn gathered at its centre until the layout's answer slides it out of there.
@@ -213,7 +211,7 @@ void CanvasScene::rebuild() {
         frames_.insert(fv.id, frame);
         nowShown.insert(fv.id);
         for (PadItem* p : frame->pads()) {
-            const QString k = key(p->view().element, p->view().identity, p->view().isSrc);
+            const QString k = fromStd(p->view().ref.key());
             frame->setInner(p, pads_.value(k));
             pads_.insert(k, p);
         }
@@ -238,11 +236,10 @@ void CanvasScene::rebuild() {
         ghosts_ << ghost;
     }
     for (const LinkView& l : controller_->linkViews()) {
-        if (elements_.value(l.srcElement) && elements_.value(l.srcElement) == elements_.value(l.sinkElement)) {
-            continue;  // internal link inside a collapsed template
-        }
-        PadItem* from = pad(l.srcElement, l.srcIdentity, true);
-        PadItem* to = pad(l.sinkElement, l.sinkIdentity, false);
+        ElementItem* srcBox = elements_.value(fromStd(l.src.element));
+        if (srcBox && srcBox == elements_.value(fromStd(l.sink.element))) continue;  // internal link inside a collapsed template
+        PadItem* from = pad(l.src);
+        PadItem* to = pad(l.sink);
         if (!from || !to) continue;  // the element's info is not cached yet; the next rebuild draws it
         auto* link = new LinkItem(l, from, to);
         link->setOpacity(stale_ ? 0.5 : 1.0);
@@ -277,8 +274,8 @@ void CanvasScene::setStale(bool stale) {
 
 void CanvasScene::padClicked(const PadView& pad, Qt::MouseButton button, const QPoint& screenPos) {
     if (locked_) return;
-    if (button == Qt::LeftButton && pad.isSrc && pad.state != PadView::Linked) {
-        emit freeSrcPadClicked(pad.element, pad.identity, screenPos);
+    if (button == Qt::LeftButton && pad.ref.isSrc() && pad.state != PadView::Linked) {
+        emit freeSrcPadClicked(fromStd(pad.ref.element), fromStd(pad.ref.identity), screenPos);
     } else if (button == Qt::RightButton && pad.link >= 0) {
         // A linked pad of either side belongs to a link; its menu is the link's menu.
         const gps::Connection& l = controller_->plan().links[pad.link];
@@ -288,13 +285,13 @@ void CanvasScene::padClicked(const PadView& pad, Qt::MouseButton button, const Q
 
 void CanvasScene::padDragMoved(const PadView& from, const QPointF& scenePos) {
     if (locked_) return;
-    PadItem* startPad = pad(from.element, from.identity, from.isSrc);
+    PadItem* startPad = pad(from.ref);
     if (!startPad) return;
     if (!dragWire_) {
         dragWire_ = new ConnectionPreview;
         addItem(dragWire_);
     }
-    dragWire_->setEndpoints(startPad->center(), scenePos, from.isSrc);
+    dragWire_->setEndpoints(startPad->center(), scenePos, from.ref.isSrc());
 }
 
 void CanvasScene::padDragEnded() {
@@ -307,10 +304,10 @@ void CanvasScene::padDragEnded() {
 void CanvasScene::padDroppedOnPad(const PadView& from, const PadView& to) {
     padDragEnded();
     if (locked_) return;
-    const PadView* src = from.isSrc ? &from : (to.isSrc ? &to : nullptr);
-    const PadView* sink = !from.isSrc ? &from : (!to.isSrc ? &to : nullptr);
-    if (!src || !sink) return;
-    controller_->linkExisting(src->element, src->identity, sink->element, sink->templateName);
+    const gps::PadRef& src = from.ref.isSrc() ? from.ref : to.ref;
+    const gps::PadRef& sink = from.ref.isSrc() ? to.ref : from.ref;
+    if (!src.isSrc() || sink.isSrc()) return;
+    controller_->linkExisting(fromStd(src.element), fromStd(src.identity), fromStd(sink.element), fromStd(sink.linkName()));
 }
 
 void CanvasScene::contextMenuEvent(QGraphicsSceneContextMenuEvent* event) {
@@ -353,10 +350,11 @@ void CanvasScene::elementDragged(const QString& element, const QPointF& pos) {
         }
         bool foundSplice = false;
         for (LinkItem* link : links_) {
-            if (draggedSet.contains(link->view().srcElement) || draggedSet.contains(link->view().sinkElement)) continue;
+            const LinkView& lv = link->view();
+            if (draggedSet.contains(fromStd(lv.src.element)) || draggedSet.contains(fromStd(lv.sink.element))) continue;
             for (ElementItem* di : draggedItems) {
                 if (di->collidesWithItem(link)) {
-                    emit elementSpliced(element, link->view().srcElement, link->view().srcIdentity);
+                    emit elementSpliced(element, fromStd(lv.src.element), fromStd(lv.src.identity));
                     foundSplice = true;
                     break;
                 }

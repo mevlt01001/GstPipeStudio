@@ -1500,7 +1500,7 @@ private slots:
         scene_rebuild(w);
         QVERIFY(w.scene()->pad(mix, "sink_%u#1", false));
         QCOMPARE(w.scene()->links().size(), 2);
-        QCOMPARE(w.scene()->links()[1]->view().sinkIdentity, QString("sink_%u#1"));
+        QCOMPARE(fromStd(w.scene()->links()[1]->view().sink.identity), QString("sink_%u#1"));
     }
 
     void canvasPadColoursFollowTheSpec() {

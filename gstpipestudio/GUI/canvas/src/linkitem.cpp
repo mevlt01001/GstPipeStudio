@@ -10,6 +10,7 @@
 
 #include "canvasmetrics.h"
 #include "capslabel.h"
+#include "contract.h"
 #include "canvasscene.h"
 #include "paditem.h"
 #include "theme.h"
@@ -173,8 +174,8 @@ void LinkItem::mouseReleaseEvent(QGraphicsSceneMouseEvent* event) {
     auto* canvas = qobject_cast<CanvasScene*>(scene());
     if (!canvas) return;
     if (event->button() == Qt::LeftButton) {
-        canvas->linkClicked(view_.srcElement, view_.srcIdentity);
+        canvas->linkClicked(fromStd(view_.src.element), fromStd(view_.src.identity));
     } else if (event->button() == Qt::RightButton) {
-        canvas->linkContext(view_.srcElement, view_.srcIdentity, event->screenPos());
+        canvas->linkContext(fromStd(view_.src.element), fromStd(view_.src.identity), event->screenPos());
     }
 }

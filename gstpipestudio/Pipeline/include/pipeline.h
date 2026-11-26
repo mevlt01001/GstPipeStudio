@@ -111,7 +111,7 @@ public:
     GraphEditor& editor() { return editor_; }
     const GraphEditor& editor() const { return editor_; }
     void registerFactory(std::string name, FactoryDefinition definition);
-    std::optional<PadAddress> peer(const PadAddress&) const;
+    std::optional<PadRef> peer(const PadRef&) const;  // the pad at the other end of its link
     Change lastChange() const { return change_; }
     bool reset(Graph graph = {}, std::string* error = nullptr);
     ExecutionPlan executionPlan(std::uint64_t run) const;

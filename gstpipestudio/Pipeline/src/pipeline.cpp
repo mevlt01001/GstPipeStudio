@@ -196,15 +196,10 @@ const PadReport* Pipeline::report(const std::string& element, const Pad& pad, in
     }
     return nullptr;
 }
-std::optional<PadAddress> Pipeline::peer(const PadAddress& address) const {
-    if (address.direction == Pad::Direction::Source) {
-        int i = graph_.linkFrom(address.element, address.pad);
-        if (i >= 0) return PadAddress{graph_.links[i].sinkElement, graph_.sinkIdentity(i), Pad::Direction::Sink};
-    } else {
-        int i = graph_.linkInto(address.element, address.pad);
-        if (i >= 0) return PadAddress{graph_.links[i].srcElement, graph_.links[i].srcPad, Pad::Direction::Source};
-    }
-    return std::nullopt;
+std::optional<PadRef> Pipeline::peer(const PadRef& pad) const {
+    const int i = pad.isSrc() ? graph_.linkFrom(pad.element, pad.identity) : graph_.linkInto(pad.element, pad.identity);
+    if (i < 0) return std::nullopt;
+    return pad.isSrc() ? graph_.sinkOf(static_cast<size_t>(i)) : graph_.srcOf(static_cast<size_t>(i));
 }
 
 Graph& GraphEditor::begin() {

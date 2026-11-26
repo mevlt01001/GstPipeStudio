@@ -56,11 +56,9 @@ public:
     std::optional<Frame> frame(const QString& instanceId) const;
     void invalidate() { valid_ = false; }  // a template was expanded or collapsed: frames and routes are old
 
-    // The canvas as the engine sees it. Public for tests. Port ids are the canvas pad keys ("<element>|<pad>|src");
-    // a frame's own ports are "<instance>|<pad key>"; a link's id is linkId().
+    // The canvas as the engine sees it. Public for tests. Port ids are the pad keys (gps::PadRef::key()); a frame's own
+    // ports are "<instance>|<pad key>"; a link's id is gps::LinkRef::id().
     layout::Node tree(const QStringList& elements = {}) const;
-    static QString linkId(const QString& srcElement, const QString& srcPad) { return srcElement + "|" + srcPad; }
-    static QString padKey(const QString& element, const QString& identity, bool isSrc);
 
 signals:
     void aligned(bool ok);
