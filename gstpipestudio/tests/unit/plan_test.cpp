@@ -71,11 +71,6 @@ static void chain() {
     CHECK_EQ(p.linkFrom(a, "src"), 1);
     CHECK_EQ(p.linkFrom(b, "src"), -1);
 
-    Removal preview = p.previewCut(a, "src", T);
-    CHECK(preview.elements.empty());
-    CHECK_EQ(preview.links, 1);
-    CHECK_EQ(p.elements.size(), size_t(3));  // the preview changed nothing
-
     Removal r = p.cut(a, "src", T);
     CHECK(r.elements.empty());
     CHECK_EQ(r.links, 1);
@@ -91,7 +86,7 @@ static void chain() {
     // Names are never reused.
     Graph q;
     std::string first = q.addSource("src");
-    q.deleteSource(first, T);
+    q.deleteElement(first, false);
     CHECK_EQ(q.addSource("src"), std::string("src_1"));
 }
 
@@ -122,14 +117,6 @@ static void pruning() {
     CHECK_EQ(h.links[0].srcElement, hs);
     CHECK_EQ(h.links[0].sinkElement, hc);
 
-    // An element with one linked input stays although another sink pad is free (textoverlay).
-    Graph o;
-    std::string v = o.addSource("src");
-    std::string overlay = o.addAfter(v, "src", "overlay", "video_sink");
-    std::string out = o.addAfter(overlay, "src", "sink", "sink");
-    CHECK(o.prune(T).elements.empty());
-    CHECK(o.find(overlay) && o.find(out));
-
     // Two sources into a mixer: deleting a source only deletes that source; downstream elements stay on canvas.
     Graph m;
     std::string s1 = m.addSource("src");
@@ -137,26 +124,15 @@ static void pruning() {
     std::string mix = m.addAfter(s1, "src", "mixer", "sink_%u");
     CHECK(m.linkExisting(s2, "src", mix, "sink_%u", "video/x-raw, width=(int)160"));
     std::string end = m.addAfter(mix, "src", "sink", "sink");
-    Removal one = m.previewDeleteSource(s1, T);
-    CHECK_EQ(one.elements, Names({s1}));
-    CHECK_EQ(one.links, 1);
-    CHECK_EQ(m.elements.size(), size_t(4));
-    m.deleteSource(s1, T);
+    CHECK(m.deleteElement(s1, false));
+    CHECK_EQ(m.links.size(), size_t(2));
     CHECK(m.find(mix) && m.find(end));
     CHECK(m.isElementTracked(mix, T));
-    Removal both = m.deleteSource(s2, T);
-    CHECK_EQ(both.elements, Names({s2}));
+    CHECK(m.deleteElement(s2, false));
     CHECK_EQ(m.elements.size(), size_t(2));  // mix and end stay on the free canvas
     CHECK(!m.isElementTracked(mix, T));
     CHECK(!m.isElementTracked(end, T));
-
-    // Only sources can be deleted this way.
-    Graph n;
-    std::string ns = n.addSource("src");
-    std::string nf = n.addAfter(ns, "src", "f", "sink");
-    CHECK(n.deleteSource(nf, T).elements.empty());
-    CHECK(n.find(nf));
-    CHECK(n.deleteSource("nope", T).elements.empty());
+    CHECK(!m.deleteElement("nope", false));
 }
 
 static void linking() {
@@ -199,7 +175,6 @@ static void replacing() {
     std::string b = p.addAfter(a, "src", "f", "sink");
     CHECK(p.setCaps(s, "src", "video/x-raw, width=(int)640"));
 
-    CHECK_EQ(p.previewReplace(s, "src", T).elements, Names({a}));
     Addition r = p.replace(s, "src", "other", "video_sink", {{"k", "v"}}, T);
     CHECK_EQ(r.removed.elements, Names({a}));
     CHECK(!r.element.empty());
@@ -308,7 +283,7 @@ static void edits() {
     // An exposed parameter goes with its element.
     p.cut(s, "src", T);
     CHECK_EQ(p.exposed.size(), size_t(1));  // the source stays
-    p.deleteSource(s, T);
+    p.deleteElement(s, false);
     CHECK(p.exposed.empty());
 }
 

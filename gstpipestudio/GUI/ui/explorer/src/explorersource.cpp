@@ -46,8 +46,7 @@ QList<ExplorerEntry> listFolder(const QString& origin, const QString& dir, int d
 void markOutdated(ExplorerEntry& e, const QMap<QString, int>& held, const TemplateLibrary& library) {
     QStringList older;
     for (auto it = held.cbegin(); it != held.cend(); ++it) {
-        const gps::Graph* current = library.plan(it.key());
-        if (current && current->revision > it.value()) older << it.key();
+        if (library.isNewer(it.key(), it.value())) older << it.key();
     }
     if (older.isEmpty()) return;
     e.state = State::Outdated;

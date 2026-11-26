@@ -68,9 +68,8 @@ void TemplateLibrary::describe() {
     if (!catalog_.loaded()) return;
     QStringList missing;
     for (const auto& [name, content] : plans_) {
-        for (const gps::Element& e : content.elements) {
-            const QString factory = fromStd(e.factory);
-            if (!catalog_.definition(factory) && catalog_.entry(factory) && !missing.contains(factory)) missing << factory;
+        for (const QString& factory : catalog_.missing(content)) {
+            if (catalog_.entry(factory) && !missing.contains(factory)) missing << factory;
         }
     }
     catalog_.fetchInfos(missing, this, [](bool) {});
@@ -82,20 +81,15 @@ QList<ComponentInfo> TemplateLibrary::components() const {
     QList<ComponentInfo> out;
     for (const QString& name : names_) {
         const gps::Graph& content = plans_.at(name);
-        QStringList factories;
-        bool known = true;
-        std::vector<std::string> all;
-        for (const gps::Element& e : content.elements) {
-            factories << fromStd(e.factory);
-            known = known && catalog_.definition(fromStd(e.factory));
-            all.push_back(e.name);
-        }
+        QStringList chain;  // the member factories, one per element
+        for (const gps::Element& e : content.elements) chain << fromStd(e.factory);
+        const bool known = catalog_.missing(content).isEmpty();
         const gps::NodeShape shape(content, [this](const std::string& factory) { return catalog_.definition(fromStd(factory)); });
-        const gps::NodePorts ports = shape.ports(all);
+        const gps::NodePorts ports = shape.ports(content.elementNames());
         ComponentInfo info;
         info.ref = ref(name);
         info.title = name;
-        info.description = factories.join(" → ");
+        info.description = chain.join(" → ");
         info.hint = QString("template · %1").arg(content.elements.size());
         info.takesInput = !known || !ports.free(gps::Pad::Direction::Sink).empty() || !ports.requests.empty();
         info.givesOutput = !ports.free(gps::Pad::Direction::Source).empty();
@@ -120,6 +114,11 @@ QList<ComponentAction> TemplateLibrary::actions(const QString& name) const {
 const gps::Graph* TemplateLibrary::plan(const QString& name) const {
     auto it = plans_.find(name);
     return it == plans_.end() ? nullptr : &it->second;
+}
+
+int TemplateLibrary::revision(const QString& name) const {
+    const gps::Graph* p = plan(name);
+    return p ? p->revision : 0;
 }
 
 gps::Graph TemplateLibrary::content(const QString& name) const {

@@ -112,7 +112,7 @@ bool isTemplateName(const std::string& padName);
 // "always" | "request" | anything else (sometimes), as GStreamer's presence is written in catalog and reports.
 Pad::Presence presenceOf(const std::string& text);
 
-// What an edit deleted (or would delete, for the preview functions).
+// What an edit deleted.
 struct Removal {
     std::vector<std::string> elements;
     int links = 0;
@@ -156,6 +156,11 @@ public:
     bool isElementTracked(const std::string& name, const TraitsFn& traits) const;
     Graph trackedSubplan(const TraitsFn& traits) const;
     bool empty() const { return elements.empty(); }
+    std::vector<std::string> elementNames() const;  // every element's name, in order
+    std::vector<std::string> factories() const;     // the factories its elements use, each once, in order
+    // Linked pads of an element per Request (or Sometimes) template: src links by their "<template>#<k>" identity,
+    // sink links by the template they name. The fewest pads a count may ask for.
+    std::map<std::string, int> linkedRequestPads(const std::string& element, Pad::Direction direction) const;
     std::pair<double, double> topLeft() const;  // the top left corner of its elements' positions; (0, 0) when empty
 
     // ---- additions
@@ -197,16 +202,10 @@ public:
                      const std::vector<std::pair<std::string, std::string>>& freeSinkPads,
                      const std::vector<std::pair<std::string, std::string>>& freeSrcPads);
 
-    // ---- removals. Every edit ends with prune(), and every one has a preview that changes nothing.
+    // ---- removals. The free canvas keeps what is downstream: only the link, or the element behind it, goes.
     Removal cut(const std::string& srcElement, const std::string& srcPad, const TraitsFn& traits);
-    Removal previewCut(const std::string& srcElement, const std::string& srcPad, const TraitsFn& traits) const;
     Addition replace(const std::string& srcElement, const std::string& srcPad, const std::string& factory,
                      const std::string& sinkPad, const Props& props, const TraitsFn& traits);
-    Removal previewReplace(const std::string& srcElement, const std::string& srcPad, const TraitsFn& traits) const;
-    Removal deleteSource(const std::string& name, const TraitsFn& traits);
-    Removal previewDeleteSource(const std::string& name, const TraitsFn& traits) const;
-    // Elements with no linked input left (and that are not sources) go, until none is left.
-    Removal prune(const TraitsFn& traits);
 
     // ---- the queue shortcut
     std::string insertQueue(const std::string& srcElement, const std::string& srcPad);  // "" if the pad is free

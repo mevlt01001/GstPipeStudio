@@ -126,10 +126,10 @@ public:
     // Nothing to execute (no element, or none fed by a source): not validated when empty, else valid but incomplete.
     void observeIdle();
     static bool validate(const Graph&, std::string* error = nullptr);
+    Graph executed(const Graph&) const;  // the part of a graph that runs
 private:
     friend class GraphEditor;
     void install(Graph);
-    Graph executed(const Graph&) const;  // the part of a graph that runs
     void clearObservations();
     void refreshPads();
     std::map<std::string, FactoryDefinition> factories_;

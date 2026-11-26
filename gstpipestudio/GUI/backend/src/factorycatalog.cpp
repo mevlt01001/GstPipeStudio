@@ -94,6 +94,14 @@ void FactoryCatalog::fetchInfos(const QStringList& factories, QObject* context, 
     }
 }
 
+QStringList FactoryCatalog::missing(const gps::Graph& graph) const {
+    QStringList out;
+    for (const std::string& factory : graph.factories()) {
+        if (!info(fromStd(factory))) out << fromStd(factory);
+    }
+    return out;
+}
+
 void FactoryCatalog::fetchCompatible(const QString& caps, QObject* context, NamesCallback done) {
     auto cached = compatible_.constFind(caps);
     if (cached != compatible_.constEnd()) {

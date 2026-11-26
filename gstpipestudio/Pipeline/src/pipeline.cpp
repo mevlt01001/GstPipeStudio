@@ -170,9 +170,7 @@ std::vector<Pad> padsOf(const Graph& graph, const Element& element, const Factor
             ordinals = {-1};
         } else if (!src) {
             int n = requested(element.requestSink, t.templateName);
-            n = std::max(n, static_cast<int>(std::count_if(graph.links.begin(), graph.links.end(), [&](const Connection& l) {
-                return l.sinkElement == element.name && l.sinkPad == t.templateName;
-            })));
+            n = std::max(n, requested(graph.linkedRequestPads(element.name, Pad::Direction::Sink), t.templateName));
             for (int k = 0; k < n; ++k) ordinals.push_back(k);
         } else {
             std::set<int> used;

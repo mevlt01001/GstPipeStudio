@@ -242,8 +242,8 @@ void MainWindow::buildCommands() {
         {C::ReplaceBehind, "actionReplace", "Replace element…", {}, [this, target] { flows()->replaceBehind(target().element, target().pad); }},
         {C::CutLink, "actionCutLink", "Cut link", {}, [this, target] { controller()->cut(target().element, target().pad); }},
         {C::InsertQueue, "actionInsertQueue", "Insert queue", {}, [this, target] { flows()->addQueue(target().element, target().pad); }},
-        {C::EditTemplate, "actionEditTemplate", "Edit template", {}, [this, target] { openTemplate(templateNameOf(target().instance)); }, [this, target] {
-             return services_.library().plan(templateNameOf(target().instance)) ? QString() : "The template is not in the library";
+        {C::EditTemplate, "actionEditTemplate", "Edit template", {}, [this, target] { openTemplate(controller()->templateOf(target().instance)); }, [this, target] {
+             return services_.library().plan(controller()->templateOf(target().instance)) ? QString() : "The template is not in the library";
          }},
         {C::ToggleTemplate, "actionToggleTemplate", "Collapse", {}, [this, target] {
              controller()->setTemplateExpanded(target().instance, !controller()->isTemplateExpanded(target().instance));
@@ -251,7 +251,7 @@ void MainWindow::buildCommands() {
         {C::DetachTemplate, "actionDetachTemplate", "Detach from template", {}, [this, target] { controller()->detachTemplate(target().instance); }},
     });
     commands_->setLabel(C::Run, [this] { return controller()->running() ? "&Stop" : "&Run"; });
-    commands_->setLabel(C::EditTemplate, [this, target] { return "Edit template '" + templateNameOf(target().instance) + "'"; });
+    commands_->setLabel(C::EditTemplate, [this, target] { return "Edit template '" + controller()->templateOf(target().instance) + "'"; });
     commands_->setLabel(C::DetachTemplate, [this] { return "Detach from template '" + copyTitle() + "'"; });
     commands_->setLabel(C::ToggleTemplate, [this, target] {
         const QString id = target().instance;
@@ -270,11 +270,6 @@ void MainWindow::buildCommands() {
                              {C::Delete, "Delete"}, {C::SaveAsTemplate, "Save as template"}})
         (*commands_)[id]->setIconText(words);
     commands_->refresh();
-}
-
-QString MainWindow::templateNameOf(const QString& instanceId) const {
-    const gps::TemplateInstance* t = controller()->plan().instance(toStd(instanceId));
-    return t ? fromStd(t->templateName) : QString();
 }
 
 // The menus as desktop applications have them: File, Edit, View, then the application's own, then Help.
@@ -579,7 +574,7 @@ void MainWindow::askReload(Document* d, DiskChange why) {
 // "Template changes, what now?" (TEMPLATE_PLAN D17, D30): the change, the projects the template is used in, and four
 // answers. Closing the window is Undo: nothing was decided.
 void MainWindow::askTemplateChange(const QString& id) {
-    const QString name = templateNameOf(id);
+    const QString name = controller()->templateOf(id);
     if (name.isEmpty()) return;
     QStringList used;
     for (const QString& project : services_.library().projectsUsing(name)) used << QFileInfo(project).absolutePath();
@@ -614,7 +609,7 @@ void MainWindow::askTemplatesOutdated(const QStringList& ids) {
         const gps::TemplateInstance* t = controller()->plan().instance(toStd(id));
         if (!t) continue;
         const QString name = fromStd(t->templateName);
-        lines << QString("%1: revision %2 → %3%4").arg(name).arg(t->revision).arg(services_.library().content(name).revision)
+        lines << QString("%1: revision %2 → %3%4").arg(name).arg(t->revision).arg(services_.library().revision(name))
                      .arg(gps::templates::modified(controller()->plan(), t->id) ? "  (its changes here would be lost)" : "");
     }
     if (lines.isEmpty()) return;

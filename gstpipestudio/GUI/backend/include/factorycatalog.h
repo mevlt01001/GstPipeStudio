@@ -37,6 +37,10 @@ public:
     // asking tab's object) still exists: a tab closed meanwhile is not called back.
     void fetchInfo(const QString& factory, QObject* context, InfoCallback done);  // done at once when cached; nullptr on failure
     void fetchInfos(const QStringList& factories, QObject* context, std::function<void(bool)> done);
+    QStringList missing(const gps::Graph& graph) const;  // the factories it uses that have no information yet
+    void fetchMissing(const gps::Graph& graph, QObject* context, std::function<void(bool)> done) {
+        fetchInfos(missing(graph), context, std::move(done));
+    }
     void fetchCompatible(const QString& caps, QObject* context, NamesCallback done);  // ranked factories that can follow these caps
     gps::TraitsFn traits() const;
 

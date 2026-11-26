@@ -2,11 +2,10 @@
 #include "validationsession.h"
 
 #include "contract.h"
-#include "factorycatalog.h"
 #include "slowwatch.h"
 
-ValidationSession::ValidationSession(gps::Pipeline& pipeline, const FactoryCatalog& catalog, QObject* parent)
-    : QObject(parent), pipeline_(pipeline), catalog_(catalog), watch_(new SlowWatch(this)) {
+ValidationSession::ValidationSession(gps::Pipeline& pipeline, QObject* parent)
+    : QObject(parent), pipeline_(pipeline), watch_(new SlowWatch(this)) {
     bool ok = false;
     const int ms = qEnvironmentVariableIntValue("GPS_UPDATE_TIMEOUT_MS", &ok);
     if (ok && ms > 0) timeoutMs_ = ms;
@@ -36,7 +35,7 @@ void ValidationSession::request(const QString& suspect) {
 void ValidationSession::dispatch() {
     cancelled_ = false;
     const gps::Graph& plan = pipeline_.editor().view();
-    if (plan.empty() || plan.trackedSubplan(catalog_.traits()).empty()) {
+    if (pipeline_.executed(plan).empty()) {
         pipeline_.observeIdle();
         stopped(false);
         emit finished(true);

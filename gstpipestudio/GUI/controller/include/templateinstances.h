@@ -47,13 +47,14 @@ public:
     bool commit(const QString& id);  // a copy being edited becomes the template's next revision; unchanged copies follow
     void commitAll();                // every edited copy (saving the file ends their editing)
 
+    QString libraryOf(const QString& id) const;  // the library template a copy is of, "" when the copy is gone
+
     // ---- the library's newer revisions
     QStringList outdated() const;           // copies whose library template is newer
     bool update(const QStringList& ids);    // they take the library's content: one undo step; updated() follows
     void offer();                           // templatesOutdated soon, for revisions not offered yet
 
     // ---- parameters: of a placed copy (its collapsed box shows these), and of a library template being edited
-    std::vector<gps::ExposedParam> params(const QString& id) const;
     bool setParams(const QString& id, const std::map<std::string, std::string>& values);  // name -> value, "" = default
     void setTemplateParameters(const std::vector<gps::ExposedParam>& params);
 

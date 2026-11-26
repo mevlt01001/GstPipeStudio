@@ -38,9 +38,7 @@ QString TemplateInstances::begin(const QStringList& elements) {
     if (members.isEmpty()) return QString();
     QString id;
     const bool made = edits_.transact([&](gps::Graph& g, Edit& edit) {
-        std::vector<std::string> names;
-        for (const QString& n : members) names.push_back(toStd(n));
-        id = fromStd(gps::templates::wrap(g, names, "New template", {}));
+        id = fromStd(gps::templates::wrap(g, toStd(members), "New template", {}));
         edit.action = QString("Made a template of %1 element(s)").arg(members.size());
         edit.presentation = true;
         return true;
@@ -112,7 +110,7 @@ std::vector<gps::ExposedParam> TemplateInstances::parameterChoices(const QString
 
 void TemplateInstances::keepEditing(const QString& id) {
     editing_.insert(id);
-    emit logLine("Editing template " + fromStd(plan().instance(toStd(id))->templateName) +
+    emit logLine("Editing template " + fromStd(views_.names().instance(toStd(id))) +
                  ": the library gets the change when it collapses or the file is saved");
 }
 
@@ -158,13 +156,17 @@ void TemplateInstances::commitAll() {
     for (const QString& id : QSet<QString>(editing_)) commit(id);
 }
 
+QString TemplateInstances::libraryOf(const QString& id) const {
+    const gps::TemplateInstance* t = plan().instance(toStd(id));
+    return t ? fromStd(t->templateName) : QString();
+}
+
 // ---- newer revisions
 
 QStringList TemplateInstances::outdated() const {
     QStringList out;
     for (const gps::TemplateInstance& t : plan().instances) {
-        const gps::Graph* library = library_.plan(fromStd(t.templateName));
-        if (library && library->revision > t.revision) out << fromStd(t.id);
+        if (library_.isNewer(fromStd(t.templateName), t.revision)) out << fromStd(t.id);
     }
     return out;
 }
@@ -173,8 +175,7 @@ bool TemplateInstances::update(const QStringList& ids) {
     const bool done = edits_.transact([&](gps::Graph& g, Edit& edit) {
         bool any = false;
         for (const QString& id : ids) {
-            const gps::TemplateInstance* t = g.instance(toStd(id));
-            const gps::Graph* library = t ? library_.plan(fromStd(t->templateName)) : nullptr;
+            const gps::Graph* library = library_.plan(libraryOf(id));
             if (library && gps::templates::replaceContent(g, toStd(id), *library)) any = true;
         }
         for (const QString& id : ids) {
@@ -197,7 +198,7 @@ void TemplateInstances::offerNow() {
     const QStringList ids = outdated();
     bool fresh = false;
     for (const QString& id : ids) {
-        const int revision = library_.plan(fromStd(plan().instance(toStd(id))->templateName))->revision;
+        const int revision = library_.revision(libraryOf(id));
         if (std::exchange(offered_[id], revision) != revision) fresh = true;
     }
     if (fresh) emit templatesOutdated(ids);
@@ -205,15 +206,9 @@ void TemplateInstances::offerNow() {
 
 // ---- parameters
 
-std::vector<gps::ExposedParam> TemplateInstances::params(const QString& id) const {
-    const gps::TemplateInstance* t = plan().instance(toStd(id));
-    return t ? t->params : std::vector<gps::ExposedParam>();
-}
-
 bool TemplateInstances::setParams(const QString& id, const std::map<std::string, std::string>& values) {
-    const gps::TemplateInstance* t = plan().instance(toStd(id));
-    if (!t) return false;
-    const QString title = fromStd(t->templateName);
+    if (!plan().instance(toStd(id))) return false;
+    const QString title = fromStd(views_.names().instance(toStd(id)));
     return edits_.transact([&](gps::Graph& g, Edit& edit) {
         for (const gps::ExposedParam& p : g.instance(toStd(id))->params) {
             auto value = values.find(p.name);
@@ -227,10 +222,7 @@ bool TemplateInstances::setParams(const QString& id, const std::map<std::string,
 
 void TemplateInstances::setTemplateParameters(const std::vector<gps::ExposedParam>& params) {
     edits_.transact([&](gps::Graph& g, Edit& edit) {
-        g.exposed.clear();
-        for (const gps::ExposedParam& p : params) {
-            if (g.find(p.element)) g.exposed.push_back(p);
-        }
+        g.setExposed(params);
         edit.action = QString("Set %1 template parameter(s)").arg(g.exposed.size());
         edit.presentation = true;
         return true;

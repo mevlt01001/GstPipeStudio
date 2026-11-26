@@ -38,6 +38,8 @@ public:
     QStringList names() const { return names_; }        // in the folder's order
     const gps::Graph* plan(const QString& name) const;  // nullptr when there is no such template
     gps::Graph content(const QString& name) const;      // a copy of it, empty when there is none
+    int revision(const QString& name) const;                // the library's revision of it, 0 when there is none
+    bool isNewer(const QString& name, int held) const { return revision(name) > held; }  // than a copy held at held
     int nextRevision(const QString& name, int base) const;  // the revision after both the library's and base
     QStringList projectsUsing(const QString& name) const;   // .gpsproj files of the projects it is used in
 

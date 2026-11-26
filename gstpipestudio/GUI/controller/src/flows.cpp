@@ -259,11 +259,9 @@ QList<const ComponentProvider*> Flows::providers() const {
 
 // The template being edited on the canvas: its parameters, chosen like when it was saved.
 void Flows::editTemplateParameters() {
-    QStringList all;
-    for (const gps::Element& e : controller_->plan().elements) all << fromStd(e.name);
     TemplatePageInput input;
     input.name = controller_->target().libraryTemplate();
-    input.choices = controller_->parameterChoices(all);
+    input.choices = controller_->parameterChoices(fromStd(controller_->plan().elementNames()));
     input.chosen = controller_->plan().exposed;
     input.fixedName = true;
     input.names = controller_->names();
@@ -435,12 +433,8 @@ void Flows::editProperties(const QString& element) {
     in.props = e->props;
     in.requestSrc = e->requestSrc;
     in.requestSink = e->requestSink;
-    for (const gps::Connection& l : controller_->plan().links) {
-        std::string templateName;
-        int k = 0;
-        if (l.srcElement == e->name && gps::splitPadIdentity(l.srcPad, &templateName, &k)) ++in.linkedSrc[templateName];
-        if (l.sinkElement == e->name) ++in.linkedSink[l.sinkPad];
-    }
+    in.linkedSrc = controller_->plan().linkedRequestPads(e->name, gps::Pad::Direction::Source);
+    in.linkedSink = controller_->plan().linkedRequestPads(e->name, gps::Pad::Direction::Sink);
     auto* page = new PropertyPage(in);
     connect(page, &PropertyPage::confirmed, this, [this, page, element] {
         if (controller_->editElement(element, page->edit())) closeProperties();

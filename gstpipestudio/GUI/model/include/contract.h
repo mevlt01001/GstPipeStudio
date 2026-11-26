@@ -23,6 +23,7 @@ using gps::UpdateResult;
 inline std::string toStd(const QString& s) { return s.toStdString(); }
 inline QString fromStd(const std::string& s) { return QString::fromStdString(s); }
 QStringList fromStd(const std::vector<std::string>& list);
+std::vector<std::string> toStd(const QStringList& list);
 // list[i] as Qt text, or fallback when the list is shorter.
 QString itemAt(const std::vector<std::string>& list, size_t i, const QString& fallback = QString());
 

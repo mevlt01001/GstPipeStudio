@@ -110,7 +110,6 @@ private:
     QString addReason() const;
     QString selectionReason(int least = 1) const;
     QString copyTitle() const;  // the template copy a context menu is about, as the user reads it
-    QString templateNameOf(const QString& instanceId) const;  // the library template of a copy, "" when it is gone
 
     AppServices& services_;
     SaveFlow* saveFlow_;      // every save the user asks for, and every question about unsaved changes

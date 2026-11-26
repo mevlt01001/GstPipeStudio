@@ -10,7 +10,6 @@
 #include "executionbackend.h"
 #include "pipeline.h"
 
-class FactoryCatalog;
 class SlowWatch;
 
 // gps-update gets this as --timeout-ms: only a backstop. The user decides about slow runs (SlowWatch).
@@ -19,7 +18,7 @@ constexpr int kUpdateBackstopMs = 600000;
 class ValidationSession : public QObject {
     Q_OBJECT
 public:
-    ValidationSession(gps::Pipeline& pipeline, const FactoryCatalog& catalog, QObject* parent = nullptr);
+    explicit ValidationSession(gps::Pipeline& pipeline, QObject* parent = nullptr);
 
     // A validation soon; suspect is the element the last edit concerned, named when the validator dies.
     void request(const QString& suspect = QString());
@@ -44,7 +43,6 @@ private:
     void stopped(bool cancelled);  // no longer running: cancelled, or done
 
     gps::Pipeline& pipeline_;
-    const FactoryCatalog& catalog_;
     HelperExecutionBackend backend_;
     gps::ExecutionCoordinator execution_{pipeline_, backend_};
     QTimer pause_;  // the short pause that gathers a burst of edits into one validation

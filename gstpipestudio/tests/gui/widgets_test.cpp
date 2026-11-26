@@ -302,7 +302,7 @@ private slots:
         w.show();
         QString src, convert, sink;
         buildChain(w, &src, &convert, &sink);
-        QVERIFY(c->saveTemplate("Tail", {convert, sink}));
+        QVERIFY(saveTemplate(*c, "Tail", {convert, sink}));
         QVERIFY(settle(*c));
         const QString id = c->outline().collapsedTemplate(convert);
         QVERIFY(!id.isEmpty());
@@ -355,7 +355,7 @@ private slots:
         w.show();
         QString src, convert, sink;
         buildChain(w, &src, &convert, &sink);
-        QVERIFY(c->saveTemplate("Tail", {convert, sink}));
+        QVERIFY(saveTemplate(*c, "Tail", {convert, sink}));
         QVERIFY(settle(*c));
         scene_rebuild(w);
         Document* project = w.front();
@@ -402,7 +402,7 @@ private slots:
         w.activate(project);
         QVERIFY(waitFor([&] { return !asked.isEmpty(); }));
         QVERIFY(asked.contains("Tail: revision 1 → 2"));
-        QVERIFY(waitFor([&] { return c->outdatedTemplates().isEmpty(); }));
+        QVERIFY(waitFor([&] { return !holdsOlderTemplates(*c); }));
         useUserDir({});
     }
 
@@ -823,7 +823,7 @@ private slots:
         press(page, "saveButton");
         QVERIFY(waitFor([&] { return !w.flows()->propertyPage() && !visibleChild<TemplatePage>(&w); }));
         QCOMPARE(c->services().library().names(), QStringList({"Tail"}));
-        const auto params = c->templateParams(id);
+        const auto params = c->plan().instance(toStd(id))->params;
         QCOMPARE(params.size(), size_t(2));
         QCOMPARE(params[0].name, c->names().element(toStd(convert)) + ".caps.width");
         QCOMPARE(params[1].name, c->names().element(toStd(sink)) + ".sync");
@@ -864,7 +864,7 @@ private slots:
         w.show();
         QString src, convert, sink;
         buildChain(w, &src, &convert, &sink);
-        QVERIFY(c->saveTemplate("Tail", {convert, sink}));
+        QVERIFY(saveTemplate(*c, "Tail", {convert, sink}));
         QVERIFY(settle(*c));
 
         // Add element lists elements only; templates have their own page.
@@ -949,7 +949,7 @@ private slots:
         w.show();
         QString src, convert, sink;
         buildChain(w, &src, &convert, &sink);
-        QVERIFY(c->saveTemplate("Tail", {convert, sink}));
+        QVERIFY(saveTemplate(*c, "Tail", {convert, sink}));
         QVERIFY(settle(*c));
         const QString conf = root.filePath("door/door.conf");
         QVERIFY(QDir().mkpath(root.filePath("door")));
@@ -1090,7 +1090,7 @@ private slots:
         w.show();
         QString src, convert, sink;
         buildChain(w, &src, &convert, &sink);
-        QVERIFY(c->saveTemplate("Tail", {convert, sink}));
+        QVERIFY(saveTemplate(*c, "Tail", {convert, sink}));
         QVERIFY(settle(*c));
         const QString id = c->outline().collapsedTemplate(convert);
         Document* tab = w.openTemplate("Tail");
@@ -1156,7 +1156,7 @@ private slots:
         w.show();
         QString src, convert, sink;
         buildChain(w, &src, &convert, &sink);
-        QVERIFY(c->saveTemplate("Tail", {convert, sink}));
+        QVERIFY(saveTemplate(*c, "Tail", {convert, sink}));
         QVERIFY(settle(*c));
         Document* tab = w.openTemplate("Tail");
         Controller* t = tab->controller();
@@ -1248,7 +1248,7 @@ private slots:
         w.show();
         QString src, convert, sink;
         buildChain(w, &src, &convert, &sink);
-        QVERIFY(c->saveTemplate("Tail", {convert, sink}));
+        QVERIFY(saveTemplate(*c, "Tail", {convert, sink}));
         QVERIFY(settle(*c));
         const QString id = c->outline().collapsedTemplate(convert);
         c->setTemplateExpanded(id, true);
@@ -2466,7 +2466,7 @@ private slots:
         w.flows()->fromFreePad(src, "src");
         w.scene()->linkContext(src, "src", QPoint(10, 10));  // the locked canvas offers no menu
         w.scene()->elementContext(src, QPoint(10, 10));
-        QVERIFY(!c->deleteSource(src));
+        QVERIFY(!c->deleteElement(src, false));
         w.flows()->editProperties(src);
         w.flows()->chooseElement();
         QTest::qWait(50);
@@ -2592,7 +2592,7 @@ private slots:
         QCOMPARE(w.view()->dragMode(), QGraphicsView::RubberBandDrag);
         QTemporaryDir customDir;
         useUserDir(customDir.path());
-        QVERIFY(c->saveTemplate("ConvSinkPreset", {convert, sink}));
+        QVERIFY(saveTemplate(*c, "ConvSinkPreset", {convert, sink}));
         scene_rebuild(w);
         // Both convert and sink map to the same collapsed ElementItem on the scene, and only 1 external link is drawn!
         QVERIFY(w.scene()->element(convert) != nullptr);

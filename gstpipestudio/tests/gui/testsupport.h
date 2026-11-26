@@ -101,6 +101,29 @@ inline QString addAfter(Controller& c, const QString& element, const QString& pa
     return QString::fromStdString(c.plan().elements.back().name);
 }
 
+// Save as template, as the Properties tab finishes it: the selection becomes a template of that name with no
+// parameters, written to the library and collapsed. False (and why, in the test's output) when it was refused.
+inline bool saveTemplate(Controller& c, const QString& name, const QStringList& elements) {
+    const QString id = c.beginTemplate(elements);
+    if (id.isEmpty()) return false;
+    QString error;
+    if (!c.finishTemplate(id, name, {}, &error)) {
+        qWarning() << error;
+        c.cancelTemplate(id);
+        return false;
+    }
+    c.setTemplateExpanded(id, false);
+    return true;
+}
+
+// Whether a copy on the canvas is older than its library template.
+inline bool holdsOlderTemplates(Controller& c) {
+    for (const gps::TemplateInstance& t : c.plan().instances) {
+        if (c.services().library().isNewer(QString::fromStdString(t.templateName), t.revision)) return true;
+    }
+    return false;
+}
+
 inline ElementEdit withProps(const gps::Props& props) {
     ElementEdit e;
     e.props = props;

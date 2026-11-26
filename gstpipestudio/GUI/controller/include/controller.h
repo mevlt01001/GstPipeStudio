@@ -54,9 +54,8 @@ public:
     bool busy() const { return !busyReason().isEmpty(); }
     QString busyReason() const;  // why a step is running (editing is blocked, or validation runs), "" when none is
     bool editingBlocked() const { return edits_.blocked(); }
-    bool canSave() const { return saveBlockedReason().isEmpty(); }  // Save always writes, unless a file opens or it runs
     bool canRun() const { return runBlockedReason().isEmpty(); }    // validated, no problem, and complete
-    QString saveBlockedReason() const { return edits_.blockedReason(); }  // why Save (and editing) is off, "" when on
+    QString saveBlockedReason() const { return edits_.blockedReason(); }  // why Save (and editing) is off, "" when on: Save always writes, unless a file opens or it runs
     QString runBlockedReason() const;   // why Run (and Monitor) is off, "" when it is on
     bool notValidated() const { return validation_.cancelled(); }  // the user cancelled the last validation
     bool helperStopped() const;  // the last validation's helper crashed or gave no usable answer
@@ -88,13 +87,11 @@ public:
         return templates_.finish(id, name, params, error);
     }
     void cancelTemplate(const QString& id) { templates_.detach(id); }
-    bool saveTemplate(const QString& templateName, const QStringList& elementNames);  // all three, no parameters, collapsed
     std::vector<gps::ExposedParam> parameterChoices(const QStringList& elements) const { return templates_.parameterChoices(elements); }
     void keepEditingTemplate(const QString& id) { templates_.keepEditing(id); }
     bool saveTemplateAsNew(const QString& id, const QString& name, QString* error) { return templates_.saveAsNew(id, name, error); }
-    QStringList outdatedTemplates() const { return templates_.outdated(); }
+    QString templateOf(const QString& id) const { return templates_.libraryOf(id); }  // the library template of a copy
     bool updateTemplates(const QStringList& ids) { return templates_.update(ids); }
-    std::vector<gps::ExposedParam> templateParams(const QString& id) const { return templates_.params(id); }
     bool setTemplateParams(const QString& id, const std::map<std::string, std::string>& values) { return templates_.setParams(id, values); }
     // A library template's parameters (the plan's exposed list) while it is the document (a LibraryTemplateTarget).
     void setTemplateParameters(const std::vector<gps::ExposedParam>& params) { templates_.setTemplateParameters(params); }
@@ -134,7 +131,6 @@ public:
     bool disconnectLink(const QString& element, const QString& pad);
     bool replace(const QString& element, const QString& pad, const QString& factory, const QString& sinkPad,
                  const ElementEdit& edit);
-    bool deleteSource(const QString& element) { return deleteSelection({element}, {}, false); }
     bool deleteElement(const QString& element, bool autoHeal = true) { return deleteSelection({element}, {}, autoHeal); }
     bool deleteSelection(const QStringList& elementNames, const QList<gps::LinkRef>& links = {}, bool autoHeal = true);
     bool spliceElement(const QString& element, const QString& linkSrcElement, const QString& linkSrcPad) {
@@ -143,7 +139,6 @@ public:
     bool spliceElements(const QStringList& elements, const QString& linkSrcElement, const QString& linkSrcPad);
     bool insertQueue(const QString& element, const QString& pad);
     bool removeQueue(const QString& queue);
-    void setPosition(const QString& element, double x, double y) { setPositions({{element, QPointF(x, y)}}); }  // no validation
     void setPositions(const QList<QPair<QString, QPointF>>& positions);
     bool canUndo() const { return edits_.canUndo(); }
     bool canRedo() const { return edits_.canRedo(); }
@@ -225,7 +220,7 @@ private:
     gps::Pipeline pipeline_{"pipeline", [this](const std::string& factory) { return catalog().traits()(factory); }};
     std::shared_ptr<SaveTarget> target_ = std::make_shared<UntitledTarget>(1);
     EditSession edits_{pipeline_};
-    ValidationSession validation_{pipeline_, services_.catalog()};
+    ValidationSession validation_{pipeline_};
     RunSession runs_;
     CanvasLayout* layout_;
     TemplateInstances templates_;

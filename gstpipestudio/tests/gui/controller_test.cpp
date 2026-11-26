@@ -60,7 +60,7 @@ private slots:
 
     void emptyCanvas() {
         QVERIFY(c->plan().empty());
-        QVERIFY(c->canSave());  // Save always writes
+        QVERIFY(c->saveBlockedReason().isEmpty());  // Save always writes
         QVERIFY(!c->canRun());
         QVERIFY(!c->result().valid());
         QCOMPARE(c->launchCommand(), QString());
@@ -109,7 +109,7 @@ private slots:
     void aTemplateOpensAndClosesAroundItsCentre() {
         const Chain chain = makeChain();
         QVERIFY(settle(*c));
-        QVERIFY(c->saveTemplate("Tail", {chain.convert, chain.sink}));
+        QVERIFY(saveTemplate(*c, "Tail", {chain.convert, chain.sink}));
         QVERIFY(settle(*c));
         const QString id = c->outline().collapsedTemplate(chain.convert);
         const QStringList members = c->outline().membersOf(id);
@@ -154,12 +154,12 @@ private slots:
         QVERIFY(!c->editingBlocked());
         QVERIFY(!c->refresh());
         QVERIFY(!c->cut("videotestsrc_0", "src"));
-        QVERIFY(c->canSave());
+        QVERIFY(c->saveBlockedReason().isEmpty());
         QVERIFY(!c->canRun());
         QVERIFY(settle(*c));
         QCOMPARE(finished.count(), 1);
         QCOMPARE(fromStd(c->result().status), QString("ok"));
-        QVERIFY(c->canSave());          // an unfinished pipeline can be saved ...
+        QVERIFY(c->saveBlockedReason().isEmpty());          // an unfinished pipeline can be saved ...
         QVERIFY(!c->canRun());          // ... but not run (SPEC 8)
         ElementView v = c->view("videotestsrc_0");
         QVERIFY(v.isSource);
@@ -174,21 +174,21 @@ private slots:
     // Work no source feeds does not run: adding it keeps the last validation, and saving stays open.
     void looseWorkKeepsTheValidation() {
         Chain ch = makeChain();
-        QVERIFY(c->canSave());
+        QVERIFY(c->saveBlockedReason().isEmpty());
         need(*c, "videoconvert");
         QSignalSpy finished(c.get(), &Controller::updateFinished);
         QVERIFY(c->addElement("videoconvert", {}));
         QVERIFY(!c->busy());
         QCOMPARE(finished.count(), 1);
         QVERIFY(c->result().complete());
-        QVERIFY(c->canSave());
+        QVERIFY(c->saveBlockedReason().isEmpty());
     }
 
     void chainIsCompleteAndRuns() {
         Chain ch = makeChain();
         QVERIFY(!ch.sink.isEmpty());
         QVERIFY(c->result().complete());
-        QVERIFY(c->canSave());
+        QVERIFY(c->saveBlockedReason().isEmpty());
         QVERIFY(c->canRun());
         QCOMPARE(c->view(ch.convert).sinks.size(), 1);
         QCOMPARE(c->view(ch.convert).sinks[0].state, PadView::Linked);
@@ -198,7 +198,7 @@ private slots:
         QSignalSpy ended(c.get(), &Controller::runFinished);
         QVERIFY(c->run());
         QVERIFY(c->running());
-        QVERIFY(!c->canSave());
+        QVERIFY(!c->saveBlockedReason().isEmpty());
         QVERIFY(!c->addElement("videotestsrc", {}));
         QVERIFY(waitFor([&] { return ended.count() == 1; }));
         QCOMPARE(ended[0][0].toString(), QString("eos"));
@@ -277,7 +277,7 @@ private slots:
         QRectF ra(ea->x, ea->y, metrics::kBoxWidth, c->view(a).height());
         QRectF rb(eb->x, eb->y, metrics::kBoxWidth, c->view(b).height());
         QVERIFY(!ra.intersects(rb));
-        QVERIFY(c->canSave());
+        QVERIFY(c->saveBlockedReason().isEmpty());
     }
 
     void noOverlapInABiggerGraph() {
@@ -359,7 +359,7 @@ private slots:
         QCOMPARE(fromStd(c->result().status), QString("ok"));
         QCOMPARE(c->result().refused.size(), 1);
         QVERIFY(!c->result().complete());
-        QVERIFY(c->canSave());
+        QVERIFY(c->saveBlockedReason().isEmpty());
         QVERIFY(!c->canRun());
         QVERIFY(!c->view(src).note.isEmpty());
         QVERIFY(!c->view(src).isError);
@@ -388,13 +388,8 @@ private slots:
         QVERIFY(!c->removeQueue(ch.convert));  // only a queue can be removed this way
     }
 
-    void cutShowsWhatWillGoAndThenCuts() {
+    void cutRemovesOnlyTheLink() {
         Chain ch = makeChain();
-        QString before = text(c->plan().toConf());
-        gps::Removal preview = c->plan().previewCut(toStd(ch.src), "src", c->services().catalog().traits());
-        QVERIFY(preview.elements.empty());
-        QCOMPARE(preview.links, 1);
-        QCOMPARE(text(c->plan().toConf()), before);  // a preview changes nothing
         QVERIFY(c->cut(ch.src, "src"));
         QVERIFY(settle(*c));
         // Free-canvas rule: cutting a link only removes the link; downstream elements remain on the canvas as untracked!
@@ -407,7 +402,6 @@ private slots:
 
     void replaceCutsAndAddsBehindTheSamePad() {
         Chain ch = makeChain();
-        QCOMPARE(c->plan().previewReplace(toStd(ch.src), "src", c->services().catalog().traits()).elements, std::vector<std::string>{ch.convert.toStdString()});
         need(*c, "queue");
         QVERIFY(c->replace(ch.src, "src", "queue", "sink", {}));
         QVERIFY(settle(*c));
@@ -432,14 +426,12 @@ private slots:
         QVERIFY(c->result().complete());
 
         // Deleting a source only deletes that source; the compositor and sink remain on the free canvas.
-        QCOMPARE(c->plan().previewDeleteSource(toStd(one), c->services().catalog().traits()).elements, std::vector<std::string>{one.toStdString()});
-        QVERIFY(c->deleteSource(one));
+        QVERIFY(c->deleteElement(one, false));
         QVERIFY(settle(*c));
         QCOMPARE(c->plan().elements.size(), size_t(3));
         QCOMPARE(c->view(mix).sinks.size(), 1);
         // Deleting the second source removes only that source; mix and out stay on the free canvas as untracked.
-        QCOMPARE(c->plan().previewDeleteSource(toStd(two), c->services().catalog().traits()).elements, std::vector<std::string>{two.toStdString()});
-        QVERIFY(c->deleteSource(two));
+        QVERIFY(c->deleteElement(two, false));
         QVERIFY(settle(*c));
         QCOMPARE(c->plan().elements.size(), size_t(2));
         QVERIFY(c->plan().find(mix.toStdString()));
@@ -448,14 +440,14 @@ private slots:
 
     void aFailedUpdateKeepsTheChange() {
         QString src = addSource(*c, "videotestsrc");
-        QVERIFY(c->canSave());
+        QVERIFY(c->saveBlockedReason().isEmpty());
         QString sink = addAfter(*c, src, "src", "fakesink", "sink", withProps({{"fake-error", "boom: cannot open"}}));
         QVERIFY(!sink.isEmpty());
         QCOMPARE(fromStd(c->result().status), QString("error"));
         QCOMPARE(fromStd(c->result().errorElement), sink);
         QVERIFY(c->plan().find(sink.toStdString()));   // the change stays
         QVERIFY(c->modified());
-        QVERIFY(c->canSave());                        // Save still writes ...
+        QVERIFY(c->saveBlockedReason().isEmpty());                        // Save still writes ...
         QVERIFY(!c->canRun());                        // ... Run closes
         QTemporaryDir dir;
         QVERIFY(saved(saveAs(*c, dir.filePath("x.conf"))));
@@ -469,7 +461,7 @@ private slots:
         // The user can repair it: the update runs again and Save opens.
         QVERIFY(c->editElement(sink, {}));
         QVERIFY(settle(*c));
-        QVERIFY(c->canSave());
+        QVERIFY(c->saveBlockedReason().isEmpty());
         QVERIFY(c->canRun());
         QVERIFY(c->view(sink).note.isEmpty());
     }
@@ -486,7 +478,7 @@ private slots:
         QVERIFY(c->editElement(src, {}));
         QVERIFY(settle(*c));
         QCOMPARE(fromStd(c->result().status), QString("ok"));
-        QVERIFY(c->canSave());
+        QVERIFY(c->saveBlockedReason().isEmpty());
         QVERIFY(!c->canRun());  // a source alone is not complete
     }
 
@@ -537,12 +529,9 @@ private slots:
     }
 
     void cancelLeavesThePlanAlone() {
-        // Everything before the last page's Add / Save is a read: previews, info and compatible lists change nothing.
+        // Everything before the last page's Add / Save is a read: info and compatible lists change nothing.
         Chain ch = makeChain();
         QString before = text(c->plan().toConf());
-        c->plan().previewCut(toStd(ch.src), "src", c->services().catalog().traits());
-        c->plan().previewReplace(toStd(ch.src), "src", c->services().catalog().traits());
-        c->plan().previewDeleteSource(toStd(ch.src), c->services().catalog().traits());
         need(*c, "tee");
         QStringList compatible;
         c->services().catalog().fetchCompatible("video/x-raw", c.get(), [&](const QStringList& l) { compatible = l; });
@@ -719,7 +708,7 @@ private slots:
         useUserDir(state.path());
         const Chain chain = makeChain();
         QVERIFY(settle(*c));
-        QVERIFY(c->saveTemplate("Tail", {chain.convert, chain.sink}));
+        QVERIFY(saveTemplate(*c, "Tail", {chain.convert, chain.sink}));
         c->open(std::make_unique<LibraryTemplateTarget>("Tail", c->services().library()));
         QVERIFY(waitFor([&] { return c->target().libraryTemplate() == "Tail" && !c->busy(); }));
         const QString convert = fromStd(c->plan().elements.front().name);
@@ -745,7 +734,7 @@ private slots:
         useUserDir(state.path());
         const Chain chain = makeChain();
         QVERIFY(settle(*c));
-        QVERIFY(c->saveTemplate("Tail", {chain.convert, chain.sink}));
+        QVERIFY(saveTemplate(*c, "Tail", {chain.convert, chain.sink}));
         QVERIFY(settle(*c));
         QVERIFY(saved(saveAs(*c, dir.filePath("uses.conf"))));
         const QString project = ProjectFile::pathForConf(dir.filePath("uses.conf"));
@@ -771,7 +760,7 @@ private slots:
         useUserDir(state.path());
         const Chain chain = makeChain();
         QVERIFY(settle(*c));
-        QVERIFY(c->saveTemplate("Tail", {chain.convert, chain.sink}));
+        QVERIFY(saveTemplate(*c, "Tail", {chain.convert, chain.sink}));
         QVERIFY(settle(*c));
 
         c->open(std::make_unique<LibraryTemplateTarget>("Tail", c->services().library()));
@@ -848,7 +837,7 @@ private slots:
         useUserDir(state.path());
         const Chain chain = makeChain();
         QVERIFY(settle(*c));
-        QVERIFY(c->saveTemplate("Tail", {chain.convert, chain.sink}));
+        QVERIFY(saveTemplate(*c, "Tail", {chain.convert, chain.sink}));
         QVERIFY(settle(*c));
         const QString id = c->outline().collapsedTemplate(chain.convert);
         QCOMPARE(fromStd(c->names().instance(toStd(id))), QString("Tail"));
@@ -918,7 +907,7 @@ private slots:
         useUserDir(state.path());
         const Chain chain = makeChain();
         QVERIFY(settle(*c));
-        QVERIFY(c->saveTemplate("Tail", {chain.convert, chain.sink}));
+        QVERIFY(saveTemplate(*c, "Tail", {chain.convert, chain.sink}));
         QVERIFY(settle(*c));
         const QString src = addSource(*c, "videotestsrc");
         QVERIFY(!src.isEmpty());
@@ -938,7 +927,7 @@ private slots:
         useUserDir(state.path());
         const Chain chain = makeChain();
         QVERIFY(settle(*c));
-        QVERIFY(c->saveTemplate("Tail", {chain.convert, chain.sink}));
+        QVERIFY(saveTemplate(*c, "Tail", {chain.convert, chain.sink}));
         QVERIFY(settle(*c));
         const QString first = c->outline().collapsedTemplate(chain.convert);
         const QStringList second = c->place(TemplateLibrary::ref("Tail"));
@@ -979,7 +968,7 @@ private slots:
         QTest::qWait(100);
         QCOMPARE(outdated.count(), 1);
         QVERIFY(c->updateTemplates(outdated[0][0].toStringList()));
-        QVERIFY(c->outdatedTemplates().isEmpty());
+        QVERIFY(!holdsOlderTemplates(*c));
     }
 
     void dragMovesTheBoxButSavesNothing() {
@@ -987,13 +976,13 @@ private slots:
         QTemporaryDir dir;
         QVERIFY(saved(saveAs(*c, dir.filePath("p.conf"))));
         QSignalSpy changed(c.get(), &Controller::changed);
-        c->setPosition(src, 512, 384);
+        c->setPositions({{src, QPointF(512, 384)}});
         QCOMPARE(changed.count(), 1);
         QCOMPARE(c->plan().find(toStd(src))->x, 512.0);
         QVERIFY(!text(c->plan().toConf()).contains("x=512"));  // nice alignment places boxes when a file opens
         QVERIFY(!c->modified());
         QVERIFY(c->canUndo());  // still one step back
-        c->setPosition(src, 512, 384);  // same place: nothing to report
+        c->setPositions({{src, QPointF(512, 384)}});  // same place: nothing to report
         QCOMPARE(changed.count(), 1);
     }
 
@@ -1025,7 +1014,7 @@ private slots:
         const double oldX = initial->x, oldY = initial->y;
         const auto executionRevision = c->pipeline().lastChange().executionRevision;
         QSignalSpy completed(c.get(), &Controller::updateFinished);
-        c->setPosition(source, -12000, -8000);
+        c->setPositions({{source, QPointF(-12000, -8000)}});
         QCOMPARE(c->pipeline().graph().find(toStd(source))->x, -12000.0);
         QCOMPARE(c->pipeline().lastChange().executionRevision, executionRevision);
         QVERIFY(!c->updating());
@@ -1165,7 +1154,7 @@ private slots:
         QCOMPARE(c->plan().links.size(), size_t(1));
 
         // 4. Save the connected pair (conv -> scale) as a reusable Template ("ScaleConvert").
-        QVERIFY(c->saveTemplate("ScaleConvert", {conv, scale}));
+        QVERIFY(saveTemplate(*c, "ScaleConvert", {conv, scale}));
         const QList<ComponentInfo> templates = c->services().library().components();
         QCOMPARE(templates.size(), 1);
         QCOMPARE(templates.first().title, QString("ScaleConvert"));

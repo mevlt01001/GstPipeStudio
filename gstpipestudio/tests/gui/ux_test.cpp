@@ -264,7 +264,7 @@ private slots:
         w.scene()->rebuild();
         QVERIFY(w.scene()->element(src)->flags() & QGraphicsItem::ItemIsMovable);
         const auto revision = c->pipeline().lastChange().executionRevision;
-        c->setPosition(src, -9000, 200);
+        c->setPositions({{src, QPointF(-9000, 200)}});
         QCOMPARE(c->pipeline().lastChange().executionRevision, revision);
         const double zoom = w.view()->zoom(); w.view()->zoomBy(1.25);
         QVERIFY(w.view()->zoom() != zoom);
@@ -359,7 +359,7 @@ private slots:
         QVERIFY(c->editElement(src, {}));
         QVERIFY(settle(*c));
         QVERIFY(!c->notValidated());
-        QVERIFY(c->canSave());
+        QVERIFY(c->saveBlockedReason().isEmpty());
         QVERIFY(w.findChild<QAction*>("actionSave")->isEnabled());
     }
 

@@ -175,8 +175,7 @@ void Document::showState() {
 
 // The view fits the pipeline when its elements change, and once when a file has opened.
 void Document::rebuilt() {
-    QStringList names;
-    for (const auto& e : controller_->plan().elements) names << QString::fromStdString(e.name);
+    const QStringList names = fromStd(controller_->plan().elementNames());
     const bool changed = names != lastNames_;
     lastNames_ = names;
     if (names.isEmpty()) return;

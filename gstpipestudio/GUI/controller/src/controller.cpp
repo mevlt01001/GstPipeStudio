@@ -31,12 +31,6 @@ QString shellQuote(const QString& s) {
     return plain.match(s).hasMatch() ? s : "'" + QString(s).replace("'", "'\\''") + "'";
 }
 
-std::vector<std::string> toStd(const QStringList& names) {
-    std::vector<std::string> out;
-    for (const QString& n : names) out.push_back(n.toStdString());
-    return out;
-}
-
 }  // namespace
 
 Controller::Controller(AppServices& services, QObject* parent)
@@ -174,19 +168,6 @@ QString Controller::beginTemplate(const QStringList& elements) {
     return id;
 }
 
-bool Controller::saveTemplate(const QString& templateName, const QStringList& elementNames) {
-    const QString id = beginTemplate(elementNames);
-    if (id.isEmpty()) return false;
-    QString error;
-    if (!finishTemplate(id, templateName, {}, &error)) {
-        emit notice(error);
-        cancelTemplate(id);
-        return false;
-    }
-    setTemplateExpanded(id, false);
-    return true;
-}
-
 // Collapsing ends a copy's editing. The box grows into its frame from its centre, or the frame shrinks into it;
 // everything around it makes room.
 void Controller::setTemplateExpanded(const QString& id, bool expanded) {
@@ -241,13 +222,8 @@ QStringList Controller::land(const ComponentRef& component, const QPointF& at, c
 
 // The clip's factories are known (true), or are asked for and retry runs once they are (false).
 bool Controller::infosReady(const gps::Graph& clip, std::function<void()> retry) {
-    QStringList missing;
-    for (const gps::Element& e : clip.elements) {
-        QString factory = fromStd(e.factory);
-        if (!catalog().info(factory) && !missing.contains(factory)) missing << factory;
-    }
-    if (missing.isEmpty()) return true;
-    catalog().fetchInfos(missing, this, [retry](bool ok) {
+    if (catalog().missing(clip).isEmpty()) return true;
+    catalog().fetchMissing(clip, this, [retry](bool ok) {
         if (ok) retry();
     });
     return false;
@@ -581,9 +557,7 @@ bool Controller::disconnectBetweenElements(const QStringList& names) {
 
 bool Controller::niceAlign(const QStringList& elements) {
     const QStringList chosen = elements.isEmpty() ? QStringList() : outline().expand(elements);
-    QStringList all;
-    for (const gps::Element& e : plan().elements) all << fromStd(e.name);
-    return layout_->align(chosen, layout_->pinOf(chosen.isEmpty() ? all : chosen));  // what is on screen stays there
+    return layout_->align(chosen, layout_->pinOf(chosen.isEmpty() ? fromStd(plan().elementNames()) : chosen));  // what is on screen stays there
 }
 
 // An edit of the user's, with automatic alignment on: the whole canvas follows, once for a burst of edits.
@@ -662,12 +636,8 @@ void Controller::load(const QString& source, std::shared_ptr<SaveTarget> target,
         emit notice("Unable to open the file: " + fromStd(error));
         return;
     }
-    QStringList factories;
-    for (const gps::Element& e : loaded->elements) {
-        if (!factories.contains(fromStd(e.factory))) factories << fromStd(e.factory);
-    }
     opening_ = true;
-    catalog().fetchInfos(factories, this, [this, loaded, target, how, action](bool ok) {
+    catalog().fetchMissing(*loaded, this, [this, loaded, target, how, action](bool ok) {
         opening_ = false;
         if (!ok) {
             emit notice("Unable to open the file: the plan uses an element this installation does not have.");

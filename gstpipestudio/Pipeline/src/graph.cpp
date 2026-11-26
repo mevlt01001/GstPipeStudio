@@ -1,5 +1,6 @@
 // plan.cpp – the rules of SPEC 4. Nothing in here knows an element by name except the queue (SPEC 4.4).
 #include "graph.h"
+#include "pipeline.h"
 
 #include <algorithm>
 #include <cctype>
@@ -99,6 +100,34 @@ std::string Graph::sinkIdentity(size_t index) const {
     for (size_t i = 0; i < index; ++i)
         if (links[i].sinkElement == link.sinkElement && links[i].sinkPad == link.sinkPad) ++ordinal;
     return padIdentity(link.sinkPad, ordinal);
+}
+
+std::vector<std::string> Graph::elementNames() const {
+    std::vector<std::string> out;
+    for (const Element& e : elements) out.push_back(e.name);
+    return out;
+}
+
+std::vector<std::string> Graph::factories() const {
+    std::vector<std::string> out;
+    for (const Element& e : elements) {
+        if (std::find(out.begin(), out.end(), e.factory) == out.end()) out.push_back(e.factory);
+    }
+    return out;
+}
+
+std::map<std::string, int> Graph::linkedRequestPads(const std::string& element, Pad::Direction direction) const {
+    std::map<std::string, int> out;
+    for (const Connection& l : links) {
+        std::string templateName;
+        int k = 0;
+        if (direction == Pad::Direction::Source) {
+            if (l.srcElement == element && splitPadIdentity(l.srcPad, &templateName, &k)) ++out[templateName];
+        } else if (l.sinkElement == element) {
+            ++out[l.sinkPad];
+        }
+    }
+    return out;
 }
 
 std::pair<double, double> Graph::topLeft() const {
@@ -225,21 +254,10 @@ bool Graph::isElementTracked(const std::string& name, const TraitsFn& traits) co
     return std::find(tracked.begin(), tracked.end(), name) != tracked.end();
 }
 
+// What runs: the tracked elements as a fragment of the graph, under its name.
 Graph Graph::trackedSubplan(const TraitsFn& traits) const {
-    std::vector<std::string> tracked = trackedElements(traits);
-    std::set<std::string> keep(tracked.begin(), tracked.end());
-    Graph sub;
+    Graph sub = GraphFragment(trackedElements(traits)).copy(*this);
     sub.name = name;
-    sub.nextId = nextId;
-    for (const Element& e : elements) {
-        if (keep.count(e.name)) sub.elements.push_back(e);
-    }
-    for (const Connection& l : links) {
-        if (keep.count(l.srcElement) && keep.count(l.sinkElement)) sub.links.push_back(l);
-    }
-    for (const ExposedParam& p : exposed) {
-        if (keep.count(p.element)) sub.exposed.push_back(p);
-    }
     return sub;
 }
 
@@ -330,6 +348,8 @@ bool Graph::setRequestSrc(const std::string& element, const std::string& templat
     Element* e = find(element);
     if (!e || count < 0) return false;
 
+    if (count < linkedRequestPads(element, Pad::Direction::Source)[templateName]) return false;
+
     std::vector<std::pair<int, int>> linked;  // (pad index, link index)
     for (size_t i = 0; i < links.size(); ++i) {
         std::string t;
@@ -338,7 +358,6 @@ bool Graph::setRequestSrc(const std::string& element, const std::string& templat
             linked.emplace_back(k, static_cast<int>(i));
         }
     }
-    if (count < static_cast<int>(linked.size())) return false;
 
     std::sort(linked.begin(), linked.end());
     for (size_t j = 0; j < linked.size(); ++j) links[linked[j].second].srcPad = padIdentity(templateName, static_cast<int>(j));
@@ -353,11 +372,7 @@ bool Graph::setRequestSrc(const std::string& element, const std::string& templat
 bool Graph::setRequestSink(const std::string& element, const std::string& templateName, int count) {
     Element* e = find(element);
     if (!e || count < 0) return false;
-    int linkedCount = 0;
-    for (const Connection& l : links) {
-        if (l.sinkElement == element && l.sinkPad == templateName) ++linkedCount;
-    }
-    if (count < linkedCount) return false;
+    if (count < linkedRequestPads(element, Pad::Direction::Sink)[templateName]) return false;
     if (count == 0) e->requestSink.erase(templateName);
     else e->requestSink[templateName] = count;
     return true;
@@ -526,27 +541,10 @@ void Graph::dropEmptyInstances() {
     }
 }
 
-Removal Graph::prune(const TraitsFn& traits) {
-    Removal removed;
-    for (;;) {
-        std::vector<std::string> dead;
-        for (const Element& e : elements) {
-            if (!traits(e.factory).isSource && linksInto(e.name).empty()) dead.push_back(e.name);
-        }
-        if (dead.empty()) return removed;
-        for (const std::string& name : dead) dropElement(name, &removed);
-    }
-}
-
 Removal Graph::cut(const std::string& srcElement, const std::string& srcPad, const TraitsFn&) {
     Removal removed;
     if (disconnectLink(srcElement, srcPad)) removed.links = 1;
     return removed;
-}
-
-Removal Graph::previewCut(const std::string& srcElement, const std::string& srcPad, const TraitsFn& traits) const {
-    Graph copy = *this;
-    return copy.cut(srcElement, srcPad, traits);
 }
 
 Addition Graph::replace(const std::string& srcElement, const std::string& srcPad, const std::string& factory,
@@ -580,29 +578,6 @@ Addition Graph::replace(const std::string& srcElement, const std::string& srcPad
         find(result.element)->group = group;
     }
     return result;
-}
-
-Removal Graph::previewReplace(const std::string& srcElement, const std::string& srcPad, const TraitsFn&) const {
-    Removal removed;
-    int old = linkFrom(srcElement, srcPad);
-    if (old >= 0) {
-        Graph copy = *this;
-        copy.dropElement(links[old].sinkElement, &removed);
-    }
-    return removed;
-}
-
-Removal Graph::deleteSource(const std::string& name, const TraitsFn& traits) {
-    Removal removed;
-    const Element* e = find(name);
-    if (!e || (traits && !traits(e->factory).isSource)) return removed;
-    dropElement(name, &removed);
-    return removed;
-}
-
-Removal Graph::previewDeleteSource(const std::string& name, const TraitsFn& traits) const {
-    Graph copy = *this;
-    return copy.deleteSource(name, traits);
 }
 
 // ---- the queue shortcut. Its pad names are part of the exception (SPEC 4.4).

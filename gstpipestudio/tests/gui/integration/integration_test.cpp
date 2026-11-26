@@ -524,7 +524,7 @@ private slots:
         QVERIFY(video->view().label.startsWith("video_"));
         QVERIFY(!c->result().complete());
         QVERIFY(!c->canRun());
-        QVERIFY(c->canSave());
+        QVERIFY(c->saveBlockedReason().isEmpty());
         QVERIFY(w->findChild<QAction*>("actionSave")->isEnabled());
         QVERIFY(!w->findChild<QAction*>("actionRun")->isEnabled());
         // the Validation panel shows exactly the pads of the JSON
@@ -580,7 +580,7 @@ private slots:
             idle();
         }
         QVERIFY2(c->result().ok(), (c->result().status + ": " + c->result().message).c_str());
-        QVERIFY(c->canSave());
+        QVERIFY(c->saveBlockedReason().isEmpty());
 
         QString vsink = addBehind(conv, "src", "fakesink");
         QString asink = addBehind(demux, "audio_%u#0", "fakesink");
@@ -802,7 +802,7 @@ private slots:
         QCOMPARE(w->scene()->pad(b, "src", true)->view().state, PadView::Free);
         QVERIFY(!c->result().complete());
         QVERIFY(!c->canRun());
-        QVERIFY(c->canSave());
+        QVERIFY(c->saveBlockedReason().isEmpty());
         QVERIFY(shot("11_confirm_3_elements"));
 
         // Re-link b.src -> cc.sink, then replace cc (behind b.src) with videoflip: only cc is replaced, d stays on canvas!
@@ -871,7 +871,7 @@ private slots:
         QCOMPARE(fromStd(c->result().status), QString("error"));
         QCOMPARE(fromStd(c->result().errorElement), file);
         QVERIFY2(fromStd(c->result().message).contains("exist.avi") || fromStd(c->result().message).contains("not found"), c->result().message.c_str());
-        QVERIFY(c->canSave());  // Save always writes; validation gates Run
+        QVERIFY(c->saveBlockedReason().isEmpty());  // Save always writes; validation gates Run
         QVERIFY(w->findChild<QAction*>("actionSave")->isEnabled());
         QVERIFY(!w->findChild<QAction*>("actionRun")->isEnabled());
         QVERIFY(w->scene()->element(file)->view().isError);
@@ -890,7 +890,7 @@ private slots:
         timed("Edit properties: fix the location", [&] { press(dialog, "saveButton"); });
         idle();
         QCOMPARE(fromStd(c->result().status), QString("ok"));
-        QVERIFY(c->canSave());
+        QVERIFY(c->saveBlockedReason().isEmpty());
         QVERIFY(w->findChild<QAction*>("actionSave")->isEnabled());
         QVERIFY(!w->scene()->element(file)->view().isError);
         QVERIFY(w->saveFlow()->saveAs(w->front(), work.filePath("fixed.conf")));
@@ -1062,7 +1062,7 @@ private slots:
         timed("Validate (F5) after the crash", [&] { w->findChild<QAction*>("actionUpdate")->trigger(); });
         idle();
         QCOMPARE(fromStd(c->result().status), QString("ok"));
-        QVERIFY(c->canSave());
+        QVERIFY(c->saveBlockedReason().isEmpty());
         QVERIFY(!w->scene()->element(conv)->view().isError);
     }
 

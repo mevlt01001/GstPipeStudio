@@ -7,6 +7,12 @@ QStringList fromStd(const std::vector<std::string>& list) {
     return out;
 }
 
+std::vector<std::string> toStd(const QStringList& list) {
+    std::vector<std::string> out;
+    for (const QString& item : list) out.push_back(toStd(item));
+    return out;
+}
+
 QString itemAt(const std::vector<std::string>& list, size_t i, const QString& fallback) {
     return i < list.size() ? fromStd(list[i]) : fallback;
 }
