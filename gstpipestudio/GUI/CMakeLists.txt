@@ -34,6 +34,7 @@ add_library(gps_gui STATIC
     controller/include/templateinstances.h controller/src/templateinstances.cpp
     controller/include/documentviews.h controller/src/documentviews.cpp
     controller/include/flows.h controller/src/flows.cpp
+    controller/include/panelslot.h controller/src/panelslot.cpp
     controller/include/canvaslayout.h controller/src/canvaslayout.cpp
     controller/include/outline.h controller/src/outline.cpp
     controller/include/documentbackup.h controller/src/documentbackup.cpp

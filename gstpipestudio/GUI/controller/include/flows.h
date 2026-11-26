@@ -7,6 +7,7 @@
 #include <functional>
 
 #include "controller.h"
+#include "panelslot.h"
 
 class CapsPage;
 class Drawer;
@@ -26,8 +27,8 @@ public:
 
     PropertyPage* propertyPage() const;
     CapsPage* capsPage() const;
-    QString propertiesTitle() const { return propsTitle_; }
-    QString capsTitle() const { return capsTitle_; }
+    QString propertiesTitle() const { return props_.title(); }
+    QString capsTitle() const { return caps_.title(); }
 
     void closeProperties();
     void closeCaps();
@@ -78,11 +79,7 @@ private:
     Controller* controller_;
     Drawer* drawer_;
     QWidget* window_;
-    Panels* panels_ = nullptr;
-    QWidget* propsTab_ = nullptr;
-    QWidget* capsTab_ = nullptr;
-    QWidget* defaultTab_ = nullptr;
-    QString propsTitle_;
-    QString capsTitle_;
+    PanelSlot props_{"propsTab", "Click an element on the canvas to inspect or edit its Properties."};
+    PanelSlot caps_{"capsTab", "Click a link on the canvas to inspect or edit its Caps."};
     QMetaObject::Connection pending_;  // waits for the validation that decides whether the caps tab opens
 };

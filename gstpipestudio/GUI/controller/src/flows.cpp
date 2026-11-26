@@ -1,14 +1,8 @@
 // flows.cpp
 #include "flows.h"
 
-#include "panels.h"
-
 #include <algorithm>
 #include <memory>
-#include <QHBoxLayout>
-#include <QLabel>
-#include <QTabWidget>
-#include <QVBoxLayout>
 
 #include "capspage.h"
 #include "capstext.h"
@@ -18,33 +12,13 @@
 #include "templatepage.h"
 #include "templateparamspage.h"
 #include "templates.h"
-#include "theme.h"
-
-namespace {
-
-void clearTabLayout(QWidget* tab) {
-    if (!tab || !tab->layout()) return;
-    QLayout* layout = tab->layout();
-    while (QLayoutItem* item = layout->takeAt(0)) {
-        if (QWidget* w = item->widget()) {
-            w->hide();
-            w->setParent(nullptr);
-            w->deleteLater();
-        }
-        delete item;
-    }
-}
-
-}  // namespace
 
 Flows::Flows(Controller* controller, Drawer* drawer, QWidget* window)
     : QObject(window), controller_(controller), drawer_(drawer), window_(window) {}
 
 void Flows::setBottomPanels(Panels* panels, QWidget* propsTab, QWidget* capsTab, QWidget* defaultTab) {
-    panels_ = panels;
-    propsTab_ = propsTab;
-    capsTab_ = capsTab;
-    defaultTab_ = defaultTab;
+    props_.attach(panels, propsTab, defaultTab);
+    caps_.attach(panels, capsTab, defaultTab);
     closeProperties();
     closeCaps();
 }
@@ -103,98 +77,35 @@ void Flows::editTemplateParams(const QString& instanceId) {
     connect(page, &TemplateParamsPage::confirmed, this, [this, page, instanceId] {
         if (controller_->setTemplateParams(instanceId, page->values())) closeProperties();
     });
-    presentProperties(page, "Template · " + fromStd(t->templateName));
+    presentProperties(page, "Template · " + fromStd(controller_->names().instance(t->id)));
 }
 
 PropertyPage* Flows::propertyPage() const {
-    return propsTab_ ? propsTab_->findChild<PropertyPage*>() : nullptr;
+    return props_.tab() ? props_.tab()->findChild<PropertyPage*>() : nullptr;
 }
 
 CapsPage* Flows::capsPage() const {
-    return capsTab_ ? capsTab_->findChild<CapsPage*>() : nullptr;
+    return caps_.tab() ? caps_.tab()->findChild<CapsPage*>() : nullptr;
 }
 
 void Flows::presentProperties(DrawerPage* page, const QString& title) {
     drawer_->dismiss();
-    if (!propsTab_ || !panels_) {
-        page->deleteLater();
-        return;
-    }
-    clearTabLayout(propsTab_);
-    propsTitle_ = title;
-    auto* layout = static_cast<QVBoxLayout*>(propsTab_->layout());
-    auto* titleLabel = new QLabel(title, propsTab_);
-    titleLabel->setObjectName("propsTabTitle");
-    titleLabel->setStyleSheet("font-weight: bold; color: " + Theme::accent().name() + ";");
-    layout->addWidget(titleLabel);
-    page->setParent(propsTab_);
-    layout->addWidget(page, 1);
-    page->show();
-    connect(page, &DrawerPage::cancelled, this, &Flows::closeProperties);
-    panels_->show(propsTab_);
-    page->focusFirst();
+    if (props_.present(page, title)) connect(page, &DrawerPage::cancelled, this, &Flows::closeProperties);
 }
 
 void Flows::closeProperties() {
     abandonPending();  // closing while a validation runs: no caps step afterwards
-    propsTitle_.clear();
-    if (!propsTab_) return;
-    bool wasCurrent = panels_ && panels_->showing(propsTab_);
-    clearTabLayout(propsTab_);
-    auto* layout = static_cast<QVBoxLayout*>(propsTab_->layout());
-    auto* hint = new QLabel("Click an element on the canvas to inspect or edit its Properties.", propsTab_);
-    hint->setObjectName("muted");
-    layout->addWidget(hint);
-    layout->addStretch(1);
-    if (wasCurrent && defaultTab_) panels_->show(defaultTab_);
+    props_.close();
 }
 
 void Flows::presentCaps(CapsPage* page, const QString& title, const QString& subtitle) {
     drawer_->dismiss();
-    if (!capsTab_ || !panels_) {
-        page->deleteLater();
-        return;
-    }
-    clearTabLayout(capsTab_);
-    capsTitle_ = title;
-    auto* layout = static_cast<QVBoxLayout*>(capsTab_->layout());
-    auto* headRow = new QHBoxLayout;
-    auto* titleLabel = new QLabel(title, capsTab_);
-    titleLabel->setObjectName("capsTabTitle");
-    titleLabel->setStyleSheet("font-weight: bold; color: " + Theme::accent().name() + ";");
-    headRow->addWidget(titleLabel);
-    if (!subtitle.isEmpty()) {
-        auto* subLabel = new QLabel(subtitle, capsTab_);
-        subLabel->setObjectName("capsTabSubtitle");
-        subLabel->setStyleSheet("color: " + Theme::muted().name() + ";");
-        headRow->addWidget(subLabel);
-    }
-    headRow->addStretch(1);
-    auto* headWidget = new QWidget(capsTab_);
-    headWidget->setLayout(headRow);
-    headRow->setContentsMargins(0, 0, 0, 0);
-    layout->addWidget(headWidget);
-    page->setParent(capsTab_);
-    layout->addWidget(page, 1);
-    page->show();
+    if (!caps_.present(page, title, subtitle)) return;
     connect(page, &DrawerPage::cancelled, this, &Flows::closeCaps);
     connect(page, &CapsPage::skipped, this, &Flows::closeCaps);
-    panels_->show(capsTab_);
-    page->focusFirst();
 }
 
-void Flows::closeCaps() {
-    capsTitle_.clear();
-    if (!capsTab_) return;
-    bool wasCurrent = panels_ && panels_->showing(capsTab_);
-    clearTabLayout(capsTab_);
-    auto* layout = static_cast<QVBoxLayout*>(capsTab_->layout());
-    auto* hint = new QLabel("Click a link on the canvas to inspect or edit its Caps.", capsTab_);
-    hint->setObjectName("muted");
-    layout->addWidget(hint);
-    layout->addStretch(1);
-    if (wasCurrent && defaultTab_) panels_->show(defaultTab_);
-}
+void Flows::closeCaps() { caps_.close(); }
 
 // The user closed the drawer or cancelled while the validation of an edit was still running: no caps page opens afterwards.
 void Flows::abandonPending() { disconnect(pending_); }
