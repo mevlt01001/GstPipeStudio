@@ -211,6 +211,9 @@ public:
     std::string insertQueue(const std::string& srcElement, const std::string& srcPad);  // "" if the pad is free
     bool removeQueue(const std::string& queueName);
 
+    // Checks authored topology and references, independently of the installed factories.
+    bool validate(std::string* error = nullptr) const;
+
     // ---- text form
     // Inline: every element, template members too (temporary files, the clipboard, the library's own files).
     // Reference: a project's conf. An unchanged top-level template copy is written like an element, by its template's

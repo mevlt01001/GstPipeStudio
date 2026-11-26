@@ -1,7 +1,6 @@
 #include "pipeline.h"
 #include "templates.h"
 #include <algorithm>
-#include <cmath>
 #include <set>
 #include <stdexcept>
 
@@ -27,45 +26,7 @@ bool fail(std::string* error, const std::string& message) {
 }
 
 Pipeline::Pipeline(std::string name, TraitsFn traits) : traits_(std::move(traits)), editor_(*this) { graph_.name = std::move(name); clearObservations(); }
-bool Pipeline::validate(const Graph& graph, std::string* error) {
-    std::set<std::string> names;
-    for (const auto& e : graph.elements) {
-        if (e.name.empty() || e.factory.empty() || !names.insert(e.name).second)
-            return fail(error, "Elements need unique non-empty identities and factories");
-        if (!std::isfinite(e.x) || !std::isfinite(e.y)) return fail(error, "Element coordinates must be finite");
-        for (const auto* requests : {&e.requestSrc, &e.requestSink})
-            for (const auto& entry : *requests)
-                if (entry.second < 0) return fail(error, "A request pad count cannot be negative");
-    }
-    std::set<std::pair<std::string, std::string>> sources, sinks;
-    for (const auto& l : graph.links) {
-        if (!names.count(l.srcElement) || !names.count(l.sinkElement) || l.srcPad.empty() || l.sinkPad.empty())
-            return fail(error, "A connection refers to a missing element or empty pad identity");
-        if (!sources.emplace(l.srcElement, l.srcPad).second)
-            return fail(error, "A source pad already has a connection");
-        if (!isTemplateName(l.sinkPad) && !sinks.emplace(l.sinkElement, l.sinkPad).second)
-            return fail(error, "A sink pad already has a connection");
-        if (graph.wouldCycle(l.srcElement, l.sinkElement)) return fail(error, "A connection would create a cycle");
-    }
-    std::set<std::string> exposed;
-    for (const auto& p : graph.exposed)
-        if (!names.count(p.element) || p.name.empty() || !exposed.insert(p.name).second)
-            return fail(error, "An exposed property has a missing owner or duplicate name");
-    std::set<std::string> instances;
-    for (const auto& t : graph.instances)
-        if (t.id.empty() || !instances.insert(t.id).second) return fail(error, "Template instances need unique identities");
-    for (const auto& t : graph.instances) {
-        if (!t.parent.empty() && !instances.count(t.parent)) return fail(error, "A template instance names a missing parent");
-        if (templates::inside(graph, t.id, t.id)) return fail(error, "A template instance cannot be inside itself");
-        std::set<std::string> params;
-        for (const auto& p : t.params)
-            if (!templates::inside(graph, p.element, t.id) || !params.insert(p.name).second)
-                return fail(error, "A template parameter has a missing owner or duplicate name");
-    }
-    for (const auto& e : graph.elements)
-        if (!e.group.empty() && !instances.count(e.group)) return fail(error, "An element names a missing template instance");
-    return true;
-}
+bool Pipeline::validate(const Graph& graph, std::string* error) { return graph.validate(error); }
 void Pipeline::install(Graph graph) {
     const bool affectsExecution = executionKey(executed(graph)) != executionKey(executed(graph_));
     nextIdentity_ = std::max(nextIdentity_, graph.nextId);

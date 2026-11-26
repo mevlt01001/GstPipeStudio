@@ -203,7 +203,6 @@ bool Graph::fromConf(const std::string& text, Graph* out, std::string* error, co
     std::map<std::string, std::map<std::string, std::string>> values;  // referenced copy -> parameter values
     bool header = false;
     int next = 0;
-    std::set<std::string> names;
     for (const Section& s : sections) {
         if (s.kind == "gstpipestudio") {
             header = true;
@@ -215,7 +214,6 @@ bool Graph::fromConf(const std::string& text, Graph* out, std::string* error, co
             if (const std::string* v = s.get("revision")) plan.revision = std::max(0, std::atoi(v->c_str()));
         } else if (s.kind == "element") {
             if (!validName(s.name)) return fail(error, s.line, "bad element name '" + s.name + "'");
-            if (!names.insert(s.name).second) return fail(error, s.line, "duplicate element '" + s.name + "'");
             const std::string* factory = s.get("factory");
             if (!factory || factory->empty()) return fail(error, s.line, "element without factory");
             Element e;
@@ -314,42 +312,8 @@ bool Graph::fromConf(const std::string& text, Graph* out, std::string* error, co
     for (ExposedParam& p : plan.exposed) {
         if (!reach(&p.element, &p.property)) return fail(error, 0, "expose '" + p.name + "' names a member its template does not have");
     }
-    for (const Element& e : plan.elements) names.insert(e.name);
-
-    // 3. The plan must make sense on its own.
-    std::set<std::pair<std::string, std::string>> srcPads;
-    std::set<std::pair<std::string, std::string>> sinkPads;
-    for (const Connection& l : plan.links) {
-        if (!names.count(l.srcElement) || !names.count(l.sinkElement)) {
-            return fail(error, 0, "link " + l.srcElement + " -> " + l.sinkElement + " names an element that does not exist");
-        }
-        if (!srcPads.insert({l.srcElement, l.srcPad}).second) {
-            return fail(error, 0, "src pad " + l.srcElement + "." + l.srcPad + " has two links");
-        }
-        if (!isTemplateName(l.sinkPad) && !sinkPads.insert({l.sinkElement, l.sinkPad}).second) {
-            return fail(error, 0, "sink pad " + l.sinkElement + "." + l.sinkPad + " has two links");
-        }
-    }
-    {
-        Graph check;
-        for (const Element& e : plan.elements) check.elements.push_back(e);
-        for (const Connection& l : plan.links) {
-            if (check.wouldCycle(l.srcElement, l.sinkElement)) {
-                return fail(error, 0, "link " + l.srcElement + " -> " + l.sinkElement + " makes a cycle");
-            }
-            check.links.push_back(l);
-        }
-    }
-    for (const ExposedParam& p : plan.exposed) {
-        if (!names.count(p.element)) return fail(error, 0, "expose '" + p.name + "' names an element that does not exist");
-    }
-    for (const TemplateInstance& t : plan.instances) {
-        if (!t.parent.empty() && !plan.instance(t.parent)) return fail(error, 0, "template " + t.id + " names a missing parent");
-        if (templates::inside(plan, t.id, t.id)) return fail(error, 0, "template " + t.id + " is inside itself");
-        for (const ExposedParam& p : t.params) {
-            if (!templates::inside(plan, p.element, t.id)) return fail(error, 0, "template " + t.id + " has a parameter outside it");
-        }
-    }
+    std::string why;
+    if (!plan.validate(&why)) return fail(error, 0, why);
     // An instance read without a fingerprint (older files) starts in sync with what it holds now.
     for (TemplateInstance& t : plan.instances) {
         if (t.signature.empty()) t.signature = templates::fingerprint(plan, t.id);

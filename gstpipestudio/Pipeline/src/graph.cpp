@@ -1,9 +1,13 @@
 // plan.cpp – the rules of SPEC 4. Nothing in here knows an element by name except the queue (SPEC 4.4).
 #include "graph.h"
 #include "pipeline.h"
+#include "templates.h"
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
+#include <string_view>
+#include <unordered_map>
 #include <set>
 #include <tuple>
 
@@ -175,6 +179,72 @@ bool Graph::sinkPadTaken(const std::string& sinkElement, const std::string& sink
     return std::any_of(links.begin(), links.end(), [&](const Connection& l) {
         return l.sinkElement == sinkElement && l.sinkPad == sinkPad;
     });
+}
+
+bool Graph::validate(std::string* error) const {
+    auto reject = [error](const std::string& reason) {
+        if (error) *error = reason;
+        return false;
+    };
+    std::unordered_map<std::string_view, size_t> nodes;
+    nodes.reserve(elements.size());
+    for (size_t i = 0; i < elements.size(); ++i) {
+        const Element& element = elements[i];
+        if (element.name.empty() || element.factory.empty() || !nodes.emplace(element.name, i).second)
+            return reject("Elements need unique non-empty identities and factories");
+        if (!std::isfinite(element.x) || !std::isfinite(element.y)) return reject("Element coordinates must be finite");
+        for (const auto* pads : {&element.requestSrc, &element.requestSink})
+            for (const auto& entry : *pads)
+                if (entry.second < 0) return reject("A request pad count cannot be negative");
+    }
+
+    std::vector<std::vector<size_t>> downstream(elements.size());
+    std::vector<size_t> incoming(elements.size());
+    std::set<std::pair<std::string_view, std::string_view>> sourcePads, sinkPads;
+    for (const Connection& link : links) {
+        const auto source = nodes.find(link.srcElement);
+        const auto sink = nodes.find(link.sinkElement);
+        if (source == nodes.end() || sink == nodes.end() || link.srcPad.empty() || link.sinkPad.empty())
+            return reject("Link " + link.srcElement + " -> " + link.sinkElement + " names a missing element or empty pad");
+        if (!sourcePads.emplace(link.srcElement, link.srcPad).second)
+            return reject("Source pad " + link.srcElement + "." + link.srcPad + " has two links");
+        if (!isTemplateName(link.sinkPad) && !sinkPads.emplace(link.sinkElement, link.sinkPad).second)
+            return reject("Sink pad " + link.sinkElement + "." + link.sinkPad + " has two links");
+        downstream[source->second].push_back(sink->second);
+        ++incoming[sink->second];
+    }
+
+    // In an acyclic graph, removing nodes with no remaining inputs visits every node.
+    std::vector<size_t> ready;
+    ready.reserve(elements.size());
+    for (size_t i = 0; i < incoming.size(); ++i)
+        if (incoming[i] == 0) ready.push_back(i);
+    for (size_t i = 0; i < ready.size(); ++i)
+        for (const size_t sink : downstream[ready[i]])
+            if (--incoming[sink] == 0) ready.push_back(sink);
+    if (ready.size() != elements.size()) return reject("A connection would create a cycle");
+
+    std::set<std::string_view> exposedNames;
+    for (const ExposedParam& parameter : exposed)
+        if (!nodes.count(parameter.element) || parameter.name.empty() || !exposedNames.insert(parameter.name).second)
+            return reject("Exposed property " + parameter.name + " has a missing owner or duplicate name");
+
+    std::set<std::string_view> instanceIds;
+    for (const auto& instance : instances)
+        if (instance.id.empty() || !instanceIds.insert(instance.id).second)
+            return reject("Template instances need unique identities");
+    for (const auto& instance : instances) {
+        if (!instance.parent.empty() && !instanceIds.count(instance.parent)) return reject("A template instance names a missing parent");
+        if (templates::inside(*this, instance.id, instance.id)) return reject("A template instance cannot be inside itself");
+        std::set<std::string_view> parameterNames;
+        for (const auto& parameter : instance.params)
+            if (!templates::inside(*this, parameter.element, instance.id) || !parameterNames.insert(parameter.name).second)
+                return reject("A template parameter has a missing owner or duplicate name");
+    }
+    for (const Element& element : elements)
+        if (!element.group.empty() && !instanceIds.count(element.group))
+            return reject("An element names a missing template instance");
+    return true;
 }
 
 bool Graph::wouldCycle(const std::string& srcElement, const std::string& sinkElement) const {

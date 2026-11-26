@@ -391,6 +391,7 @@ static void confErrors() {
     CHECK(!Graph::fromConf(two + "[link:0]\nsrc=b\nsrcpad=src\nsink=c\nsinkpad=sink\n"
                                 "[link:1]\nsrc=c\nsrcpad=src\nsink=b\nsinkpad=sink2\n", &out, &error));  // cycle
     CHECK(!Graph::fromConf(two + "[expose:p]\ntarget=nope.x\n", &out, &error));
+    CHECK(!Graph::fromConf(two + "[expose:p]\ntarget=a.x\n[expose:p]\ntarget=b.x\n", &out, &error));
     CHECK(!Graph::fromConf(two + "[expose:p]\ntarget=nodot\n", &out, &error));
     CHECK(!error.empty());
     // Windows line ends are fine.
