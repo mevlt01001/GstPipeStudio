@@ -8,6 +8,7 @@
 
 #include "controller.h"
 #include "document.h"
+#include "documentbackup.h"
 
 DocumentRegistry::DocumentRegistry(QObject* parent) : QObject(parent) {
     settle_.setSingleShot(true);
@@ -40,6 +41,7 @@ bool DocumentRegistry::changedSinceRead(Document* d) const {
 void DocumentRegistry::accept(Document* d) {
     Entry& e = entries_[d];
     e.read = e.seen = stamp(e.path);
+    d->backup()->setBase(e.read);
 }
 
 bool DocumentRegistry::catchUp(Document* d) {
@@ -50,11 +52,18 @@ bool DocumentRegistry::catchUp(Document* d) {
     return now != e.read;
 }
 
+// A document reopened from a backup holds what its unsaved work was based on: a file changed since (while the
+// application was closed) is said as any other change.
 void DocumentRegistry::remember(Document* d) {
     Entry& e = entries_[d];
     const bool moved = e.path != d->path();
     e.path = d->path();
     e.read = e.seen = stamp(e.path);
+    if (const std::optional<QByteArray> base = d->backup()->takeRestoredBase(); base && *base != e.read) {
+        e.read = e.seen = *base;
+        settle_.start();
+    }
+    d->backup()->setBase(e.read);
     d->setFileDeleted(false);
     if (moved) rewatch();
 }

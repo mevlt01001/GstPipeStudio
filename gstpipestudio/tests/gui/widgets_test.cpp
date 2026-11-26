@@ -633,6 +633,37 @@ private slots:
         useUserDir({});
     }
 
+    // A file another program changed while the application was closed: its reopened unsaved tab asks Reload or Keep
+    // mine, as for any other change, instead of taking the new file for what its changes were based on.
+    void aFileChangedWhileClosedIsSaidToItsReopenedTab() {
+        QTemporaryDir root;
+        useUserDir(root.filePath("user"));
+        const QString a = root.filePath("a.conf");
+        {
+            MainWindow w(c.get());
+            w.show();
+            const QString src = addSource(*c, "videotestsrc");
+            QVERIFY(w.saveFlow()->saveAs(w.front(), a));
+            QVERIFY(!addAfter(*c, src, "src", "fakesink").isEmpty());
+            QVERIFY(w.close());
+        }
+        gps::Graph changed;
+        changed.addSource("audiotestsrc");
+        std::string error;
+        QVERIFY(changed.save(a.toStdString(), &error));
+        auto fresh = makeController();
+        MainWindow again(fresh.get());
+        again.show();
+        again.restoreSession();
+        auto question = [&] { auto* box = again.findChild<QMessageBox*>("changedOnDisk"); return box && box->isVisible() ? box : nullptr; };
+        QVERIFY(waitFor([&] { return question(); }, 30000));
+        question()->findChild<QPushButton*>("keepMine")->click();
+        QCOMPARE(again.front()->controller()->plan().elements.size(), size_t(2));
+        Settings::setSession({});
+        Settings::setWindow({}, {});
+        useUserDir({});
+    }
+
     // Quitting asks nothing; the next start brings back every tab with its unsaved changes: an untitled tab, and a
     // file changed since it was saved. A crash before the window could save its session leaves the same backups.
     void quittingKeepsUnsavedTabsForTheNextStart() {

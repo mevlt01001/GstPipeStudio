@@ -1,6 +1,6 @@
 // backupservice.h – hot exit: the unsaved content of the open tabs, kept in AppPaths::backups() so that quitting asks
 // nothing and a crash loses about a second of work. A backup is two files: <id>.conf, the document as it was, and
-// <id>.json, what it is the content of (its target's session key and title). The next start reopens the tabs from
+// <id>.json, what it is the content of (its target's session key and title, and the file content it was based on). The next start reopens the tabs from
 // the session and the backups (MainWindow::restoreSession). One per process, in AppServices; DocumentBackup writes
 // one document's.
 #pragma once
@@ -16,6 +16,7 @@ struct Backup {
     QString id;     // "" for a tab to reopen that has no unsaved changes
     QString key;    // its target's session key: "file:…", "template:…", "untitled:N"
     QString title;  // its tab's text when it was written
+    QByteArray base;  // the file content the unsaved work was based on, as DocumentRegistry hashes it; empty: none
 };
 
 class BackupService {

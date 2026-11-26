@@ -16,6 +16,8 @@ void DocumentBackup::continueFrom(const QString& id) {
     id_ = id;
     active_ = false;
     reopened_ = true;
+    const std::optional<Backup> b = backups_.find(id);
+    if (b && !b->base.isEmpty()) restored_ = b->base;
 }
 
 std::optional<Backup> DocumentBackup::held() const { return reopened_ && !active_ ? backups_.find(id_) : std::nullopt; }
@@ -45,5 +47,5 @@ void DocumentBackup::follow() {
 void DocumentBackup::write() {
     if (!controller_->hasUnsavedWork()) return;
     const SaveTarget& target = controller_->target();
-    backups_.write({id_, target.sessionKey(), target.title()}, QByteArray::fromStdString(controller_->plan().toConf()));
+    backups_.write({id_, target.sessionKey(), target.title(), base_}, QByteArray::fromStdString(controller_->plan().toConf()));
 }

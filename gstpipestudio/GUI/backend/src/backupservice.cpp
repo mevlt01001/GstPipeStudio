@@ -31,7 +31,7 @@ QString BackupService::contentOf(const QString& id) { return id.isEmpty() ? QStr
 
 bool BackupService::write(const Backup& backup, const QByteArray& content) const {
     return gps::files::writeAtomic(contentOf(backup.id).toStdString(), content.toStdString()) &&
-           writeAbout(backup.id, {{"key", backup.key}, {"title", backup.title}});
+           writeAbout(backup.id, {{"key", backup.key}, {"title", backup.title}, {"base", QString::fromLatin1(backup.base.toHex())}});
 }
 
 void BackupService::remove(const QString& id) const {
@@ -44,7 +44,8 @@ std::optional<Backup> BackupService::find(const QString& id) const {
     if (id.isEmpty() || !QFile::exists(contentOf(id))) return std::nullopt;
     const QJsonObject json = aboutOf(id);
     if (json.value("key").toString().isEmpty()) return std::nullopt;
-    return Backup{id, json.value("key").toString(), json.value("title").toString()};
+    return Backup{id, json.value("key").toString(), json.value("title").toString(),
+                  QByteArray::fromHex(json.value("base").toString().toLatin1())};
 }
 
 QList<Backup> BackupService::list() const {
