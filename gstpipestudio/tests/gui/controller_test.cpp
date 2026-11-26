@@ -1,4 +1,5 @@
 // controller_test.cpp – every flow of SPEC 8 driven through the Controller against the fake helpers.
+#include <QDir>
 #include <QLineF>
 #include <QSignalSpy>
 #include <QFileInfo>
@@ -674,6 +675,54 @@ private slots:
         QVERIFY(waitFor([&] { return !c->busy() && c->plan().elements.size() == 1; }, 10000));
         QVERIFY(c->modified());
         QCOMPARE(c->target().path(), conf);
+    }
+
+    void projectHistoryRetainsTemplateContent() {
+        QTemporaryDir state, dir;
+        useUserDir(state.path());
+        const QString conf = dir.filePath("demo.conf");
+        ProjectConfTarget target(conf);
+
+        gps::Graph source;
+        source.name = "Tail";
+        source.revision = 1;
+        source.addElement("identity", {{"silent", "true"}});
+        gps::Graph first;
+        gps::templates::insertTemplate(first, source, 0, 0);
+        QVERIFY(saved(target.write(first)));
+
+        source.revision = 2;
+        source.elements.front().props["silent"] = "false";
+        gps::Graph second;
+        gps::templates::insertTemplate(second, source, 0, 0);
+        QVERIFY(saved(target.write(second)));
+        const auto history = VersionHistory::versions(conf);
+        QCOMPARE(history.size(), 1);
+        QVERIFY(QDir(dir.filePath("templates")).removeRecursively());
+        gps::Graph restored;
+        QVERIFY(gps::Graph::load(toStd(history.front().path), &restored, nullptr));
+        QCOMPARE(restored.instances.front().revision, 1);
+        QCOMPARE(text(restored.elements.front().props.at("silent")), QString("true"));
+    }
+
+    void projectSaveReportsMetadataFailureAndCanRetry() {
+        QTemporaryDir state, dir;
+        useUserDir(state.path());
+        const QString conf = dir.filePath("demo.conf");
+        const QString manifest = ProjectFile::pathForConf(conf);
+        QVERIFY(QDir().mkpath(manifest));
+        QVERIFY(!addSource(*c, "videotestsrc").isEmpty());
+        const SaveResult partial = saveAs(*c, conf);
+        QVERIFY(!partial.ok);
+        QCOMPARE(partial.path, conf);
+        QVERIFY(partial.error.contains(manifest));
+        QVERIFY(QFileInfo::exists(conf));
+        QCOMPARE(c->target().path(), conf);
+        QVERIFY(c->hasUnsavedWork());
+
+        QVERIFY(QDir().rmdir(manifest));
+        QVERIFY(saved(c->save()));
+        QVERIFY(!c->hasUnsavedWork());
     }
 
     // Modified means: not what the last save or load left. Undo back to the save point is not modified any more,

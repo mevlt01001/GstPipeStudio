@@ -295,6 +295,19 @@ static void projectFolder() {
     CHECK(Graph::load((folder / "door.conf").string(), &back, &error));
     CHECK_EQ(back.instance(old)->revision, 2);
     CHECK(!tpl::modified(back, old));
+
+    Graph newerTemplate = decodeTemplate();
+    newerTemplate.revision = 4;
+    newerTemplate.elements.front().factory = "newdepay";
+    Graph newer;
+    const std::string latest = tpl::insertTemplate(newer, newerTemplate, 0, 0);
+    CHECK(newer.saveProject((folder / "new.conf").string(), &error));
+    CHECK(Graph::load((folder / "cam.conf").string(), &back, &error));
+    CHECK_EQ(back.instance(id)->revision, 3);
+    CHECK(Graph::load((folder / "new.conf").string(), &back, &error));
+    CHECK_EQ(back.instance(latest)->revision, 4);
+    CHECK_EQ(back.elements.front().factory, std::string("newdepay"));
+
     // Without the copy it is not found (no library given).
     std::filesystem::remove_all(folder / "templates");
     CHECK(!Graph::load((folder / "cam.conf").string(), &back, &error));

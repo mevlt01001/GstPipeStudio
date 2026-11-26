@@ -46,13 +46,19 @@ void ProjectConfTarget::opened() { ProjectFile::opened(path_); }
 SaveResult ProjectConfTarget::write(const gps::Graph& plan) {
     gps::Graph saved = plan;
     saved.name = toStd(QFileInfo(path_).completeBaseName());
-    // The file as it was stays (File > Version history).
-    VersionHistory::keep(path_, QByteArray::fromStdString(saved.toConf(gps::Graph::Form::Reference)));
+    const auto keepHistory = [this](const std::string& replacement, std::string* error) {
+        QString reason;
+        const bool kept = VersionHistory::keep(path_, QByteArray::fromStdString(replacement), &reason, templateFolders());
+        if (!kept && error) *error = toStd(reason);
+        return kept;
+    };
     std::string failure;
-    if (!saved.saveProject(toStd(path_), &failure)) return SaveResult::failed("Unable to save: " + fromStd(failure));
+    if (!saved.saveProject(toStd(path_), &failure, keepHistory)) return SaveResult::failed("Unable to save: " + fromStd(failure));
     ProjectFile project = ProjectFile::load(ProjectFile::pathForConf(path_));
     project.record(path_, saved);
-    if (project.save()) ProjectRegistry::remember(project.path());
+    QString metadataError;
+    if (!project.save(&metadataError) || !ProjectRegistry::remember(project.path(), &metadataError))
+        return SaveResult::partial(path_, "Saved " + path_ + ". Unable to update project metadata: " + metadataError);
     Settings::addRecent(path_);
     return SaveResult::written(path_);
 }

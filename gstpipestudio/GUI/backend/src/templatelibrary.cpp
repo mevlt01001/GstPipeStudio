@@ -156,7 +156,9 @@ QString TemplateLibrary::holder(const QString& name, const QString& except) cons
 SaveResult TemplateLibrary::write(const QString& name, gps::Graph content) {
     content.name = toStd(name);
     const QString target = fileFor(name), read = file(name);
-    VersionHistory::keep(target, QByteArray::fromStdString(content.toConf()));  // a template keeps its history too
+    QString historyError;
+    if (!VersionHistory::keep(target, QByteArray::fromStdString(content.toConf()), &historyError))
+        return SaveResult::failed("Unable to save the template: " + historyError);
     std::string failure;
     if (!content.save(toStd(target), &failure)) return SaveResult::failed("Unable to save the template: " + fromStd(failure));
     if (read != target) QFile::remove(read);  // read from a file named the older way: one file for it from now on

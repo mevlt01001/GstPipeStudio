@@ -35,7 +35,7 @@ private:
 };
 
 namespace ProjectRegistry {
-void remember(const QString& projectPath);
+bool remember(const QString& projectPath, QString* error = nullptr);
 QStringList projects();                               // the ones still on disk
 QStringList usingTemplate(const QString& templateName);  // project files a template is used in
 }  // namespace ProjectRegistry

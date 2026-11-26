@@ -3,7 +3,6 @@
 #include <cctype>
 #include <cstdlib>
 #include <fstream>
-#include <set>
 #include <sstream>
 
 #include "files.h"
@@ -336,29 +335,29 @@ bool Graph::save(const std::string& path, std::string* error) const { return fil
 
 std::string Graph::templatesFolder(const std::string& confPath) { return folderOf(confPath) + "/" + kTemplatesFolder; }
 
-// The revision of the template file there, 0 when there is none or it cannot be read.
-int Graph::revisionOf(const std::string& templateFile) {
-    std::ifstream file(templateFile, std::ios::binary);
-    if (!file) return 0;
-    std::stringstream text;
-    text << file.rdbuf();
-    Graph tmpl;
-    return fromConf(text.str(), &tmpl, nullptr) ? tmpl.revision : 0;
-}
-
-// The confs of one folder share its templates/: a copy older than the file there (another conf took a newer revision)
-// is written inline instead, so saving this conf never takes the other one back.
-bool Graph::saveProject(const std::string& path, std::string* error) const {
+bool Graph::saveProject(const std::string& path, std::string* error, const BeforeProjectWrite& beforeWrite) const {
     const std::string folder = templatesFolder(path);
     std::vector<std::string> referenced;
     for (const std::string& id : referencable()) {
-        const TemplateInstance* t = instance(id);
-        const std::string file = folder + "/" + templates::fileName(t->templateName);
-        if (revisionOf(file) > t->revision) continue;
-        if (!files::writeAtomic(file, templates::extract(*this, id).toConf(), error)) return false;
+        const TemplateInstance* instance = this->instance(id);
+        const std::string file = folder + "/" + templates::fileName(instance->templateName);
+        Graph content = templates::extract(*this, id);
+        content.nextId = 0; // The template's local names determine its next identity on load.
+        const std::string bytes = content.toConf();
+        using files::CreateResult;
+        const auto published = files::createAtomic(file, bytes, error);
+        if (published == CreateResult::Failed) return false;
+        if (published == CreateResult::Exists) {
+            Graph existing;
+            if (!load(file, &existing, nullptr)) continue;
+            existing.nextId = 0;
+            if (existing.toConf() != bytes) continue;
+        }
         referenced.push_back(id);
     }
-    return files::writeAtomic(path, writeConf(Form::Reference, referenced), error);
+    const std::string replacement = writeConf(Form::Reference, referenced);
+    if (beforeWrite && !beforeWrite(replacement, error)) return false;
+    return files::writeAtomic(path, replacement, error);
 }
 
 bool Graph::load(const std::string& path, Graph* out, std::string* error, const std::vector<std::string>& libraries) {

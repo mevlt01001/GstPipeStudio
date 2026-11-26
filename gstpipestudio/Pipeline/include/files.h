@@ -12,6 +12,11 @@ namespace gps::files {
 // Writes bytes to path atomically; the folder is made when it is missing. False, with the reason, when it fails.
 bool writeAtomic(const std::string& path, const std::string& bytes, std::string* error = nullptr);
 
+enum class CreateResult { Created, Exists, Failed };
+
+// Publishes a complete file only if the destination has not already been created.
+CreateResult createAtomic(const std::string& path, const std::string& bytes, std::string* error = nullptr);
+
 // A name as a file name: every character outside [A-Za-z0-9_.-] becomes '_'. The only sanitizer.
 std::string safeName(const std::string& name);
 

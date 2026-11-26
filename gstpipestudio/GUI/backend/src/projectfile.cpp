@@ -105,12 +105,15 @@ bool ProjectFile::save(QString* error) const {
 
 namespace ProjectRegistry {
 
-void remember(const QString& projectPath) {
+bool remember(const QString& projectPath, QString* error) {
     QStringList all = projects();
     const QString path = QFileInfo(projectPath).absoluteFilePath();
-    if (all.contains(path)) return;
+    if (all.contains(path)) return true;
     all << path;
-    gps::files::writeAtomic(toStd(registryFile()), toStd(all.join("\n") + "\n"));
+    std::string failure;
+    if (gps::files::writeAtomic(toStd(registryFile()), toStd(all.join("\n") + "\n"), &failure)) return true;
+    if (error) *error = fromStd(failure);
+    return false;
 }
 
 QStringList projects() {

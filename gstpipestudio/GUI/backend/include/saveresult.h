@@ -5,10 +5,11 @@
 
 struct SaveResult {
     bool ok = false;
-    QString path;      // the file written
-    QString error;     // why nothing was written
+    QString path;      // the primary file written, including a partial save
+    QString error;     // the failed operation and its reason
     int revision = 0;  // the revision written, when the destination counts them (a library template)
 
     static SaveResult written(const QString& path, int revision = 0) { return {true, path, QString(), revision}; }
+    static SaveResult partial(const QString& path, const QString& why) { return {false, path, why, 0}; }
     static SaveResult failed(const QString& why) { return {false, QString(), why, 0}; }
 };

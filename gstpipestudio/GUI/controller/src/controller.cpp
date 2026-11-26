@@ -718,8 +718,14 @@ SaveResult Controller::write(std::shared_ptr<SaveTarget> target) {
     gps::Graph document = plan();
     document.complete = result().complete();
     const SaveResult r = target->write(document);
-    if (!r.ok) return r;
+    if (!r.ok && r.path.isEmpty()) return r;
     target_ = std::move(target);
+    if (!r.ok) {
+        // The conf on disk now matches the graph. Keep the edit state dirty so metadata can be saved again.
+        emit synced();
+        emit changed();
+        return r;
+    }
     if (r.revision > 0 && r.revision != plan().revision) {
         edits_.transact([&](gps::Graph& g, Edit& edit) {
             g.revision = r.revision;

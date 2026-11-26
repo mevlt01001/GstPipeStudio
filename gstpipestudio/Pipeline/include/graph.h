@@ -227,9 +227,10 @@ public:
     bool save(const std::string& path, std::string* error) const;  // inline
     // A project's conf in the reference form, and beside it <folder>/templates/<template>.conf for every template it
     // references: the content it uses, so the folder runs on its own (copied to another machine, for instance).
-    // A copy older than the template file already there (another conf of the folder holds a newer revision) is
-    // written inline instead: the file keeps the newer revision.
-    bool saveProject(const std::string& path, std::string* error) const;
+    // A copy goes inline when its content differs from the shared file. Existing references keep their content.
+    // beforeWrite can retain the previous version before the main conf is replaced.
+    using BeforeProjectWrite = std::function<bool(const std::string& replacement, std::string* error)>;
+    bool saveProject(const std::string& path, std::string* error, const BeforeProjectWrite& beforeWrite = {}) const;
     static constexpr const char* kTemplatesFolder = "templates";
     static std::string templatesFolder(const std::string& confPath);  // <folder of the conf>/templates
     // References resolve from <folder of path>/templates, then the folders given, then GPS_TEMPLATE_PATH (':' between).
@@ -238,7 +239,6 @@ public:
 private:
     std::vector<std::string> referencable() const;  // the copies the reference form names: unchanged and top-level
     std::string writeConf(Form form, const std::vector<std::string>& referenced) const;
-    static int revisionOf(const std::string& templateFile);
     std::string newName(const std::string& factory);
     void dropElement(const std::string& name, Removal* removed);
     void dropEmptyInstances();

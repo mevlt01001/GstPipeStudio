@@ -6,6 +6,7 @@
 #include <QDateTime>
 #include <QList>
 #include <QString>
+#include <QStringList>
 
 namespace VersionHistory {
 
@@ -18,8 +19,9 @@ struct Version {
 
 QString folderFor(const QString& file);
 // Keeps the file as it is now, before replacement overwrites it; nothing happens when it does not exist yet or when
-// replacement is what it already holds.
-bool keep(const QString& file, const QByteArray& replacement);
+// replacement is what it already holds. When given template folders, resolves the old project's references into the copy.
+// True when the copy was retained or no version was needed.
+bool keep(const QString& file, const QByteArray& replacement, QString* error = nullptr, const QStringList& templateFolders = {});
 QList<Version> versions(const QString& file);  // newest first
 
 }  // namespace VersionHistory
