@@ -101,6 +101,11 @@ bool Document::pristine() const {
     return controller_->target().needsDestination() && controller_->plan().empty() && !controller_->modified() && !controller_->busy();
 }
 
+void Document::setFileDeleted(bool deleted) {
+    fileDeleted_ = deleted;
+    if (deleted) controller_->markModified();
+}
+
 bool Document::shows(const QString& sessionKey) const { return controller_->target().sessionKey() == sessionKey; }
 
 // The view fits the pipeline when its elements change, and once when a file has opened.

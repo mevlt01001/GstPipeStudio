@@ -582,6 +582,12 @@ private slots:
         QVERIFY(waitFor([&] { return backups.list().size() == 1; }, 3000));
         QVERIFY(w.saveFlow()->saveAs(w.document(), root.filePath("one.conf")));
         QVERIFY(backups.list().isEmpty());
+        // Closed after Don't save, the tab takes its backup with it.
+        QVERIFY(!addSource(*c, "audiotestsrc").isEmpty());
+        QVERIFY(waitFor([&] { return backups.list().size() == 1; }, 3000));
+        answer(&w, "saveChangesDiscard");
+        QVERIFY(w.closeDocument(w.document()));
+        QVERIFY(backups.list().isEmpty());
         useUserDir({});
     }
 
@@ -691,6 +697,20 @@ private slots:
         QVERIFY(w.saveFlow()->save(w.document()));
         QVERIFY(QFile::exists(a) && !c->modified());
         QCOMPARE(w.document()->title(), QString("a.conf"));
+
+        // In the background, a modified tab is asked about once it comes to the front.
+        auto question = [&] { auto* box = w.findChild<QMessageBox*>("changedOnDisk"); return box && box->isVisible() ? box : nullptr; };
+        QVERIFY(!addSource(*c, "audiotestsrc").isEmpty());
+        Document* file = w.document();
+        w.newDocument();
+        QVERIFY(overwrite(a, one));
+        QTest::qWait(4 * DocumentRegistry::kSettleMs);
+        QVERIFY(!question());
+        w.activate(file);
+        QVERIFY(waitFor([&] { return question(); }));
+        question()->findChild<QPushButton*>("reloadFromDisk")->click();
+        QVERIFY(waitFor([&] { return c->plan().elements.size() == 1 && !c->busy(); }));
+        QVERIFY(!c->modified());
     }
 
     void saveAsTemplateDrawsTheBorderThenAsksForNameAndParameters() {

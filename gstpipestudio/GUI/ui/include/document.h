@@ -50,7 +50,8 @@ public:
     bool pristine() const;  // untitled, empty and unchanged: opening a file may use it instead of a new tab
     bool shows(const QString& sessionKey) const;  // it is bound to the target of that session key
     bool fileDeleted() const { return fileDeleted_; }
-    void setFileDeleted(bool deleted) { fileDeleted_ = deleted; }  // its file was deleted on disk (DocumentRegistry)
+    // Its file was deleted on disk, or is back (DocumentRegistry). Deleted, it is modified: Save writes the file again.
+    void setFileDeleted(bool deleted);
 
     // A file is opening in it: its tab already reads the file's name, and the view fits it once it is on the canvas.
     void opening(const QString& title) {

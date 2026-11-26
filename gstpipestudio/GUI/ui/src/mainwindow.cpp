@@ -97,7 +97,6 @@ MainWindow::MainWindow(Controller* controller, QWidget* parent)
     connect(registry_, &DocumentRegistry::changedOnDisk, this, &MainWindow::onChangedOnDisk);
     connect(registry_, &DocumentRegistry::deletedOnDisk, this, [this](Document* d) {
         statusBar()->showMessage(d->controller()->target().title() + " was deleted on disk: save to keep it", 10000);
-        d->controller()->markModified();
     });
 
     buildPanels();
@@ -407,7 +406,7 @@ void MainWindow::activate(Document* d) {
     onEnvironment();
     const QStringList outdated = d->takeOutdated();
     if (!outdated.isEmpty()) QTimer::singleShot(0, this, [this, d, outdated] { if (d == doc_) askTemplatesOutdated(outdated); });
-    if (d->takeChangedOnDisk()) QTimer::singleShot(0, this, [this, d] { if (d == doc_) askReload(d); });
+    if (d->takeChangedOnDisk()) QTimer::singleShot(0, this, [this, d] { if (d == doc_) onChangedOnDisk(d); });
 }
 
 void MainWindow::refreshTab(Document* d) {
@@ -489,8 +488,10 @@ Document* MainWindow::reopen(const Backup& tab) {
 }
 
 // Someone else changed a tab's file: without unsaved work it is read again; with some, the user chooses, when the tab
-// is in front.
+// is in front. Asked again when a deferred tab comes to the front, it may be clean or saved by then.
 void MainWindow::onChangedOnDisk(Document* d) {
+    refreshTab(d);                                // a deleted file that is back loses its mark
+    if (!registry_->changedSinceRead(d)) return;  // saved or reloaded meanwhile, or back as it was
     if (!d->controller()->hasUnsavedWork()) {
         d->controller()->reload();
         statusBar()->showMessage(d->title() + " changed on disk and was reloaded", 10000);
@@ -501,9 +502,8 @@ void MainWindow::onChangedOnDisk(Document* d) {
     }
 }
 
-// Not modal for the application: the other tabs stay usable while it waits.
+// Opened, not run: the event loop goes on (saves, runs, the watcher) while it waits.
 void MainWindow::askReload(Document* d) {
-    if (!registry_->changedSinceRead(d)) return;  // saved or reloaded meanwhile
     auto* box = new QMessageBox(QMessageBox::Warning, "File changed on disk",
                                 d->title() + " was changed on disk by another program.", QMessageBox::NoButton, this);
     box->setObjectName("changedOnDisk");
