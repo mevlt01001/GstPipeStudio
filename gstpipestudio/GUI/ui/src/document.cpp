@@ -91,7 +91,8 @@ QList<QWidget*> Document::panelPages() const { return {log_, updates_, telemetry
 // An untitled tab a file is opening in reads the file's name already.
 QString Document::title() const {
     const SaveTarget& target = controller_->target();
-    return target.needsDestination() && controller_->busy() && !opening_.isEmpty() ? opening_ : target.title();
+    const QString title = target.needsDestination() && controller_->busy() && !opening_.isEmpty() ? opening_ : target.title();
+    return fileDeleted_ ? title + " (deleted)" : title;
 }
 
 QString Document::path() const { return controller_->target().path(); }

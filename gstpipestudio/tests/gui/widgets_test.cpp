@@ -28,6 +28,7 @@
 #include <QToolButton>
 #include <QToolTip>
 #include <QMessageBox>
+#include <QStatusBar>
 
 #include "canvasscene.h"
 #include "canvasview.h"
@@ -37,6 +38,7 @@
 #include "elementitem.h"
 #include "document.h"
 #include "documentbackup.h"
+#include "documentregistry.h"
 #include "backupservice.h"
 #include "explorer.h"
 #include "tabclosebutton.h"
@@ -632,6 +634,63 @@ private slots:
         Settings::setSession({});
         Settings::setWindow({}, {});
         useUserDir({});
+    }
+
+    // Another program changes a tab's file: a tab without unsaved changes reads it again; one with unsaved changes is
+    // not reloaded, the user chooses, and Save over the file asks first.
+    void aFileChangedOnDiskReloadsOnlyACleanTab() {
+        QTemporaryDir root;
+        const QString a = root.filePath("a.conf"), one = root.filePath("one.conf"), two = root.filePath("two.conf");
+        auto other = makeController();
+        const QString src = addSource(*other, "videotestsrc");
+        QVERIFY(saved(saveAs(*other, one)));
+        QVERIFY(!addAfter(*other, src, "src", "fakesink").isEmpty());
+        QVERIFY(saved(saveAs(*other, two)));
+        auto overwrite = [](const QString& file, const QString& with) {
+            QFile from(with), to(file);
+            return from.open(QIODevice::ReadOnly) && to.open(QIODevice::WriteOnly | QIODevice::Truncate) && to.write(from.readAll()) > 0;
+        };
+        MainWindow w(c.get());
+        w.show();
+        QVERIFY(!addSource(*c, "videotestsrc").isEmpty());
+        QVERIFY(w.saveFlow()->saveAs(w.document(), a));
+        QTest::qWait(2 * DocumentRegistry::kSettleMs);
+        QCOMPARE(c->plan().elements.size(), size_t(1));  // its own save is no change
+
+        QVERIFY(overwrite(a, two));
+        QVERIFY(waitFor([&] { return c->plan().elements.size() == 2 && !c->busy(); }));
+        QVERIFY(!c->modified());
+        QVERIFY(w.statusBar()->currentMessage().contains("changed on disk and was reloaded"));
+
+        // Changed here and there: the tab keeps its changes until the user chooses.
+        QVERIFY(!addSource(*c, "audiotestsrc").isEmpty());
+        QVERIFY(overwrite(a, one));
+        QVERIFY(waitFor([&] { auto* box = w.findChild<QMessageBox*>("changedOnDisk"); return box && box->isVisible(); }));
+        QCOMPARE(c->plan().elements.size(), size_t(3));
+        QVERIFY(c->modified());
+        w.findChild<QMessageBox*>("changedOnDisk")->findChild<QPushButton*>("keepMine")->click();
+        QCOMPARE(c->plan().elements.size(), size_t(3));
+
+        // Changed on disk again, saved before the watcher tells: Save asks; Cancel writes nothing, Overwrite does.
+        QVERIFY(overwrite(a, two));
+        answer(&w, "cancel");
+        QVERIFY(!w.saveFlow()->save(w.document()));
+        QVERIFY(c->modified());
+        answer(&w, "overwriteOnDisk");
+        QVERIFY(w.saveFlow()->save(w.document()));
+        QVERIFY(!c->modified());
+        gps::Graph written;
+        std::string error;
+        QVERIFY(gps::Graph::load(a.toStdString(), &written, &error));
+        QCOMPARE(written.elements.size(), size_t(3));
+
+        // Deleted on disk: the tab stays, marked deleted and modified, so Save writes it again.
+        QVERIFY(QFile::remove(a));
+        QVERIFY(waitFor([&] { return w.document()->title() == "a.conf (deleted)"; }));
+        QVERIFY(c->modified());
+        QVERIFY(w.saveFlow()->save(w.document()));
+        QVERIFY(QFile::exists(a) && !c->modified());
+        QCOMPARE(w.document()->title(), QString("a.conf"));
     }
 
     void saveAsTemplateDrawsTheBorderThenAsksForNameAndParameters() {

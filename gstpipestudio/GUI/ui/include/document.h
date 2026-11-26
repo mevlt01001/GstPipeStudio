@@ -45,10 +45,12 @@ public:
     DocumentBackup* backup() const { return backup_; }  // its hot-exit backup
     QList<QWidget*> panelPages() const;  // what it shows in the panels, in their order
 
-    QString title() const;  // its target's: the file's name, "Template: <name>", or "Untitled-N"
+    QString title() const;  // its target's: the file's name, "Template: <name>", or "Untitled-N"; "(deleted)" after it
     QString path() const;   // the file it is, "" when it has none yet
     bool pristine() const;  // untitled, empty and unchanged: opening a file may use it instead of a new tab
     bool shows(const QString& sessionKey) const;  // it is bound to the target of that session key
+    bool fileDeleted() const { return fileDeleted_; }
+    void setFileDeleted(bool deleted) { fileDeleted_ = deleted; }  // its file was deleted on disk (DocumentRegistry)
 
     // A file is opening in it: its tab already reads the file's name, and the view fits it once it is on the canvas.
     void opening(const QString& title) {
@@ -58,6 +60,9 @@ public:
     // The library has newer templates while another tab is in front: asked when this one comes to the front.
     void deferOutdated(const QStringList& ids) { outdated_ = ids; }
     QStringList takeOutdated() { return std::exchange(outdated_, {}); }
+    // Its file changed on disk while it had unsaved work and another tab was in front: asked when it comes to the front.
+    void deferChangedOnDisk() { changedOnDisk_ = true; }
+    bool takeChangedOnDisk() { return std::exchange(changedOnDisk_, false); }
 
 private:
     void rebuilt();
@@ -80,4 +85,6 @@ private:
     bool fitNext_ = false;
     QString opening_;
     QStringList outdated_;
+    bool changedOnDisk_ = false;
+    bool fileDeleted_ = false;
 };

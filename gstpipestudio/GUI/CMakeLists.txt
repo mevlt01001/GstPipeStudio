@@ -45,6 +45,7 @@ add_library(gps_gui STATIC
     ui/include/panels.h ui/src/panels.cpp
     ui/include/document.h ui/src/document.cpp
     ui/include/saveflow.h ui/src/saveflow.cpp
+    ui/include/documentregistry.h ui/src/documentregistry.cpp
     ui/widgets/include/newprojectdialog.h ui/widgets/src/newprojectdialog.cpp
     ui/widgets/include/explorer.h ui/widgets/src/explorer.cpp
     ui/widgets/include/tabclosebutton.h ui/widgets/src/tabclosebutton.cpp

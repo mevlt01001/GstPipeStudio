@@ -1,6 +1,7 @@
 // saveflow.h – the one place that saves for the user, says why a save failed, and asks about unsaved changes.
-// Save of an untitled document asks for a project first (New project); Save as binds the tab to the file chosen;
-// closing asks Save / Don't save / Cancel once: about one tab, or about every unsaved one of several in one list.
+// Save of an untitled document asks for a project first (New project); Save over a file that changed on disk since the
+// document read it asks Overwrite / Cancel; Save as binds the tab to the file chosen; closing tabs asks Save / Don't
+// save / Cancel once: about one tab, or about every unsaved one of several in one list.
 #pragma once
 
 #include <QList>
@@ -26,6 +27,7 @@ public:
 private:
     enum class Answer { Save, Discard, Cancel };
     Answer ask(const QList<Document*>& unsaved) const;
+    bool overwrite(Document* document) const;  // its file changed on disk: true when the user overwrites it
     bool report(Document* document, const SaveResult& result) const;  // false, said in the status bar and the Log
 
     MainWindow* window_;

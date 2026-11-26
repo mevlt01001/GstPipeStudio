@@ -1425,8 +1425,17 @@ void Controller::open(const QString& path, bool imported) {
 
 void Controller::restoreVersion(const QString& version) { load(version, nullptr, Load::Replace, "Restored an earlier version"); }
 
+void Controller::reload() {
+    if (QFileInfo::exists(target_->path())) load(target_->path(), nullptr, Load::Open, "Read " + target_->title() + " from disk");
+}
+
 void Controller::revert() {
-    if (canRevert()) load(target_->path(), nullptr, Load::Open, "Reverted to the saved file");
+    if (canRevert()) reload();
+}
+
+void Controller::markModified() {
+    savedState_ = kNeverSaved;
+    emit changed();
 }
 
 // A new project has its path before its first save writes the file: there is nothing to go back to yet.

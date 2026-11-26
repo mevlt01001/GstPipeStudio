@@ -17,6 +17,7 @@
 #include <QStackedWidget>
 #include <QStatusBar>
 #include <QMouseEvent>
+#include <QPointer>
 #include <QTabBar>
 #include <QTimer>
 #include <QToolBar>
@@ -37,6 +38,7 @@
 #include "drawer.h"
 #include "document.h"
 #include "documentbackup.h"
+#include "documentregistry.h"
 #include "elementitem.h"
 #include "explorer.h"
 #include "flows.h"
@@ -64,7 +66,7 @@
 #include <set>
 
 MainWindow::MainWindow(Controller* controller, QWidget* parent)
-    : QMainWindow(parent), services_(controller->services()), saveFlow_(new SaveFlow(this)) {
+    : QMainWindow(parent), services_(controller->services()), saveFlow_(new SaveFlow(this)), registry_(new DocumentRegistry(this)) {
     setObjectName("mainWindow");
     setWindowFlag(Qt::FramelessWindowHint);
     setWindowIcon(QIcon(":/brand/gstpipestudio.png"));
@@ -91,6 +93,11 @@ MainWindow::MainWindow(Controller* controller, QWidget* parent)
     setCentralWidget(centre);
     connect(tabs_, &QTabBar::currentChanged, this, [this](int index) {
         if (Document* d = docAt(index); d && d != doc_) activate(d);
+    });
+    connect(registry_, &DocumentRegistry::changedOnDisk, this, &MainWindow::onChangedOnDisk);
+    connect(registry_, &DocumentRegistry::deletedOnDisk, this, [this](Document* d) {
+        statusBar()->showMessage(d->controller()->target().title() + " was deleted on disk: save to keep it", 10000);
+        d->controller()->markModified();
     });
 
     buildPanels();
@@ -343,6 +350,7 @@ Document* MainWindow::addDocument(Controller* controller) {
     auto* close = new TabCloseButton(tabs_);
     connect(close, &QToolButton::clicked, this, [this, d] { closeDocument(d); });
     tabs_->setTabButton(index, QTabBar::RightSide, close);
+    registry_->track(d);
     wire(d);
     activate(d);
     return d;
@@ -399,6 +407,7 @@ void MainWindow::activate(Document* d) {
     onEnvironment();
     const QStringList outdated = d->takeOutdated();
     if (!outdated.isEmpty()) QTimer::singleShot(0, this, [this, d, outdated] { if (d == doc_) askTemplatesOutdated(outdated); });
+    if (d->takeChangedOnDisk()) QTimer::singleShot(0, this, [this, d] { if (d == doc_) askReload(d); });
 }
 
 void MainWindow::refreshTab(Document* d) {
@@ -477,6 +486,41 @@ Document* MainWindow::reopen(const Backup& tab) {
     std::unique_ptr<SaveTarget> target = SaveTarget::fromKey(tab.key, services_.library());
     if (!target || (tab.id.isEmpty() && !QFileInfo::exists(target->path()))) return nullptr;
     return open(std::move(target), tab.id);
+}
+
+// Someone else changed a tab's file: without unsaved work it is read again; with some, the user chooses, when the tab
+// is in front.
+void MainWindow::onChangedOnDisk(Document* d) {
+    if (!d->controller()->hasUnsavedWork()) {
+        d->controller()->reload();
+        statusBar()->showMessage(d->title() + " changed on disk and was reloaded", 10000);
+    } else if (d == doc_) {
+        askReload(d);
+    } else {
+        d->deferChangedOnDisk();
+    }
+}
+
+// Not modal for the application: the other tabs stay usable while it waits.
+void MainWindow::askReload(Document* d) {
+    if (!registry_->changedSinceRead(d)) return;  // saved or reloaded meanwhile
+    auto* box = new QMessageBox(QMessageBox::Warning, "File changed on disk",
+                                d->title() + " was changed on disk by another program.", QMessageBox::NoButton, this);
+    box->setObjectName("changedOnDisk");
+    box->setAttribute(Qt::WA_DeleteOnClose);
+    box->setInformativeText("Reload it and lose your changes, or keep your version?");
+    QPushButton* reload = box->addButton("Reload", QMessageBox::DestructiveRole);
+    QPushButton* keep = box->addButton("Keep mine", QMessageBox::RejectRole);
+    reload->setObjectName("reloadFromDisk");
+    keep->setObjectName("keepMine");
+    box->setDefaultButton(keep);
+    QPointer<Document> asked(d);
+    connect(box, &QMessageBox::finished, this, [this, box, reload, asked] {
+        if (!asked) return;
+        if (box->clickedButton() == reload) asked->controller()->reload();
+        else registry_->accept(asked);
+    });
+    box->open();
 }
 
 bool MainWindow::eventFilter(QObject* watched, QEvent* event) {

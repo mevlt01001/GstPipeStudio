@@ -69,6 +69,7 @@ public:
     const SaveTarget& target() const { return *target_; }
     void setTarget(std::unique_ptr<SaveTarget> target);  // binds the document to another target; the content stays
     bool modified() const { return pipeline_.editor().state() != savedState_; }  // changed since its last save or load
+    void markModified();  // it no longer matches its target's file (the file was deleted), whatever the undo history says
     bool hasUnsavedWork() const { return modified() && !plan().empty(); }       // what the window asks about
     void setUpdateTimeoutMs(int ms) { updateTimeoutMs_ = ms; }
 
@@ -177,7 +178,8 @@ public:
     void open(std::unique_ptr<SaveTarget> target, const QString& backup = QString());
     void open(const QString& path, bool imported = false);  // a project conf; imported: an unsaved change of this document
     void restoreVersion(const QString& version);  // an earlier version of the document, as one undoable change to it
-    void revert();                                // the target's file again, unmodified
+    void reload();                                // the target's file again, as it is on disk now, unmodified
+    void revert();                                // reload, when there are changes to drop
     bool canRevert() const;                       // modified, not busy, and the target's file is on disk
     bool importLaunch(const QString& description); // brief native probe, then opens an unsaved canvas graph
     SaveResult save();                                     // to the target
@@ -190,6 +192,7 @@ public:
 
 signals:
     void changed();                         // anything the views show has changed
+    void synced();                          // it matches its target's file now: opened, reloaded, saved, or new
     void updateFinished(bool ok);
     void logLine(const QString& line);      // helper stderr and events
     void notice(const QString& text);       // something the user must be told (helper missing, open failed ...)
@@ -220,7 +223,10 @@ private:
     // target: what the document is bound to once it is open; null keeps the one it has.
     void load(const QString& source, std::shared_ptr<SaveTarget> target, Load how, const QString& action);
     SaveResult write(std::shared_ptr<SaveTarget> target);  // the one save path of save and saveAs
-    void markSaved() { savedState_ = pipeline_.editor().state(); }
+    void markSaved() {
+        savedState_ = pipeline_.editor().state();
+        emit synced();
+    }
     void checkTemplates(bool ask);
     void offerNewerTemplates();  // templatesOutdated soon, when the library holds newer versions of copies on this canvas
     void offerNow();

@@ -11,6 +11,7 @@ class CanvasScene;
 class CanvasView;
 class Controller;
 class Document;
+class DocumentRegistry;
 class Drawer;
 class Explorer;
 class Flows;
@@ -45,6 +46,7 @@ public:
     Panels* panels() const { return panels_; }
     Explorer* explorer() const { return explorer_; }
     SaveFlow* saveFlow() const { return saveFlow_; }
+    DocumentRegistry* registry() const { return registry_; }  // the open tabs' files, watched on disk
     QWidget* propertiesTab() const { return propsTab_; }
     QWidget* capsTab() const { return capsTab_; }
     SetupPage* setupPage() const { return setup_; }
@@ -86,6 +88,8 @@ private:
     Document* blankTab();               // where a file opens: the front tab when it is pristine, else a new one
     void saveSession();
     Document* reopen(const Backup& tab);  // a tab of restoreSession; null when there is nothing to reopen
+    void onChangedOnDisk(Document* document);
+    void askReload(Document* document);
 
     void showVersionHistory();
     void askTemplateChange(const QString& id);
@@ -114,6 +118,7 @@ private:
 
     AppServices& services_;  // the process's, shared by every tab
     SaveFlow* saveFlow_;      // every save the user asks for, and every question about unsaved changes
+    DocumentRegistry* registry_;
 
     // The front document's parts: the menus, panels and status bar act on these.
     Controller* controller_ = nullptr;

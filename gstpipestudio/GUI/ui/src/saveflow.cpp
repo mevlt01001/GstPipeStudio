@@ -7,6 +7,7 @@
 
 #include "controller.h"
 #include "document.h"
+#include "documentregistry.h"
 #include "logpanel.h"
 #include "mainwindow.h"
 #include "newprojectdialog.h"
@@ -18,7 +19,7 @@ SaveFlow::SaveFlow(MainWindow* window) : QObject(window), window_(window) {}
 
 bool SaveFlow::save(Document* d) {
     Controller* c = d->controller();
-    if (!c->target().needsDestination()) return report(d, c->save());
+    if (!c->target().needsDestination()) return overwrite(d) && report(d, c->save());
     window_->activate(d);  // the project asked for is this tab's
     const QString conf = NewProjectDialog::ask(window_);
     return !conf.isEmpty() && report(d, c->saveAs(std::make_unique<ProjectConfTarget>(conf)));
@@ -76,6 +77,22 @@ SaveFlow::Answer SaveFlow::ask(const QList<Document*>& unsaved) const {
     box.exec();
     if (box.clickedButton() == saveButton) return Answer::Save;
     return box.clickedButton() == dropButton ? Answer::Discard : Answer::Cancel;
+}
+
+bool SaveFlow::overwrite(Document* d) const {
+    if (!window_->registry()->changedSinceRead(d)) return true;
+    window_->activate(d);
+    QMessageBox box(window_);
+    box.setObjectName("changedOnDiskSave");
+    box.setIcon(QMessageBox::Warning);
+    box.setWindowTitle("File changed on disk");
+    box.setText(d->title() + " was changed on disk by another program.");
+    box.setInformativeText("Overwrite it with your version?");
+    QPushButton* overwriteButton = box.addButton("Overwrite", QMessageBox::AcceptRole);
+    overwriteButton->setObjectName("overwriteOnDisk");
+    box.setEscapeButton(box.addButton(QMessageBox::Cancel));
+    box.exec();
+    return box.clickedButton() == overwriteButton;
 }
 
 bool SaveFlow::report(Document* d, const SaveResult& r) const {
