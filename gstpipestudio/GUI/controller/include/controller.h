@@ -209,7 +209,8 @@ private:
     void alignOpened();
     void applyEdit(gps::Graph& g, const std::string& element, const ElementEdit& edit);
     void makeRoomForQueue(gps::Graph& g, const std::string& source, const std::string& queue);
-    void placeNewElement(gps::Graph& g, const std::string& id);
+    static QPointF spotAfter(const gps::Element& from);  // where something added after its pad goes
+    void placeNew(gps::Graph& g, const std::vector<std::string>& created);  // off the other boxes, as one block
     bool linkInOrder(gps::Graph& g, const QStringList& expanded, QString* lastTouched);
 
     // What GStreamer offers (gps-inspect), shared by every document; each fetched factory is registered with the Pipeline.

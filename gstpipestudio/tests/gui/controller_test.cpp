@@ -922,6 +922,28 @@ private slots:
         useUserDir({});
     }
 
+    // A template added after a pad whose next column already holds a box moves down off it, as an element does.
+    void aTemplateAfterAPadLandsOffTheBoxThere() {
+        QTemporaryDir state;
+        useUserDir(state.path());
+        const Chain chain = makeChain();
+        QVERIFY(settle(*c));
+        QVERIFY(saveTemplate(*c, "Tail", {chain.convert, chain.sink}));
+        QVERIFY(settle(*c));
+        ElementEdit two;
+        two.requestSrc = {{"src_%u", 2}};
+        const QString src = addSource(*c, "videotestsrc");
+        const QString tee = addAfter(*c, src, "src", "tee", "sink", two);
+        QVERIFY(!tee.isEmpty());
+        const QString first = addAfter(*c, tee, "src_%u#0", "fakesink");
+        const double teeY = c->plan().find(toStd(tee))->y;
+        QCOMPARE(c->plan().find(toStd(first))->y, teeY);  // the spot after the pad
+        const QStringList placed = c->placeAfter(tee, "src_%u#1", TemplateLibrary::ref("Tail"));
+        QCOMPARE(placed.size(), 2);
+        for (const QString& member : placed) QVERIFY(c->plan().find(toStd(member))->y > teeY);
+        useUserDir({});
+    }
+
     void aChangedTemplateCopyAsksThenUpdatesTheLibraryAndTheOtherCopies() {
         QTemporaryDir state, dir;
         useUserDir(state.path());

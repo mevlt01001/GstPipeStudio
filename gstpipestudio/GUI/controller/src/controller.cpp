@@ -190,13 +190,15 @@ QStringList Controller::place(const ComponentRef& component, double x, double y)
 QStringList Controller::placeAfter(const QString& srcElement, const QString& srcPad, const ComponentRef& component) {
     const gps::Element* from = plan().find(toStd(srcElement));
     if (!from) return {};
-    return land(component, QPointF(from->x + metrics::kColumn, from->y), srcRef(srcElement, srcPad),
-                [=] { placeAfter(srcElement, srcPad, component); });
+    return land(component, spotAfter(*from), srcRef(srcElement, srcPad), [=] { placeAfter(srcElement, srcPad, component); });
 }
+
+// Where something added after an element's pad goes: one column to its right, on its row.
+QPointF Controller::spotAfter(const gps::Element& from) { return {from.x + metrics::kColumn, from.y}; }
 
 // The one way a component lands on the canvas, in one undo step: its factories known (else asked for, and retry runs
 // once they are), its content's top left corner at `at`, and fed by `after` through the node's first free sink pad,
-// worked out on the draft it is placed in.
+// worked out on the draft it is placed in. After a pad it moves down off any box there, as an added element does.
 QStringList Controller::land(const ComponentRef& component, const QPointF& at, const std::optional<gps::PadRef>& after,
                              const std::function<void()>& retry) {
     const ComponentProvider* provider = services_.provider(component.provider);
@@ -212,6 +214,7 @@ QStringList Controller::land(const ComponentRef& component, const QPointF& at, c
         if (after) {
             if (const auto entry = shape.firstFree(*node, gps::Pad::Direction::Sink))
                 g.linkExisting(after->element, after->identity, entry->element, entry->linkName());
+            placeNew(g, toStd(created));
             edit.action += " after " + fromStd(after->element) + "." + fromStd(after->identity);
         }
         edit.touched = created.value(0);
@@ -251,24 +254,34 @@ void Controller::applyEdit(gps::Graph& g, const std::string& element, const Elem
     counts(e->requestSink, edit.requestSink, &gps::Graph::setRequestSink);
 }
 
-// Automatic placement moves only the newly created element. Native observations never rearrange a user's canvas.
-void Controller::placeNewElement(gps::Graph& g, const std::string& id) {
-    auto* element = g.find(id);
-    if (!element) return;
-    QRectF rect(element->x, element->y, metrics::kBoxWidth, view(fromStd(id)).height());
-    bool moved;
-    do {
+// Automatic placement moves only what was just created, as one block, down until it overlaps no other box. Native
+// observations never rearrange a user's canvas.
+void Controller::placeNew(gps::Graph& g, const std::vector<std::string>& created) {
+    const std::set<std::string> mine(created.begin(), created.end());
+    auto boxOf = [this](const gps::Element& e) { return QRectF(e.x, e.y, metrics::kBoxWidth, view(fromStd(e.name)).height()); };
+    std::vector<gps::Element*> moving;
+    QRectF block;
+    for (const std::string& name : created) {
+        if (gps::Element* e = g.find(name)) {
+            moving.push_back(e);
+            block |= boxOf(*e);
+        }
+    }
+    if (moving.empty()) return;
+    const double top = block.top();
+    const double margin = metrics::kGap / 2;
+    for (bool moved = true; moved;) {
         moved = false;
-        for (const auto& other : plan().elements) {
-            if (other.name == id) continue;
-            QRectF occupied(other.x, other.y, metrics::kBoxWidth, view(fromStd(other.name)).height());
-            if (rect.adjusted(-metrics::kGap/2, -metrics::kGap/2, metrics::kGap/2, metrics::kGap/2).intersects(occupied)) {
-                rect.moveTop(occupied.bottom() + metrics::kGap);
+        for (const gps::Element& other : g.elements) {
+            if (mine.count(other.name)) continue;
+            const QRectF occupied = boxOf(other);
+            if (block.adjusted(-margin, -margin, margin, margin).intersects(occupied)) {
+                block.moveTop(occupied.bottom() + metrics::kGap);
                 moved = true;
             }
         }
-    } while (moved);
-    element->x = rect.x(); element->y = rect.y();
+    }
+    for (gps::Element* e : moving) e->y += block.top() - top;
 }
 
 gps::Graph Controller::copySubplan(const QStringList& elementNames) const {
@@ -316,11 +329,11 @@ bool Controller::addAfter(const QString& element, const QString& pad, const QStr
     const gps::Element* from = plan().find(toStd(element));
     if (!catalog().info(factory) || !from) return false;
     return edits_.transact([&](gps::Graph& g, Edit& e) {
-        std::string name = g.addAfter(toStd(element), toStd(pad), toStd(factory), toStd(sinkPad), edit.props,
-                                      from->x + metrics::kColumn, from->y);
+        const QPointF at = spotAfter(*from);
+        std::string name = g.addAfter(toStd(element), toStd(pad), toStd(factory), toStd(sinkPad), edit.props, at.x(), at.y());
         if (name.empty()) return false;
         applyEdit(g, name, edit);
-        placeNewElement(g, name);
+        placeNew(g, {name});
         e.action = "Added " + factory + " after " + element + "." + pad;
         e.linking = padName(srcRef(element, pad)) + " -> " + padName(sinkRef(fromStd(name), sinkPad));
         e.touched = fromStd(name);
