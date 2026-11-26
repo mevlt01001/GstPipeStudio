@@ -1,4 +1,6 @@
 #include "pipeline.h"
+#include "nodes.h"
+#include "templates.h"
 #include "actions.h"
 #include "check.h"
 #include <limits>
@@ -160,4 +162,41 @@ void padRefs() {
     CHECK(g.srcOf(0) == (PadRef{a, "src", D::Source}));
     CHECK(g.sinkOf(0) == (PadRef{b, "sink_%u#0", D::Sink}));
 }
-int main(){transactions();invariantsAndFragments();results();pads();savePoint();padRefs();return finish("pipeline_test");}
+// A node's shape comes from the definitions and the links alone, so a draft that no Pipeline holds answers too: a copy's
+// way in is its first free sink pad, else a new pad of a Request sink template; with no way in it is a source.
+void nodeShapes() {
+    using D = Pad::Direction; using P = Pad::Presence;
+    auto pad = [](const char* name, D direction, P presence) {
+        Pad p; p.identity = p.templateName = name; p.direction = direction; p.presence = presence; return p;
+    };
+    const std::map<std::string, FactoryDefinition> defs = {
+        {"src", {true, {pad("src", D::Source, P::Always)}}},
+        {"conv", {false, {pad("sink", D::Sink, P::Always), pad("src", D::Source, P::Always)}}},
+        {"mux", {false, {pad("sink_%u", D::Sink, P::Request), pad("src", D::Source, P::Always)}}},
+        {"sink", {false, {pad("sink", D::Sink, P::Always)}, true}},
+    };
+    Graph g;
+    const std::string s = g.addElement("src"), c = g.addElement("conv"), k = g.addElement("sink");
+    const std::string m = g.addElement("mux"), k2 = g.addElement("sink");
+    CHECK(g.linkExisting(s, "src", c, "sink") && g.linkExisting(m, "src", k2, "sink"));
+    const NodeRef head = NodeRef::instance(templates::wrap(g, {s, c}, "Head", {}));
+    const NodeRef tail = NodeRef::instance(templates::wrap(g, {k}, "Tail", {}));
+    const NodeRef mixer = NodeRef::instance(templates::wrap(g, {m, k2}, "Mixer", {}));
+    const NodeShape shape(g, [&](const std::string& f) { auto it = defs.find(f); return it == defs.end() ? nullptr : &it->second; });
+
+    CHECK(shape.role(head) == Role::Source);
+    CHECK(!shape.firstFree(head, D::Sink).has_value());
+    CHECK(shape.firstFree(head, D::Source).value() == (PadRef{c, "src", D::Source}));
+    CHECK(shape.role(tail) == Role::Sink);
+    CHECK(shape.firstFree(tail, D::Sink).value() == (PadRef{k, "sink", D::Sink}));
+    CHECK(shape.role(mixer) == Role::Sink);  // a Request sink is a way in
+    const PadRef request = shape.firstFree(mixer, D::Sink).value();
+    CHECK(request.element == m && request.linkName() == "sink_%u");
+    CHECK(shape.role(NodeRef::element(c)) == Role::Filter);
+    CHECK(shape.members(head) == std::vector<std::string>({s, c}));
+    // Linked, the pad is no longer free, on the same graph the shape reads.
+    CHECK(g.linkExisting(c, "src", k, "sink"));
+    CHECK(!shape.firstFree(tail, D::Sink).has_value());
+    CHECK(shape.role(head) == Role::Source && shape.ports(head).srcs.front().link >= 0);
+}
+int main(){transactions();invariantsAndFragments();results();pads();savePoint();padRefs();nodeShapes();return finish("pipeline_test");}
