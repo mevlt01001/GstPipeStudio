@@ -25,9 +25,15 @@ QString findSystemTool(const QString& name) {
 }
 
 HelperClient* HelperClient::run(QObject* parent, const QString& name, const QStringList& args, int killAfterMs,
-                                std::function<void(const QString&)> log, std::function<void(const HelperResult&)> done) {
+                                std::function<void(const QString&)> log, std::function<void(const HelperResult&)> done,
+                                std::function<void(const QString&)> line) {
     auto* client = new HelperClient(parent);
-    connect(client, &HelperClient::stderrLine, parent, [log, name](const QString& line) { log("[" + name + "] " + line); });
+    connect(client, &HelperClient::stderrLine, parent, [log, name](const QString& text) { log("[" + name + "] " + text); });
+    if (line) {
+        client->streaming_ = true;
+        connect(client->process_, &QProcess::readyReadStandardOutput, client, &HelperClient::readOutput);
+        connect(client, &HelperClient::stdoutLine, parent, line);
+    }
     connect(client, &HelperClient::finished, parent, [client, done](const HelperResult& r) {
         client->deleteLater();
         done(r);
@@ -63,8 +69,10 @@ void HelperClient::start(const QString& program, const QStringList& args, int ki
     if (killAfterMs > 0) watchdog_->start(killAfterMs);
 }
 
-void HelperClient::interrupt() {
-    if (process_->state() == QProcess::Running) ::kill(static_cast<pid_t>(process_->processId()), SIGINT);
+void HelperClient::interrupt(int killAfterMs) {
+    if (process_->state() != QProcess::Running) return;
+    ::kill(static_cast<pid_t>(process_->processId()), SIGINT);
+    if (killAfterMs > 0) escalate_->start(killAfterMs);
 }
 
 void HelperClient::cancel() {
@@ -83,8 +91,19 @@ void HelperClient::readError() {
     }
 }
 
+void HelperClient::readOutput() {
+    outBuffer_ += process_->readAllStandardOutput();
+    int end;
+    while ((end = outBuffer_.indexOf('\n')) >= 0) {
+        lastLine_ = outBuffer_.left(end);
+        outBuffer_.remove(0, end + 1);
+        emit stdoutLine(QString::fromUtf8(lastLine_));
+    }
+}
+
 void HelperClient::onFinished(int code, QProcess::ExitStatus status) {
     readError();
+    if (streaming_) readOutput();
     if (!errBuffer_.isEmpty()) emit stderrLine(QString::fromUtf8(errBuffer_));
     errBuffer_.clear();
     HelperResult::Outcome outcome = cancelled_ ? HelperResult::Cancelled
@@ -103,6 +122,7 @@ void HelperClient::finish(HelperResult::Outcome outcome, int code) {
     HelperResult r;
     r.outcome = outcome;
     r.exitCode = code;
-    if (process_->isOpen()) r.out = process_->readAllStandardOutput();
+    if (streaming_) r.out = outBuffer_.trimmed().isEmpty() ? lastLine_ : outBuffer_;
+    else if (process_->isOpen()) r.out = process_->readAllStandardOutput();
     emit finished(r);
 }

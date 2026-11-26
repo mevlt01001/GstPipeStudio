@@ -1,5 +1,7 @@
-// helperclient.h – one asynchronous call of a helper program (gps-inspect, gps-update, gps-run).
+// helperclient.h – one asynchronous call of a helper program (gps-inspect, gps-update, gps-run, gps-monitor).
 // The helpers answer with one JSON object on stdout and log on stderr (SPEC 7). A watchdog kills a hung helper.
+// A streaming helper (gps-monitor) writes a JSON line per sample: each line is passed on as it comes, the last is the
+// answer.
 #pragma once
 
 #include <QByteArray>
@@ -36,21 +38,25 @@ public:
     explicit HelperClient(QObject* parent = nullptr);
 
     // One call of helper `name` (found with findHelper): its stderr lines go to log as "[name] line", the client deletes
-    // itself after done ran. The returned client can be interrupted or cancelled until then.
+    // itself after done ran. The returned client can be interrupted or cancelled until then. With line, stdout is read
+    // line by line as it comes and each line goes there; the result holds the last one.
     static HelperClient* run(QObject* parent, const QString& name, const QStringList& args, int killAfterMs,
-                             std::function<void(const QString&)> log, std::function<void(const HelperResult&)> done);
+                             std::function<void(const QString&)> log, std::function<void(const HelperResult&)> done,
+                             std::function<void(const QString&)> line = {});
 
     // killAfterMs <= 0: no watchdog. An empty program (helper not found) finishes with NotFound.
     void start(const QString& program, const QStringList& args, int killAfterMs);
-    void interrupt();  // SIGINT, the way a terminal's Ctrl+C stops gst-launch
+    void interrupt(int killAfterMs = 0);  // SIGINT, the way a terminal's Ctrl+C stops gst-launch; SIGKILL later when > 0
     void cancel();     // SIGTERM, then SIGKILL after kKillAfterTermMs; finishes with Cancelled
 
 signals:
     void stderrLine(const QString& line);
+    void stdoutLine(const QString& line);  // streaming only
     void finished(const HelperResult& result);
 
 private:
     void readError();
+    void readOutput();  // streaming: every whole line, the last kept as the answer
     void onFinished(int code, QProcess::ExitStatus status);
     void finish(HelperResult::Outcome outcome, int code);
 
@@ -58,6 +64,8 @@ private:
     QTimer* watchdog_;
     QTimer* escalate_;  // SIGKILL for a helper that ignored SIGTERM
     QByteArray errBuffer_;
+    QByteArray outBuffer_, lastLine_;
+    bool streaming_ = false;
     bool timedOut_ = false;
     bool cancelled_ = false;
     bool done_ = false;

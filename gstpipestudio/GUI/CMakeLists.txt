@@ -28,6 +28,11 @@ add_library(gps_gui STATIC
     model/include/contract.h model/src/contract.cpp
     model/include/elementview.h
     controller/include/controller.h controller/src/controller.cpp
+    controller/include/editsession.h controller/src/editsession.cpp
+    controller/include/validationsession.h controller/src/validationsession.cpp
+    controller/include/runsession.h controller/src/runsession.cpp
+    controller/include/templateinstances.h controller/src/templateinstances.cpp
+    controller/include/documentviews.h controller/src/documentviews.cpp
     controller/include/flows.h controller/src/flows.cpp
     controller/include/canvaslayout.h controller/src/canvaslayout.cpp
     controller/include/outline.h controller/src/outline.cpp

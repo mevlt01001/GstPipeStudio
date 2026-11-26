@@ -391,7 +391,7 @@ private slots:
     void cutShowsWhatWillGoAndThenCuts() {
         Chain ch = makeChain();
         QString before = text(c->plan().toConf());
-        gps::Removal preview = c->previewCut(ch.src, "src");
+        gps::Removal preview = c->plan().previewCut(toStd(ch.src), "src", c->services().catalog().traits());
         QVERIFY(preview.elements.empty());
         QCOMPARE(preview.links, 1);
         QCOMPARE(text(c->plan().toConf()), before);  // a preview changes nothing
@@ -407,7 +407,7 @@ private slots:
 
     void replaceCutsAndAddsBehindTheSamePad() {
         Chain ch = makeChain();
-        QCOMPARE(c->previewReplace(ch.src, "src").elements, std::vector<std::string>{ch.convert.toStdString()});
+        QCOMPARE(c->plan().previewReplace(toStd(ch.src), "src", c->services().catalog().traits()).elements, std::vector<std::string>{ch.convert.toStdString()});
         need(*c, "queue");
         QVERIFY(c->replace(ch.src, "src", "queue", "sink", {}));
         QVERIFY(settle(*c));
@@ -432,13 +432,13 @@ private slots:
         QVERIFY(c->result().complete());
 
         // Deleting a source only deletes that source; the compositor and sink remain on the free canvas.
-        QCOMPARE(c->previewDeleteSource(one).elements, std::vector<std::string>{one.toStdString()});
+        QCOMPARE(c->plan().previewDeleteSource(toStd(one), c->services().catalog().traits()).elements, std::vector<std::string>{one.toStdString()});
         QVERIFY(c->deleteSource(one));
         QVERIFY(settle(*c));
         QCOMPARE(c->plan().elements.size(), size_t(3));
         QCOMPARE(c->view(mix).sinks.size(), 1);
         // Deleting the second source removes only that source; mix and out stay on the free canvas as untracked.
-        QCOMPARE(c->previewDeleteSource(two).elements, std::vector<std::string>{two.toStdString()});
+        QCOMPARE(c->plan().previewDeleteSource(toStd(two), c->services().catalog().traits()).elements, std::vector<std::string>{two.toStdString()});
         QVERIFY(c->deleteSource(two));
         QVERIFY(settle(*c));
         QCOMPARE(c->plan().elements.size(), size_t(2));
@@ -540,9 +540,9 @@ private slots:
         // Everything before the last page's Add / Save is a read: previews, info and compatible lists change nothing.
         Chain ch = makeChain();
         QString before = text(c->plan().toConf());
-        c->previewCut(ch.src, "src");
-        c->previewReplace(ch.src, "src");
-        c->previewDeleteSource(ch.src);
+        c->plan().previewCut(toStd(ch.src), "src", c->services().catalog().traits());
+        c->plan().previewReplace(toStd(ch.src), "src", c->services().catalog().traits());
+        c->plan().previewDeleteSource(toStd(ch.src), c->services().catalog().traits());
         need(*c, "tee");
         QStringList compatible;
         c->services().catalog().fetchCompatible("video/x-raw", c.get(), [&](const QStringList& l) { compatible = l; });

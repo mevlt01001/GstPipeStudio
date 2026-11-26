@@ -1,24 +1,24 @@
-// controller.cpp – see controller.h. Rules come from gps_pipeline; this file only sequences them with the helpers.
+// controller.cpp – see controller.h. Rules come from gps_pipeline; this file only sequences the sessions with each
+// other and with the helpers.
 #include "controller.h"
 
-#include "capstext.h"
 #include "actions.h"
+#include "canvasmetrics.h"
 #include "projectfile.h"
 #include "templates.h"
 
 #include <QClipboard>
-#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QRectF>
 #include <QRegularExpression>
-#include <QScopedValueRollback>
+#include <QSet>
+#include <QTimer>
 #include <algorithm>
-#include <memory>
+#include <cmath>
 #include <set>
 #include <utility>
-#include <csignal>
 
 namespace {
 
@@ -31,35 +31,35 @@ QString shellQuote(const QString& s) {
     return plain.match(s).hasMatch() ? s : "'" + QString(s).replace("'", "'\\''") + "'";
 }
 
-// The chip on a link: "caps" and the number of pinned fields. The full text is the tooltip: the gap between
-// two element boxes is only 40 px wide.
-QString badgeOf(const QString& caps) {
-    size_t pinned = gps::CapsChoice::fromText(toStd(caps)).fields.size();
-    return pinned == 0 ? QString("caps") : QString("caps · %1").arg(pinned);
-}
-
-// At most metrics::kMaxPropLines lines; the last says how many more there are.
-QStringList limitedLines(const QStringList& lines) {
-    if (lines.size() <= metrics::kMaxPropLines) return lines;
-    QStringList shown = lines.mid(0, metrics::kMaxPropLines - 1);
-    return shown << QString("… +%1 more").arg(lines.size() - shown.size());
+std::vector<std::string> toStd(const QStringList& names) {
+    std::vector<std::string> out;
+    for (const QString& n : names) out.push_back(n.toStdString());
+    return out;
 }
 
 }  // namespace
 
 Controller::Controller(AppServices& services, QObject* parent)
-    : QObject(parent), services_(services), layout_(new CanvasLayout(*this)), watch_(new SlowWatch(this)) {
-    bool ok = false;
-    int ms = qEnvironmentVariableIntValue("GPS_UPDATE_TIMEOUT_MS", &ok);
-    if (ok && ms > 0) updateTimeoutMs_ = ms;
-    updateTimer_.setSingleShot(true);
-    updateTimer_.setInterval(35);
-    connect(&updateTimer_, &QTimer::timeout, this, &Controller::dispatchUpdate);
-    connect(&backend_, &HelperExecutionBackend::logLine, this, [this](const QString& line) { log("[gps-update] " + line); });
-    connect(watch_, &SlowWatch::slow, this, [this] {
-        log("Validation is taking longer than expected");
-        emit changed();
-    });
+    : QObject(parent), services_(services), layout_(new CanvasLayout(*this)),
+      templates_(edits_, pipeline_, services.library(), services.catalog(), views_),
+      views_(pipeline_, services.catalog(), templates_, *layout_) {
+    edits_.setBlocker([this] { return blockedReason(); });
+    connect(&edits_, &EditSession::committed, this, &Controller::committed);
+    connect(&edits_, &EditSession::notice, this, &Controller::notice);
+    connect(&edits_, &EditSession::synced, this, &Controller::synced);
+    connect(&validation_, &ValidationSession::changed, this, &Controller::changed);
+    connect(&validation_, &ValidationSession::finished, this, &Controller::validated);
+    connect(&validation_, &ValidationSession::logLine, this, logger());
+    connect(&runs_, &RunSession::changed, this, &Controller::changed);
+    connect(&runs_, &RunSession::runFinished, this, &Controller::runFinished);
+    connect(&runs_, &RunSession::telemetryReceived, this, &Controller::telemetryReceived);
+    connect(&runs_, &RunSession::logLine, this, logger());
+    connect(&runs_, &RunSession::notice, this, &Controller::notice);
+    connect(&templates_, &TemplateInstances::templateChanged, this, &Controller::templateChanged);
+    connect(&templates_, &TemplateInstances::templatesOutdated, this, &Controller::templatesOutdated);
+    connect(&templates_, &TemplateInstances::updated, this, [this] { niceAlign(); });
+    connect(&templates_, &TemplateInstances::notice, this, &Controller::notice);
+    connect(&templates_, &TemplateInstances::logLine, this, logger());
     // The shared catalog already knows the factories other documents asked for; the Pipeline learns them now.
     catalog().forEachInfo([this](const QString& factory, const ElementInfo&) { registerFactory(factory); });
     connect(&catalog(), &FactoryCatalog::infoArrived, this, &Controller::registerFactory);
@@ -68,14 +68,7 @@ Controller::Controller(AppServices& services, QObject* parent)
     connect(&services_.environment(), &EnvironmentService::checked, this, [this](const StartupResult& r) {
         log(r.state == StartupResult::Ready ? r.statusText() : "GStreamer check: the environment is not ready");
     });
-    // Any tab wrote the library: this canvas shows it, and offers the newer versions of its copies.
-    connect(&services_.library(), &TemplateLibrary::changed, this, [this] {
-        emit changed();
-        offerNewerTemplates();
-    });
-    connect(&services_.library(), &TemplateLibrary::renamed, this, &Controller::followRename);
-    offerTimer_.setSingleShot(true);
-    connect(&offerTimer_, &QTimer::timeout, this, &Controller::offerNow);
+    connect(&services_.library(), &TemplateLibrary::changed, this, &Controller::changed);  // any tab wrote the library
 }
 
 void Controller::registerFactory(const QString& factory) {
@@ -84,16 +77,12 @@ void Controller::registerFactory(const QString& factory) {
 
 // ---- state
 
-bool Controller::canSave() const { return saveBlockedReason().isEmpty(); }
-
-bool Controller::canRun() const { return runBlockedReason().isEmpty(); }
-
-// Save always writes: validation gates Run and Monitor only. A file saved before it was validated says complete=0.
-QString Controller::saveBlockedReason() const {
+// The one edit-blocked guard; Save is off for the same reasons.
+QString Controller::blockedReason() const {
     if (opening_) return "A file is being opened";
-    if (running_) return "The pipeline is running";
-    if (monitoring_) return "Monitoring is running";
-    if (cancelling_) return "Validation is being cancelled";
+    if (running()) return "The pipeline is running";
+    if (monitoring()) return "Monitoring is running";
+    if (cancelling()) return "Validation is being cancelled";
     return QString();
 }
 
@@ -101,8 +90,8 @@ QString Controller::runBlockedReason() const {
     if (const QString own = target_->runBlockedReason(); !own.isEmpty()) return own;
     if (const QString busy = saveBlockedReason(); !busy.isEmpty()) return busy;
     if (plan().empty()) return "The canvas is empty";
-    if (updating_) return "Validation is running";
-    if (cancelled_) return "Validation was cancelled — press Validate";
+    if (updating()) return "Validation is running";
+    if (notValidated()) return "Validation was cancelled — press Validate";
     if (!result().valid()) return "The pipeline is not validated yet — press Validate";
     if (!result().ok()) return "The last validation reported a problem (see the Validation tab)";
     if (!result().complete()) return "The pipeline is not complete: link every free src pad";
@@ -121,29 +110,13 @@ void Controller::log(const QString& line) {
     emit logLine(line);
 }
 
-void Controller::note(const QString& action, const QString& linking) {
-    action_ = action;
-    linking_ = linking;
-}
-
-gps::Names Controller::names() const {
-    if (pipeline_.editor().editing()) return gps::Names(plan());  // a draft is never kept
-    if (namesRevision_ != pipeline_.lastChange().revision) {
-        names_ = gps::Names(plan());
-        namesRevision_ = pipeline_.lastChange().revision;
-    }
-    return names_;
-}
-
-QString Controller::padName(const gps::PadRef& pad) const { return fromStd(names().pad(plan(), pad)); }
-
 SupportInfo Controller::supportInfo(const QString& title) const {
     SupportInfo i = SupportReport::systemInfo();
     i.title = title;
-    i.action = action_;
-    i.linking = linking_;
+    i.action = edits_.lastAction();
+    i.linking = edits_.lastLinking();
     if (result().valid()) i.validation = statusText(result()) + (result().message.empty() ? QString() : " – " + fromStd(result().message));
-    else if (cancelled_) i.validation = "cancelled";
+    else if (notValidated()) i.validation = "cancelled";
     i.logTail = logTail_.mid(qMax(0, logTail_.size() - 15));
     const StartupResult& env = services_.environment().result();
     if (env.state == StartupResult::Ready || env.state == StartupResult::TooOld) i.gstreamer = env.version;
@@ -170,101 +143,31 @@ QString Controller::launchCommand() const {
     return text;
 }
 
-// ---- templates & groups
+// ---- what one session's work means for the others
 
-Outline Controller::outline() const {
-    if (pipeline_.editor().editing()) return Outline(plan(), expandedTemplates_);  // a draft is never kept
-    if (outlineRevision_ != pipeline_.lastChange().revision) {
-        outline_ = Outline(plan(), expandedTemplates_);
-        outlineRevision_ = pipeline_.lastChange().revision;
-    }
-    return outline_;
-}
-
-void Controller::setTemplateExpanded(const QString& groupId, bool expanded) {
-    if (groupId.isEmpty() || isTemplateExpanded(groupId) == expanded) return;
-    if (!expanded && editingTemplates_.contains(groupId)) commitTemplateEdit(groupId);  // collapsing ends its editing
-    // The box grows into its frame from its centre, or the frame shrinks into it; everything around it makes room.
-    const CanvasLayout::Pin pin = layout_->pinOf(outline().membersOf(groupId), true);
-    if (expanded) expandedTemplates_.insert(groupId);
-    else expandedTemplates_.remove(groupId);
-    outlineRevision_ = kNeverKept;
-    layout_->invalidate();
-    layout_->align({}, pin);
+// An edit is shown, followed by automatic alignment (not undo and redo: going back is not an edit to follow), validated
+// when it changed what runs, and its template copies are checked.
+void Controller::committed(const Edit& edit, bool restoring) {
     emit changed();
+    if (!restoring) alignAfterEdit();
+    if (!edit.presentation) {
+        if (pipeline_.lastChange().kind == gps::ChangeKind::Execution || updating()) validation_.request(edit.touched);
+        else emit updateFinished(true);
+    }
+    templates_.check(!restoring);
 }
 
-bool Controller::detachTemplate(const QString& groupId) {
-    if (groupId.isEmpty() || !plan().instance(toStd(groupId))) return false;
-    return transact([&](gps::Graph& g, Edit& edit) {
-        gps::templates::detach(g, toStd(groupId));
-        expandedTemplates_.remove(groupId);
-        outlineRevision_ = kNeverKept;
-        edit.action = "Detached from template " + fromStd(names().instance(toStd(groupId)));
-        edit.presentation = true;
-        return true;
-    });
+void Controller::validated(bool ok) {
+    emit updateFinished(ok);
+    if (!notValidated()) alignOpened();
 }
 
-QString Controller::beginTemplate(const QStringList& elementNames) {
-    const QStringList members = outline().expand(elementNames);
-    if (members.isEmpty()) return QString();
-    QString id;
-    const bool made = transact([&](gps::Graph& g, Edit& edit) {
-        std::vector<std::string> names;
-        for (const QString& n : members) names.push_back(toStd(n));
-        id = fromStd(gps::templates::wrap(g, names, "New template", {}));
-        edit.action = QString("Made a template of %1 element(s)").arg(members.size());
-        edit.presentation = true;
-        return true;
-    });
-    if (!made) return QString();
-    setTemplateExpanded(id, true);  // its border is drawn, and the canvas makes room
+// ---- template copies
+
+QString Controller::beginTemplate(const QStringList& elements) {
+    const QString id = templates_.begin(elements);
+    if (!id.isEmpty()) setTemplateExpanded(id, true);  // its border is drawn, and the canvas makes room
     return id;
-}
-
-bool Controller::finishTemplate(const QString& id, const QString& name, const std::vector<gps::ExposedParam>& params, QString* error) {
-    QString clean;
-    if (!services_.library().acceptName(name, &clean, error) || !onCanvas(id, error)) return false;
-    transact([&](gps::Graph& g, Edit& edit) {
-        gps::TemplateInstance* t = g.instance(toStd(id));
-        t->templateName = toStd(clean);
-        t->params.clear();
-        for (const gps::ExposedParam& p : params) {
-            if (gps::templates::inside(g, p.element, t->id)) t->params.push_back(p);
-        }
-        gps::templates::sync(g, t->id, 1);
-        edit.action = "Saved template " + clean;
-        edit.presentation = true;
-        return true;
-    });
-    return wrote(services_.library().save(clean, gps::templates::extract(plan(), toStd(id))), error);
-}
-
-void Controller::cancelTemplate(const QString& id) { detachTemplate(id); }
-
-void Controller::followRename(const QString& from, const QString& to) {
-    transact([&](gps::Graph& g, Edit& edit) {
-        bool any = false;
-        for (gps::TemplateInstance& t : g.instances) {
-            if (t.templateName == toStd(from)) t.templateName = toStd(to), any = true;
-        }
-        edit.action = "Renamed template " + from + " to " + to;
-        edit.presentation = true;
-        return any;
-    });
-}
-
-void Controller::setTemplateParameters(const std::vector<gps::ExposedParam>& params) {
-    transact([&](gps::Graph& g, Edit& edit) {
-        g.exposed.clear();
-        for (const gps::ExposedParam& p : params) {
-            if (g.find(p.element)) g.exposed.push_back(p);
-        }
-        edit.action = QString("Set %1 template parameter(s)").arg(g.exposed.size());
-        edit.presentation = true;
-        return true;
-    });
 }
 
 bool Controller::saveTemplate(const QString& templateName, const QStringList& elementNames) {
@@ -280,59 +183,20 @@ bool Controller::saveTemplate(const QString& templateName, const QStringList& el
     return true;
 }
 
-std::vector<gps::ExposedParam> Controller::parameterChoices(const QStringList& elements) const {
-    std::vector<gps::ExposedParam> out;
-    const gps::Names names = this->names();
-    auto offer = [&](const std::string& element, const std::string& property) {
-        gps::ExposedParam p{"", element, property};
-        p.name = names.param(p);
-        out.push_back(p);
-    };
-    for (const QString& member : elements) {
-        const gps::Element* e = plan().find(toStd(member));
-        if (!e) continue;
-        if (const ElementInfo* inf = catalog().info(fromStd(e->factory))) {
-            for (const PropertyInfo& p : inf->properties) {
-                if (p.writable && !p.deprecated) offer(e->name, p.name);
-            }
-        }
-        // Fixed caps are parameters too, field by field: the element's own caps property, and the caps on its src links.
-        auto own = e->props.find("caps");
-        if (own != e->props.end()) {
-            for (const gps::CapsField& f : gps::CapsChoice::fromText(own->second).fields) offer(e->name, "caps." + f.name);
-        }
-        const std::vector<int> out = plan().linksFromElement(e->name);
-        for (int i : out) {
-            const gps::Connection& l = plan().links[static_cast<size_t>(i)];
-            const std::string prefix = out.size() == 1 && own == e->props.end() ? "caps." : l.srcPad + ".caps.";
-            for (const gps::CapsField& f : gps::CapsChoice::fromText(l.caps).fields) offer(e->name, prefix + f.name);
-        }
-    }
-    return out;
-}
-
-std::vector<gps::ExposedParam> Controller::templateParams(const QString& id) const {
-    const gps::TemplateInstance* t = plan().instance(toStd(id));
-    return t ? t->params : std::vector<gps::ExposedParam>();
-}
-
-bool Controller::setTemplateParams(const QString& id, const std::map<std::string, std::string>& values) {
-    const gps::TemplateInstance* t = plan().instance(toStd(id));
-    if (!t) return false;
-    const QString title = fromStd(t->templateName);
-    return transact([&](gps::Graph& g, Edit& edit) {
-        for (const gps::ExposedParam& p : g.instance(toStd(id))->params) {
-            auto value = values.find(p.name);
-            if (value != values.end()) gps::templates::setParam(g, p, value->second);
-        }
-        edit.action = "Set the parameters of template " + title;
-        edit.touched = outline().membersOf(id).value(0);
-        return true;
-    });
+// Collapsing ends a copy's editing. The box grows into its frame from its centre, or the frame shrinks into it;
+// everything around it makes room.
+void Controller::setTemplateExpanded(const QString& id, bool expanded) {
+    if (id.isEmpty() || isTemplateExpanded(id) == expanded) return;
+    if (!expanded) templates_.commit(id);
+    const CanvasLayout::Pin pin = layout_->pinOf(outline().membersOf(id), true);
+    templates_.setExpanded(id, expanded);
+    layout_->invalidate();
+    layout_->align({}, pin);
+    emit changed();
 }
 
 QStringList Controller::place(const ComponentRef& component, double x, double y) {
-    const QPointF at = (std::isfinite(x) && std::isfinite(y)) ? QPointF(x, y) : freeSpot();
+    const QPointF at = (std::isfinite(x) && std::isfinite(y)) ? QPointF(x, y) : views_.freeSpot();
     const QStringList created = land(component, at, std::nullopt, [=] { place(component, x, y); });
     if (!created.isEmpty()) niceAlign();  // the new box finds its place among the others
     return created;
@@ -352,10 +216,9 @@ QStringList Controller::land(const ComponentRef& component, const QPointF& at, c
                              const std::function<void()>& retry) {
     const ComponentProvider* provider = services_.provider(component.provider);
     const gps::Graph content = provider ? provider->peek(component.id) : gps::Graph();
-    if (content.empty() || editingBlocked()) return {};
-    if (!infosReady(content, retry)) return {};
+    if (content.empty() || !infosReady(content, retry)) return {};
     QStringList created;
-    transact([&](gps::Graph& g, Edit& edit) {
+    edits_.transact([&](gps::Graph& g, Edit& edit) {
         const std::optional<gps::NodeRef> node = provider->place(g, component.id, at.x(), at.y());
         if (!node) return false;
         const gps::NodeShape shape(g, pipeline_);
@@ -367,487 +230,6 @@ QStringList Controller::land(const ComponentRef& component, const QPointF& at, c
             edit.action += " after " + fromStd(after->element) + "." + fromStd(after->identity);
         }
         edit.touched = created.value(0);
-        return true;
-    });
-    return created;
-}
-
-// ---- views
-
-QString Controller::elementNote(const QString& element, bool* isError) const {
-    *isError = false;
-    const UpdateResult& r = result();
-    if (r.valid() && !r.ok() && fromStd(r.errorElement) == element) {
-        *isError = true;
-        return fromStd(r.message);
-    }
-    for (const std::vector<std::string>* list : {&r.refused, &r.missing}) {
-        for (const std::string& text : *list) {
-            const QString entry = fromStd(text);
-            if (entry.startsWith(element + ".") || entry.startsWith(element + ":")) return entry;
-        }
-    }
-    return QString();
-}
-
-ElementView Controller::view(const QString& name) const {
-    ElementView v;
-    v.name = name;
-    const gps::Element* element = plan().find(toStd(name));
-    if (!element) return v;
-
-    v.factory = fromStd(element->factory);
-    v.displayTitle = fromStd(names().element(element->name));
-    v.groupId = fromStd(element->group);
-    v.groupTitle = fromStd(names().instance(element->group));
-    if (!v.groupId.isEmpty()) v.templateMembers = outline().membersOf(v.groupId);
-    if (const FactoryEntry* e = catalog().entry(v.factory)) {
-        v.nvidia = e->nvidia;
-        v.longName = fromStd(e->longName);
-    }
-
-    // Changed properties, the exposed ones marked.
-    QStringList lines;
-    for (const auto& entry : element->props) {
-        const auto& key = entry.first;
-        const auto& value = entry.second;
-        bool exposed = std::any_of(plan().exposed.begin(), plan().exposed.end(),
-                                   [&](const gps::ExposedParam& p) { return p.element == element->name && p.property == key; });
-        lines << (exposed ? "↗ " : "") + fromStd(key) + " = " + fromStd(value);
-    }
-    v.propLines = limitedLines(lines);
-    v.note = elementNote(name, &v.isError);
-
-    const ElementInfo* inf = catalog().info(v.factory);
-    if (!inf) return v;
-    const gps::Role role = shape().role(gps::NodeRef::element(element->name));
-    v.isSource = role == gps::Role::Source;
-    v.isSink = role == gps::Role::Sink;
-    v.isTracked = plan().isElementTracked(element->name, catalog().traits());
-    if (!v.isTracked && v.note.isEmpty()) {
-        v.isInfo = true;
-        v.note = "ℹ Unlinked sink pad — not tracked until fed by a source.";
-    }
-    // Pads: the Pipeline owns which exist (Pipeline::padsOf); the view adds what the canvas shows of them.
-    for (const gps::Pad& pad : element->pads) (pad.direction == gps::Pad::Direction::Source ? v.srcs : v.sinks) << padView(*element, pad, v.isTracked);
-    return v;
-}
-
-PadView Controller::padView(const gps::Element& element, const gps::Pad& pad, bool tracked) const {
-    const bool src = pad.direction == gps::Pad::Direction::Source;
-    const ElementInfo* inf = catalog().info(fromStd(element.factory));
-    const PadTemplateInfo* t = inf ? inf->padTemplate(pad.templateName, src ? "src" : "sink") : nullptr;
-    PadView p;
-    p.ref = {element.name, pad.identity, pad.direction};
-    p.label = fromStd(gps::Names::label(pad));
-    if (src) {
-        p.link = plan().linkFrom(element.name, pad.identity);
-        const std::string& caps = pad.negotiatedCaps.empty() ? pad.allowedCaps : pad.negotiatedCaps;
-        p.media = fromStd(gps::mediaOf(caps));
-        p.tip = fromStd(caps);
-        p.caps = fromStd(pad.negotiatedCaps);
-        p.state = p.link >= 0 ? PadView::Linked : (!tracked || pad.unknownData) ? PadView::Unknown : PadView::Free;
-    } else {
-        p.link = plan().linkInto(element.name, pad.identity);
-        p.media = t && !t->structures.empty() ? fromStd(gps::structureTitle(t->structures.front())) : QString();
-        p.tip = fromStd(pad.templateCaps);
-        if (!pad.negotiatedCaps.empty()) {
-            p.media = fromStd(gps::mediaOf(pad.negotiatedCaps));
-            p.tip = p.caps = fromStd(pad.negotiatedCaps);
-        }
-        p.state = p.link >= 0 ? PadView::Linked : PadView::Empty;
-    }
-    return p;
-}
-
-// What the canvas draws of the pads a group shows: each one as its element's box would draw it.
-QList<PadView> Controller::padViews(const std::vector<gps::Port>& ports) const {
-    QList<PadView> out;
-    for (const gps::Port& port : ports) {
-        const gps::Element* e = plan().find(port.pad.element);
-        if (!e) continue;
-        for (const gps::Pad& pad : e->pads) {
-            if (pad.identity == port.pad.identity && pad.direction == port.pad.direction)
-                out << padView(*e, pad, plan().isElementTracked(e->name, catalog().traits()));
-        }
-    }
-    return out;
-}
-
-ElementView Controller::templateView(const QString& groupId) const {
-    ElementView v;
-    const QStringList members = outline().membersOf(groupId);
-    if (members.isEmpty()) return v;
-
-    v.name = members.first();
-    v.displayTitle = fromStd(names().instance(toStd(groupId)));
-    v.groupId = groupId;
-    v.isTemplate = true;
-    v.templateMembers = members;
-    v.isTracked = false;
-
-    QStringList factories;
-    QStringList propSummary;
-    for (const QString& m : members) {
-        ElementView mv = view(m);
-        factories << mv.factory;
-        if (mv.nvidia) v.nvidia = true;
-        if (mv.isTracked) v.isTracked = true;
-        if (mv.isError && !mv.note.isEmpty()) {
-            v.isError = true;
-            v.note = mv.displayTitle + ": " + mv.note;
-        } else if (v.note.isEmpty() && !mv.note.isEmpty() && !mv.isInfo) {
-            v.note = mv.displayTitle + ": " + mv.note;
-        }
-        for (const QString& pl : mv.propLines) {
-            if (!pl.startsWith("…")) propSummary << (mv.displayTitle + "." + pl);
-        }
-    }
-    const gps::NodePorts ports = shape().ports(gps::NodeRef::instance(toStd(groupId)));
-    v.sinks = padViews(ports.sinks);
-    v.srcs = padViews(ports.srcs);
-    const gps::Role role = gps::NodeShape::role(ports);
-    v.isSource = role == gps::Role::Source;
-    v.isSink = role == gps::Role::Sink;
-    v.factory = QString("template (%1) · %2").arg(members.size()).arg(factories.join(" → "));
-    v.propLines = limitedLines(propSummary);
-    if (!v.isTracked && v.note.isEmpty() && !v.isSource) {
-        v.isInfo = true;
-        v.note = "ℹ Unlinked template — not tracked until fed by a source.";
-    }
-    return v;
-}
-
-ElementView Controller::boxView(const QString& box) const {
-    return plan().find(toStd(box)) ? view(box) : templateView(box);
-}
-
-FrameView Controller::frameView(const QString& instanceId) const {
-    FrameView v;
-    const gps::TemplateInstance* t = plan().instance(toStd(instanceId));
-    if (!t) return v;
-    v.id = instanceId;
-    v.title = fromStd(t->templateName);
-    v.members = outline().membersOf(instanceId);
-    v.depth = static_cast<int>(gps::templates::chain(plan(), t->id).size());
-    const gps::NodePorts ports = shape().ports(gps::NodeRef::instance(t->id));
-    v.pads = padViews(ports.sinks) + padViews(ports.srcs);
-    return v;
-}
-
-QList<LinkView> Controller::linkViews() const {
-    QList<LinkView> out;
-    for (size_t i = 0; i < plan().links.size(); ++i) {
-        const gps::Connection& l = plan().links[i];
-        LinkView v;
-        v.index = static_cast<int>(i);
-        v.src = plan().srcOf(i);
-        v.sink = plan().sinkOf(i);
-        v.id = fromStd(gps::LinkRef{v.src}.id());
-        v.route = layout_->route(v.id);
-        v.badge = l.caps.empty() ? QString() : badgeOf(fromStd(l.caps));
-        v.tip = fromStd(l.caps);
-        const PadReport* srcRep = result().pad(l.srcElement, l.srcPad, true);
-        if (srcRep && !srcRep->caps.empty()) {
-            v.negotiatedCaps = fromStd(srcRep->caps);
-        } else if (!l.caps.empty()) {
-            v.negotiatedCaps = fromStd(l.caps);
-        }
-        if (v.tip.isEmpty() && !v.negotiatedCaps.isEmpty()) v.tip = v.negotiatedCaps;
-        out << v;
-    }
-    return out;
-}
-
-std::vector<StructureInfo> Controller::padStructures(const QString& element, const QString& identity) const {
-    const PadReport* r = result().pad(toStd(element), toStd(identity), true);
-    return r ? r->allowedStructures : std::vector<StructureInfo>();
-}
-
-QString Controller::padAllowed(const QString& element, const QString& identity) const {
-    const PadReport* r = result().pad(toStd(element), toStd(identity), true);
-    return r ? fromStd(r->allowed) : QString();
-}
-
-const PadTemplateInfo* Controller::linkSinkTemplate(int link) const {
-    if (link < 0 || link >= static_cast<int>(plan().links.size())) return nullptr;
-    const gps::Connection& l = plan().links[link];
-    const gps::Element* sink = plan().find(l.sinkElement);
-    const ElementInfo* inf = sink ? catalog().info(fromStd(sink->factory)) : nullptr;
-    return inf ? inf->padTemplate(l.sinkPad, "sink") : nullptr;
-}
-
-QList<ExistingTarget> Controller::existingTargets(const QString& element, const QString& identity) const {
-    QList<ExistingTarget> out;
-    std::vector<StructureInfo> allowed = padStructures(element, identity);
-    for (const gps::Element& e : plan().elements) {
-        const ElementInfo* inf = catalog().info(fromStd(e.factory));
-        if (!inf || plan().wouldCycle(toStd(element), e.name)) continue;
-        for (const PadTemplateInfo& t : inf->sinkTemplates()) {
-            if (!gps::structuresMeet(allowed, t.structures)) continue;
-            if (!t.isRequest() && plan().sinkPadTaken(e.name, t.name)) continue;
-            out.append({fromStd(e.name), fromStd(e.factory), fromStd(t.name), t.isRequest()});
-        }
-    }
-    return out;
-}
-
-std::vector<PadTemplateInfo> Controller::sinkChoices(const ElementInfo& inf, const QString& element, const QString& identity) const {
-    return inf.sinkTemplatesFor(padStructures(element, identity));
-}
-
-// ---- layout
-
-QPointF Controller::freeSpot() const {
-    double y = 40;
-    for (const gps::Element& e : plan().elements) y = std::max(y, e.y + view(fromStd(e.name)).height() + 40);
-    return QPointF(40, y);
-}
-
-// Automatic placement moves only the newly created element. Native observations
-// never rearrange a user's canvas.
-void Controller::placeNewElement(const std::string& id) {
-    auto* element = editGraph().find(id);
-    if (!element) return;
-    QRectF rect(element->x, element->y, metrics::kBoxWidth, view(fromStd(id)).height());
-    bool moved;
-    do {
-        moved = false;
-        for (const auto& other : plan().elements) {
-            if (other.name == id) continue;
-            QRectF occupied(other.x, other.y, metrics::kBoxWidth, view(fromStd(other.name)).height());
-            if (rect.adjusted(-metrics::kGap/2, -metrics::kGap/2, metrics::kGap/2, metrics::kGap/2).intersects(occupied)) {
-                rect.moveTop(occupied.bottom() + metrics::kGap);
-                moved = true;
-            }
-        }
-    } while (moved);
-    element->x = rect.x(); element->y = rect.y();
-}
-
-// ---- edits
-
-void Controller::applyEdit(const std::string& element, const ElementEdit& edit) {
-    gps::Element* e = editGraph().find(element);
-    if (!e) return;
-
-    // Request pad counts, src and sink alike: every template the element or the edit names gets the edit's count.
-    auto counts = [&](const std::map<std::string, int>& now, const std::map<std::string, int>& wanted,
-                      bool (gps::Graph::*set)(const std::string&, const std::string&, int)) {
-        std::set<std::string> templates;
-        for (const auto& entry : now) templates.insert(entry.first);
-        for (const auto& entry : wanted) templates.insert(entry.first);
-        for (const std::string& t : templates) {
-            auto found = wanted.find(t);
-            int count = found == wanted.end() ? 0 : found->second;
-            if (!(editGraph().*set)(element, t, count))
-                emit notice(fromStd("Unable to set the pad count of " + t + " to " + std::to_string(count) + ": linked pads need it."));
-        }
-    };
-    counts(e->requestSrc, edit.requestSrc, &gps::Graph::setRequestSrc);
-    counts(e->requestSink, edit.requestSink, &gps::Graph::setRequestSink);
-}
-
-bool Controller::transact(const std::function<bool(gps::Graph&, Edit&)>& change) {
-    if (editingBlocked()) return false;
-    pipeline_.editor().begin();
-    Edit edit;
-    if (!change(editGraph(), edit)) {
-        pipeline_.editor().rollback();
-        return false;
-    }
-    note(edit.action, edit.linking);
-    if (edit.presentation) {
-        if (!commitTransaction()) return false;
-        emit changed();
-        alignAfterEdit();
-        checkTemplates(true);
-        return true;
-    }
-    edited(edit.touched);
-    checkTemplates(true);
-    return true;
-}
-
-// Which template copies hold content their template does not: the first time one does, the window asks what that
-// means (unless the user already chose to edit that template). Undo and opening a file only take note.
-void Controller::checkTemplates(bool ask) {
-    QSet<QString> now;
-    for (const gps::TemplateInstance& t : plan().instances) {
-        if (gps::templates::modified(plan(), t.id)) now.insert(fromStd(t.id));
-    }
-    QSet<QString> fresh = now - knownModified_ - editingTemplates_;
-    knownModified_ = now;
-    if (!ask || fresh.isEmpty()) return;
-    QString innermost;
-    size_t depth = 0;
-    for (const QString& id : fresh) {
-        const size_t d = gps::templates::chain(plan(), toStd(id)).size() + 1;
-        if (d > depth || (d == depth && id < innermost)) depth = d, innermost = id;
-    }
-    QTimer::singleShot(0, this, [this, innermost] {
-        if (plan().instance(toStd(innermost)) && !editingTemplates_.contains(innermost)) emit templateChanged(innermost);
-    });
-}
-
-void Controller::keepEditingTemplate(const QString& id) {
-    editingTemplates_.insert(id);
-    log("Editing template " + fromStd(plan().instance(toStd(id))->templateName) + ": the library gets the change when it collapses or the file is saved");
-}
-
-// The edited copy becomes the template's next revision; the other copies on this canvas that were not changed follow.
-bool Controller::commitTemplateEdit(const QString& id) {
-    editingTemplates_.remove(id);
-    const gps::TemplateInstance* t = plan().instance(toStd(id));
-    if (!t || !gps::templates::modified(plan(), t->id)) return false;
-    const QString name = fromStd(t->templateName);
-    const int revision = services_.library().nextRevision(name, t->revision);
-    transact([&](gps::Graph& g, Edit& edit) {
-        gps::templates::sync(g, toStd(id), revision);
-        edit.action = QString("Updated template %1 to revision %2").arg(name).arg(revision);
-        edit.presentation = true;
-        return true;
-    });
-    if (const SaveResult r = services_.library().save(name, gps::templates::extract(plan(), toStd(id))); !r.ok) {
-        emit notice(r.error);
-        return false;
-    }
-    QStringList others;
-    for (const gps::TemplateInstance& other : plan().instances) {
-        if (fromStd(other.id) != id && fromStd(other.templateName) == name && !gps::templates::modified(plan(), other.id)) others << fromStd(other.id);
-    }
-    if (!others.isEmpty()) updateTemplates(others);
-    emit changed();
-    return true;
-}
-
-bool Controller::saveTemplateAsNew(const QString& id, const QString& name, QString* error) {
-    QString clean;
-    if (!services_.library().acceptName(name, &clean, error) || !onCanvas(id, error)) return false;
-    editingTemplates_.remove(id);
-    transact([&](gps::Graph& g, Edit& edit) {
-        g.instance(toStd(id))->templateName = toStd(clean);
-        gps::templates::sync(g, toStd(id), 1);
-        edit.action = "Saved a copy as the new template " + clean;
-        edit.presentation = true;
-        return true;
-    });
-    return wrote(services_.library().save(clean, gps::templates::extract(plan(), toStd(id))), error);
-}
-
-bool Controller::wrote(const SaveResult& r, QString* error) {
-    if (!r.ok && error) *error = r.error;
-    return r.ok;
-}
-
-bool Controller::onCanvas(const QString& id, QString* error) const {
-    if (plan().instance(toStd(id))) return true;
-    if (error) *error = "The template is no longer on the canvas.";
-    return false;
-}
-
-// Asked when the current edit or write is over, so the offer is about the canvas as it is then.
-void Controller::offerNewerTemplates() { offerTimer_.start(0); }
-
-// Only a revision not offered yet asks: the library read again (the catalog arrived, another template was written)
-// does not ask about the same revisions twice.
-void Controller::offerNow() {
-    const QStringList outdated = outdatedTemplates();
-    bool fresh = false;
-    for (const QString& id : outdated) {
-        const int revision = services_.library().plan(fromStd(plan().instance(toStd(id))->templateName))->revision;
-        if (std::exchange(offered_[id], revision) != revision) fresh = true;
-    }
-    if (fresh) emit templatesOutdated(outdated);
-}
-
-QStringList Controller::outdatedTemplates() const {
-    QStringList out;
-    for (const gps::TemplateInstance& t : plan().instances) {
-        const gps::Graph* library = services_.library().plan(fromStd(t.templateName));
-        if (library && library->revision > t.revision) out << fromStd(t.id);
-    }
-    return out;
-}
-
-bool Controller::updateTemplates(const QStringList& ids) {
-    QStringList touched;
-    const bool done = transact([&](gps::Graph& g, Edit& edit) {
-        bool any = false;
-        for (const QString& id : ids) {
-            const gps::TemplateInstance* t = g.instance(toStd(id));
-            const gps::Graph* library = t ? services_.library().plan(fromStd(t->templateName)) : nullptr;
-            if (library && gps::templates::replaceContent(g, toStd(id), *library)) any = true;
-        }
-        for (const QString& id : ids) {
-            for (const std::string& m : gps::templates::members(g, toStd(id))) touched << fromStd(m);
-        }
-        edit.action = QString("Took the library's newer version of %1 template(s)").arg(ids.size());
-        edit.touched = touched.value(0);
-        return any;
-    });
-    if (done) niceAlign();
-    return done;
-}
-
-bool Controller::commitTransaction() {
-    if (!pipeline_.editor().editing()) return true;
-    std::string error;
-    const bool committed = pipeline_.editor().commit(&error);
-    if (!error.empty()) emit notice(fromStd(error));
-    return committed || error.empty();
-}
-
-void Controller::edited(const QString& touchedElement) {
-    if (!commitTransaction()) return;
-    touched_ = touchedElement;
-    emit changed();
-    alignAfterEdit();
-    if (pipeline_.lastChange().kind == gps::ChangeKind::Execution || updating_) {
-        startUpdate();
-    } else {
-        emit updateFinished(true);
-    }
-}
-
-bool Controller::undo() {
-    if (!canUndo() || !pipeline_.editor().undo()) return false;
-    note("Undo");
-    const QScopedValueRollback restoring(restoring_, true);  // going back is not an edit to follow
-    edited(QString());
-    checkTemplates(false);
-    return true;
-}
-
-bool Controller::redo() {
-    if (!canRedo() || !pipeline_.editor().redo()) return false;
-    note("Redo");
-    const QScopedValueRollback restoring(restoring_, true);
-    edited(QString());
-    checkTemplates(false);
-    return true;
-}
-
-gps::Graph Controller::copySubplan(const QStringList& elementNames) const {
-    std::vector<std::string> ids;
-    for (const auto& name : outline().expand(elementNames)) ids.push_back(toStd(name));
-    return gps::GraphFragment(std::move(ids)).copy(plan());
-}
-
-QStringList Controller::pasteSubplan(const gps::Graph& clip, double targetX, double targetY) {
-    if (editingBlocked() || clip.elements.empty()) return {};
-    if (!infosReady(clip, [=] { pasteSubplan(clip, targetX, targetY); })) return {};
-    const auto [left, top] = clip.topLeft();
-    const QPointF corner(left, top);
-    const QPointF at = std::isfinite(targetX) ? QPointF(targetX, targetY) : corner + QPointF(40, 40);
-    QStringList created;
-    transact([&](gps::Graph& g, Edit& edit) {
-        const QPointF offset = at - corner;
-        for (const auto& [old, made] : gps::templates::insertCopy(g, clip, offset.x(), offset.y())) {
-            if (g.find(made)) created << fromStd(made);
-        }
-        edit.action = QString("Pasted %1 element(s)").arg(created.size());
-        edit.touched = created.last();
         return true;
     });
     return created;
@@ -867,21 +249,82 @@ bool Controller::infosReady(const gps::Graph& clip, std::function<void()> retry)
     return false;
 }
 
+// ---- edits
 
+// Request pad counts, src and sink alike: every template the element or the edit names gets the edit's count.
+void Controller::applyEdit(gps::Graph& g, const std::string& element, const ElementEdit& edit) {
+    gps::Element* e = g.find(element);
+    if (!e) return;
+    auto counts = [&](const std::map<std::string, int>& now, const std::map<std::string, int>& wanted,
+                      bool (gps::Graph::*set)(const std::string&, const std::string&, int)) {
+        std::set<std::string> templates;
+        for (const auto& entry : now) templates.insert(entry.first);
+        for (const auto& entry : wanted) templates.insert(entry.first);
+        for (const std::string& t : templates) {
+            auto found = wanted.find(t);
+            int count = found == wanted.end() ? 0 : found->second;
+            if (!(g.*set)(element, t, count))
+                emit notice(fromStd("Unable to set the pad count of " + t + " to " + std::to_string(count) + ": linked pads need it."));
+        }
+    };
+    counts(e->requestSrc, edit.requestSrc, &gps::Graph::setRequestSrc);
+    counts(e->requestSink, edit.requestSink, &gps::Graph::setRequestSink);
+}
+
+// Automatic placement moves only the newly created element. Native observations never rearrange a user's canvas.
+void Controller::placeNewElement(gps::Graph& g, const std::string& id) {
+    auto* element = g.find(id);
+    if (!element) return;
+    QRectF rect(element->x, element->y, metrics::kBoxWidth, view(fromStd(id)).height());
+    bool moved;
+    do {
+        moved = false;
+        for (const auto& other : plan().elements) {
+            if (other.name == id) continue;
+            QRectF occupied(other.x, other.y, metrics::kBoxWidth, view(fromStd(other.name)).height());
+            if (rect.adjusted(-metrics::kGap/2, -metrics::kGap/2, metrics::kGap/2, metrics::kGap/2).intersects(occupied)) {
+                rect.moveTop(occupied.bottom() + metrics::kGap);
+                moved = true;
+            }
+        }
+    } while (moved);
+    element->x = rect.x(); element->y = rect.y();
+}
+
+gps::Graph Controller::copySubplan(const QStringList& elementNames) const {
+    return gps::GraphFragment(toStd(outline().expand(elementNames))).copy(plan());
+}
+
+QStringList Controller::pasteSubplan(const gps::Graph& clip, double targetX, double targetY) {
+    if (clip.elements.empty()) return {};
+    if (!infosReady(clip, [=] { pasteSubplan(clip, targetX, targetY); })) return {};
+    const auto [left, top] = clip.topLeft();
+    const QPointF corner(left, top);
+    const QPointF at = std::isfinite(targetX) ? QPointF(targetX, targetY) : corner + QPointF(40, 40);
+    QStringList created;
+    edits_.transact([&](gps::Graph& g, Edit& edit) {
+        const QPointF offset = at - corner;
+        for (const auto& [old, made] : gps::templates::insertCopy(g, clip, offset.x(), offset.y())) {
+            if (g.find(made)) created << fromStd(made);
+        }
+        edit.action = QString("Pasted %1 element(s)").arg(created.size());
+        edit.touched = created.last();
+        return true;
+    });
+    return created;
+}
 
 QStringList Controller::duplicateElements(const QStringList& names) {
-    if (editingBlocked() || names.isEmpty()) return {};
-    gps::Graph sub = copySubplan(names);
-    if (sub.elements.empty()) return {};
-    return pasteSubplan(sub);
+    if (names.isEmpty()) return {};
+    return pasteSubplan(copySubplan(names));
 }
 
 bool Controller::addElement(const QString& factory, const ElementEdit& edit, double x, double y) {
     if (!catalog().info(factory)) return false;
-    return transact([&](gps::Graph& g, Edit& e) {
-        QPointF at = (std::isfinite(x) && std::isfinite(y)) ? QPointF(x, y) : freeSpot();
+    return edits_.transact([&](gps::Graph& g, Edit& e) {
+        QPointF at = (std::isfinite(x) && std::isfinite(y)) ? QPointF(x, y) : views_.freeSpot();
         std::string name = g.addElement(toStd(factory), edit.props, at.x(), at.y());
-        applyEdit(name, edit);
+        applyEdit(g, name, edit);
         e.action = "Added " + factory;
         e.touched = fromStd(name);
         return true;
@@ -892,12 +335,12 @@ bool Controller::addAfter(const QString& element, const QString& pad, const QStr
                           const ElementEdit& edit) {
     const gps::Element* from = plan().find(toStd(element));
     if (!catalog().info(factory) || !from) return false;
-    return transact([&](gps::Graph& g, Edit& e) {
+    return edits_.transact([&](gps::Graph& g, Edit& e) {
         std::string name = g.addAfter(toStd(element), toStd(pad), toStd(factory), toStd(sinkPad), edit.props,
                                       from->x + metrics::kColumn, from->y);
         if (name.empty()) return false;
-        applyEdit(name, edit);
-        placeNewElement(name);
+        applyEdit(g, name, edit);
+        placeNewElement(g, name);
         e.action = "Added " + factory + " after " + element + "." + pad;
         e.linking = padName(srcRef(element, pad)) + " -> " + padName(sinkRef(fromStd(name), sinkPad));
         e.touched = fromStd(name);
@@ -906,12 +349,11 @@ bool Controller::addAfter(const QString& element, const QString& pad, const QStr
 }
 
 bool Controller::linkExisting(const QString& element, const QString& pad, const QString& sinkElement, const QString& sinkPad) {
-    if (editingBlocked()) return false;
     if (element == sinkElement || plan().wouldCycle(toStd(element), toStd(sinkElement))) {
         emit notice(fromStd(gps::Graph::ouroborosMessage(toStd(element), toStd(sinkElement))));
         return false;
     }
-    return transact([&](gps::Graph& g, Edit& e) {
+    return edits_.transact([&](gps::Graph& g, Edit& e) {
         if (!g.linkExisting(toStd(element), toStd(pad), toStd(sinkElement), toStd(sinkPad))) return false;
         e.action = "Linked " + element + "." + pad + " to an existing element";
         e.linking = padName(srcRef(element, pad)) + " -> " + padName(sinkRef(sinkElement, sinkPad));
@@ -924,9 +366,9 @@ bool Controller::editElement(const QString& element, const ElementEdit& edit) {
     const gps::Element* found = plan().find(toStd(element));
     if (!found) return false;
     const QString factory = fromStd(found->factory);
-    return transact([&](gps::Graph& g, Edit& e) {
+    return edits_.transact([&](gps::Graph& g, Edit& e) {
         g.setProps(toStd(element), edit.props);
-        applyEdit(toStd(element), edit);
+        applyEdit(g, toStd(element), edit);
         e.action = "Edited the properties of " + element + " (" + factory + ")";
         e.touched = element;
         return true;
@@ -935,7 +377,7 @@ bool Controller::editElement(const QString& element, const ElementEdit& edit) {
 
 bool Controller::setCaps(const QString& element, const QString& pad, const QString& caps, const gps::Props& sinkPadProps) {
     if (plan().linkFrom(toStd(element), toStd(pad)) < 0) return false;
-    return transact([&](gps::Graph& g, Edit& e) {
+    return edits_.transact([&](gps::Graph& g, Edit& e) {
         g.setCaps(toStd(element), toStd(pad), toStd(caps));
         g.setSinkPadProps(toStd(element), toStd(pad), sinkPadProps);
         e = {"Changed the caps of " + element + "." + pad, padName(srcRef(element, pad)), element};
@@ -945,31 +387,25 @@ bool Controller::setCaps(const QString& element, const QString& pad, const QStri
 
 bool Controller::cut(const QString& element, const QString& pad) {
     const QString linking = padName(srcRef(element, pad));
-    return transact([&](gps::Graph& g, Edit& e) {
+    return edits_.transact([&](gps::Graph& g, Edit& e) {
         e = {"Cut the link at " + element + "." + pad, linking, element};
         return g.cut(toStd(element), toStd(pad), catalog().traits()).links > 0;
     });
 }
 
 bool Controller::disconnectLink(const QString& element, const QString& pad) {
-    if (editingBlocked()) return false;
-    const QString linking = padName(srcRef(element, pad));
-    gps::DisconnectAction action(toStd(element), toStd(pad));
-    if (!pipeline_.editor().execute(action)) return false;
-    note("Disconnected the link at " + element + "." + pad, linking);
-    edited(element);
-    checkTemplates(true);
-    return true;
+    return edits_.perform(gps::DisconnectAction(toStd(element), toStd(pad)),
+                          {"Disconnected the link at " + element + "." + pad, padName(srcRef(element, pad)), element});
 }
 
 bool Controller::replace(const QString& element, const QString& pad, const QString& factory, const QString& sinkPad,
                          const ElementEdit& edit) {
     if (!catalog().info(factory)) return false;
     const QString linking = padName(srcRef(element, pad));
-    return transact([&](gps::Graph& g, Edit& e) {
+    return edits_.transact([&](gps::Graph& g, Edit& e) {
         gps::Addition added = g.replace(toStd(element), toStd(pad), toStd(factory), toStd(sinkPad), edit.props, catalog().traits());
         if (added.element.empty()) return false;
-        applyEdit(added.element, edit);
+        applyEdit(g, added.element, edit);
         e.action = "Replaced the element behind " + element + "." + pad + " with " + factory;
         e.linking = linking + " -> " + factory;
         e.touched = fromStd(added.element);
@@ -977,26 +413,13 @@ bool Controller::replace(const QString& element, const QString& pad, const QStri
     });
 }
 
-bool Controller::deleteSource(const QString& element) {
-    return deleteSelection({element}, {}, false);
-}
-
-bool Controller::deleteElement(const QString& element, bool autoHeal) {
-    return deleteSelection({element}, {}, autoHeal);
-}
-
 bool Controller::deleteSelection(const QStringList& elementNames, const QList<gps::LinkRef>& links, bool autoHeal) {
     const QStringList expanded = outline().expand(elementNames);
     if (expanded.isEmpty() && links.isEmpty()) return false;
-    QStringList touched = expanded;
-    for (const gps::LinkRef& link : links) touched << fromStd(link.src.element);
-
-    std::vector<std::string> names;
-    for (const QString& n : expanded) names.push_back(toStd(n));
+    const std::vector<std::string> names = toStd(expanded);
     const size_t exits = shape().ports(names).srcs.size();
     const int exitTotalSrcPads = exits == 0 ? 1 : static_cast<int>(exits);
-
-    return transact([&](gps::Graph& g, Edit& e) {
+    return edits_.transact([&](gps::Graph& g, Edit& e) {
         bool changedAny = false;
         for (const gps::LinkRef& link : links) changedAny = g.disconnectLink(link.src.element, link.src.identity) || changedAny;
         if (!names.empty()) changedAny = g.deleteElements(names, autoHeal, exitTotalSrcPads) || changedAny;
@@ -1005,20 +428,13 @@ bool Controller::deleteSelection(const QStringList& elementNames, const QList<gp
     });
 }
 
-bool Controller::spliceElement(const QString& element, const QString& linkSrcElement, const QString& linkSrcPad) {
-    return spliceElements({element}, linkSrcElement, linkSrcPad);
-}
-
+// Its free pads are where the link goes in and comes out; a single element may also take a new Request pad.
 bool Controller::spliceElements(const QStringList& elements, const QString& linkSrcElement, const QString& linkSrcPad) {
-    if (editingBlocked() || elements.isEmpty()) return false;
     const QStringList expanded = outline().expand(elements);
     if (expanded.isEmpty()) return false;
-
-    std::vector<std::string> ids;
-    for (const auto& id : expanded) ids.push_back(toStd(id));
+    std::vector<std::string> ids = toStd(expanded);
     if (!gps::GraphFragment(ids).connected(plan())) return false;
 
-    // Its free pads are where the link goes in and comes out; a single element may also take a new Request pad.
     const gps::NodePorts ports = shape().ports(ids);
     std::vector<std::pair<std::string, std::string>> freeSinks, freeSrcs;
     std::vector<gps::PadRef> entries = ports.free(gps::Pad::Direction::Sink);
@@ -1029,25 +445,17 @@ bool Controller::spliceElements(const QStringList& elements, const QString& link
     }
     for (const gps::PadRef& p : ports.free(gps::Pad::Direction::Source)) freeSrcs.emplace_back(p.element, p.identity);
 
-    gps::InsertFragmentAction action(gps::GraphFragment(std::move(ids)),
-        {toStd(linkSrcElement), toStd(linkSrcPad)}, std::move(freeSinks), std::move(freeSrcs));
-    std::string error;
-    if (!pipeline_.editor().execute(action, &error)) {
-        if (!error.empty()) emit notice(fromStd(error));
-        return false;
-    }
-    note("Spliced " + expanded.join(", ") + " into link from " + linkSrcElement + "." + linkSrcPad);
-    edited(expanded.first());
-    checkTemplates(true);
-    return true;
+    const gps::InsertFragmentAction action(gps::GraphFragment(std::move(ids)), {toStd(linkSrcElement), toStd(linkSrcPad)},
+                                           std::move(freeSinks), std::move(freeSrcs));
+    return edits_.perform(action, {"Spliced " + expanded.join(", ") + " into link from " + linkSrcElement + "." + linkSrcPad, QString(), expanded.first()});
 }
 
 bool Controller::insertQueue(const QString& element, const QString& pad) {
     if (!catalog().info(fromStd(gps::kQueueFactory))) return false;
-    return transact([&](gps::Graph& g, Edit& e) {
+    return edits_.transact([&](gps::Graph& g, Edit& e) {
         std::string name = g.insertQueue(toStd(element), toStd(pad));
         if (name.empty()) return false;
-        makeRoomForQueue(toStd(element), name);
+        makeRoomForQueue(g, toStd(element), name);
         e = {"Inserted a queue after " + element + "." + pad, padName(srcRef(element, pad)), fromStd(name)};
         return true;
     });
@@ -1056,12 +464,12 @@ bool Controller::insertQueue(const QString& element, const QString& pad) {
 // Graph::insertQueue puts the queue half way between its neighbours, on top of both when they are one column apart.
 // Here it takes the column after its source, on the row of the box it feeds, and that box and everything behind it
 // move one column right, so every link keeps running left to right.
-void Controller::makeRoomForQueue(const std::string& source, const std::string& queue) {
-    int out = plan().linkFrom(queue, gps::kQueueSrcPad);
-    gps::Element* from = editGraph().find(source);
-    gps::Element* q = editGraph().find(queue);
+void Controller::makeRoomForQueue(gps::Graph& g, const std::string& source, const std::string& queue) {
+    int out = g.linkFrom(queue, gps::kQueueSrcPad);
+    gps::Element* from = g.find(source);
+    gps::Element* q = g.find(queue);
     if (out < 0 || !from || !q) return;
-    gps::Element* sink = editGraph().find(plan().links[out].sinkElement);
+    gps::Element* sink = g.find(g.links[out].sinkElement);
     if (!sink) return;
     q->x = from->x + metrics::kColumn;
     q->y = sink->y;
@@ -1071,28 +479,26 @@ void Controller::makeRoomForQueue(const std::string& source, const std::string& 
     std::set<std::string> behind = {sink->name};
     for (bool grew = true; grew;) {
         grew = false;
-        for (const gps::Connection& l : plan().links) {
+        for (const gps::Connection& l : g.links) {
             if (behind.count(l.srcElement) && behind.insert(l.sinkElement).second) grew = true;
         }
     }
-    for (gps::Element& e : editGraph().elements) {
+    for (gps::Element& e : g.elements) {
         if (behind.count(e.name)) e.x += need;
     }
 }
 
 bool Controller::removeQueue(const QString& queue) {
-    return transact([&](gps::Graph& g, Edit& e) {
+    return edits_.transact([&](gps::Graph& g, Edit& e) {
         e.action = "Removed queue " + queue;
         return g.removeQueue(toStd(queue));
     });
 }
 
-void Controller::setPosition(const QString& element, double x, double y) {
-    setPositions({{element, QPointF(x, y)}});
-}
-
+// A collapsed template moves whole: its members follow the box that was dragged. One undoable presentation change that
+// says nothing of itself: the support report keeps the last real edit.
 void Controller::setPositions(const QList<QPair<QString, QPointF>>& positions) {
-    if (positions.isEmpty() || editingBlocked()) return;
+    if (positions.isEmpty()) return;
     const Outline outline = this->outline();
     QSet<QString> handledGroups;
     std::map<std::string, gps::Placement> updates;
@@ -1111,25 +517,14 @@ void Controller::setPositions(const QList<QPair<QString, QPointF>>& positions) {
             }
         } else updates[e->name] = {e->name, pt.x(), pt.y()};
     }
-    QList<QPair<QString, QPointF>> moves;
-    for (const auto& entry : updates) moves.append({fromStd(entry.first), QPointF(entry.second.x, entry.second.y)});
-    move(moves);
-}
-
-bool Controller::move(const QList<QPair<QString, QPointF>>& placements) {
     std::vector<gps::Placement> moves;
-    for (const auto& [element, at] : placements) moves.push_back({toStd(element), at.x(), at.y()});
-    if (moves.empty() || !pipeline_.editor().execute(gps::MoveElementsAction(std::move(moves)))) return false;
-    emit changed();
-    alignAfterEdit();  // with automatic alignment a dragged box slides back into place
-    return true;
+    for (const auto& entry : updates) moves.push_back(entry.second);
+    if (!moves.empty()) edits_.perform(gps::MoveElementsAction(std::move(moves)), {QString(), QString(), QString(), true});
 }
 
 // Left to right (then sources, filters, sinks, then top to bottom), each element feeds the next one: its first free src
 // pad into the next one's first free sink pad, or a new Request pad of it. Worked out on the draft as it grows.
-bool Controller::linkOrderedInternal(const QStringList& expanded, QString* lastTouched) {
-    if (expanded.size() < 2) return false;
-    gps::Graph& g = editGraph();
+bool Controller::linkInOrder(gps::Graph& g, const QStringList& expanded, QString* lastTouched) {
     const gps::NodeShape shape(g, pipeline_);
     auto rank = [&](const QString& name) {
         const gps::Role role = shape.role(gps::NodeRef::element(toStd(name)));
@@ -1153,34 +548,32 @@ bool Controller::linkOrderedInternal(const QStringList& expanded, QString* lastT
         const auto sink = shape.firstFree(gps::NodeRef::element(to), gps::Pad::Direction::Sink);
         if (src && sink && g.linkExisting(src->element, src->identity, sink->element, sink->linkName())) {
             linkedAny = true;
-            if (lastTouched) *lastTouched = sorted[i + 1];
+            *lastTouched = sorted[i + 1];
         }
     }
     return linkedAny;
 }
 
 bool Controller::connectSelectedElements(const QStringList& names) {
-    if (editingBlocked() || names.size() < 2) return false;
     const QStringList expanded = outline().expand(names);
     if (expanded.size() < 2) return false;
-
-    return transact([&](gps::Graph&, Edit& e) {
+    return edits_.transact([&](gps::Graph& g, Edit& e) {
         e.action = "Connected selected elements";
-        if (!linkOrderedInternal(expanded, &e.touched)) return false;
-        return true;
+        return linkInOrder(g, expanded, &e.touched);
     });
 }
 
 bool Controller::disconnectBetweenElements(const QStringList& names) {
     if (names.size() < 2) return false;
-    const QStringList expanded = outline().expand(names);
     std::set<std::string> chosen;
-    for (const QString& n : expanded) chosen.insert(toStd(n));
-    return transact([&](gps::Graph& g, Edit& e) {
+    for (const QString& n : outline().expand(names)) chosen.insert(toStd(n));
+    return edits_.transact([&](gps::Graph& g, Edit& e) {
         e.action = "Disconnected links between selected elements";
         return g.disconnectBetween(chosen);
     });
 }
+
+// ---- layout
 
 bool Controller::niceAlign(const QStringList& elements) {
     const QStringList chosen = elements.isEmpty() ? QStringList() : outline().expand(elements);
@@ -1191,7 +584,7 @@ bool Controller::niceAlign(const QStringList& elements) {
 
 // An edit of the user's, with automatic alignment on: the whole canvas follows, once for a burst of edits.
 void Controller::alignAfterEdit() {
-    if (!services_.view().autoAlign() || layout_->applying() || restoring_ || alignQueued_) return;
+    if (!services_.view().autoAlign() || layout_->applying() || alignQueued_) return;
     alignQueued_ = true;
     QTimer::singleShot(0, this, [this] {
         alignQueued_ = false;
@@ -1204,108 +597,33 @@ void Controller::alignOpened() {
     if (std::exchange(alignWhenValidated_, false)) layout_->align();
 }
 
-gps::Removal Controller::previewCut(const QString& element, const QString& pad) const {
-    return plan().previewCut(toStd(element), toStd(pad), catalog().traits());
-}
-
-gps::Removal Controller::previewReplace(const QString& element, const QString& pad) const {
-    return plan().previewReplace(toStd(element), toStd(pad), catalog().traits());
-}
-
-gps::Removal Controller::previewDeleteSource(const QString& element) const {
-    return plan().previewDeleteSource(toStd(element), catalog().traits());
-}
-
-// ---- update
-
-void Controller::startUpdate() {
-    execution_.supersede();
-    updateTimer_.start();
-    cancelled_ = false;
-    updating_ = true;
-    watch_->start();
-    emit changed();
-}
-
-void Controller::dispatchUpdate() {
-    cancelled_ = false;
-    if (plan().empty() || plan().trackedSubplan(catalog().traits()).empty()) {
-        updating_ = false; watch_->stop();
-        pipeline_.observeIdle();
-        emit changed();
-        emit updateFinished(true);
-        alignOpened();
-        return;
-    }
-    updating_ = true;
-    watch_->start();
-    emit changed();
-    backend_.setTimeout(updateTimeoutMs_);
-    backend_.setSuspect(toStd(touched_));
-    execution_.start([this](const gps::ExecutionResult& result) { finishUpdate(result); });
-}
-
-void Controller::cancelUpdate() {
-    if (!updating_ || cancelling_) return;
-    if (updateTimer_.isActive()) {
-        updateTimer_.stop();
-        execution_.supersede();
-        updating_ = false; cancelling_ = false; cancelled_ = true;
-        watch_->stop();
-        emit changed(); emit updateFinished(false);
-        return;
-    }
-    cancelling_ = true;
-    log("Validation cancelled: stopping the validator");
-    execution_.cancel();
-    emit changed();
-}
-
-void Controller::waitMore() {
-    watch_->extend();
-    emit changed();
-}
-
-void Controller::finishUpdate(const gps::ExecutionResult& r) {
-    updating_ = false;
-    cancelling_ = false;
-    watch_->stop();
-    if (r.report.status == "cancelled") {
-        cancelled_ = true;
-        log("Validation cancelled — press Validate to run it again");
-        emit changed();
-        emit updateFinished(false);
-        return;
-    }
-    log("Validation: " + statusText(result()) + (result().message.empty() ? QString() : " – " + fromStd(result().message)));
-    emit changed();
-    emit updateFinished(result().ok());
-    alignOpened();
-}
-
 bool Controller::refresh() {
     if (busy() || plan().empty()) return false;
-    note("Validated the pipeline again");
-    startUpdate();
+    edits_.note("Validated the pipeline again");
+    validation_.request();
     return true;
 }
 
-// ---- files and runs
+// ---- files
 
 void Controller::newPlan(std::unique_ptr<SaveTarget> target) {
     if (busy()) return;
     pipeline_.reset();
-    editingTemplates_.clear();
-    knownModified_.clear();
-    cancelled_ = false;
+    templates_.forget();
+    validation_.forget();
     target_ = std::move(target);
-    markSaved();
-    note("New " + target_->title());
+    edits_.markSaved();
+    edits_.note("New " + target_->title());
     emit changed();
 }
 
 void Controller::setTarget(std::unique_ptr<SaveTarget> target) {
     target_ = std::move(target);
+    emit changed();
+}
+
+void Controller::markModified() {
+    edits_.markModified();
     emit changed();
 }
 
@@ -1325,11 +643,6 @@ void Controller::reload() {
 
 void Controller::revert() {
     if (canRevert()) reload();
-}
-
-void Controller::markModified() {
-    savedState_ = kNeverSaved;
-    emit changed();
 }
 
 // A new project has its path before its first save writes the file: there is nothing to go back to yet.
@@ -1361,20 +674,18 @@ void Controller::load(const QString& source, std::shared_ptr<SaveTarget> target,
         if (how != Load::Replace) {
             if (!pipeline_.reset(*loaded, &failure)) { emit notice(fromStd(failure)); return; }
             if (target) target_ = target;
-            if (how == Load::Open) markSaved();
-            else savedState_ = kNeverSaved;
-        } else {
-            pipeline_.editor().begin() = *loaded;
-            if (!commitTransaction()) { emit changed(); return; }
+            if (how == Load::Open) edits_.markSaved();
+            else edits_.markModified();
+        } else if (!edits_.replace(*loaded)) {
+            emit changed();
+            return;
         }
-        note(action);
+        edits_.note(action);
         alignWhenValidated_ = true;
-        editingTemplates_.clear();
-        offered_.clear();
-        checkTemplates(false);
+        templates_.forget();
         emit changed();
-        startUpdate();
-        offerNewerTemplates();
+        validation_.request();
+        templates_.offer();
     });
 }
 
@@ -1404,113 +715,25 @@ bool Controller::importLaunch(const QString& description) {
     return true;
 }
 
-SaveResult Controller::save() { return write(target_); }
-
-SaveResult Controller::saveAs(std::unique_ptr<SaveTarget> target) { return write(std::move(target)); }
-
 // Saving ends every template edit; the target writes the plan, and the document is bound to it, saved there. A target
 // that counts revisions (a library template) gives the document the revision it wrote.
 SaveResult Controller::write(std::shared_ptr<SaveTarget> target) {
     if (const QString why = saveBlockedReason(); !why.isEmpty()) return SaveResult::failed("Unable to save: " + why);
-    for (const QString& id : QSet<QString>(editingTemplates_)) commitTemplateEdit(id);
+    templates_.commitAll();
     gps::Graph document = plan();
     document.complete = result().complete();
     const SaveResult r = target->write(document);
     if (!r.ok) return r;
     target_ = std::move(target);
     if (r.revision > 0 && r.revision != plan().revision) {
-        transact([&](gps::Graph& g, Edit& edit) {
+        edits_.transact([&](gps::Graph& g, Edit& edit) {
             g.revision = r.revision;
             edit.action = QString("Saved %1, revision %2").arg(target_->title()).arg(r.revision);
             edit.presentation = true;
             return true;
         });
     }
-    markSaved();
+    edits_.markSaved();
     emit changed();
     return r;
-}
-
-// The complete plan in a temporary file for gps-run or gps-monitor; "" (and a notice) when it cannot be written.
-QString Controller::runFile(const QString& name) {
-    gps::Graph copy = plan();
-    copy.complete = true;
-    const QString file = tmp_.filePath(name);
-    std::string error;
-    if (copy.save(toStd(file), &error)) return file;
-    emit notice("Unable to write the temporary plan file: " + fromStd(error));
-    return QString();
-}
-
-bool Controller::run() {
-    if (!canRun()) return false;
-    const QString file = runFile("run.conf");
-    if (file.isEmpty()) return false;
-    running_ = true;
-    log("Running…");
-    runClient_ = HelperClient::run(this, "gps-run", {file}, 0, logger(), [this](const HelperResult& r) {
-        running_ = false;
-        runClient_ = nullptr;
-        gps::RunResult answer;
-        answer.status.clear();
-        const bool answered = r.read(&answer);
-        QString status;
-        if (r.outcome == HelperResult::Finished && answered) status = fromStd(answer.status);
-        else if (r.outcome == HelperResult::Crashed) status = "crashed";
-        else if (r.outcome == HelperResult::NotFound) status = "not-found";
-        else status = "error";
-        QString message = answered ? fromStd(answer.message) : QString();
-        log("Run finished: " + status + (message.isEmpty() ? "" : " – " + message));
-        emit changed();
-        emit runFinished(status);
-    });
-    emit changed();
-    return true;
-}
-
-void Controller::stopRun() {
-    if (runClient_) runClient_->interrupt();
-}
-
-bool Controller::startMonitoring() {
-    if (!canRun()) return false;
-    const QString helper = findHelper("gps-monitor");
-    if (helper.isEmpty()) { emit notice("gps-monitor was not found"); return false; }
-    const QString file = runFile("monitor.conf");
-    if (file.isEmpty()) return false;
-    monitorOutput_.clear();
-    auto* client = new QProcess(this);
-    monitorClient_ = client;
-    monitoring_ = true;
-    connect(client, &QProcess::readyReadStandardOutput, this, [this, client] {
-        monitorOutput_ += client->readAllStandardOutput();
-        int end = 0;
-        while ((end = monitorOutput_.indexOf('\n')) >= 0) {
-            QByteArray line = monitorOutput_.left(end);
-            monitorOutput_.remove(0, end + 1);
-            const std::string text = line.toStdString();
-            gps::TelemetrySample sample;
-            gps::RunResult finished;
-            finished.status.clear();
-            if (gps::fromJson(text, &sample)) emit telemetryReceived(sample);
-            else if (gps::fromJson(text, &finished) && !finished.status.empty()) log("Monitor finished: " + fromStd(finished.status));
-        }
-    });
-    connect(client, &QProcess::readyReadStandardError, this, [this, client] { log("[gps-monitor] " + QString::fromUtf8(client->readAllStandardError()).trimmed()); });
-    connect(client, &QProcess::errorOccurred, this, [this](QProcess::ProcessError) { emit notice("Monitor could not start or stopped unexpectedly"); });
-    connect(client, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this, [this, client](int, QProcess::ExitStatus) {
-        if (monitorClient_ == client) { monitoring_ = false; monitorClient_ = nullptr; emit changed(); }
-        client->deleteLater();
-    });
-    client->start(helper, {file});
-    emit changed();
-    return true;
-}
-
-void Controller::stopMonitoring() {
-    if (!monitorClient_) return;
-    auto* client = monitorClient_;
-    if (client->state() == QProcess::Running) ::kill(static_cast<pid_t>(client->processId()), SIGINT);
-    else client->terminate();
-    QTimer::singleShot(2000, client, [client] { if (client->state() != QProcess::NotRunning) client->kill(); });
 }

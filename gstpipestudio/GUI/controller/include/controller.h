@@ -1,51 +1,43 @@
-// Controller owns the Pipeline document and coordinates GUI workflows and helper processes.
-// Widgets read views and submit edits; GraphEditor owns transactions and history.
-// Preview updates are coalesced and allow further edits. Playback, opening and cancellation block edits.
+// controller.h – one document: its plan (gps::Pipeline), what it is saved to (SaveTarget), and the sessions that work on
+// it. The Controller is their facade: widgets read views and submit edits here, and it sequences what one session's
+// work means for the others (an edit is validated, an opened file is laid out, a template copy is committed on save).
+//   EditSession        transactions and gps actions, undo and redo, the save point, the edit-blocked guard
+//   ValidationSession  validation by gps-update: the pause, the slow watch, cancel, the result
+//   RunSession         run and monitor, on a temporary copy
+//   TemplateInstances  expanded, edited and modified copies, commit, newer revisions, parameters
+//   DocumentViews      what the canvas and the drawer show; names and the outline kept per revision
+// Validation allows further edits; running, opening a file and cancelling a validation block them.
 // Call services().catalog().fetchInfo(factory, context, …) before edits that refer to a new factory.
 #pragma once
 
-#include <QHash>
 #include <QObject>
 #include <QPair>
 #include <QPointF>
-#include <QProcess>
-#include <QSet>
 #include <QTemporaryDir>
-#include <QTimer>
 #include <functional>
+#include <limits>
 #include <map>
 #include <memory>
 #include <optional>
-#include <limits>
-#include <cmath>
 
 #include "appservices.h"
-#include "elementedit.h"
-#include "contract.h"
-#include "elementview.h"
-#include "helperclient.h"
 #include "canvaslayout.h"
-#include "executionbackend.h"
-#include "names.h"
-#include "nodes.h"
-#include "outline.h"
+#include "contract.h"
+#include "documentviews.h"
+#include "editsession.h"
+#include "elementedit.h"
 #include "pipeline.h"
+#include "runsession.h"
 #include "savetarget.h"
 #include "slowwatch.h"
 #include "supportreport.h"
-
-// A place a free src pad can be linked to inside the plan.
-struct ExistingTarget {
-    QString element, factory, sinkPad;
-    bool request = false;  // true: a new pad of a Request sink template ("Request a pad")
-};
-
-// gps-update gets this as --timeout-ms: only a backstop. The user decides about slow runs (SlowWatch).
-constexpr int kUpdateBackstopMs = 600000;
+#include "templateinstances.h"
+#include "validationsession.h"
 
 class Controller : public QObject {
     Q_OBJECT
 public:
+    static constexpr double kFree = std::numeric_limits<double>::quiet_NaN();  // no position given: a free spot
 
     // One per document; the services are the process's, shared with the other documents.
     explicit Controller(AppServices& services, QObject* parent = nullptr);
@@ -54,89 +46,85 @@ public:
     // ---- state
     const gps::Graph& plan() const { return pipeline_.editor().view(); }
     const gps::Pipeline& pipeline() const { return pipeline_; }
-    gps::NodeShape shape() const { return gps::NodeShape(plan(), pipeline_); }  // nodes and their pads on the plan as it is
+    gps::NodeShape shape() const { return views_.shape(); }
     const UpdateResult& result() const { return pipeline_.observations(); }  // the last validation, owned by Pipeline
-    bool updating() const { return updating_; }
-    bool running() const { return running_; }
-    bool busy() const { return updating_ || running_ || monitoring_ || opening_; }
-    bool editingBlocked() const { return running_ || monitoring_ || opening_ || cancelling_; }
-    bool monitoring() const { return monitoring_; }
-    bool canSave() const;  // Save always writes, unless a file is opening or the pipeline runs
-    bool canRun() const;   // validated, the last validation did not fail, and the pipeline is complete
-    QString saveBlockedReason() const;  // why Save is off, "" when it is on
+    bool updating() const { return validation_.updating(); }
+    bool running() const { return runs_.running(); }
+    bool monitoring() const { return runs_.monitoring(); }
+    bool busy() const { return updating() || running() || monitoring() || opening_; }
+    bool editingBlocked() const { return edits_.blocked(); }
+    bool canSave() const { return saveBlockedReason().isEmpty(); }  // Save always writes, unless a file opens or it runs
+    bool canRun() const { return runBlockedReason().isEmpty(); }    // validated, no problem, and complete
+    QString saveBlockedReason() const { return edits_.blockedReason(); }  // why Save (and editing) is off, "" when on
     QString runBlockedReason() const;   // why Run (and Monitor) is off, "" when it is on
-    bool notValidated() const { return cancelled_; }  // the user cancelled the last validation
-    bool helperStopped() const;                       // the last update's helper crashed or gave no usable answer
+    bool notValidated() const { return validation_.cancelled(); }  // the user cancelled the last validation
+    bool helperStopped() const;  // the last validation's helper crashed or gave no usable answer
     QString launchCommand() const;  // the gst-launch-1.0 line for the saved file, "" before the first save
 
     // ---- what the document is saved to, and whether it holds changes it has not saved
     const SaveTarget& target() const { return *target_; }
     void setTarget(std::unique_ptr<SaveTarget> target);  // binds the document to another target; the content stays
-    bool modified() const { return pipeline_.editor().state() != savedState_; }  // changed since its last save or load
+    bool modified() const { return edits_.modified(); }  // changed since its last save or load
     void markModified();  // it no longer matches its target's file (the file was deleted), whatever the undo history says
-    bool hasUnsavedWork() const { return modified() && !plan().empty(); }       // what the window asks about
-    void setUpdateTimeoutMs(int ms) { updateTimeoutMs_ = ms; }
+    bool hasUnsavedWork() const { return modified() && !plan().empty(); }  // what the window asks about
+    void setUpdateTimeoutMs(int ms) { validation_.setTimeoutMs(ms); }
 
     // ---- slow validation and cancel (UI_RULES 3.1 and 3.2)
-    SlowWatch* slowWatch() const { return watch_; }
-    bool slowAsked() const { return updating_ && watch_->asking(); }
-    bool cancelling() const { return cancelling_; }
-    void cancelUpdate();  // SIGTERM, SIGKILL after 2 s; the plan keeps its change and is "not validated"
-    void waitMore();      // the user chose Wait: the next question comes 15 s later
+    SlowWatch* slowWatch() const { return validation_.slowWatch(); }
+    bool slowAsked() const { return validation_.slowAsked(); }
+    bool cancelling() const { return validation_.cancelling(); }
+    void cancelUpdate() { validation_.cancel(); }
+    void waitMore() { validation_.waitMore(); }
 
     // ---- support
     void setUrlOpener(UrlOpener* opener) { opener_ = opener; }
     SupportInfo supportInfo(const QString& title) const;
     void requestSupport(const QString& title);  // opens the prefilled issue in the browser
+    QString lastAction() const { return edits_.lastAction(); }  // what the last edit did, in words
 
-    // ---- templates (saved multi-element presets & canvas groups); the library itself is services().library()
-    // Making a template: the selection becomes an expanded instance at once, so its border is drawn and the canvas
-    // makes room; finish names it, gives it its parameters and writes it to the library; cancel takes it back.
-    QString beginTemplate(const QStringList& elements);  // the new instance, "" when refused
-    bool finishTemplate(const QString& id, const QString& name, const std::vector<gps::ExposedParam>& params, QString* error);
-    void cancelTemplate(const QString& id);
+    // ---- template copies (TemplateInstances); the library itself is services().library()
+    QString beginTemplate(const QStringList& elements);  // the new copy, expanded so the canvas makes room; "" when refused
+    bool finishTemplate(const QString& id, const QString& name, const std::vector<gps::ExposedParam>& params, QString* error) {
+        return templates_.finish(id, name, params, error);
+    }
+    void cancelTemplate(const QString& id) { templates_.detach(id); }
     bool saveTemplate(const QString& templateName, const QStringList& elementNames);  // all three, no parameters, collapsed
-    std::vector<gps::ExposedParam> parameterChoices(const QStringList& elements) const;  // what Add parameter offers
-    // A template copy's content changed (templateChanged): the user chooses. Keep editing: the library gets the change
-    // as the template's next revision when the copy collapses or the file is saved, and the unchanged copies follow.
-    void keepEditingTemplate(const QString& id);
-    bool isEditingTemplate(const QString& id) const { return editingTemplates_.contains(id); }
-    bool saveTemplateAsNew(const QString& id, const QString& name, QString* error);
-    QStringList outdatedTemplates() const;           // copies whose library template is newer
-    bool updateTemplates(const QStringList& ids);    // they take the library's newer content: one undo step
-    QString lastAction() const { return action_; }   // what the last edit did, in words
-    // A placed template's parameters: the collapsed box shows these as its properties.
-    std::vector<gps::ExposedParam> templateParams(const QString& id) const;
-    bool setTemplateParams(const QString& id, const std::map<std::string, std::string>& values);  // name -> value, "" = default
-
-    // ---- the template library, like a folder of modules: what a project imports. Renamed there, the copies here follow.
+    std::vector<gps::ExposedParam> parameterChoices(const QStringList& elements) const { return templates_.parameterChoices(elements); }
+    void keepEditingTemplate(const QString& id) { templates_.keepEditing(id); }
+    bool saveTemplateAsNew(const QString& id, const QString& name, QString* error) { return templates_.saveAsNew(id, name, error); }
+    QStringList outdatedTemplates() const { return templates_.outdated(); }
+    bool updateTemplates(const QStringList& ids) { return templates_.update(ids); }
+    std::vector<gps::ExposedParam> templateParams(const QString& id) const { return templates_.params(id); }
+    bool setTemplateParams(const QString& id, const std::map<std::string, std::string>& values) { return templates_.setParams(id, values); }
     // A library template's parameters (the plan's exposed list) while it is the document (a LibraryTemplateTarget).
-    void setTemplateParameters(const std::vector<gps::ExposedParam>& params);
+    void setTemplateParameters(const std::vector<gps::ExposedParam>& params) { templates_.setTemplateParameters(params); }
+    bool detachTemplate(const QString& id) { return templates_.detach(id); }
+    bool isTemplateExpanded(const QString& id) const { return templates_.expanded(id); }
+    void setTemplateExpanded(const QString& id, bool expanded);  // the box grows into its frame, or the frame into its box
     // A component (a template, later a plugin) on the canvas, at (x, y) or a free spot; or fed by a free src pad.
     // The elements it placed, none when it was refused.
-    QStringList place(const ComponentRef& component, double x = std::numeric_limits<double>::quiet_NaN(), double y = std::numeric_limits<double>::quiet_NaN());
+    QStringList place(const ComponentRef& component, double x = kFree, double y = kFree);
     QStringList placeAfter(const QString& srcElement, const QString& srcPad, const ComponentRef& component);
-    bool detachTemplate(const QString& groupId);
-    bool isTemplateExpanded(const QString& groupId) const { return expandedTemplates_.contains(groupId); }
-    void setTemplateExpanded(const QString& groupId, bool expanded);
-    Outline outline() const;  // what is drawn as one box, of the plan as it is; kept per revision and expanded set
 
-    // ---- what the canvas and the drawer show
-    gps::Names names() const;  // every name the user reads, of the plan as it is; kept per revision
-    QString padName(const gps::PadRef& pad) const;  // names().pad() of the plan as text: "<element>.<pad>"
-    ElementView view(const QString& element) const;
-    ElementView templateView(const QString& groupId) const;
-    ElementView boxView(const QString& box) const;  // what is drawn for a box (Outline): an element's view or a copy's
-    FrameView frameView(const QString& instanceId) const;
-    QList<LinkView> linkViews() const;
-    std::vector<StructureInfo> padStructures(const QString& element, const QString& identity) const;  // allowed by a src pad
-    QString padAllowed(const QString& element, const QString& identity) const;
-    QList<ExistingTarget> existingTargets(const QString& element, const QString& identity) const;
-    std::vector<PadTemplateInfo> sinkChoices(const ElementInfo& info, const QString& element, const QString& identity) const;
-    const PadTemplateInfo* linkSinkTemplate(int link) const;  // template of the sink pad a link ends on
+    // ---- what the canvas and the drawer show (DocumentViews)
+    Outline outline() const { return views_.outline(); }
+    gps::Names names() const { return views_.names(); }
+    QString padName(const gps::PadRef& pad) const { return views_.padName(pad); }
+    ElementView view(const QString& element) const { return views_.view(element); }
+    ElementView templateView(const QString& id) const { return views_.templateView(id); }
+    ElementView boxView(const QString& box) const { return views_.boxView(box); }
+    FrameView frameView(const QString& id) const { return views_.frameView(id); }
+    QList<LinkView> linkViews() const { return views_.linkViews(); }
+    std::vector<StructureInfo> padStructures(const QString& element, const QString& identity) const { return views_.padStructures(element, identity); }
+    QString padAllowed(const QString& element, const QString& identity) const { return views_.padAllowed(element, identity); }
+    QList<ExistingTarget> existingTargets(const QString& element, const QString& identity) const { return views_.existingTargets(element, identity); }
+    std::vector<PadTemplateInfo> sinkChoices(const ElementInfo& info, const QString& element, const QString& identity) const {
+        return views_.sinkChoices(info, element, identity);
+    }
+    const PadTemplateInfo* linkSinkTemplate(int link) const { return views_.linkSinkTemplate(link); }
 
-    // ---- edits. Each starts an update.
-    bool addElement(const QString& factory, const ElementEdit& edit, double x = std::numeric_limits<double>::quiet_NaN(), double y = std::numeric_limits<double>::quiet_NaN());
+    // ---- edits (EditSession). Each one that changes what runs starts a validation.
+    bool addElement(const QString& factory, const ElementEdit& edit, double x = kFree, double y = kFree);
     bool addAfter(const QString& element, const QString& pad, const QString& factory, const QString& sinkPad,
                   const ElementEdit& edit);
     bool linkExisting(const QString& element, const QString& pad, const QString& sinkElement, const QString& sinkPad);
@@ -146,21 +134,23 @@ public:
     bool disconnectLink(const QString& element, const QString& pad);
     bool replace(const QString& element, const QString& pad, const QString& factory, const QString& sinkPad,
                  const ElementEdit& edit);
-    bool deleteSource(const QString& element);
-    bool deleteElement(const QString& element, bool autoHeal = true);
+    bool deleteSource(const QString& element) { return deleteSelection({element}, {}, false); }
+    bool deleteElement(const QString& element, bool autoHeal = true) { return deleteSelection({element}, {}, autoHeal); }
     bool deleteSelection(const QStringList& elementNames, const QList<gps::LinkRef>& links = {}, bool autoHeal = true);
-    bool spliceElement(const QString& element, const QString& linkSrcElement, const QString& linkSrcPad);
+    bool spliceElement(const QString& element, const QString& linkSrcElement, const QString& linkSrcPad) {
+        return spliceElements({element}, linkSrcElement, linkSrcPad);
+    }
     bool spliceElements(const QStringList& elements, const QString& linkSrcElement, const QString& linkSrcPad);
     bool insertQueue(const QString& element, const QString& pad);
     bool removeQueue(const QString& queue);
-    void setPosition(const QString& element, double x, double y);  // dragging; no update
+    void setPosition(const QString& element, double x, double y) { setPositions({{element, QPointF(x, y)}}); }  // no validation
     void setPositions(const QList<QPair<QString, QPointF>>& positions);
-    bool canUndo() const { return pipeline_.editor().canUndo() && !editingBlocked(); }
-    bool canRedo() const { return pipeline_.editor().canRedo() && !editingBlocked(); }
-    bool undo();
-    bool redo();
+    bool canUndo() const { return edits_.canUndo(); }
+    bool canRedo() const { return edits_.canRedo(); }
+    bool undo() { return edits_.undo(); }
+    bool redo() { return edits_.redo(); }
     gps::Graph copySubplan(const QStringList& elementNames) const;
-    QStringList pasteSubplan(const gps::Graph& clip, double targetX = std::numeric_limits<double>::quiet_NaN(), double targetY = std::numeric_limits<double>::quiet_NaN());
+    QStringList pasteSubplan(const gps::Graph& clip, double targetX = kFree, double targetY = kFree);
     QStringList duplicateElements(const QStringList& names);
     bool connectSelectedElements(const QStringList& names);
     bool disconnectBetweenElements(const QStringList& names);
@@ -169,9 +159,6 @@ public:
     bool niceAlign(const QStringList& elements = {});
     CanvasLayout& canvasLayout() { return *layout_; }
     const CanvasLayout& canvasLayout() const { return *layout_; }
-    gps::Removal previewCut(const QString& element, const QString& pad) const;
-    gps::Removal previewReplace(const QString& element, const QString& pad) const;
-    gps::Removal previewDeleteSource(const QString& element) const;
 
     // ---- files and runs. Opening is asynchronous: the plan is replaced when all its factories are known.
     void newPlan(std::unique_ptr<SaveTarget> target);  // an empty canvas bound to target: untitled, or a new project
@@ -182,13 +169,13 @@ public:
     void revert();                                // reload, when there are changes to drop
     bool canRevert() const;                       // modified, not busy, and the target's file is on disk
     bool importLaunch(const QString& description); // brief native probe, then opens an unsaved canvas graph
-    SaveResult save();                                     // to the target
-    SaveResult saveAs(std::unique_ptr<SaveTarget> target); // there; written, the document is bound to it
-    bool refresh();                  // run the update again
-    bool run();
-    void stopRun();
-    bool startMonitoring();
-    void stopMonitoring();
+    SaveResult save() { return write(target_); }   // to the target
+    SaveResult saveAs(std::unique_ptr<SaveTarget> target) { return write(std::move(target)); }  // written, bound to it
+    bool refresh();  // validate again
+    bool run() { return canRun() && runs_.run(plan()); }
+    void stopRun() { runs_.stop(); }
+    bool startMonitoring() { return canRun() && runs_.startMonitoring(plan()); }
+    void stopMonitoring() { runs_.stopMonitoring(); }
 
 signals:
     void changed();                         // anything the views show has changed
@@ -202,19 +189,12 @@ signals:
     void templatesOutdated(const QStringList& ids);       // the library holds newer versions of copies on this canvas
 
 private:
+    using Edit = EditSession::Edit;
     void log(const QString& line);
-    void note(const QString& action, const QString& linking = QString());  // what the support report says we did
     std::function<void(const QString&)> logger();  // log() as a callback
-    bool move(const QList<QPair<QString, QPointF>>& placements);  // one undoable presentation change
-    // What one user edit says about itself; its change fills it in.
-    struct Edit {
-        QString action, linking;       // for the support report
-        QString touched;               // the element it concerned: the suspect when the validator dies
-        bool presentation = false;     // groups and positions only: committed without any validation
-    };
-    // The one path of an edit: refused while editing is blocked or when change returns false (nothing happened);
-    // otherwise one undo step, noted, and validated when it changed what runs (the Pipeline tells).
-    bool transact(const std::function<bool(gps::Graph&, Edit&)>& change);
+    QString blockedReason() const;  // the edit-blocked guard's answer
+    void committed(const Edit& edit, bool restoring);  // what an edit means for the other sessions
+    void validated(bool ok);
     // How a plan read from a file becomes the document: it is the document's file (Open: unmodified, the undo history
     // starts again), its unsaved content from a backup (Recover: the same, but modified), or one undoable change of the
     // document (Replace).
@@ -222,37 +202,15 @@ private:
     // target: what the document is bound to once it is open; null keeps the one it has.
     void load(const QString& source, std::shared_ptr<SaveTarget> target, Load how, const QString& action);
     SaveResult write(std::shared_ptr<SaveTarget> target);  // the one save path of save and saveAs
-    void markSaved() {
-        savedState_ = pipeline_.editor().state();
-        emit synced();
-    }
-    void followRename(const QString& from, const QString& to);  // the library renamed a template: its copies here say so
-    void checkTemplates(bool ask);
-    void offerNewerTemplates();  // templatesOutdated soon, when the library holds newer versions of copies on this canvas
-    void offerNow();
-    bool commitTemplateEdit(const QString& id);
-    bool onCanvas(const QString& instanceId, QString* error) const;  // false, with the reason, when it is gone
-    static bool wrote(const SaveResult& r, QString* error);  // r.ok; its error in error when it failed
     bool infosReady(const gps::Graph& clip, std::function<void()> retry);
     QStringList land(const ComponentRef& component, const QPointF& at, const std::optional<gps::PadRef>& after,
                      const std::function<void()>& retry);
-    QString runFile(const QString& name);
-    gps::Graph& editGraph() { return pipeline_.editor().draft(); }
-    bool commitTransaction();
-    void edited(const QString& touchedElement);  // validated when the last change was an Execution change
     void alignAfterEdit();
     void alignOpened();
-    void startUpdate();
-    void dispatchUpdate();
-    void finishUpdate(const gps::ExecutionResult& r);
-    void applyEdit(const std::string& element, const ElementEdit& edit);
-    void makeRoomForQueue(const std::string& source, const std::string& queue);
-    QPointF freeSpot() const;
-    void placeNewElement(const std::string& id);
-    QString elementNote(const QString& element, bool* isError) const;
-    PadView padView(const gps::Element& element, const gps::Pad& pad, bool tracked) const;
-    QList<PadView> padViews(const std::vector<gps::Port>& ports) const;
-    bool linkOrderedInternal(const QStringList& expanded, QString* lastTouched = nullptr);
+    void applyEdit(gps::Graph& g, const std::string& element, const ElementEdit& edit);
+    void makeRoomForQueue(gps::Graph& g, const std::string& source, const std::string& queue);
+    void placeNewElement(gps::Graph& g, const std::string& id);
+    bool linkInOrder(gps::Graph& g, const QStringList& expanded, QString* lastTouched);
 
     // What GStreamer offers (gps-inspect), shared by every document; each fetched factory is registered with the Pipeline.
     FactoryCatalog& catalog() const { return services_.catalog(); }
@@ -260,44 +218,18 @@ private:
 
     AppServices& services_;
     gps::Pipeline pipeline_{"pipeline", [this](const std::string& factory) { return catalog().traits()(factory); }};
-    HelperExecutionBackend backend_;
-    QTimer updateTimer_;
-    gps::ExecutionCoordinator execution_{pipeline_, backend_};
     std::shared_ptr<SaveTarget> target_ = std::make_shared<UntitledTarget>(1);
-    std::uint64_t savedState_ = 0;  // the editor's state at the last save or load
-    static constexpr std::uint64_t kNeverSaved = std::numeric_limits<std::uint64_t>::max();  // no state matches it
-    bool updating_ = false;
-    bool running_ = false;
-    bool monitoring_ = false;
-    bool opening_ = false;  // a file is being opened: its elements' info is on its way
-    int updateTimeoutMs_ = kUpdateBackstopMs;
-    QString touched_;  // the element the last edit concerned; the suspect when the helper dies
-
-    QTemporaryDir tmp_;
+    EditSession edits_{pipeline_};
+    ValidationSession validation_{pipeline_, services_.catalog()};
+    RunSession runs_;
     CanvasLayout* layout_;
-    bool alignWhenValidated_ = false;
-    bool restoring_ = false;     // undo or redo is running
-    bool alignQueued_ = false;   // automatic alignment follows the current burst of edits  // an opened file is laid out once its first validation tells every pad
-    QSet<QString> editingTemplates_;   // copies whose changes go to their template (Update template was chosen)
-    QSet<QString> knownModified_;      // copies already known to differ from their template
-    QSet<QString> expandedTemplates_;
-    HelperClient* runClient_ = nullptr;
-    QProcess* monitorClient_ = nullptr;
-    QByteArray monitorOutput_;
-    SlowWatch* watch_;
-    bool cancelled_ = false;
-    bool cancelling_ = false;
-
-    QTimer offerTimer_;  // coalesces the templatesOutdated offers of one burst of library changes
-    QHash<QString, int> offered_;  // copy id -> the library revision it was last offered
+    TemplateInstances templates_;
+    DocumentViews views_;
+    bool opening_ = false;  // a file is being opened: its elements' info is on its way
+    bool alignWhenValidated_ = false;  // an opened file is laid out once its first validation tells every pad
+    bool alignQueued_ = false;         // automatic alignment follows the current burst of edits
+    QTemporaryDir tmp_;                // where an imported pipeline is written
     DesktopUrlOpener desktopOpener_;
     UrlOpener* opener_ = &desktopOpener_;
-    QString action_, linking_;
-    // Kept for the committed plan at a revision; kNeverKept: worked out again on the next call.
-    static constexpr std::uint64_t kNeverKept = std::numeric_limits<std::uint64_t>::max();
-    mutable gps::Names names_;
-    mutable std::uint64_t namesRevision_ = kNeverKept;
-    mutable Outline outline_;
-    mutable std::uint64_t outlineRevision_ = kNeverKept;
     QStringList logTail_;
 };
