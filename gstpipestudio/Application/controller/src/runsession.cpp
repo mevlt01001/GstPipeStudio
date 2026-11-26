@@ -8,36 +8,37 @@ namespace {
 constexpr int kMonitorKillMs = 2000;
 }
 
-RunSession::RunSession(QObject* parent) : QObject(parent) {}
+RunSession::RunSession(QObject* parent)
+    : QObject(parent),
+      run_{"gps-run", "run.conf", "Running…", "Run finished: ", 0, {}, [this](const QString& status) { emit runFinished(status); }},
+      monitor_{"gps-monitor", "monitor.conf", {}, "Monitor finished: ", kMonitorKillMs,
+               [this](const QString& line) { sample(line); }, {}} {}
 
-bool RunSession::run(const gps::Graph& plan) { return start(Mode::Run, plan); }
+bool RunSession::run(const gps::Graph& plan) { return start(run_, plan); }
 
-bool RunSession::startMonitoring(const gps::Graph& plan) { return start(Mode::Monitor, plan); }
+bool RunSession::startMonitoring(const gps::Graph& plan) { return start(monitor_, plan); }
 
-void RunSession::stop() {
-    if (run_) run_->interrupt();
+void RunSession::stop() { run_.stop(); }
+
+void RunSession::stopMonitoring() { monitor_.stop(); }
+
+void RunSession::Channel::stop() const {
+    if (process) process->interrupt(shutdownGraceMs);
 }
 
-void RunSession::stopMonitoring() {
-    if (monitor_) monitor_->interrupt(kMonitorKillMs);
-}
-
-// The complete plan in a temporary file, then its helper on it; "" (and a notice) when it cannot be written.
-bool RunSession::start(Mode mode, const gps::Graph& plan) {
-    const bool monitor = mode == Mode::Monitor;
+bool RunSession::start(Channel& channel, const gps::Graph& plan) {
     gps::Graph copy = plan;
     copy.complete = true;
-    const QString file = tmp_.filePath(monitor ? "monitor.conf" : "run.conf");
+    const QString file = tmp_.filePath(channel.snapshot);
     std::string error;
     if (!copy.save(file.toStdString(), &error)) {
         emit notice("Unable to write the temporary plan file: " + QString::fromStdString(error));
         return false;
     }
-    if (!monitor) emit logLine("Running…");
+    if (!channel.startMessage.isEmpty()) emit logLine(channel.startMessage);
     auto log = [this](const QString& line) { emit logLine(line); };
-    auto done = [this, mode](const HelperResult& r) { finished(mode, r); };
-    if (monitor) monitor_ = HelperClient::run(this, "gps-monitor", {file}, 0, log, done, [this](const QString& line) { sample(line); });
-    else run_ = HelperClient::run(this, "gps-run", {file}, 0, log, done);
+    auto done = [this, &channel](const HelperResult& result) { finished(channel, result); };
+    channel.process = HelperClient::run(this, channel.helper, {file}, 0, log, done, channel.onLine);
     emit changed();
     return true;
 }
@@ -47,9 +48,8 @@ void RunSession::sample(const QString& line) {
     if (gps::fromJson(line.toStdString(), &sample)) emit telemetryReceived(sample);
 }
 
-void RunSession::finished(Mode mode, const HelperResult& r) {
-    const bool monitor = mode == Mode::Monitor;
-    (monitor ? monitor_ : run_) = nullptr;
+void RunSession::finished(Channel& channel, const HelperResult& r) {
+    channel.process = nullptr;
     gps::RunResult answer;
     answer.status.clear();
     const bool answered = r.read(&answer) && !answer.status.empty();
@@ -59,8 +59,8 @@ void RunSession::finished(Mode mode, const HelperResult& r) {
     else if (r.outcome == HelperResult::NotFound) status = "not-found";
     else status = "error";
     const QString message = answered ? QString::fromStdString(answer.message) : QString();
-    if (r.outcome == HelperResult::NotFound) emit notice(QString(monitor ? "gps-monitor" : "gps-run") + " was not found");
-    emit logLine((monitor ? "Monitor finished: " : "Run finished: ") + status + (message.isEmpty() ? "" : " – " + message));
+    if (r.outcome == HelperResult::NotFound) emit notice(channel.helper + " was not found");
+    emit logLine(channel.finishPrefix + status + (message.isEmpty() ? "" : " – " + message));
     emit changed();
-    if (!monitor) emit runFinished(status);
+    if (channel.onFinished) channel.onFinished(status);
 }

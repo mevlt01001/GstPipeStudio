@@ -10,14 +10,10 @@
 QString findHelper(const QString& name) {
     // GPS_BIN_DIR, when set, is the only place to look: an override that silently falls back to another copy of
     // the helpers (next to the executable in a full build) would hide a wrong path.
-    QStringList dirs;
-    QString env = qEnvironmentVariable("GPS_BIN_DIR");
-    dirs << (env.isEmpty() ? QCoreApplication::applicationDirPath() : env);
-    for (const QString& dir : dirs) {
-        QFileInfo file(dir + "/" + name);
-        if (file.isFile() && file.isExecutable()) return file.absoluteFilePath();
-    }
-    return QString();
+    const QString override = qEnvironmentVariable("GPS_BIN_DIR");
+    const QString directory = override.isEmpty() ? QCoreApplication::applicationDirPath() : override;
+    const QFileInfo file(directory + "/" + name);
+    return file.isFile() && file.isExecutable() ? file.absoluteFilePath() : QString();
 }
 
 QString findSystemTool(const QString& name) {

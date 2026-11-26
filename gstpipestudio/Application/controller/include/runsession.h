@@ -5,6 +5,7 @@
 
 #include <QObject>
 #include <QTemporaryDir>
+#include <functional>
 
 #include "wire.h"
 
@@ -23,8 +24,8 @@ public:
     void stop();                       // Ctrl+C, as a terminal stops gst-launch
     bool startMonitoring(const gps::Graph& plan);
     void stopMonitoring();             // Ctrl+C, killed 2 s later when it does not stop
-    bool running() const { return run_ != nullptr; }
-    bool monitoring() const { return monitor_ != nullptr; }
+    bool running() const { return run_.process != nullptr; }
+    bool monitoring() const { return monitor_.process != nullptr; }
 
 signals:
     void changed();
@@ -34,12 +35,24 @@ signals:
     void notice(const QString& text);
 
 private:
-    enum class Mode { Run, Monitor };
-    bool start(Mode mode, const gps::Graph& plan);
-    void finished(Mode mode, const HelperResult& result);
-    void sample(const QString& line);  // a line of gps-monitor: a telemetry sample (its last line is its answer)
+    struct Channel {
+        QString helper;
+        QString snapshot;
+        QString startMessage;
+        QString finishPrefix;
+        int shutdownGraceMs;
+        std::function<void(const QString&)> onLine;
+        std::function<void(const QString&)> onFinished;
+        HelperClient* process = nullptr;
+
+        void stop() const;
+    };
+
+    bool start(Channel& channel, const gps::Graph& plan);
+    void finished(Channel& channel, const HelperResult& result);
+    void sample(const QString& line);
 
     QTemporaryDir tmp_;
-    HelperClient* run_ = nullptr;
-    HelperClient* monitor_ = nullptr;
+    Channel run_;
+    Channel monitor_;
 };
