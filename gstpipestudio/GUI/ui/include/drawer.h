@@ -59,9 +59,6 @@ public:
     void setBusy(bool busy);        // an update runs: the page cannot be used
     void focusSearch();
 
-signals:
-    void closed();
-
 protected:
     void keyPressEvent(QKeyEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;

@@ -305,7 +305,7 @@ void CanvasScene::elementContext(const QString& element, const QPoint& screenPos
 void CanvasScene::elementDoubleClicked(const QString& element) {
     if (!locked_) emit elementActivated(element);
 }
-void CanvasScene::elementDragged(const QString& element, const QPointF& pos) {
+void CanvasScene::elementDragged(const QString& element, const QPointF&) {
     if (locked_) return;
     QList<QPair<QString, QPointF>> positions;
     QSet<ElementItem*> seenItems;
@@ -314,7 +314,6 @@ void CanvasScene::elementDragged(const QString& element, const QPointF& pos) {
         seenItems.insert(item);
         positions.append({item->view().name, item->pos()});
     }
-    emit elementMoved(element, pos.x(), pos.y());
     emit elementsMoved(positions);
     if (this->element(element)) {
         QStringList selNames = selectedElementNames();

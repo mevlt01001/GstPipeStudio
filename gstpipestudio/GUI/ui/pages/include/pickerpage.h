@@ -55,7 +55,6 @@ public:
 
 signals:
     void picked(const PickerChoice& choice);  // Choose, double click or Enter
-    void previewRequested(const QString& factory);
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;

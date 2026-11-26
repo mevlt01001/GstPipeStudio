@@ -106,7 +106,6 @@ void Drawer::dismiss() {
     if (!open_) return;
     open_ = false;
     slideTo(0);
-    emit closed();
 }
 
 void Drawer::setBusy(bool busy) { stack_->setEnabled(!busy); }

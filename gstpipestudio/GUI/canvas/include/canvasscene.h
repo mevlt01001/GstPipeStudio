@@ -82,7 +82,6 @@ signals:
     void elementMenuRequested(const QString& element, const QPoint& screenPos);
     void canvasContextMenuRequested(const QPoint& screenPos, const QPointF& scenePos);
     void elementActivated(const QString& element);
-    void elementMoved(const QString& element, double x, double y);
     void elementsMoved(const QList<QPair<QString, QPointF>>& positions);
     void elementSpliced(const QString& element, const QString& linkSrcElement, const QString& linkSrcPad);
     void templateMenuRequested(const QString& instanceId, const QPoint& screenPos);

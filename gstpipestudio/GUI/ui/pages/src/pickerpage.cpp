@@ -179,9 +179,6 @@ PickerPage::PickerPage(const PickerData& data, QWidget* parent) : DrawerPage(par
 
     connect(search_, &QLineEdit::textChanged, this, &PickerPage::filter);
     connect(list_, &QListWidget::itemDoubleClicked, this, [this] { choose(); });
-    connect(list_, &QListWidget::itemClicked, this, [this](QListWidgetItem* item) {
-        if (item && item->data(kFactoryRole).isValid()) emit previewRequested(item->data(kFactoryRole).toString());
-    });
     filter(QString());
 }
 
