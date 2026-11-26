@@ -66,6 +66,7 @@ public:
     void setTarget(std::unique_ptr<SaveTarget> target);  // binds the document to another target; the content stays
     bool modified() const { return edits_.modified(); }  // changed since its last save or load
     void markModified();  // it no longer matches its target's file (the file was deleted), whatever the undo history says
+    void restoreSavePoint();  // the file is back as it was read: only the edits made since make it modified
     bool hasUnsavedWork() const { return modified() && !plan().empty(); }  // what the window asks about
     void setUpdateTimeoutMs(int ms) { validation_.setTimeoutMs(ms); }
 

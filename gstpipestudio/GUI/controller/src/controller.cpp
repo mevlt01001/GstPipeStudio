@@ -614,7 +614,12 @@ void Controller::setTarget(std::unique_ptr<SaveTarget> target) {
 }
 
 void Controller::markModified() {
-    edits_.markModified();
+    edits_.markModified(true);
+    emit changed();
+}
+
+void Controller::restoreSavePoint() {
+    edits_.restoreSavePoint();
     emit changed();
 }
 

@@ -754,7 +754,15 @@ private slots:
         QVERIFY(gps::Graph::load(a.toStdString(), &written, &error));
         QCOMPARE(written.elements.size(), size_t(3));
 
-        // Deleted on disk: the tab stays, marked deleted and modified, so Save writes it again.
+        // Deleted on disk: the tab stays, marked deleted and modified; back as it was (a checkout), it is clean again.
+        QVERIFY(QFile::copy(a, root.filePath("kept.conf")));
+        QVERIFY(QFile::remove(a));
+        QVERIFY(waitFor([&] { return w.front()->title() == "a.conf (deleted)"; }));
+        QVERIFY(c->modified());
+        QVERIFY(QFile::copy(root.filePath("kept.conf"), a));
+        QVERIFY(waitFor([&] { return w.front()->title() == "a.conf" && !c->modified(); }));
+
+        // Deleted again: Save writes it again.
         QVERIFY(QFile::remove(a));
         QVERIFY(waitFor([&] { return w.front()->title() == "a.conf (deleted)"; }));
         QVERIFY(c->modified());

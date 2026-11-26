@@ -44,7 +44,10 @@ public:
     // ---- the save point
     bool modified() const { return pipeline_.editor().state() != savedState_; }
     void markSaved();     // it matches its file now: saved, opened, reloaded, or new
-    void markModified();  // it no longer does, whatever the undo history says (its file was deleted, a backup came back)
+    // It no longer does, whatever the undo history says (its file was deleted, a backup came back). keepAside: the save
+    // point is kept for restoreSavePoint (the deleted file may come back as it was).
+    void markModified(bool keepAside = false);
+    void restoreSavePoint();  // the save point markModified kept aside, when nothing was saved or loaded since
 
     // ---- what the support report says the user did last
     void note(const QString& action, const QString& linking = QString());
@@ -66,5 +69,6 @@ private:
     gps::Pipeline& pipeline_;
     std::function<QString()> blocker_;
     std::uint64_t savedState_ = 0;
+    std::uint64_t asideState_ = kNeverSaved;  // the save point markModified kept aside
     QString action_, linking_;
 };

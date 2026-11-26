@@ -71,8 +71,10 @@ void DocumentRegistry::check() {
             e.seen.clear();
             emit deletedOnDisk(d);
         } else if (now != e.seen || d->fileDeleted()) {
-            const bool changed = now != e.read || d->fileDeleted();  // a file back after a delete counts as changed
+            const bool back = d->fileDeleted();
+            const bool changed = now != e.read || back;  // a file back after a delete counts as changed
             d->setFileDeleted(false);
+            if (back && now == e.read) d->controller()->restoreSavePoint();  // back as it was read
             e.seen = now;
             if (changed) emit changedOnDisk(d);
         }

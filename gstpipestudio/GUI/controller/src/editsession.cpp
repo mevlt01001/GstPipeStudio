@@ -1,6 +1,8 @@
 // editsession.cpp – see editsession.h.
 #include "editsession.h"
 
+#include <utility>
+
 EditSession::EditSession(gps::Pipeline& pipeline, QObject* parent) : QObject(parent), pipeline_(pipeline) {}
 
 bool EditSession::transact(const std::function<bool(gps::Graph&, Edit&)>& change) {
@@ -57,10 +59,18 @@ bool EditSession::commit(const Edit& edit, bool restoring) {
 
 void EditSession::markSaved() {
     savedState_ = pipeline_.editor().state();
+    asideState_ = kNeverSaved;
     emit synced();
 }
 
-void EditSession::markModified() { savedState_ = kNeverSaved; }
+void EditSession::markModified(bool keepAside) {
+    if (savedState_ != kNeverSaved || !keepAside) asideState_ = keepAside ? savedState_ : kNeverSaved;
+    savedState_ = kNeverSaved;
+}
+
+void EditSession::restoreSavePoint() {
+    if (savedState_ == kNeverSaved) savedState_ = std::exchange(asideState_, kNeverSaved);
+}
 
 void EditSession::note(const QString& action, const QString& linking) {
     action_ = action;
