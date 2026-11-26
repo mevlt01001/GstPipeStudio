@@ -4,6 +4,7 @@
 #include <QDir>
 #include <QFileInfo>
 
+#include "apppaths.h"
 #include "appservices.h"
 #include "contract.h"
 #include "projectfile.h"
@@ -11,7 +12,7 @@
 #include "templatelibrary.h"
 #include "versionhistory.h"
 
-QStringList SaveTarget::templateFolders() const { return {TemplateLibrary::directory()}; }
+QStringList SaveTarget::templateFolders() const { return {AppPaths::templates()}; }
 
 std::unique_ptr<SaveTarget> SaveTarget::fromKey(const QString& entry, AppServices& services) {
     const QString kind = kindOf(entry), value = valueOf(entry);

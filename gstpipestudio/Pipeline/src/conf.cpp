@@ -219,7 +219,6 @@ bool Graph::fromConf(const std::string& text, Graph* out, std::string* error, co
             e.name = s.name;
             e.factory = *factory;
             for (const auto& kv : s.keys) {
-                // x and y of files before 0.4 are left out: nice alignment places every box when the file opens.
                 if (kv.first == "group") e.group = kv.second;
                 else if (kv.first.rfind("prop.", 0) == 0) e.props[kv.first.substr(5)] = kv.second;
                 else if (kv.first.rfind("request.", 0) == 0) e.requestSrc[kv.first.substr(8)] = std::max(0, std::atoi(kv.second.c_str()));
@@ -250,11 +249,13 @@ bool Graph::fromConf(const std::string& text, Graph* out, std::string* error, co
             plan.exposed.push_back({s.name, target->substr(0, dot), target->substr(dot + 1)});
         } else if (s.kind == "template") {
             if (s.name.empty() || plan.instance(s.name)) return fail(error, s.line, "template section needs a unique id");
+            const std::string* name = s.get("template");
+            if (!name || name->empty()) return fail(error, s.line, "template section needs a name");
             TemplateInstance t;
             t.id = s.name;
+            t.templateName = *name;
             for (const auto& kv : s.keys) {
                 if (kv.first.rfind("prop.", 0) == 0) values[t.id][kv.first.substr(5)] = kv.second;  // a reference's parameters
-                else if (kv.first == "template") t.templateName = kv.second;
                 else if (kv.first == "revision") t.revision = std::max(0, std::atoi(kv.second.c_str()));
                 else if (kv.first == "parent") t.parent = kv.second;
                 else if (kv.first == "signature") t.signature = kv.second;
@@ -265,17 +266,8 @@ bool Graph::fromConf(const std::string& text, Graph* out, std::string* error, co
                     t.params.push_back({kv.first.substr(6), kv.second.substr(0, dot), kv.second.substr(dot + 1)});
                 }
             }
-            if (t.templateName.empty()) t.templateName = t.id.substr(0, t.id.find('#'));
             plan.instances.push_back(t);
         }
-    }
-    // Files before 0.4 tag group members only: every group becomes an instance of the template it was named after.
-    for (const Element& e : plan.elements) {
-        if (e.group.empty() || plan.instance(e.group)) continue;
-        TemplateInstance t;
-        t.id = e.group;
-        t.templateName = e.group.substr(0, e.group.find('#'));
-        plan.instances.push_back(t);
     }
     if (!header) return fail(error, 1, "missing [gstpipestudio] section");
     plan.nextId = next;
@@ -313,11 +305,6 @@ bool Graph::fromConf(const std::string& text, Graph* out, std::string* error, co
     }
     std::string why;
     if (!plan.validate(&why)) return fail(error, 0, why);
-    // An instance read without a fingerprint (older files) starts in sync with what it holds now.
-    for (TemplateInstance& t : plan.instances) {
-        if (t.signature.empty()) t.signature = templates::fingerprint(plan, t.id);
-    }
-
     *out = plan;
     return true;
 }

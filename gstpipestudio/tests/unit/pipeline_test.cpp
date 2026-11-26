@@ -67,8 +67,8 @@ void invariantsAndFragments() {
     CHECK(p.editor().undo());
     CHECK(p.editor().execute(EditAction([&](Graph& d, std::string*) { return d.setCaps(a,"src","video/x-raw"); })));
     CHECK(p.lastChange().executionRevision > execRevision);
-    Graph bad=p.graph();bad.links.push_back(bad.links.front());CHECK(!Pipeline::validate(bad));
-    bad=p.graph();bad.find(a)->x=std::numeric_limits<double>::infinity();CHECK(!Pipeline::validate(bad));
+    Graph bad=p.graph();bad.links.push_back(bad.links.front());CHECK(!bad.validate());
+    bad=p.graph();bad.find(a)->x=std::numeric_limits<double>::infinity();CHECK(!bad.validate());
     auto saved=p.graph().toConf();Graph loaded;std::string error;
     CHECK(Graph::fromConf(saved,&loaded,&error));CHECK(p.reset(loaded));CHECK_EQ(p.graph().toConf(),saved);
 }

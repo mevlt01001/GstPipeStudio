@@ -121,3 +121,8 @@ Projects: a folder with saved confs gets `<folder>.gpsproj` (its confs and the t
 - Change saved data: update `Pipeline/src/conf.cpp` and its round-trip/compatibility tests. Version 1 is unchanged by this migration.
 
 See [development commands](../development/README.md) and the [original proposal](../archive/dev-zero-proposal.md). This page describes the implementation; the proposal contains future refinements and must not be read as a list of shipped classes.
+
+
+### Template file layout
+
+The template library reads canonical filenames from the template directory. A grouped element in a project must refer to an explicit template instance. Projects and templates that still rely on the pre-0.4 library location, implicit groups or earlier filename conventions need to be opened and exported using a release that supports those conventions before upgrading. The template library leaves files it cannot load on disk.

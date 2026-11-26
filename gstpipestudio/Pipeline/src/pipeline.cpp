@@ -25,7 +25,6 @@ bool fail(std::string* error, const std::string& message) {
 }
 
 Pipeline::Pipeline(std::string name, TraitsFn traits) : traits_(std::move(traits)), editor_(*this) { graph_.name = std::move(name); clearObservations(); }
-bool Pipeline::validate(const Graph& graph, std::string* error) { return graph.validate(error); }
 void Pipeline::install(Graph graph) {
     const bool affectsExecution = executionKey(executed(graph)) != executionKey(executed(graph_));
     nextIdentity_ = std::max(nextIdentity_, graph.nextId);
@@ -40,7 +39,7 @@ void Pipeline::install(Graph graph) {
     refreshPads();
 }
 bool Pipeline::reset(Graph graph, std::string* error) {
-    if (!validate(graph, error)) return false;
+    if (!graph.validate(error)) return false;
     editor_.rollback(); editor_.undo_.clear(); editor_.redo_.clear(); editor_.renumber();
     install(std::move(graph));
     // A new document invalidates every run even if its serialized contents match.
@@ -178,7 +177,7 @@ const Graph& GraphEditor::view() const { return draft_ ? *draft_ : document_.gra
 void GraphEditor::rollback() { draft_.reset(); }
 bool GraphEditor::commit(std::string* error) {
     if (!draft_) return false;
-    if (!Pipeline::validate(*draft_, error)) { rollback(); return false; }
+    if (!draft_->validate(error)) { rollback(); return false; }
     const bool contentChanged = draft_->toConf() != document_.graph_.toConf();
     if (!contentChanged && samePositions(*draft_, document_.graph_)) { rollback(); return false; }
     Graph next = std::move(*draft_); rollback();

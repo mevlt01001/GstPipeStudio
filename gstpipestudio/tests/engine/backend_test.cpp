@@ -1,3 +1,4 @@
+#include "gst_element_creator.h"
 #include "gst_engine.h"
 #include "check.h"
 using namespace gps;

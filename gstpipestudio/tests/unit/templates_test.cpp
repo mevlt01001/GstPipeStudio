@@ -43,7 +43,7 @@ static void placing() {
     CHECK(t && t->revision == 3 && t->templateName == "Decode" && t->parent.empty());
     CHECK_EQ(t->params.size(), size_t(2));
     CHECK(!tpl::modified(g, id));
-    CHECK(Pipeline::validate(g));
+    CHECK(g.validate());
     // Linking from outside to a member is not a change of the template.
     const std::string first = tpl::members(g, id).front();
     CHECK(g.linkExisting(src, "src", first, "sink"));
@@ -93,7 +93,7 @@ static void structureChanges() {
     // Deleting every member deletes the instance.
     for (const std::string& m : tpl::members(g, id)) g.deleteElement(m, false);
     CHECK(!g.instance(id));
-    CHECK(Pipeline::validate(g));
+    CHECK(g.validate());
 }
 
 static void nesting() {
@@ -110,7 +110,7 @@ static void nesting() {
     CHECK_EQ(tpl::nested(g, outer), std::vector<std::string>{decode});
     CHECK_EQ(tpl::chain(g, inner.front()), (std::vector<std::string>{decode, outer}));
     CHECK(!tpl::modified(g, outer));
-    CHECK(Pipeline::validate(g));
+    CHECK(g.validate());
 
     // The outer template holds the inner one: extract keeps it as a nested instance with its parameters.
     const Graph lib = tpl::extract(g, outer);
@@ -132,7 +132,7 @@ static void nesting() {
     CHECK(!g.instance(decode));
     CHECK_EQ(g.find(inner.front())->group, outer);
     CHECK(tpl::modified(g, outer));
-    CHECK(Pipeline::validate(g));
+    CHECK(g.validate());
     (void)src;
 }
 
@@ -166,15 +166,8 @@ static void confForm() {
     CHECK_EQ(back.toConf(), g.toConf());
     CHECK(!tpl::modified(back, id));
 
-    // Before 0.4 a group was a tag only: it becomes an instance named after it, in sync with what it holds.
-    const std::string old =
-        "[gstpipestudio]\nversion=1\n\n[element:a_0]\nfactory=a\ngroup=Chain#3\n\n[element:b_1]\nfactory=b\ngroup=Chain#3\n"
-        "\n[link:0]\nsrc=a_0\nsrcpad=src\nsink=b_1\nsinkpad=sink\n";
-    Graph migrated;
-    CHECK(Graph::fromConf(old, &migrated, &error));
-    CHECK(migrated.instance("Chain#3") && migrated.instance("Chain#3")->templateName == "Chain");
-    CHECK(!tpl::modified(migrated, "Chain#3"));
-    CHECK(Pipeline::validate(migrated));
+    // A group must name an explicit template instance.
+    CHECK(!Graph::fromConf("[gstpipestudio]\nversion=1\n[element:a]\nfactory=a\ngroup=Chain#3\n", &back, &error));
 
     // A parameter outside its instance is refused.
     std::string bad = g.toConf() + "\n[template:Stray#1]\ntemplate=Stray\nparam.x=" + src + ".is-live\n";
@@ -190,7 +183,7 @@ static void replacingKeepsMembership() {
     const Addition added = g.replace(inner[0], "src", "otherparse", "sink", {}, [](const std::string&) { return FactoryTraits{}; });
     CHECK(!added.element.empty());
     CHECK_EQ(g.find(added.element)->group, id);
-    CHECK(Pipeline::validate(g));
+    CHECK(g.validate());
 }
 
 static void updatingFromTheLibrary() {
@@ -220,7 +213,7 @@ static void updatingFromTheLibrary() {
     CHECK_EQ(g.find(g.links[size_t(in)].sinkElement)->factory, std::string("depay"));
     // The parameter kept its value.
     CHECK_EQ(tpl::paramValue(g, g.instance(id)->params[0]), std::string("8000"));
-    CHECK(Pipeline::validate(g));
+    CHECK(g.validate());
 }
 
 // A project's conf names a template like an element: its content comes from the template's own file, like an import.
@@ -256,7 +249,7 @@ static void references() {
     const int in = back.linkFrom(src, "src");
     CHECK(in >= 0 && back.find(back.links[size_t(in)].sinkElement)->factory == "depay");
     CHECK(back.linkInto(sink, "sink") >= 0 && back.links[size_t(back.linkInto(sink, "sink"))].caps == "video/x-raw");
-    CHECK(Pipeline::validate(back));
+    CHECK(back.validate());
     CHECK_EQ(back.toConf(Graph::Form::Reference), text);  // read and written again, the same file
 
     // Without the template's file the conf cannot be read, and says which template is missing.

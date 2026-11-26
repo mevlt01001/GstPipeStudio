@@ -1,6 +1,5 @@
 #pragma once
 #include "builder.h"
-#include "gst_element_creator.h"
 #include "pipeline.h"
 #include <atomic>
 
@@ -12,7 +11,6 @@ public:
     explicit GstEngine(UpdateOptions options = {}, LogFn log = {}) : options_(std::move(options)), log_(std::move(log)) {}
     void execute(const ExecutionPlan&, Completion) override;
     void cancel() override { cancelled_ = true; }
-    static UpdateResult validateTracked(const Graph&, const UpdateOptions& = {}, const LogFn& = {});
 private:
     UpdateOptions options_;
     LogFn log_;

@@ -5,6 +5,7 @@
 #include <QFileInfo>
 #include <QTemporaryDir>
 
+#include "apppaths.h"
 #include "outline.h"
 #include "projectfile.h"
 #include "templates.h"
@@ -899,13 +900,12 @@ private slots:
         useUserDir({});
     }
 
-    // One file per template: names that share a file name are refused, and a template an earlier version saved under
-    // another file name is deleted, and saved again, by its own file.
+    // The library reads and writes each template through its canonical filename.
     void theLibraryKeepsOneFilePerTemplate() {
         QTemporaryDir state;
         useUserDir(state.path());
         TemplateLibrary& library = c->services().library();
-        const QDir folder(TemplateLibrary::directory());
+        const QDir folder(AppPaths::templates());
         gps::Graph one;
         one.addElement("videotestsrc");
         QString clean, error;
@@ -915,20 +915,15 @@ private slots:
         QVERIFY(library.plan("a_b") && !library.plan("a b"));
         QCOMPARE(folder.entryList({"*.conf"}), QStringList{"a_b.conf"});
 
-        auto older = [&] {  // "Yüz" as earlier versions named its file
-            gps::Graph t = one;
-            t.name = "Yüz";
-            QVERIFY(t.save(toStd(folder.filePath("Y_z.conf")), nullptr));
-            library.reload();
-            QVERIFY(library.plan("Yüz"));
-        };
-        older();
-        QVERIFY(library.remove("Yüz"));
-        QCOMPARE(folder.entryList({"*.conf"}), QStringList{"a_b.conf"});
-        older();
-        QVERIFY(library.save("Yüz", one).ok);
-        QCOMPARE(folder.entryList({"*.conf"}).size(), 2);  // its older file is gone
-        QVERIFY(library.plan("Yüz"));
+        gps::Graph misnamed = one;
+        misnamed.name = "Another";
+        QVERIFY(misnamed.save(toStd(folder.filePath("misnamed.conf")), nullptr));
+        library.reload();
+        QVERIFY(!library.plan("Another"));
+        QVERIFY(!library.save("misnamed", one).ok);
+        QVERIFY(library.save("Another", one).ok);
+        QVERIFY(library.plan("Another"));
+        QVERIFY(QFileInfo::exists(folder.filePath("misnamed.conf")));
         useUserDir({});
     }
 
