@@ -2477,6 +2477,26 @@ private slots:
         QCOMPARE(c->plan().elements.size(), size_t(2));
     }
 
+    // Closing a running tab with unsaved work: Save stops the run first, then writes, and the tab goes.
+    void closingARunningTabSavesItOnceTheRunStops() {
+        QTemporaryDir root;
+        const QString file = root.filePath("run.conf");
+        MainWindow w(c.get());
+        w.show();
+        Document* d = w.front();
+        const QString src = addSource(*c, "videotestsrc");
+        QVERIFY(w.saveFlow()->saveAs(d, file));
+        QVERIFY(!addAfter(*c, src, "src", "fakesink").isEmpty());
+        QVERIFY(c->run());
+        answer(&w, "saveChangesSave");
+        QVERIFY(w.closeDocument(d));
+        QVERIFY(!c->running());
+        gps::Graph saved;
+        std::string error;
+        QVERIFY(gps::Graph::load(file.toStdString(), &saved, &error));
+        QCOMPARE(saved.elements.size(), size_t(2));
+    }
+
     void runFromTheToolbarLogsTheHelper() {
         MainWindow w(c.get());
         w.show();

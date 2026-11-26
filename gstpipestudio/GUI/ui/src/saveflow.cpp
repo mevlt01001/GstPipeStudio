@@ -1,7 +1,9 @@
 // saveflow.cpp – see saveflow.h.
 #include "saveflow.h"
 
+#include <QEventLoop>
 #include <QStatusBar>
+#include <QTimer>
 
 #include "controller.h"
 #include "document.h"
@@ -32,11 +34,19 @@ bool SaveFlow::saveAs(Document* d, const QString& path) {
     return report(d, d->controller()->saveAs(std::make_unique<ProjectConfTarget>(file)));
 }
 
+// A tab that cannot be saved now (it runs, or a file opens in it) is passed over and named, not a stop.
 bool SaveFlow::saveAll(const QList<Document*>& documents) {
+    QStringList skipped;
     for (Document* d : documents) {
-        if (d->controller()->hasUnsavedWork() && !save(d)) return false;
+        if (!d->controller()->hasUnsavedWork()) continue;
+        if (const QString why = d->controller()->saveBlockedReason(); !why.isEmpty()) {
+            skipped << d->title() + " (" + why.toLower() + ")";
+        } else if (!save(d)) {
+            return false;
+        }
     }
-    return true;
+    if (!skipped.isEmpty()) window_->statusBar()->showMessage("Not saved: " + skipped.join(", "), 10000);
+    return skipped.isEmpty();
 }
 
 bool SaveFlow::confirmClose(const QList<Document*>& documents) {
@@ -47,7 +57,9 @@ bool SaveFlow::confirmClose(const QList<Document*>& documents) {
     if (unsaved.isEmpty()) return true;
     if (unsaved.size() == 1) window_->activate(unsaved.first());
     switch (ask(unsaved)) {
-    case Answer::Save: return saveAll(unsaved);
+    case Answer::Save:
+        for (Document* d : unsaved) stopForSave(d);
+        return saveAll(unsaved);
     case Answer::Discard: return true;
     case Answer::Cancel: break;
     }
@@ -66,6 +78,19 @@ SaveFlow::Answer SaveFlow::ask(const QList<Document*>& unsaved) const {
         {{one ? "Save" : "Save all", "saveChangesSave"}, {"Don't save", "saveChangesDiscard", QMessageBox::DestructiveRole}, Prompt::cancel()},
         0, QMessageBox::Warning});
     return answer == 0 ? Answer::Save : answer == 1 ? Answer::Discard : Answer::Cancel;
+}
+
+// Closing stops a tab's run and monitor anyway: on the way out they stop first, and Save waits until they have.
+void SaveFlow::stopForSave(Document* d) const {
+    Controller* c = d->controller();
+    c->stopAll();
+    if (c->saveBlockedReason().isEmpty()) return;
+    QEventLoop wait;
+    QTimer::singleShot(kStopWaitMs, &wait, &QEventLoop::quit);
+    connect(c, &Controller::changed, &wait, [c, &wait] {
+        if (c->saveBlockedReason().isEmpty()) wait.quit();
+    });
+    wait.exec();
 }
 
 bool SaveFlow::overwrite(Document* d) const {

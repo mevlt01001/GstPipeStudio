@@ -23,7 +23,9 @@
 - File > New project… asks a name; its folder under ~/workspace/GstPipeStudio (Change… picks another place, remembered) is made by its first save. Save of a canvas never saved asks the same, so Ctrl+S always lands in a project folder; Save as… still chooses any file.
 - Save always writes, validated or not: validation gates Run and Monitor only. A file saved before it was validated is marked incomplete.
 - A tab is modified when it differs from its last save: undo back to it clears the ●, moving boxes does not set it, and opening a file never does. New tabs are Untitled-1, Untitled-2…
-- File > Save all (Ctrl+Alt+S) saves every unsaved tab; File > Revert file reads the file again.
+- File > Save all (Ctrl+Alt+S) saves every unsaved tab; a tab that runs is passed over and named in the status bar. File > Revert file reads the file again.
+- Closing a running tab with unsaved changes and choosing Save stops the run first, then saves and closes.
+- Save as… is off on a template tab: a template is saved to the library (Save, or Save as template).
 - Hot exit: about a second after a change, every unsaved tab (Untitled ones too) is backed up. Quitting asks nothing; the next start reopens the tabs with their unsaved changes, and so does a start after a crash. Closing a single tab still asks. A backup that cannot be opened is offered at three starts, then dropped; one whose tab comes back but cannot load it yet (GStreamer not ready, say) is kept until it can.
 - A file changed on disk by another program is read again when its tab has no unsaved changes (the status bar says so); a tab with unsaved changes asks Reload or Keep mine (a tab in the background asks when it comes to the front), and Save over the changed file asks Overwrite or Cancel. A deleted file keeps its tab, marked deleted and unsaved.
 - Files are written whole or not at all (a temporary file beside it, then renamed).

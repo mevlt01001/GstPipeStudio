@@ -20,13 +20,17 @@ public:
 
     bool save(Document* document);
     bool saveAs(Document* document, const QString& path = QString());  // "" asks for the file
-    bool saveAll(const QList<Document*>& documents);  // the unsaved ones, in order; false at the first cancel or failure
+    // The unsaved ones, in order; false at the first cancel or failure. One that cannot be saved now (it runs) is
+    // passed over and named in the status bar, and the answer is false.
+    bool saveAll(const QList<Document*>& documents);
     // True when the documents may go: their changes saved or dropped, or nothing to ask about; false on Cancel.
     bool confirmClose(const QList<Document*>& documents);
 
 private:
+    static constexpr int kStopWaitMs = 5000;  // the longest Save waits for a closing tab's run to stop
     enum class Answer { Save, Discard, Cancel };
     Answer ask(const QList<Document*>& unsaved) const;
+    void stopForSave(Document* document) const;  // its run and monitor stop, and it waits until they have
     bool overwrite(Document* document) const;  // its file changed on disk: true when the user overwrites it
     bool report(Document* document, const SaveResult& result) const;  // false, said in the status bar and the Log
 
