@@ -6,7 +6,7 @@
 
 #include "drawer.h"
 #include "elementedit.h"
-#include "elementinfo.h"
+#include "contract.h"
 #include "propertyeditor.h"
 
 class QCheckBox;
@@ -23,7 +23,6 @@ struct PropertyPageInput {
     std::map<std::string, int> requestSink;   // Request sink pad counts to start from
     std::map<std::string, int> linkedSrc;     // pads already linked per template: the counts cannot go below
     std::map<std::string, int> linkedSink;    // sink pads already linked per template: the counts cannot go below
-    std::vector<std::string> exposed;         // properties already exposed
     QStringList sinkPads;                     // more than one: the user chooses where the element attaches
 };
 
@@ -46,7 +45,6 @@ private:
     PropertyPageInput input_;
     QLineEdit* search_;
     QList<PropertyEditor*> editors_;
-    QMap<QString, QCheckBox*> expose_;
     QMap<QString, QWidget*> rows_;
     QMap<QString, QSpinBox*> pads_;
     QMap<QString, QSpinBox*> sinkPadsCount_;

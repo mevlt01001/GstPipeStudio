@@ -6,6 +6,8 @@
 #include <QObject>
 #include <QString>
 
+#include "catalog.h"
+
 // The oldest GStreamer the app supports: the one place to change it.
 struct GstVersion {
     int major, minor;
@@ -30,16 +32,17 @@ class StartupCheck : public QObject {
 public:
     explicit StartupCheck(QObject* parent = nullptr);
 
-    void start();  // asynchronous; finished() comes once per start
+    void start();  // asynchronous; finished() comes once, for the last start
     const StartupResult& result() const { return result_; }
 
 signals:
     void finished(const StartupResult& result);
 
 private:
-    void onVersion(bool usable, const QJsonObject& json, const QString& error);
+    void onVersion(bool usable, const gps::VersionInfo& version, const QString& error);
     void askSystemTool();
     void done(const StartupResult& result);
 
     StartupResult result_;
+    int run_ = 0;  // which start the answers on their way belong to
 };

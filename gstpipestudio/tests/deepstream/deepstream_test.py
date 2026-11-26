@@ -207,19 +207,23 @@ def s5():
 
 
 def prepare_cache():
-    """The sample config with paths made local: the engine is written next to the model, and /opt is read-only."""
+    """The sample config with paths made local: the engine is written next to the model, and /opt is read-only.
+    DeepStream 7 ships an ONNX model, 6.x an encoded TAO model; the installed sample config tells which. Returns the engine path."""
     os.makedirs(CACHE, exist_ok=True)
     src = f"{SAMPLES}/models/Primary_Detector"
     for f in os.listdir(src):
         if not os.path.exists(os.path.join(CACHE, f)):
             shutil.copy(os.path.join(src, f), CACHE)
     text = open(f"{SAMPLES}/configs/deepstream-app/config_infer_primary.txt").read()
-    for key, value in (("onnx-file", "resnet18_trafficcamnet_pruned.onnx"),
-                       ("model-engine-file", "resnet18_trafficcamnet_pruned.onnx_b1_gpu0_int8.engine"),
-                       ("labelfile-path", "labels.txt"), ("int8-calib-file", "cal_trt.bin"), ("batch-size", "1")):
+    model_key, model_path = re.search(r"^(onnx-file|tlt-encoded-model)=(.*)$", text, flags=re.M).groups()
+    model = os.path.basename(model_path)
+    engine = f"{model}_b1_gpu0_int8.engine"  # the name nvinfer gives the engine it builds
+    for key, value in ((model_key, model), ("model-engine-file", engine), ("labelfile-path", "labels.txt"),
+                       ("int8-calib-file", "cal_trt.bin"), ("batch-size", "1")):
         text = re.sub(rf"^{key}=.*$", f"{key}={value}", text, flags=re.M)
     with open(os.path.join(CACHE, "config_infer_primary.txt"), "w") as f:
         f.write(text)
+    return os.path.join(CACHE, engine)
 
 
 def s3():
@@ -228,13 +232,12 @@ def s3():
     if not os.path.exists(f"{SAMPLES}/streams/sample_720p.mp4"):
         print("SKIP s3: no sample stream")
         return
-    prepare_cache()
+    engine = prepare_cache()
     plan = plan_path("s3_file_infer_osd.conf")
     if CACHE != "/tmp/gps-ds-cache":  # the plan names the default folder; point it to ours
         tmp = tempfile.mkdtemp(prefix="gps-ds-plan-")
         plan = os.path.join(tmp, "s3.conf")
         open(plan, "w").write(open(plan_path("s3_file_infer_osd.conf")).read().replace("/tmp/gps-ds-cache", CACHE))
-    engine = os.path.join(CACHE, "resnet18_trafficcamnet_pruned.onnx_b1_gpu0_int8.engine")
     existed = os.path.exists(engine)
     print(f"   engine cache: {engine} ({'warm' if existed else 'cold: TensorRT will build it, about a minute'})")
     u = update_plan(n, plan, timeout_ms=600000)

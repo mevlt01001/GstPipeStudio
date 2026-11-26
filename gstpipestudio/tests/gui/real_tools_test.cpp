@@ -46,29 +46,29 @@ private slots:
     }
 
     void catalogHasTheUsualElementsAndNvidiaBadges() {
-        QVERIFY(c->catalogLoaded());
-        QVERIFY2(c->catalog().size() > 50, qPrintable(QString::number(c->catalog().size())));
-        QMap<QString, ListEntry> by;
-        for (const ListEntry& e : c->catalog()) by[e.factory] = e;
+        QVERIFY(c->services().catalog().loaded());
+        QVERIFY2(c->services().catalog().entries().size() > 50, qPrintable(QString::number(c->services().catalog().entries().size())));
+        QMap<QString, FactoryEntry> by;
+        for (const FactoryEntry& e : c->services().catalog().entries()) by[fromStd(e.factory)] = e;
         for (const char* f : {"videotestsrc", "videoconvert", "fakesink", "queue", "tee", "compositor"}) QVERIFY2(by.contains(f), f);
         QVERIFY(by["videotestsrc"].isSource);
         QVERIFY(!by["videoconvert"].isSource);
         QVERIFY(by["tee"].hasRequestSrc);
         int nvidia = 0;
-        for (const ListEntry& e : c->catalog()) nvidia += e.nvidia;
-        qInfo() << "factories:" << c->catalog().size() << "nvidia:" << nvidia;
+        for (const FactoryEntry& e : c->services().catalog().entries()) nvidia += e.nvidia;
+        qInfo() << "factories:" << c->services().catalog().entries().size() << "nvidia:" << nvidia;
     }
 
     void elementInfoParses() {
         const ElementInfo* info = need(*c, "videotestsrc");
         QVERIFY(info);
-        QVERIFY(info->isSource);
+        QVERIFY(info->entry.isSource);
         const PadTemplateInfo* src = info->padTemplate("src", "src");
         QVERIFY(src);
-        QVERIFY(!src->structures.isEmpty());
-        QVERIFY(!src->structures[0].fields.isEmpty());
+        QVERIFY(!src->structures.empty());
+        QVERIFY(!src->structures[0].fields.empty());
         QStringList kinds;
-        for (const PropertyInfo& p : info->properties) kinds << p.kind;
+        for (const PropertyInfo& p : info->properties) kinds << fromStd(p.kind);
         QVERIFY(kinds.contains("enum"));
         QVERIFY(kinds.contains("boolean"));
         const PropertyInfo* pattern = nullptr;
@@ -78,29 +78,28 @@ private slots:
         QVERIFY(pattern);
         QVERIFY(pattern->enumValues.size() > 3);
         QVERIFY(need(*c, "compositor")->padTemplate("sink_%u", "sink"));
-        QVERIFY(!need(*c, "compositor")->padTemplate("sink_%u", "sink")->padProperties.isEmpty());
+        QVERIFY(!need(*c, "compositor")->padTemplate("sink_%u", "sink")->padProperties.empty());
         QVERIFY(need(*c, "tee")->padTemplate("src_%u", "src")->isRequest());
     }
 
     void updateAndRunOnARealPipeline() {
         QString src = addSource(*c, "videotestsrc", withProps({{"num-buffers", "5"}}));
         QVERIFY(!src.isEmpty());
-        QCOMPARE(c->result().status, QString("ok"));
-        const PadReport* pad = c->result().pad(src, "src", true);
+        QCOMPARE(fromStd(c->result().status), QString("ok"));
+        const PadReport* pad = c->result().pad(toStd(src), toStd("src"), true);
         QVERIFY(pad);
-        QVERIFY(!pad->allowedStructures.isEmpty());
+        QVERIFY(!pad->allowedStructures.empty());
         QVERIFY(c->view(src).srcs[0].media.startsWith("video/x-raw"));
         QString convert = addAfter(*c, src, "src", "videoconvert");
         QString sink = addAfter(*c, convert, "src", "fakesink");
-        QVERIFY2(c->result().isComplete(), qPrintable(c->result().message));
+        QVERIFY2(c->result().complete(), c->result().message.c_str());
         QVERIFY(c->setCaps(src, "src", "video/x-raw, width=(int)320", {}));
         QVERIFY(settle(*c));
-        QVERIFY2(c->result().ok(), qPrintable(c->result().message));
-        QVERIFY(c->result().pad(src, "src", true)->caps.contains("width=(int)320"));
+        QVERIFY2(c->result().ok(), c->result().message.c_str());
+        QVERIFY(fromStd(c->result().pad(toStd(src), toStd("src"), true)->caps).contains("width=(int)320"));
 
         QTemporaryDir dir;
-        QString error;
-        QVERIFY2(c->save(dir.filePath("real.conf"), &error), qPrintable(error));
+        QVERIFY(saved(saveAs(*c, dir.filePath("real.conf"))));
         QSignalSpy ended(c.get(), &Controller::runFinished);
         QVERIFY(c->run());
         QVERIFY(waitFor([&] { return ended.count() == 1; }, 30000));
@@ -108,16 +107,16 @@ private slots:
     }
 
     void importsARealLaunchPipelineIntoAnUnsavedCanvas() {
-        c->newPlan();
+        c->newPlan(std::make_unique<UntitledTarget>(1));
         MainWindow window(c.get());
         window.show();
         QVERIFY(window.findChild<QAction*>("actionImportLaunch"));
         QVERIFY(c->importLaunch("videotestsrc num-buffers=5 is-live=true ! queue ! fakesink sync=false"));
         QVERIFY(waitFor([&] { return c->plan().elements.size() == 3 && !c->busy(); }, 15000));
-        QVERIFY2(c->result().isComplete(), qPrintable(c->result().message));
+        QVERIFY2(c->result().complete(), c->result().message.c_str());
         QCOMPARE(c->plan().links.size(), size_t(2));
-        QVERIFY(c->filePath().isEmpty());
-        QVERIFY(c->dirty());
+        QVERIFY(c->target().path().isEmpty());
+        QVERIFY(c->modified());
         window.scene()->rebuild();
         QVERIFY(window.scene()->items().size() >= 3);
         window.view()->fitAll();
@@ -131,7 +130,7 @@ private slots:
 
     // The same screenshots as with the fakes, but with the real catalog (hundreds of factories) and real caps.
     void screenshotsWithTheRealCatalog() {
-        c->newPlan();
+        c->newPlan(std::make_unique<UntitledTarget>(1));
         MainWindow w(c.get());
         w.show();
         QString src = addSource(*c, "videotestsrc", withProps({{"pattern", "ball"}}));
@@ -145,12 +144,12 @@ private slots:
         QVERIFY(w.grab().save(QString("%1/ux_30_real_helpers.png").arg(shotDir())));
 
         QStringList compatible;
-        c->fetchCompatible(c->padAllowed(nv, "src"), [&](const QStringList& l) { compatible = l; });
+        c->services().catalog().fetchCompatible(c->padAllowed(nv, "src"), c.get(), [&](const QStringList& l) { compatible = l; });
         QVERIFY(waitFor([&] { return !compatible.isEmpty(); }));
         PickerData data;
         data.compatible = compatible;
-        for (const ListEntry& e : c->catalog()) {
-            if (!e.isSource) data.candidates << e;
+        for (const FactoryEntry& e : c->services().catalog().entries()) {
+            if (!e.isSource) data.candidates.push_back(e);
         }
         QElapsedTimer timer;
         timer.start();
@@ -163,11 +162,11 @@ private slots:
     }
 
     void aBadPropertyShowsAsAnErrorOnTheElement() {
-        c->newPlan();
+        c->newPlan(std::make_unique<UntitledTarget>(1));
         QString src = addSource(*c, "filesrc", withProps({{"location", "/does/not/exist.avi"}}));
         QVERIFY(!src.isEmpty());
         qInfo() << "filesrc without file:" << c->result().status << c->result().message;
-        QVERIFY(!c->result().ok() || !c->result().isComplete());
+        QVERIFY(!c->result().ok() || !c->result().complete());
     }
 };
 

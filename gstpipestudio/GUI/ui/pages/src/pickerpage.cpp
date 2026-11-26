@@ -3,7 +3,10 @@
 
 #include <QButtonGroup>
 #include <QHBoxLayout>
+#include <QCursor>
 #include <QKeyEvent>
+#include <QMouseEvent>
+#include <QTimer>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -13,6 +16,7 @@
 #include <algorithm>
 
 #include "factorydelegate.h"
+#include "templatepeek.h"
 
 namespace {
 constexpr int kExistingRole = Qt::UserRole + 20;  // index into PickerData::existing
@@ -22,7 +26,8 @@ constexpr int kIsSinkRole = Qt::UserRole + 23;
 constexpr int kHasAlwaysRole = Qt::UserRole + 24;
 constexpr int kHasSometimesRole = Qt::UserRole + 25;
 constexpr int kHasRequestRole = Qt::UserRole + 26;
-constexpr int kCustomRole = Qt::UserRole + 27;    // name of a saved custom element
+constexpr int kProviderRole = Qt::UserRole + 27;    // a component's provider (ComponentRef::provider)
+constexpr int kComponentRole = Qt::UserRole + 28;   // its id there
 }  // namespace
 
 PickerPage::PickerPage(const PickerData& data, QWidget* parent) : DrawerPage(parent), data_(data) {
@@ -74,7 +79,14 @@ PickerPage::PickerPage(const PickerData& data, QWidget* parent) : DrawerPage(par
     list_->setObjectName("pickerList");
     list_->setItemDelegate(new FactoryDelegate(list_));
     list_->setMouseTracking(true);
+    list_->viewport()->installEventFilter(this);
     root->addWidget(list_, 1);
+    peek_ = new QTimer(this);
+    peek_->setSingleShot(true);
+    peek_->setInterval(TemplatePeek::kHoverMs);
+    connect(peek_, &QTimer::timeout, this, [this] {
+        if (const ComponentProvider* provider = providerOf(data_.providers, peeked_.provider)) TemplatePeek::show(provider->peek(peeked_.id), QCursor::pos(), this);
+    });
 
     auto addHeader = [&](const QString& text) {
         auto* item = new QListWidgetItem(text, list_);
@@ -94,32 +106,38 @@ PickerPage::PickerPage(const PickerData& data, QWidget* parent) : DrawerPage(par
         }
     }
 
-    if (!data.custom.isEmpty()) {
-        addHeader("Custom elements");
-        for (const CustomElementInfo& c : data.custom) {
-            auto* item = new QListWidgetItem(c.name, list_);
+    for (const ComponentProvider* provider : data.providers) {
+        QList<ComponentInfo> offered;
+        for (const ComponentInfo& c : provider->components()) {
+            if (!data.offers || data.offers(c)) offered << c;
+        }
+        if (offered.isEmpty()) continue;
+        addHeader(provider->title());
+        for (const ComponentInfo& c : offered) {
+            auto* item = new QListWidgetItem(c.title, list_);
             item->setData(LongNameRole, c.description);
-            item->setData(HintRole, QString("custom · %1").arg(c.elementCount));
-            item->setData(SearchRole, (c.name + " " + c.description + " custom").toLower());
-            item->setData(kCustomRole, c.name);
-            item->setData(kIsSourceRole, c.isSource);
-            item->setData(kIsSinkRole, c.isSink);
+            item->setData(HintRole, c.hint);
+            item->setData(SearchRole, (c.title + " " + c.description + " " + provider->kind()).toLower());
+            item->setData(kProviderRole, c.ref.provider);
+            item->setData(kComponentRole, c.ref.id);
+            item->setData(kIsSourceRole, c.role == gps::Role::Source);
+            item->setData(kIsSinkRole, c.role == gps::Role::Sink);
             item->setData(kHasAlwaysRole, true);
         }
     }
 
     // New elements: the compatible ones first in the helper's rank order, then the rest by rank and name.
-    QList<ListEntry> ordered;
+    QList<FactoryEntry> ordered;
     for (const QString& name : data.compatible) {
-        auto found = std::find_if(data.candidates.begin(), data.candidates.end(), [&](const ListEntry& e) { return e.factory == name; });
+        auto found = std::find_if(data.candidates.begin(), data.candidates.end(), [&](const FactoryEntry& e) { return fromStd(e.factory) == name; });
         if (found != data.candidates.end()) ordered << *found;
     }
     int compatibleCount = ordered.size();
-    QList<ListEntry> rest;
-    for (const ListEntry& e : data.candidates) {
-        if (!data.compatible.contains(e.factory)) rest << e;
+    QList<FactoryEntry> rest;
+    for (const FactoryEntry& e : data.candidates) {
+        if (!data.compatible.contains(fromStd(e.factory))) rest << e;
     }
-    std::sort(rest.begin(), rest.end(), [](const ListEntry& a, const ListEntry& b) {
+    std::sort(rest.begin(), rest.end(), [](const FactoryEntry& a, const FactoryEntry& b) {
         return a.rank != b.rank ? a.rank > b.rank : a.factory < b.factory;
     });
     ordered << rest;
@@ -127,13 +145,13 @@ PickerPage::PickerPage(const PickerData& data, QWidget* parent) : DrawerPage(par
     if (!ordered.isEmpty()) {
         addHeader(data.newHeader);
         for (int i = 0; i < ordered.size(); ++i) {
-            const ListEntry& e = ordered[i];
-            auto* item = new QListWidgetItem(e.factory, list_);
-            item->setData(LongNameRole, e.longName);
+            const FactoryEntry& e = ordered[i];
+            auto* item = new QListWidgetItem(fromStd(e.factory), list_);
+            item->setData(LongNameRole, fromStd(e.longName));
             item->setData(NvidiaRole, e.nvidia);
             item->setData(HintRole, i < compatibleCount ? "compatible" : "");
-            item->setData(SearchRole, (e.factory + " " + e.longName + " " + e.klass).toLower());
-            item->setData(kFactoryRole, e.factory);
+            item->setData(SearchRole, fromStd(e.factory + " " + e.longName + " " + e.klass).toLower());
+            item->setData(kFactoryRole, fromStd(e.factory));
             item->setData(kIsSourceRole, e.isSource);
             item->setData(kIsSinkRole, e.isSink);
             item->setData(kHasAlwaysRole, e.hasAlwaysSrc || e.hasAlwaysSink || (!e.hasSometimesSrc && !e.hasSometimesSink && !e.hasRequestSrc && !e.hasRequestSink));
@@ -142,23 +160,25 @@ PickerPage::PickerPage(const PickerData& data, QWidget* parent) : DrawerPage(par
         }
     }
 
-    auto* buttons = new QHBoxLayout;
-    buttons->addStretch(1);
-    auto* cancel = new QPushButton("Cancel", this);
-    cancel->setObjectName("cancelButton");
-    primary_ = new QPushButton("Choose", this);
-    primary_->setObjectName("saveButton");
-    buttons->addWidget(cancel);
-    buttons->addWidget(primary_);
-    root->addLayout(buttons);
-    connect(cancel, &QPushButton::clicked, this, &DrawerPage::cancelled);
+    QHBoxLayout* footer = addFooter(root, "Choose");
     connect(primary_, &QPushButton::clicked, this, [this] { choose(); });
+    if (data.importComponent) {
+        auto* import = new QPushButton("Import…", this);
+        import->setObjectName("importTemplate");
+        import->setToolTip("Add a template file to the library");
+        footer->insertWidget(0, import);
+        connect(import, &QPushButton::clicked, this, data.importComponent);
+    }
+    if (data.componentMenu) {
+        list_->setContextMenuPolicy(Qt::CustomContextMenu);
+        connect(list_, &QWidget::customContextMenuRequested, this, [this](const QPoint& at) {
+            const ComponentRef component = componentAt(list_->itemAt(at));
+            if (!component.id.isEmpty()) data_.componentMenu(component, list_->viewport()->mapToGlobal(at));
+        });
+    }
 
     connect(search_, &QLineEdit::textChanged, this, &PickerPage::filter);
     connect(list_, &QListWidget::itemDoubleClicked, this, [this] { choose(); });
-    connect(list_, &QListWidget::itemClicked, this, [this](QListWidgetItem* item) {
-        if (item && item->data(kFactoryRole).isValid()) emit previewRequested(item->data(kFactoryRole).toString());
-    });
     filter(QString());
 }
 
@@ -201,7 +221,7 @@ void PickerPage::filter(const QString& text) {
             continue;
         }
         bool match = needle.isEmpty() || item->data(SearchRole).toString().contains(needle);
-        if (match && (item->data(kFactoryRole).isValid() || item->data(kCustomRole).isValid())) {
+        if (match && (item->data(kFactoryRole).isValid() || item->data(kComponentRole).isValid())) {
             bool isSrc = item->data(kIsSourceRole).toBool();
             bool isSnk = item->data(kIsSinkRole).toBool();
             if (roleFilter_ == RoleSrc && !isSrc) match = false;
@@ -224,6 +244,16 @@ void PickerPage::filter(const QString& text) {
     list_->setCurrentItem(first);  // Enter takes the best hit
 }
 
+PickerPage::~PickerPage() {
+    if (TemplatePeek::current() && TemplatePeek::current()->parent() == this) TemplatePeek::hide();
+}
+
+ComponentRef PickerPage::componentAt(const QListWidgetItem* item) const {
+    if (!item || !item->data(kComponentRole).isValid()) return {};
+    return {item->data(kProviderRole).toString(), item->data(kComponentRole).toString()};
+}
+
+
 PickerChoice PickerPage::choice() const {
     PickerChoice c;
     QListWidgetItem* item = list_->currentItem();
@@ -231,9 +261,9 @@ PickerChoice PickerPage::choice() const {
     if (item->data(kExistingRole).isValid()) {
         c.kind = PickerChoice::Existing;
         c.existing = data_.existing[item->data(kExistingRole).toInt()];
-    } else if (item->data(kCustomRole).isValid()) {
-        c.kind = PickerChoice::CustomElement;
-        c.factory = item->data(kCustomRole).toString();
+    } else if (item->data(kComponentRole).isValid()) {
+        c.kind = PickerChoice::Component;
+        c.component = componentAt(item);
     } else {
         c.kind = PickerChoice::NewElement;
         c.factory = item->data(kFactoryRole).toString();
@@ -243,6 +273,17 @@ PickerChoice PickerPage::choice() const {
 
 // Up and Down in the search box move the selection in the list.
 bool PickerPage::eventFilter(QObject* watched, QEvent* event) {
+    // A template under the pointer for a moment: a peek inside it. Moving off it, or leaving the list, hides it.
+    if (watched == list_->viewport() && (event->type() == QEvent::MouseMove || event->type() == QEvent::Leave)) {
+        QListWidgetItem* item = event->type() == QEvent::MouseMove ? list_->itemAt(static_cast<QMouseEvent*>(event)->position().toPoint()) : nullptr;
+        const ComponentRef component = componentAt(item);
+        if (!(component == peeked_)) {
+            peeked_ = component;
+            TemplatePeek::hide();
+            if (component.id.isEmpty()) peek_->stop();
+            else peek_->start();
+        }
+    }
     if (watched == search_ && event->type() == QEvent::KeyPress) {
         int key = static_cast<QKeyEvent*>(event)->key();
         if (key == Qt::Key_Down || key == Qt::Key_Up) {

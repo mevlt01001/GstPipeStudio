@@ -22,6 +22,8 @@ cmake --build build --parallel 4
 (cd build && ctest --output-on-failure)
 ```
 
+`GPS_USER_DIR` replaces the per-user config, data (template library) and state (project list) folders with subfolders of one directory: tests use it, and so can a portable setup.
+
 `GPS_DIRS` can select `Pipeline;GstEngine;tools;plugin;GUI;packaging;tests`; invalid directory names fail configuration. `GPS_TEST_DIRS` selects test groups. `GPS_SWEEP_ALL=ON` opts into the long all-factory survey. Test screenshots/logs go under the build directory, so a read-only source checkout is supported.
 
 | Change | Relevant checks |
@@ -49,12 +51,18 @@ The import boundary is `gps::importLaunch` in GstEngine. It reconstructs a Pipel
 
 ## Build container
 
-`docker/Dockerfile` builds the development image. Once available:
+`docker/Dockerfile` builds the development image with the same setup scripts as CI (GStreamer, Qt 6.8.3 from source, build tools). Its `BASE` argument selects plain Ubuntu 22.04 or a DeepStream image for the GPU tests:
 
 ```bash
-docker run --rm -v "$PWD:/workspace:ro" -v "$PWD/build-container:/build" \
-  gstpipestudio-dev:latest bash -lc \
-  'cmake -S /workspace/gstpipestudio -B /build -DCMAKE_BUILD_TYPE=Debug && cmake --build /build -j4 && cd /build && ctest --output-on-failure'
+docker/build.sh              # gstpipestudio-dev on ubuntu:22.04
+docker/build.sh deepstream   # gstpipestudio-dev-deepstream on DEEPSTREAM_IMAGE (default DeepStream 6.4, Ubuntu 22.04)
+```
+
+`docker/dev.sh [ubuntu|deepstream] [command]` runs as the host user in the checkout. Without a command it configures, builds and runs every test in `build-docker-<variant>/`; the DeepStream variant gets the GPUs (NVIDIA Container Toolkit) and keeps the TensorRT engine cache in that folder.
+
+```bash
+docker/dev.sh deepstream
+docker/dev.sh deepstream 'cd build-docker-deepstream && ctest -L gui --output-on-failure'
 ```
 
 Use a separate build directory for each compiler/container. Reusing a host build inside a container can preserve incompatible absolute paths.

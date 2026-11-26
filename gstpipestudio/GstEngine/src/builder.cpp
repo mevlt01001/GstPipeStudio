@@ -3,6 +3,7 @@
 
 #include "gst_element_creator.h"
 #include "gstcompat.h"
+#include "nativepad.h"
 
 #include <algorithm>
 #include <chrono>
@@ -173,23 +174,11 @@ void Builder::onSrcPad(GstElement* element, GstPad* pad) {
 
     PadInfo info;
     info.element = GST_OBJECT_NAME(element);
-    GstPadTemplate* tmpl = gst_pad_get_pad_template(pad);
-    std::string padName = GST_PAD_NAME(pad);
-    if (tmpl) {
-        info.templateName = GST_PAD_TEMPLATE_NAME_TEMPLATE(tmpl);
-        GstPadPresence p = GST_PAD_TEMPLATE_PRESENCE(tmpl);
-        info.presence = p == GST_PAD_ALWAYS ? "always" : p == GST_PAD_SOMETIMES ? "sometimes" : "request";
-        gst_object_unref(tmpl);
-    } else {
-        info.templateName = padName;  // a pad without template is treated like a Sometimes pad named after itself
-        info.presence = "sometimes";
-    }
-    if (info.presence == "always") {
-        info.identity = padName;
-    } else {
-        int& order = seen_[{info.element, info.templateName}];
-        info.identity = padIdentity(info.templateName, order++);
-    }
+    const NativePad native(pad);
+    const std::string& padName = native.name;
+    info.templateName = native.templateName;
+    info.presence = presenceName(native.presence);
+    info.identity = native.srcIdentity(seen_[{info.element, info.templateName}]);
     info.pad = GST_PAD(gst_object_ref(pad));
     identities_.insert(info.element + "\t" + info.identity);
     pads_.push_back(info);
@@ -307,6 +296,10 @@ void Builder::attachEnd(PadInfo& info) {
     GstElement* typefind = gst_element_factory_make(kTypefindFactory, nullptr);
     GstElement* fakesink = gst_element_factory_make(kFakesinkFactory, nullptr);
     if (!queue || !typefind || !fakesink) {
+        if (queue) gst_object_unref(queue);
+        if (typefind) gst_object_unref(typefind);
+        if (fakesink) gst_object_unref(fakesink);
+        gst_object_unref(bin);
         fail(info.element, "unable to build a temporary end: queue, typefind or fakesink is missing");
         return;
     }
@@ -444,18 +437,14 @@ std::vector<PadReport> Builder::report() const {
         for (GList* l = GST_ELEMENT_CAST(node.second)->sinkpads; l; l = l->next) sinks.push_back(GST_PAD(gst_object_ref(l->data)));
         GST_OBJECT_UNLOCK(node.second);
         std::reverse(sinks.begin(), sinks.end());
-        std::map<std::string, int> order;
         for (GstPad* pad : sinks) {
+            const NativePad native(pad);
             PadReport r;
             r.element = node.first;
-            r.pad = GST_PAD_NAME(pad);
-            GstPadTemplate* tmpl = gst_pad_get_pad_template(pad);
-            r.templateName = tmpl ? GST_PAD_TEMPLATE_NAME_TEMPLATE(tmpl) : r.pad;
-            GstPadPresence p = tmpl ? GST_PAD_TEMPLATE_PRESENCE(tmpl) : GST_PAD_SOMETIMES;
-            r.presence = p == GST_PAD_ALWAYS ? "always" : p == GST_PAD_SOMETIMES ? "sometimes" : "request";
-            // Same rule as the Graph: Always sink = pad name, Request sink = template name (every link asks its own pad)
-            r.identity = p == GST_PAD_ALWAYS ? r.pad : p == GST_PAD_REQUEST ? r.templateName : padIdentity(r.templateName, order[r.templateName]++);
-            if (tmpl) gst_object_unref(tmpl);
+            r.pad = native.name;
+            r.templateName = native.templateName;
+            r.presence = presenceName(native.presence);
+            r.identity = native.sinkIdentity();
             r.linked = gst_pad_is_linked(pad);
             GstCaps* caps = gst_pad_get_current_caps(pad);
             r.caps = capsText(caps);

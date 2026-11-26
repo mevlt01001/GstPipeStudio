@@ -2,72 +2,93 @@
 #include "canvasscene.h"
 #include "connectionpreview.h"
 
+#include <QCursor>
 #include <QGraphicsPathItem>
+#include <QGraphicsView>
 #include <QGraphicsSceneContextMenuEvent>
-#include <QJsonArray>
+#include <QGraphicsSceneMouseEvent>
 #include <QPainterPath>
 #include <QPen>
+#include <QSignalBlocker>
 #include <QTimer>
+#include <QVariantAnimation>
+#include <algorithm>
 #include <cmath>
+#include <tuple>
 
 #include "controller.h"
 #include "elementitem.h"
 #include "linkitem.h"
 #include "paditem.h"
+#include "templateframeitem.h"
+#include "templatepeek.h"
+#include "templates.h"
 #include "theme.h"
 
 CanvasScene::CanvasScene(Controller* controller, QObject* parent) : QGraphicsScene(parent), controller_(controller) {
     setSceneRect(-2000, -2000, 4000, 4000);
     connect(controller_, &Controller::telemetryReceived, this, &CanvasScene::applyTelemetry);
+    connect(&controller_->canvasLayout(), &CanvasLayout::applied, this, [this](const QHash<QString, QPointF>& from) {
+        animateFrom_ = from;
+        scheduleRebuild();
+    });
 }
 
-void CanvasScene::applyTelemetry(const QJsonObject& sample) {
+// The boxes a nice alignment moved slide from where they were to where it put them; the links follow.
+void CanvasScene::slide() {
+    QList<std::tuple<ElementItem*, QPointF, QPointF>> moves;
+    QSet<ElementItem*> seen;
+    for (ElementItem* item : std::as_const(elements_)) {
+        if (!item || seen.contains(item) || !animateFrom_.contains(item->view().name)) continue;
+        seen.insert(item);
+        const QPointF start = animateFrom_.value(item->view().name), end = item->pos();
+        if (start != end) moves.append({item, start, end});
+    }
+    animateFrom_.clear();
+    if (moves.isEmpty()) return;
+    slide_ = new QVariantAnimation(this);
+    slide_->setDuration(260);
+    slide_->setEasingCurve(QEasingCurve::OutCubic);
+    slide_->setStartValue(0.0);
+    slide_->setEndValue(1.0);
+    connect(slide_, &QVariantAnimation::valueChanged, this, [this, moves](const QVariant& value) {
+        const double t = value.toDouble();
+        for (const auto& [item, start, end] : moves) item->setPos(start + (end - start) * t);
+        updateLinks();
+    });
+    slide_->start(QAbstractAnimation::DeleteWhenStopped);
+}
+
+void CanvasScene::applyTelemetry(const gps::TelemetrySample& sample) {
     telemetry_ = sample;
     QSet<ElementItem*> reset;
     for (ElementItem* item : std::as_const(elements_)) {
         if (!reset.contains(item)) { reset.insert(item); item->clearTelemetry(); }
     }
     if (!controller_->monitoring()) return;
-    auto number = [](const QJsonObject& object, const char* key) {
-        const QJsonValue value = object.value(key);
-        return value.isDouble() ? value.toDouble() : -1.0;
-    };
-    for (const QJsonValue& value : sample.value("elements").toArray()) {
-        const QJsonObject object = value.toObject();
-        if (ElementItem* item = elements_.value(object.value("element").toString()))
-            item->mergeTelemetry(number(object, "processingMs"), number(object, "dropRatePercent"), number(object, "ageMs"));
+    for (const gps::ElementTelemetry& t : sample.elements) {
+        if (ElementItem* item = elements_.value(QString::fromStdString(t.element)))
+            item->mergeTelemetry(t.processingMs, t.dropRatePercent, t.ageMs);
     }
 }
 
 const gps::Pipeline& CanvasScene::pipeline() const { return controller_->pipeline(); }
 
-QString CanvasScene::key(const QString& element, const QString& identity, bool isSrc) {
-    return element + "|" + identity + (isSrc ? "|src" : "|sink");
-}
+PadItem* CanvasScene::pad(const gps::PadRef& ref) const { return pads_.value(fromStd(ref.key())); }
 
 PadItem* CanvasScene::pad(const QString& element, const QString& identity, bool isSrc) const {
-    return pads_.value(key(element, identity, isSrc));
+    return pad(gps::PadRef{toStd(element), toStd(identity), isSrc ? gps::Pad::Direction::Source : gps::Pad::Direction::Sink});
 }
 
+// A selected box stands for every element it holds, a selected frame for every member of its template.
 QStringList CanvasScene::selectedElementNames() const {
+    const Outline outline = controller_->outline();
     QStringList names;
-    QSet<QString> seen;
     for (QGraphicsItem* item : selectedItems()) {
-        if (auto* el = dynamic_cast<ElementItem*>(item)) {
-            if (el->view().isCustomGroup && !el->view().groupMembers.isEmpty()) {
-                for (const QString& m : el->view().groupMembers) {
-                    if (!seen.contains(m)) {
-                        seen.insert(m);
-                        names << m;
-                    }
-                }
-            } else if (!seen.contains(el->view().name)) {
-                seen.insert(el->view().name);
-                names << el->view().name;
-            }
-        }
+        if (auto* frame = dynamic_cast<TemplateFrameItem*>(item)) names << outline.membersOf(frame->view().id);
+        else if (auto* box = dynamic_cast<ElementItem*>(item)) names << box->view().name;
     }
-    return names;
+    return outline.expand(names);
 }
 
 void CanvasScene::setSelectedElements(const QStringList& names) {
@@ -78,6 +99,14 @@ void CanvasScene::setSelectedElements(const QStringList& names) {
     }
 }
 
+QList<FrameGhost*> CanvasScene::ghosts() const {
+    QList<FrameGhost*> out;
+    for (const QPointer<FrameGhost>& g : ghosts_) {
+        if (g && !g->done()) out << g;
+    }
+    return out;
+}
+
 void CanvasScene::scheduleRebuild() {
     if (pending_) return;
     pending_ = true;
@@ -86,6 +115,7 @@ void CanvasScene::scheduleRebuild() {
 
 void CanvasScene::rebuild() {
     pending_ = false;
+    if (slide_) slide_->stop();  // its items go away with the rebuild
     finishConnectedMove();
     dragWire_ = nullptr;
     if (!hasExplicitSelection_ && !elements_.isEmpty()) {
@@ -94,48 +124,89 @@ void CanvasScene::rebuild() {
     }
     hasExplicitSelection_ = false;
 
-    clear();
-    elements_.clear();
-    pads_.clear();
-    links_.clear();
+    QHash<QString, QRectF> closing;  // frames drawn now, in case they close
+    for (auto it = frames_.cbegin(); it != frames_.cend(); ++it) closing[it.key()] = it.value()->frameRect();
+    ghosts_.removeIf([this](const QPointer<FrameGhost>& g) {
+        if (g && !g->done()) removeItem(g);  // kept for after the rebuild
+        else if (g) delete g.data();
+        return !g;
+    });
+    {
+        // Deleting the items takes them out of the selection; nobody should hear about it half way through.
+        const QSignalBlocker quiet(this);
+        clear();
+        elements_.clear();
+        pads_.clear();
+        links_.clear();
+        frames_.clear();
+    }
 
-    QSet<QString> builtCollapsedGroups;
+    // One item per box: an element, or a collapsed template drawn at its first member. Every member finds the item.
+    const Outline outline = controller_->outline();
+    QSet<QString> built;
     for (const gps::Element& e : pipeline().graph().elements) {
-        QString name = QString::fromStdString(e.name);
-        QString grp = QString::fromStdString(e.group);
-        if (!grp.isEmpty() && !controller_->isGroupExpanded(grp)) {
-            if (builtCollapsedGroups.contains(grp)) continue;
-            builtCollapsedGroups.insert(grp);
-            ElementView gv = controller_->groupView(grp);
-            auto* item = new ElementItem(gv);
-            item->setPos(e.x, e.y);
-            item->setFlag(QGraphicsItem::ItemIsMovable, !locked_);
-            item->setOpacity(stale_ ? 0.5 : 1.0);
-            addItem(item);
-            bool anySelected = false;
-            for (const QString& m : gv.groupMembers) {
-                elements_.insert(m, item);
-                if (selectedElements_.contains(m)) anySelected = true;
-            }
-            if (anySelected) item->setSelected(true);
-            for (PadItem* p : item->pads()) pads_.insert(key(p->view().element, p->view().identity, p->view().isSrc), p);
-        } else {
-            auto* item = new ElementItem(controller_->view(name));
-            item->setPos(e.x, e.y);
-            item->setFlag(QGraphicsItem::ItemIsMovable, !locked_);
-            item->setOpacity(stale_ ? 0.5 : 1.0);
-            addItem(item);
-            elements_.insert(item->view().name, item);
-            if (selectedElements_.contains(name)) item->setSelected(true);
-            for (PadItem* p : item->pads()) pads_.insert(key(p->view().element, p->view().identity, p->view().isSrc), p);
+        const QString box = outline.boxOf(QString::fromStdString(e.name));
+        if (built.contains(box)) continue;
+        built.insert(box);
+        auto* item = new ElementItem(controller_->boxView(box));
+        item->setPos(e.x, e.y);
+        item->setFlag(QGraphicsItem::ItemIsMovable, !locked_);
+        item->setOpacity(stale_ ? 0.5 : 1.0);
+        addItem(item);
+        const QStringList members = outline.membersOf(box);
+        for (const QString& m : members) elements_.insert(m, item);
+        if (std::any_of(members.begin(), members.end(), [&](const QString& m) { return selectedElements_.contains(m); })) item->setSelected(true);
+        for (PadItem* p : item->pads()) pads_.insert(fromStd(p->view().ref.key()), p);
+    }
+    // A template opening or closing is drawn gathered at its centre until the layout's answer slides it out of there.
+    const auto& pin = controller_->canvasLayout().pending();
+    if (pin && pin->gather) {
+        for (const QString& box : outline.boxesOf(pin->elements)) {
+            ElementItem* item = elements_.value(outline.anchorOf(box));
+            if (item) item->setPos(pin->centre - QPointF(metrics::kBoxWidth, item->view().height()) / 2);
         }
     }
-    for (const LinkView& l : controller_->linkViews()) {
-        if (elements_.value(l.srcElement) && elements_.value(l.srcElement) == elements_.value(l.sinkElement)) {
-            continue;  // internal link inside a collapsed custom element
+    // Expanded templates: a frame around their members, with the template's pads on its border. Inner frames first, so
+    // a pad shown on several borders belongs to the outermost one, where its outside link attaches.
+    QList<FrameView> shown;
+    for (const QString& id : outline.visibleFrames()) shown << controller_->frameView(id);
+    std::sort(shown.begin(), shown.end(), [](const FrameView& a, const FrameView& b) { return a.depth > b.depth; });
+    QSet<QString> nowShown;
+    for (const FrameView& fv : shown) {
+        auto* frame = new TemplateFrameItem(fv, this);
+        addItem(frame);
+        frames_.insert(fv.id, frame);
+        nowShown.insert(fv.id);
+        for (PadItem* p : frame->pads()) {
+            const QString k = fromStd(p->view().ref.key());
+            frame->setInner(p, pads_.value(k));
+            pads_.insert(k, p);
         }
-        PadItem* from = pad(l.srcElement, l.srcIdentity, true);
-        PadItem* to = pad(l.sinkElement, l.sinkIdentity, false);
+        frame->updateGeometry();
+        if (!knownInstances_.contains(fv.id)) traceStarted_[fv.id].start();  // a template just made, not one just opened
+        if (traceStarted_.contains(fv.id)) frame->trace(traceStarted_[fv.id].elapsed());
+        if (selectedElements_.contains(fv.members.value(0)) && fv.members.size() > 1 &&
+            std::all_of(fv.members.begin(), fv.members.end(), [&](const QString& m) { return selectedElements_.contains(m); }))
+            frame->setSelected(true);
+    }
+    shownFrames_ = nowShown;
+    traceStarted_.removeIf([](const auto& it) { return it.value().elapsed() > TemplateFrameItem::kTraceMs; });
+    knownInstances_.clear();
+    for (const gps::TemplateInstance& t : pipeline().graph().instances) knownInstances_.insert(QString::fromStdString(t.id));
+    for (const QPointer<FrameGhost>& g : std::as_const(ghosts_)) addItem(g);
+    for (auto it = closing.cbegin(); it != closing.cend(); ++it) {
+        if (nowShown.contains(it.key())) continue;
+        ElementItem* box = elements_.value(outline.anchorOf(it.key()));
+        const bool closed = box && box->view().isTemplate && box->view().groupId == it.key();  // else deleted, detached
+        auto* ghost = new FrameGhost(it.value(), closed ? box->sceneBoundingRect() : it.value(), closed ? FrameGhost::Shrink : FrameGhost::Untrace);
+        addItem(ghost);
+        ghosts_ << ghost;
+    }
+    for (const LinkView& l : controller_->linkViews()) {
+        ElementItem* srcBox = elements_.value(fromStd(l.src.element));
+        if (srcBox && srcBox == elements_.value(fromStd(l.sink.element))) continue;  // internal link inside a collapsed template
+        PadItem* from = pad(l.src);
+        PadItem* to = pad(l.sink);
         if (!from || !to) continue;  // the element's info is not cached yet; the next rebuild draws it
         auto* link = new LinkItem(l, from, to);
         link->setOpacity(stale_ ? 0.5 : 1.0);
@@ -145,10 +216,14 @@ void CanvasScene::rebuild() {
     if (controller_->monitoring()) applyTelemetry(telemetry_);
     else telemetry_ = {};
     setSceneRect(sceneRect().united(itemsBoundingRect().adjusted(-1000, -1000, 1000, 1000)));
+    if (!animateFrom_.isEmpty()) slide();
     emit rebuilt();
 }
 
 void CanvasScene::updateLinks() {
+    QList<TemplateFrameItem*> inner = frames_.values();
+    std::sort(inner.begin(), inner.end(), [](TemplateFrameItem* a, TemplateFrameItem* b) { return a->view().depth > b->view().depth; });
+    for (TemplateFrameItem* f : inner) f->updateGeometry();
     for (LinkItem* l : links_) l->updatePath();
     setSceneRect(sceneRect().united(itemsBoundingRect().adjusted(-1000, -1000, 1000, 1000)));
 }
@@ -166,8 +241,8 @@ void CanvasScene::setStale(bool stale) {
 
 void CanvasScene::padClicked(const PadView& pad, Qt::MouseButton button, const QPoint& screenPos) {
     if (locked_) return;
-    if (button == Qt::LeftButton && pad.isSrc && pad.state != PadView::Linked) {
-        emit freeSrcPadClicked(pad.element, pad.identity, screenPos);
+    if (button == Qt::LeftButton && pad.ref.isSrc() && pad.state != PadView::Linked) {
+        emit freeSrcPadClicked(fromStd(pad.ref.element), fromStd(pad.ref.identity), screenPos);
     } else if (button == Qt::RightButton && pad.link >= 0) {
         // A linked pad of either side belongs to a link; its menu is the link's menu.
         const gps::Connection& l = controller_->plan().links[pad.link];
@@ -177,13 +252,13 @@ void CanvasScene::padClicked(const PadView& pad, Qt::MouseButton button, const Q
 
 void CanvasScene::padDragMoved(const PadView& from, const QPointF& scenePos) {
     if (locked_) return;
-    PadItem* startPad = pad(from.element, from.identity, from.isSrc);
+    PadItem* startPad = pad(from.ref);
     if (!startPad) return;
     if (!dragWire_) {
         dragWire_ = new ConnectionPreview;
         addItem(dragWire_);
     }
-    dragWire_->setEndpoints(startPad->center(), scenePos, from.isSrc);
+    dragWire_->setEndpoints(startPad->center(), scenePos, from.ref.isSrc());
 }
 
 void CanvasScene::padDragEnded() {
@@ -195,11 +270,22 @@ void CanvasScene::padDragEnded() {
 
 void CanvasScene::padDroppedOnPad(const PadView& from, const PadView& to) {
     padDragEnded();
+    if (!locked_) link(from.ref, to.ref);
+}
+
+void CanvasScene::padDroppedOnBox(const PadView& from, const ElementView& box) {
+    padDragEnded();
     if (locked_) return;
-    const PadView* src = from.isSrc ? &from : (to.isSrc ? &to : nullptr);
-    const PadView* sink = !from.isSrc ? &from : (!to.isSrc ? &to : nullptr);
-    if (!src || !sink) return;
-    controller_->linkExisting(src->element, src->identity, sink->element, sink->templateName);
+    const gps::NodeRef node = box.isTemplate ? gps::NodeRef::instance(toStd(box.groupId)) : gps::NodeRef::element(toStd(box.name));
+    const auto other = controller_->shape().firstFree(node, from.ref.isSrc() ? gps::Pad::Direction::Sink : gps::Pad::Direction::Source);
+    if (other) link(from.ref, *other);
+}
+
+void CanvasScene::link(const gps::PadRef& a, const gps::PadRef& b) {
+    const gps::PadRef& src = a.isSrc() ? a : b;
+    const gps::PadRef& sink = a.isSrc() ? b : a;
+    if (!src.isSrc() || sink.isSrc()) return;
+    controller_->linkExisting(fromStd(src.element), fromStd(src.identity), fromStd(sink.element), fromStd(sink.linkName()));
 }
 
 void CanvasScene::contextMenuEvent(QGraphicsSceneContextMenuEvent* event) {
@@ -219,7 +305,7 @@ void CanvasScene::elementContext(const QString& element, const QPoint& screenPos
 void CanvasScene::elementDoubleClicked(const QString& element) {
     if (!locked_) emit elementActivated(element);
 }
-void CanvasScene::elementDragged(const QString& element, const QPointF& pos) {
+void CanvasScene::elementDragged(const QString& element, const QPointF&) {
     if (locked_) return;
     QList<QPair<QString, QPointF>> positions;
     QSet<ElementItem*> seenItems;
@@ -228,11 +314,10 @@ void CanvasScene::elementDragged(const QString& element, const QPointF& pos) {
         seenItems.insert(item);
         positions.append({item->view().name, item->pos()});
     }
-    emit elementMoved(element, pos.x(), pos.y());
     emit elementsMoved(positions);
     if (this->element(element)) {
         QStringList selNames = selectedElementNames();
-        if (!selNames.contains(element)) selNames = controller_->expandSelectionWithGroups({element});
+        if (!selNames.contains(element)) selNames = controller_->outline().expand({element});
         QSet<QString> draggedSet(selNames.begin(), selNames.end());
         QList<ElementItem*> draggedItems;
         for (const QString& n : selNames) {
@@ -242,10 +327,11 @@ void CanvasScene::elementDragged(const QString& element, const QPointF& pos) {
         }
         bool foundSplice = false;
         for (LinkItem* link : links_) {
-            if (draggedSet.contains(link->view().srcElement) || draggedSet.contains(link->view().sinkElement)) continue;
+            const LinkView& lv = link->view();
+            if (draggedSet.contains(fromStd(lv.src.element)) || draggedSet.contains(fromStd(lv.sink.element))) continue;
             for (ElementItem* di : draggedItems) {
                 if (di->collidesWithItem(link)) {
-                    emit elementSpliced(element, link->view().srcElement, link->view().srcIdentity);
+                    emit elementSpliced(element, fromStd(lv.src.element), fromStd(lv.src.identity));
                     foundSplice = true;
                     break;
                 }
@@ -260,10 +346,33 @@ void CanvasScene::linkClicked(const QString& srcElement, const QString& srcIdent
 void CanvasScene::linkContext(const QString& srcElement, const QString& srcIdentity, const QPoint& screenPos) {
     if (!locked_) emit linkMenuRequested(srcElement, srcIdentity, screenPos);
 }
+void CanvasScene::frameContext(const QString& instanceId, const QPoint& screenPos) {
+    if (!locked_) emit templateMenuRequested(instanceId, screenPos);
+}
+void CanvasScene::frameActivated(const QString& instanceId) {
+    if (!locked_) emit templateActivated(instanceId);
+}
+void CanvasScene::frameMinimized(const QString& instanceId) {
+    if (!locked_) controller_->setTemplateExpanded(instanceId, false);
+}
+void CanvasScene::frameExpanded(const QString& instanceId) {
+    if (!locked_) controller_->setTemplateExpanded(instanceId, true);
+}
+
+
+void CanvasScene::peekTemplate(const QString& instanceId) {
+    if (locked_ || views().isEmpty() || !pipeline().graph().instance(instanceId.toStdString())) return;
+    TemplatePeek::show(gps::templates::extract(pipeline().graph(), instanceId.toStdString()), QCursor::pos(), views().front());
+}
+
+void CanvasScene::mouseMoveEvent(QGraphicsSceneMouseEvent* event) {
+    for (TemplateFrameItem* f : std::as_const(frames_)) f->pointer(event->scenePos());
+    QGraphicsScene::mouseMoveEvent(event);
+}
 
 void CanvasScene::beginConnectedMove(const QString& name) {
     finishConnectedMove();
-    if (!connectedMoveEnabled_ || locked_) return;
+    if (!controller_->services().view().connectedMove() || locked_) return;
     ElementItem* anchor = element(name);
     if (!anchor) return;
     movingAnchor_ = name; anchorStart_ = anchor->pos();

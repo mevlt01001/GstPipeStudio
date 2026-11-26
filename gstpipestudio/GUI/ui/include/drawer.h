@@ -5,6 +5,8 @@
 #include <QWidget>
 #include <vector>
 
+class QBoxLayout;
+class QHBoxLayout;
 class QLabel;
 class QPropertyAnimation;
 class QPushButton;
@@ -25,6 +27,10 @@ signals:
     void cancelled();
 
 protected:
+    // The row every page ends with: a stretch, Cancel (cancelled()) and the primary button. A page puts its own buttons
+    // in front with insertWidget(0, ...), or before the primary one at indexOf(primary_).
+    QHBoxLayout* addFooter(QBoxLayout* root, const QString& primaryText);
+
     QPushButton* primary_ = nullptr;
 };
 
@@ -52,9 +58,6 @@ public:
     void dismiss();                 // closes the drawer and drops all pages
     void setBusy(bool busy);        // an update runs: the page cannot be used
     void focusSearch();
-
-signals:
-    void closed();
 
 protected:
     void keyPressEvent(QKeyEvent* event) override;

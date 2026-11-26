@@ -44,6 +44,10 @@ public:
     virtual void cancel() = 0;
 };
 
+// Which pads an element has in a graph: its factory's templates, the links that use them and what the last run observed
+// (no definition: the observed pads only). Pipeline installs these; NodeShape asks the same of a draft.
+std::vector<Pad> padsOf(const Graph& graph, const Element& element, const FactoryDefinition* definition, const UpdateResult& observed);
+
 class Pipeline;
 class IAction {
 public:
@@ -75,12 +79,18 @@ public:
     bool redo();
     bool canUndo() const { return !undo_.empty() && !editing(); }
     bool canRedo() const { return !redo_.empty() && !editing(); }
+    // The number of what the committed graph would write to its file: a commit that changes the conf text and every
+    // reset get a new one (moving boxes does not: positions are not saved), undo and redo bring the old one back.
+    // A document keeps the number it was saved or loaded at: a different number is an unsaved change.
+    std::uint64_t state() const { return state_; }
 private:
     friend class Pipeline;
-    struct Entry { Graph before, after; };
+    struct Entry { Graph before, after; std::uint64_t beforeState = 0, afterState = 0; };
+    void renumber() { state_ = ++lastState_; }
     Pipeline& document_;
     std::optional<Graph> draft_;
     std::vector<Entry> undo_, redo_;
+    std::uint64_t state_ = 0, lastState_ = 0;
 };
 
 // Selection is a set of identities, usable for a single element or a subgraph.
@@ -96,25 +106,34 @@ private:
 
 class Pipeline {
 public:
-    explicit Pipeline(std::string name = "pipeline");
+    // traits tell which elements a source feeds: only those are executed, so only their changes are Execution changes.
+    // Without traits every element counts.
+    explicit Pipeline(std::string name = "pipeline", TraitsFn traits = {});
     Pipeline(const Pipeline&) = delete;
     Pipeline& operator=(const Pipeline&) = delete;
     const Graph& graph() const { return graph_; }
     GraphEditor& editor() { return editor_; }
     const GraphEditor& editor() const { return editor_; }
     void registerFactory(std::string name, FactoryDefinition definition);
-    std::optional<PadAddress> peer(const PadAddress&) const;
+    const FactoryDefinition* definition(const std::string& factory) const;  // nullptr when it was not registered
+    std::optional<PadRef> peer(const PadRef&) const;  // the pad at the other end of its link
     Change lastChange() const { return change_; }
     bool reset(Graph graph = {}, std::string* error = nullptr);
-    ExecutionPlan executionPlan(const TraitsFn&, std::uint64_t run) const;
+    ExecutionPlan executionPlan(std::uint64_t run) const;
+    // The last validation of this document: the one owner of that result. status "" = not validated.
     const UpdateResult& observations() const { return observations_; }
     bool apply(const ExecutionResult&, ExecutionTicket expected);
+    // Nothing to execute (no element, or none fed by a source): not validated when empty, else valid but incomplete.
+    void observeIdle();
     static bool validate(const Graph&, std::string* error = nullptr);
+    Graph executed(const Graph&) const;  // the part of a graph that runs
 private:
     friend class GraphEditor;
     void install(Graph);
+    void clearObservations();
     void refreshPads();
     std::map<std::string, FactoryDefinition> factories_;
+    TraitsFn traits_;
     Graph graph_;
     GraphEditor editor_;
     Change change_;
@@ -127,7 +146,7 @@ public:
     using Completion = std::function<void(const ExecutionResult&)>;
     ExecutionCoordinator(Pipeline& document, IExecutionBackend& backend);
     ~ExecutionCoordinator();
-    void start(const TraitsFn&, Completion);
+    void start(Completion);
     void cancel();
     void supersede();
     bool active() const { return active_; }

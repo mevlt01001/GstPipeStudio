@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 
+#include "runtime.h"
+
 namespace gps {
 
 struct CapsField {
@@ -20,9 +22,19 @@ struct CapsChoice {
 
     // "video/x-raw(memory:NVMM), width=(int)640", or "" when there is no media type.
     std::string toText() const;
+    // The inverse of toText(), for the texts it writes (and the older spelling with plain spaces inside quotes).
+    static CapsChoice fromText(const std::string& text);
 };
 
 // One string value inside caps text: bare only with [A-Za-z0-9_+-./:], otherwise "..." with \", \\ and a space escaped.
 std::string capsString(const std::string& value);
+
+// "video/x-raw(memory:NVMM)": the media type and memory features of one structure.
+std::string structureTitle(const StructureInfo& s);
+// "video/x-raw(memory:NVMM), width=(int)1" -> "video/x-raw(memory:NVMM)"
+std::string mediaOf(const std::string& caps);
+// Caps meet by media type and memory features; an empty side (ANY) meets everything. A quick filter for what the GUI
+// offers; GStreamer's own negotiation decides when the pipeline is validated.
+bool structuresMeet(const std::vector<StructureInfo>& a, const std::vector<StructureInfo>& b);
 
 }  // namespace gps

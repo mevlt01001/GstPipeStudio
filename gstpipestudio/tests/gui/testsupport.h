@@ -6,7 +6,9 @@
 #include <QtTest>
 #include <memory>
 
+#include "appservices.h"
 #include "controller.h"
+#include "settings.h"
 #include "theme.h"
 
 namespace support {
@@ -26,21 +28,56 @@ inline void isolateSettings() {
 
 inline bool waitFor(const std::function<bool()>& condition, int ms = 10000) { return QTest::qWaitFor(condition, ms); }
 
-// A Controller with the catalog loaded from the fake gps-inspect.
+// The services of the test process, as main() has one: the catalog is loaded once, from the gps-inspect GPS_BIN_DIR
+// names when it is first asked for.
+inline AppServices& services() {
+    static AppServices* shared = [] {
+        auto* made = new AppServices(qApp);
+        made->catalog().load();
+        waitFor([made] { return made->catalog().loaded(); }, 30000);
+        return made;
+    }();
+    return *shared;
+}
+
+// The application's folders (the template library among them) go below folder, or back to the real ones when it is
+// empty; the shared library reads its new folder at once.
+inline void useUserDir(const QString& folder) {
+    if (folder.isEmpty()) qunsetenv("GPS_USER_DIR");
+    else qputenv("GPS_USER_DIR", folder.toUtf8());
+    services().library().reload();
+}
+
+// A Controller over the shared services. The library is read again, so a test starts from what its folder holds.
 inline std::unique_ptr<Controller> makeController() {
-    auto c = std::make_unique<Controller>();
+    auto c = std::make_unique<Controller>(services());
     c->setUpdateTimeoutMs(5000);
-    c->loadCatalog();
-    waitFor([&] { return c->catalogLoaded(); });
+    services().library().reload();
     return c;
 }
 
-inline bool settle(Controller& c) { return waitFor([&] { return !c.busy(); }); }
+// The window shows the state it was asked to show: it refreshes its commands and status once per turn of the event loop.
+inline void refreshed() { QCoreApplication::processEvents(); }
+
+// Nothing running in the document any more, and the window showing it.
+inline bool settle(Controller& c) {
+    const bool done = waitFor([&] { return !c.busy(); });
+    refreshed();
+    return done;
+}
+
+// Save as a project conf at path, as File > Save as does.
+inline SaveResult saveAs(Controller& c, const QString& path) { return c.saveAs(std::make_unique<ProjectConfTarget>(path)); }
+// Whether a save wrote; why not goes to the test's output.
+inline bool saved(const SaveResult& r) {
+    if (!r.ok) qWarning() << r.error;
+    return r.ok;
+}
 
 inline const ElementInfo* need(Controller& c, const QString& factory) {
     const ElementInfo* found = nullptr;
     bool done = false;
-    c.fetchInfo(factory, [&](const ElementInfo* i) {
+    c.services().catalog().fetchInfo(factory, &c, [&](const ElementInfo* i) {
         found = i;
         done = true;
     });
@@ -51,7 +88,7 @@ inline const ElementInfo* need(Controller& c, const QString& factory) {
 // Each helper below returns the name of the new element, or "" when the edit was refused.
 inline QString addSource(Controller& c, const QString& factory, const ElementEdit& edit = {}) {
     need(c, factory);
-    if (!c.addSource(factory, edit)) return QString();
+    if (!c.addElement(factory, edit)) return QString();
     settle(c);
     return QString::fromStdString(c.plan().elements.back().name);
 }
@@ -62,6 +99,29 @@ inline QString addAfter(Controller& c, const QString& element, const QString& pa
     if (!c.addAfter(element, pad, factory, sinkPad, edit)) return QString();
     settle(c);
     return QString::fromStdString(c.plan().elements.back().name);
+}
+
+// Save as template, as the Properties tab finishes it: the selection becomes a template of that name with no
+// parameters, written to the library and collapsed. False (and why, in the test's output) when it was refused.
+inline bool saveTemplate(Controller& c, const QString& name, const QStringList& elements) {
+    const QString id = c.beginTemplate(elements);
+    if (id.isEmpty()) return false;
+    QString error;
+    if (!c.finishTemplate(id, name, {}, &error)) {
+        qWarning() << error;
+        c.cancelTemplate(id);
+        return false;
+    }
+    c.setTemplateExpanded(id, false);
+    return true;
+}
+
+// Whether a copy on the canvas is older than its library template.
+inline bool holdsOlderTemplates(Controller& c) {
+    for (const gps::TemplateInstance& t : c.plan().instances) {
+        if (c.services().library().isNewer(QString::fromStdString(t.templateName), t.revision)) return true;
+    }
+    return false;
 }
 
 inline ElementEdit withProps(const gps::Props& props) {

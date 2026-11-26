@@ -1,5 +1,6 @@
 // update_test – every scenario of SPEC 5 against real GStreamer.
 #include "testutil.h"
+#include "wire.h"
 
 using namespace gpstest;
 using gps::PadReport;
@@ -305,7 +306,7 @@ static void updateTwice() {
     CHECK_EQ(brief(between), "ok");
     UpdateResult second = update(p.plan);
     first.ms = second.ms = 0;
-    CHECK_EQ(gps::updateJson(first), gps::updateJson(second));
+    CHECK_EQ(gps::toJson(first), gps::toJson(second));
     CHECK(second.pads.size() == first.pads.size() && first.pads.size() > 5);
     // the second plan's pads did not leak into the others
     CHECK(!pad(second, "conv", "src"));
@@ -313,10 +314,10 @@ static void updateTwice() {
 }
 
 static void jsonShape() {
-    std::puts("-- updateJson keys");
+    std::puts("-- UpdateResult JSON keys");
     P p;
     p.el("v", "videotestsrc", {{"num-buffers", "3"}}).el("conv", "videoconvert").link("v", "src", "conv", "sink");
-    std::string json = gps::updateJson(update(p.plan));
+    std::string json = gps::toJson(update(p.plan));
     for (const char* key : {"\"status\":\"ok\"", "\"message\":\"\"", "\"errorElement\":\"\"", "\"ms\":", "\"pads\":[", "\"identity\":\"src\"",
                             "\"template\":\"src\"", "\"presence\":\"always\"", "\"isSrc\":true", "\"linked\":true", "\"temporaryEnd\":true",
                             "\"unknownData\":false", "\"allowedStructures\":[{", "\"missing\":[]", "\"refused\":[]", "\"complete\":false"}) {

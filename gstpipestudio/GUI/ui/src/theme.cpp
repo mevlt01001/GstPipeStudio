@@ -75,13 +75,16 @@ QStatusBar { background: @panel@; border-top: 1px solid @line@; }
 QStatusBar::item { border: none; }
 QStatusBar QLabel { background: transparent; padding-left: 10px; padding-right: 10px; }
 
-QDockWidget { titlebar-close-icon: none; color: @text@; }
+QDockWidget { color: @text@; }
 QDockWidget::title { background: @panel@; border-bottom: 1px solid @line@; padding: 6px 10px; font-weight: bold; }
 
 QTabWidget::pane { border: 1px solid @line@; background: @panel@; top: -1px; }
 QTabBar::tab { background: @bg@; border: 1px solid @line@; border-bottom: none; padding: 6px 16px; margin-right: 2px; color: @muted@; }
 QTabBar::tab:selected { background: @panel@; color: @text@; border-top: 2px solid @accent@; }
 QTabBar::tab:hover { color: @text@; }
+QToolButton#tabClose { padding: 0px; border: none; border-radius: 3px; color: @muted@; font-size: 11pt; }
+QToolButton#tabClose:hover { color: @text@; background: @line@; }
+QTabBar#documentTabs::tab { padding: 6px 8px 6px 14px; }
 
 QPushButton { background: #303030; border: 1px solid @line@; border-radius: 3px; padding: 6px 18px; min-width: 64px; }
 QPushButton:hover { border-color: @accent@; }
@@ -109,6 +112,9 @@ QSpinBox::up-button, QDoubleSpinBox::up-button { subcontrol-origin: border; subc
 QSpinBox::down-button, QDoubleSpinBox::down-button { subcontrol-origin: border; subcontrol-position: bottom right; width: 20px; border-left: 1px solid @line@; background: #303030; }
 QSpinBox::up-arrow, QDoubleSpinBox::up-arrow { image: url(@arrowUp@); width: 10px; height: 6px; }
 QSpinBox::down-arrow, QDoubleSpinBox::down-arrow { image: url(@arrowDown@); width: 10px; height: 6px; }
+/* A plain drop-down list (not the native popup over the current item, which this style sheet sizes wrong): every
+   item is reachable, the list scrolls past maxVisibleItems. */
+QComboBox { combobox-popup: 0; }
 QComboBox::drop-down { border: none; width: 24px; }
 QComboBox::down-arrow { image: url(@arrowDown@); width: 10px; height: 6px; }
 QComboBox QAbstractItemView { background: @panel@; border: 1px solid @line@; selection-background-color: @accent@; selection-color: @onAccent@; outline: none; padding: 4px; }

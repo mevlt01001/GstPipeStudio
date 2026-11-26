@@ -25,7 +25,6 @@
 #include "canvasscene.h"
 #include "canvasview.h"
 #include "capspage.h"
-#include "confirmdialog.h"
 #include "drawer.h"
 #include "elementitem.h"
 #include "flows.h"
@@ -210,7 +209,7 @@ private slots:
         verify(&w, "finished pipeline");
 
         // every drawer page and bottom tab page
-        w.flows()->chooseSource();
+        w.flows()->chooseElement();
         verify(w.drawer(), "add source");
         w.flows()->fromFreePad(src, "src");
         QVERIFY(pageOf(w, "pickerPage"));
@@ -224,8 +223,6 @@ private slots:
         w.flows()->closeProperties();
         w.flows()->closeCaps();
         w.drawer()->dismiss();
-        ConfirmDialog confirm("Remove elements", "These 2 elements will be removed, with 1 link", {"a (x)"}, "Delete 2 elements");
-        verify(&confirm, "confirmation");
 
         // the slow, cancelling and stopped states of the indicator
         qint64 now = 0;
@@ -261,12 +258,13 @@ private slots:
         QCOMPARE(w.indicator()->mode(), ValidationIndicator::Validating);
         QVERIFY(w.indicator()->findChild<Spinner*>()->animating());
         QVERIFY(!w.scene()->locked()); QVERIFY(!w.view()->dimmed());
-        QVERIFY(w.findChild<QAction*>("actionAddSource")->isEnabled());
+        refreshed();
+        QVERIFY(w.findChild<QAction*>("actionAddElement")->isEnabled());
         QVERIFY(w.findChild<QLabel*>("stateLabel")->text().contains("keep editing"));
         w.scene()->rebuild();
         QVERIFY(w.scene()->element(src)->flags() & QGraphicsItem::ItemIsMovable);
         const auto revision = c->pipeline().lastChange().executionRevision;
-        c->setPosition(src, -9000, 200);
+        c->setPositions({{src, QPointF(-9000, 200)}});
         QCOMPARE(c->pipeline().lastChange().executionRevision, revision);
         const double zoom = w.view()->zoom(); w.view()->zoomBy(1.25);
         QVERIFY(w.view()->zoom() != zoom);
@@ -277,12 +275,10 @@ private slots:
 
     void updateGetsTheLargeBackstopTimeout() {
         qunsetenv("GPS_UPDATE_TIMEOUT_MS");
-        Controller fresh;
-        fresh.loadCatalog();
-        QVERIFY(waitFor([&] { return fresh.catalogLoaded(); }));
+        Controller fresh(services());
         QSignalSpy log(&fresh, &Controller::logLine);
         need(fresh, "videotestsrc");
-        QVERIFY(fresh.addSource("videotestsrc", {}));
+        QVERIFY(fresh.addElement("videotestsrc", {}));
         QVERIFY(settle(fresh));
         bool seen = false;
         for (const auto& args : log) seen |= args[0].toString().contains("timeout-ms=600000");
@@ -337,7 +333,7 @@ private slots:
         QVERIFY(body.contains("GStreamer: 1.20.3"));
         QVERIFY(body.contains("fake gps-update"));  // the log tail
 
-        // Cancel: the helper is gone, the plan keeps the change, Save and Run say why they are off.
+        // Cancel: the helper is gone, the plan keeps the change, Run says why it is off; Save still writes.
         QSignalSpy finished(c.get(), &Controller::updateFinished);
         QTest::mouseClick(ind->findChild<QPushButton*>("cancelValidationButton"), Qt::LeftButton);
         QVERIFY(waitFor([&] { return finished.count() == 1; }, 5000));
@@ -347,16 +343,14 @@ private slots:
         QVERIFY(!c->busy());
         QCOMPARE(c->plan().find(src.toStdString())->props.at("fake-slow"), std::string("30000"));
         QVERIFY(!ind->isVisible());
-        QVERIFY(!w.findChild<QAction*>("actionSave")->isEnabled());
+        refreshed();
+        QVERIFY(w.findChild<QAction*>("actionSave")->isEnabled());
         QVERIFY(!w.findChild<QAction*>("actionRun")->isEnabled());
-        QVERIFY(w.findChild<QAction*>("actionSave")->toolTip().contains("Validation was cancelled — press Validate"));
         QVERIFY(w.findChild<QAction*>("actionRun")->toolTip().contains("Validation was cancelled — press Validate"));
         QVERIFY(w.findChild<QLabel*>("stateLabel")->text().contains("Validation was cancelled — press Validate"));
         QVERIFY(w.findChild<QAction*>("actionUpdate")->isEnabled());
         QVERIFY(w.logPanel()->toPlainText().contains("Validation cancelled"));
-        QString error;
-        QVERIFY(!c->save(work.filePath("x.conf"), &error));
-        QVERIFY(error.contains("cancelled"));
+        QVERIFY(saved(saveAs(*c, work.filePath("x.conf"))));
         // The old pad information stays, dimmed.
         w.scene()->rebuild();
         QVERIFY(w.scene()->element(src)->opacity() < 1.0);
@@ -365,7 +359,7 @@ private slots:
         QVERIFY(c->editElement(src, {}));
         QVERIFY(settle(*c));
         QVERIFY(!c->notValidated());
-        QVERIFY(c->canSave());
+        QVERIFY(c->saveBlockedReason().isEmpty());
         QVERIFY(w.findChild<QAction*>("actionSave")->isEnabled());
     }
 
@@ -397,7 +391,7 @@ private slots:
         w.show();
         QString src = addSource(*c, "videotestsrc");
         QString bad = addAfter(*c, src, "src", "fakesink", "sink", withProps({{"fake-crash", "1"}}));
-        QCOMPARE(c->result().status, QString("crashed"));
+        QCOMPARE(fromStd(c->result().status), QString("crashed"));
         auto* ind = w.indicator();
         QVERIFY(ind->isVisible());
         QCOMPARE(ind->mode(), ValidationIndicator::Stopped);
@@ -411,7 +405,8 @@ private slots:
         QCOMPARE(capture.urls.size(), 1);
         QCOMPARE(QUrlQuery(capture.urls[0]).queryItemValue("title", QUrl::FullyDecoded), QString("The validator stopped unexpectedly"));
         QString body = QUrlQuery(capture.urls[0]).queryItemValue("body", QUrl::FullyDecoded);
-        QVERIFY(body.contains(src + ".src (videotestsrc) -> " + bad + ".sink (fakesink)"));
+        const gps::Names names = c->names();  // the link as the user reads it
+        QVERIFY(body.contains(fromStd(names.element(toStd(src))) + ".src -> " + fromStd(names.element(toStd(bad))) + ".sink"));
         QVERIFY(body.contains("stopped unexpectedly"));
 
         // Retry runs the validation again (it crashes again: the element is still there), then a fix clears the message.
@@ -478,6 +473,20 @@ private slots:
         qputenv("GPS_BIN_DIR", old);
     }
 
+    // Asked again before the first answer came (Retry, a second window), only the last start answers.
+    void aCheckAskedAgainAnswersOnlyForItsLastStart() {
+        StartupCheck startup;
+        QSignalSpy done(&startup, &StartupCheck::finished);
+        env("1.20.3", "1", "");
+        startup.start();  // would say NotInstalled
+        env("1.20.3", "", "");
+        startup.start();
+        QVERIFY(done.wait(10000));
+        QTest::qWait(500);
+        QCOMPARE(done.count(), 1);
+        QCOMPARE(startup.result().state, StartupResult::Ready);
+    }
+
     void theSetupPageShowsForEveryBadStateAndRetryRecovers() {
         env("1.20.3", "1", "");
         MainWindow w(c.get());
@@ -487,8 +496,9 @@ private slots:
         QCOMPARE(page->findChild<QLabel*>("setupTitle")->text(), QString("GStreamer was not found"));
         QCOMPARE(page->command(), QString("sudo apt install gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good"));
         QVERIFY(page->findChild<QLabel*>("setupCommand")->text().contains("sudo apt install"));
-        QVERIFY(!w.findChild<QAction*>("actionAddSource")->isEnabled());  // with the reason in its tooltip
-        QVERIFY(w.findChild<QAction*>("actionAddSource")->toolTip().contains("GStreamer is not ready"));
+        refreshed();
+        QVERIFY(!w.findChild<QAction*>("actionAddElement")->isEnabled());  // with the reason in its tooltip
+        QVERIFY(w.findChild<QAction*>("actionAddElement")->toolTip().contains("GStreamer is not ready"));
         QVERIFY(w.findChild<QLabel*>("environmentLabel")->text().isEmpty());
 
         QTest::mouseClick(page->findChild<QPushButton*>("copyCommandButton"), Qt::LeftButton);
@@ -515,7 +525,8 @@ private slots:
         env("1.20.3", "", "");
         QTest::mouseClick(page->findChild<QPushButton*>("retryButton"), Qt::LeftButton);
         QVERIFY(waitFor([&] { return !w.showingSetup(); }));
-        QVERIFY(w.findChild<QAction*>("actionAddSource")->isEnabled());
+        refreshed();
+        QVERIFY(w.findChild<QAction*>("actionAddElement")->isEnabled());
         QVERIFY(w.findChild<QLabel*>("environmentLabel")->text().startsWith("GStreamer 1.20.3 · NVIDIA elements: "));
     }
 
@@ -582,7 +593,7 @@ private slots:
         }
         MainWindow again(c.get());
         QCOMPARE(again.size(), QSize(960, 700));  // the default is 1360 x 860
-        QVERIFY(QSettings().contains("window/state"));
+        QVERIFY(!Settings::windowState().isEmpty());
         // The last folder is remembered too.
         QTemporaryDir dir;
         QString path = dir.filePath("p.conf");
@@ -591,7 +602,7 @@ private slots:
         f.write("");
         f.close();
         again.openFile(path);
-        QCOMPARE(QSettings().value("lastDir").toString(), dir.path());
+        QCOMPARE(Settings::lastDir(), dir.path());
     }
 
     void keyboardShortcutsFollowTheRules() {
@@ -611,7 +622,7 @@ private slots:
         // Menus have access keys.
         QStringList menus;
         for (QAction* a : w.findChild<QMenuBar*>("applicationMenu")->actions()) menus << a->text();
-        QCOMPARE(menus, QStringList({"&File", "&Pipeline", "&View", "&Help"}));
+        QCOMPARE(menus, QStringList({"&File", "&Edit", "&View", "&Pipeline", "&Help"}));  // the usual order
     }
 
     void openingTheDrawerKeepsTheCanvasWhereItWas() {
@@ -623,7 +634,7 @@ private slots:
         w.view()->zoomBy(1.5);
         int h = w.view()->horizontalScrollBar()->value(), v = w.view()->verticalScrollBar()->value();
         double zoom = w.view()->zoom();
-        w.flows()->chooseSource();
+        w.flows()->chooseElement();
         QVERIFY(waitFor([&] { return w.drawer()->width() == Drawer::kWidth; }, 2000));
         QCOMPARE(w.view()->horizontalScrollBar()->value(), h);
         QCOMPARE(w.view()->verticalScrollBar()->value(), v);

@@ -3,6 +3,7 @@
 
 #include <QFont>
 #include <QGraphicsObject>
+#include <QTimer>
 #include <QVariantAnimation>
 
 #include "elementview.h"
@@ -38,11 +39,14 @@ protected:
     void mouseDoubleClickEvent(QGraphicsSceneMouseEvent* event) override;
 
 private:
+    QRectF expandButton() const;  // a collapsed template's "+" in its header
+
     ElementView view_;
     QList<PadItem*> pads_;
     bool hover_ = false;
     double hoverProgress_ = 0;
     QVariantAnimation hoverAnimation_;
+    QTimer peek_;  // a collapsed template: a long enough hover shows a peek inside it
     bool telemetry_ = false;
     double ageMs_ = -1;
     double processingMs_ = -1, dropRatePercent_ = -1;

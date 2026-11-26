@@ -65,30 +65,31 @@ QString breakable(const QString& text) { return QString(text).replace("/", "/\u2
 
 void UpdatePanel::refresh() {
     const UpdateResult& r = controller_->result();
-    QColor colour = controller_->notValidated() ? Theme::warning() : !r.valid() ? Theme::muted() : r.ok() ? (r.complete ? Theme::accent() : Theme::warning()) : Theme::error();
-    QString status = controller_->updating() ? "Validating…" : controller_->notValidated() ? "Validation was cancelled — press Validate" : r.statusText();
+    QColor colour = controller_->notValidated() ? Theme::warning() : !r.valid() ? Theme::muted() : r.ok() ? (r.complete() ? Theme::accent() : Theme::warning()) : Theme::error();
+    QString status = controller_->updating() ? "Validating…" : controller_->notValidated() ? "Validation was cancelled — press Validate" : statusText(r);
     if (r.valid() && !controller_->updating() && !controller_->notValidated() && r.ms > 0) status += QString("   (%1 ms)").arg(r.ms, 0, 'f', 1);
     status_->setText(status);
     status_->setStyleSheet(QString("font-weight: bold; color: %1;").arg(colour.name()));
 
-    bool named = r.errorElement.isEmpty() || r.message.contains(r.errorElement);
-    message_->setText(r.message.isEmpty() ? QString() : breakable((named ? "" : "Element: " + r.errorElement + " – ") + r.message));
+    const QString message = fromStd(r.message), errorElement = fromStd(r.errorElement);
+    bool named = errorElement.isEmpty() || message.contains(errorElement);
+    message_->setText(message.isEmpty() ? QString() : breakable((named ? "" : "Element: " + errorElement + " – ") + message));
     message_->setStyleSheet(QString("color: %1;").arg(r.ok() ? Theme::text().name() : Theme::error().name()));
 
     QStringList lists;
-    if (!r.missing.isEmpty()) lists << "Pads that did not appear: " + r.missing.join("; ");
-    if (!r.refused.isEmpty()) lists << "Refused links: " + r.refused.join("; ");
+    if (!r.missing.empty()) lists << "Pads that did not appear: " + fromStd(r.missing).join("; ");
+    if (!r.refused.empty()) lists << "Refused links: " + fromStd(r.refused).join("; ");
     lists_->setText(breakable(lists.join("\n")));
     lists_->setStyleSheet(QString("color: %1;").arg(Theme::warning().name()));
     support_->setVisible(r.valid() && !r.ok() && !controller_->updating());  // something went wrong: offer the report
     message_->setVisible(!message_->text().isEmpty());
     lists_->setVisible(!lists_->text().isEmpty());
 
-    table_->setRowCount(r.pads.size());
-    for (int i = 0; i < r.pads.size(); ++i) {
+    table_->setRowCount(static_cast<int>(r.pads.size()));
+    for (int i = 0; i < static_cast<int>(r.pads.size()); ++i) {
         const PadReport& p = r.pads[i];
         QString state = p.unknownData ? "unknown data" : p.linked ? "linked" : p.temporaryEnd ? "free (temporary end)" : "free";
-        QStringList cells = {p.element, p.pad, p.presence, p.isSrc ? "src" : "sink", state, p.caps, p.allowed};
+        QStringList cells = {fromStd(p.element), fromStd(p.pad), fromStd(p.presence), p.isSrc ? "src" : "sink", state, fromStd(p.caps), fromStd(p.allowed)};
         for (int c = 0; c < cells.size(); ++c) {
             auto* item = new QTableWidgetItem(cells[c]);
             item->setToolTip(cells[c]);

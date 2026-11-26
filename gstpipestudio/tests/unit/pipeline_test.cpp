@@ -1,4 +1,6 @@
 #include "pipeline.h"
+#include "nodes.h"
+#include "templates.h"
 #include "actions.h"
 #include "check.h"
 #include <limits>
@@ -45,7 +47,7 @@ void transactions() {
     CHECK(later != source); CHECK(!editor.canRedo());
 }
 void invariantsAndFragments() {
-    Pipeline p;
+    Pipeline p("pipeline", traits);
     auto& g = p.editor().begin();
     auto a = g.addElement("source"), b = g.addElement("filter"), c = g.addElement("sink"), loose = g.addElement("filter");
     CHECK(g.linkExisting(a,"src",b,"sink")); CHECK(g.linkExisting(b,"src",c,"sink"));
@@ -53,12 +55,16 @@ void invariantsAndFragments() {
     CHECK(GraphFragment({a,b,c}).connected(p.graph())); CHECK(!GraphFragment({a,loose}).connected(p.graph()));
     CHECK(!GraphFragment({"absent"}).connected(p.graph()));
     auto fragment = GraphFragment({a,b}).copy(p.graph()); CHECK_EQ(fragment.links.size(), size_t(1));
-    const auto execution = p.executionPlan(traits,1); CHECK_EQ(execution.graph().elements.size(), size_t(3));
+    const auto execution = p.executionPlan(1); CHECK_EQ(execution.graph().elements.size(), size_t(3));
     CHECK_EQ(p.graph().elements.size(), size_t(4));
     auto execRevision = p.lastChange().executionRevision;
     CHECK(p.editor().execute(EditAction([&](Graph& d, std::string*) { d.find(a)->x = -100000; return true; })));
     CHECK_EQ(p.lastChange().executionRevision, execRevision);
     CHECK(p.editor().undo()); CHECK_EQ(p.lastChange().executionRevision, execRevision);
+    // Work no source feeds does not run: adding or changing it is not an Execution change.
+    CHECK(p.editor().execute(EditAction([&](Graph& d, std::string*) { d.addElement("filter"); return true; })));
+    CHECK(p.lastChange().kind == ChangeKind::Presentation); CHECK_EQ(p.lastChange().executionRevision, execRevision);
+    CHECK(p.editor().undo());
     CHECK(p.editor().execute(EditAction([&](Graph& d, std::string*) { return d.setCaps(a,"src","video/x-raw"); })));
     CHECK(p.lastChange().executionRevision > execRevision);
     Graph bad=p.graph();bad.links.push_back(bad.links.front());CHECK(!Pipeline::validate(bad));
@@ -67,27 +73,130 @@ void invariantsAndFragments() {
     CHECK(Graph::fromConf(saved,&loaded,&error));CHECK(p.reset(loaded));CHECK_EQ(p.graph().toConf(),saved);
 }
 void results() {
-    Pipeline p; DeferredBackend backend;
+    Pipeline p("pipeline", traits); DeferredBackend backend;
     p.editor().execute(EditAction([](Graph& g,std::string*) {g.addElement("source");return true;}));
     int received=0;
     {
         ExecutionCoordinator coordinator(p,backend);
-        coordinator.start(traits,[&](const ExecutionResult&){++received;});
-        coordinator.start(traits,[&](const ExecutionResult&){++received;});
+        coordinator.start([&](const ExecutionResult&){++received;});
+        coordinator.start([&](const ExecutionResult&){++received;});
         backend.finish(0); CHECK_EQ(received,0); CHECK(coordinator.active());
         backend.finish(1); CHECK_EQ(received,1); CHECK(!coordinator.active());
         backend.finish(1); CHECK_EQ(received,1);
         // Mutation after dispatch rejects stale observations, even after undo.
-        coordinator.start(traits,[&](const ExecutionResult&){++received;});
-        p.editor().execute(EditAction([](Graph& g,std::string*){g.addElement("filter");return true;}));
+        coordinator.start([&](const ExecutionResult&){++received;});
+        p.editor().execute(EditAction([](Graph& g,std::string*){auto f=g.addElement("filter");return g.linkExisting(g.elements[0].name,"src",f,"sink");}));
         p.editor().undo();backend.finish(2);CHECK_EQ(received,1);
-        coordinator.start(traits,[&](const ExecutionResult&){++received;});
+        coordinator.start([&](const ExecutionResult&){++received;});
         // Presentation edits do not invalidate a native run.
         p.editor().execute(EditAction([](Graph& g,std::string*){g.elements[0].x=-55;return true;}));
         backend.finish(3);CHECK_EQ(received,2);
-        coordinator.start(traits,[&](const ExecutionResult&){++received;});
+        coordinator.start([&](const ExecutionResult&){++received;});
     }
     backend.finish(4);CHECK_EQ(received,2); // callback after coordinator destruction
 }
 }
-int main(){transactions();invariantsAndFragments();results();return finish("pipeline_test");}
+// The Pipeline alone decides which pads exist: templates, Request counts, links and the last run's reports.
+void pads() {
+    Pipeline document;
+    auto pad = [](const char* name, Pad::Direction direction, Pad::Presence presence) {
+        Pad p; p.identity = p.templateName = name; p.direction = direction; p.presence = presence; return p;
+    };
+    using D = Pad::Direction; using P = Pad::Presence;
+    document.registerFactory("tee", {false, {pad("sink", D::Sink, P::Always), pad("src_%u", D::Source, P::Request)}});
+    document.registerFactory("demux", {false, {pad("sink", D::Sink, P::Always), pad("video_%u", D::Source, P::Sometimes)}});
+    document.registerFactory("mux", {false, {pad("sink_%u", D::Sink, P::Request), pad("src", D::Source, P::Always)}});
+    std::string tee, demux, mux;
+    CHECK(document.editor().execute(EditAction([&](Graph& g, std::string*) {
+        tee = g.addElement("tee"); demux = g.addElement("demux"); mux = g.addElement("mux");
+        g.find(tee)->requestSrc["src_%u"] = 1;
+        g.find(mux)->requestSink["sink_%u"] = 1;
+        return g.linkExisting(tee, padIdentity("src_%u", 2), mux, "sink_%u") && g.linkExisting(demux, padIdentity("video_%u", 1), mux, "sink_%u");
+    })));
+    auto identities = [&](const std::string& name) {
+        std::vector<std::string> out;
+        for (const Pad& p : document.graph().find(name)->pads) out.push_back(p.identity);
+        return out;
+    };
+    // a link to src_%u#2 means three Request pads; a Sometimes pad exists once a link names it; two links, two sink pads
+    CHECK(identities(tee) == std::vector<std::string>({"sink", "src_%u#0", "src_%u#1", "src_%u#2"}));
+    CHECK(identities(demux) == std::vector<std::string>({"sink", "video_%u#1"}));
+    CHECK(identities(mux) == std::vector<std::string>({"sink_%u#0", "sink_%u#1", "src"}));
+    CHECK_EQ(document.graph().linkInto(mux, "sink_%u#1"), 1);
+    CHECK(document.peer({mux, "sink_%u#0", D::Sink}).value().element == tee);
+}
+// The editor numbers what is committed: undo back to a number is the same state, a new edit after an undo is not.
+void savePoint() {
+    Pipeline document;
+    auto& editor = document.editor();
+    auto add = [&] { return editor.execute(EditAction([](Graph& g, std::string*) { g.addElement("source"); return true; })); };
+    const auto loaded = editor.state();
+    CHECK(add());
+    const auto saved = editor.state();
+    CHECK(saved != loaded);
+    CHECK(add()); CHECK(editor.state() != saved);
+    CHECK(editor.undo()); CHECK_EQ(editor.state(), saved);
+    CHECK(editor.redo()); CHECK(editor.state() != saved);
+    CHECK(editor.undo()); CHECK(add()); CHECK(editor.state() != saved);  // the same count of steps, another state
+    // Moving a box changes nothing the file holds: the number stays.
+    const auto before = editor.state();
+    CHECK(editor.execute(EditAction([](Graph& g, std::string*) { g.elements.front().x += 50; return true; })));
+    CHECK_EQ(editor.state(), before);
+    CHECK(document.reset()); CHECK(editor.state() != saved); CHECK(editor.state() != loaded);
+}
+// A pad's key is the one string form of its address: it reads back as the same pad, and a link names it by linkName().
+void padRefs() {
+    using D = Pad::Direction;
+    const PadRef src{"tee_1", "src_%u#2", D::Source}, sink{"mix_3", "sink_%u#1", D::Sink}, plain{"conv_2", "sink", D::Sink};
+    for (const PadRef& p : {src, sink, plain}) CHECK(PadRef::fromKey(p.key()).value() == p);
+    CHECK_EQ(src.key(), std::string("tee_1|src_%u#2|src"));
+    CHECK_EQ(src.linkName(), std::string("src_%u#2"));   // a src pad is linked by its identity
+    CHECK_EQ(sink.linkName(), std::string("sink_%u"));   // a Request sink pad by its template
+    CHECK_EQ(plain.linkName(), std::string("sink"));
+    CHECK(!PadRef::fromKey("tee_1|src").has_value());
+    CHECK(!PadRef::fromKey("tee_1|src|up").has_value());
+    CHECK_EQ(LinkRef{src}.id(), std::string("tee_1|src_%u#2"));
+    Graph g;
+    const std::string a = g.addElement("a"), b = g.addElement("b");
+    CHECK(g.linkExisting(a, "src", b, "sink_%u"));
+    CHECK(g.srcOf(0) == (PadRef{a, "src", D::Source}));
+    CHECK(g.sinkOf(0) == (PadRef{b, "sink_%u#0", D::Sink}));
+}
+// A node's shape comes from the definitions and the links alone, so a draft that no Pipeline holds answers too: a copy's
+// way in is its first free sink pad, else a new pad of a Request sink template; with no way in it is a source.
+void nodeShapes() {
+    using D = Pad::Direction; using P = Pad::Presence;
+    auto pad = [](const char* name, D direction, P presence) {
+        Pad p; p.identity = p.templateName = name; p.direction = direction; p.presence = presence; return p;
+    };
+    const std::map<std::string, FactoryDefinition> defs = {
+        {"src", {true, {pad("src", D::Source, P::Always)}}},
+        {"conv", {false, {pad("sink", D::Sink, P::Always), pad("src", D::Source, P::Always)}}},
+        {"mux", {false, {pad("sink_%u", D::Sink, P::Request), pad("src", D::Source, P::Always)}}},
+        {"sink", {false, {pad("sink", D::Sink, P::Always)}, true}},
+    };
+    Graph g;
+    const std::string s = g.addElement("src"), c = g.addElement("conv"), k = g.addElement("sink");
+    const std::string m = g.addElement("mux"), k2 = g.addElement("sink");
+    CHECK(g.linkExisting(s, "src", c, "sink") && g.linkExisting(m, "src", k2, "sink"));
+    const NodeRef head = NodeRef::instance(templates::wrap(g, {s, c}, "Head", {}));
+    const NodeRef tail = NodeRef::instance(templates::wrap(g, {k}, "Tail", {}));
+    const NodeRef mixer = NodeRef::instance(templates::wrap(g, {m, k2}, "Mixer", {}));
+    const NodeShape shape(g, [&](const std::string& f) { auto it = defs.find(f); return it == defs.end() ? nullptr : &it->second; });
+
+    CHECK(shape.role(head) == Role::Source);
+    CHECK(!shape.firstFree(head, D::Sink).has_value());
+    CHECK(shape.firstFree(head, D::Source).value() == (PadRef{c, "src", D::Source}));
+    CHECK(shape.role(tail) == Role::Sink);
+    CHECK(shape.firstFree(tail, D::Sink).value() == (PadRef{k, "sink", D::Sink}));
+    CHECK(shape.role(mixer) == Role::Sink);  // a Request sink is a way in
+    const PadRef request = shape.firstFree(mixer, D::Sink).value();
+    CHECK(request.element == m && request.linkName() == "sink_%u");
+    CHECK(shape.role(NodeRef::element(c)) == Role::Filter);
+    CHECK(shape.members(head) == std::vector<std::string>({s, c}));
+    // Linked, the pad is no longer free, on the same graph the shape reads.
+    CHECK(g.linkExisting(c, "src", k, "sink"));
+    CHECK(!shape.firstFree(tail, D::Sink).has_value());
+    CHECK(shape.role(head) == Role::Source && shape.ports(head).srcs.front().link >= 0);
+}
+int main(){transactions();invariantsAndFragments();results();pads();savePoint();padRefs();nodeShapes();return finish("pipeline_test");}

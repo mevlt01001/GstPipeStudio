@@ -4,7 +4,6 @@
 #include <QComboBox>
 #include <QHeaderView>
 #include <QHBoxLayout>
-#include <QJsonArray>
 #include <QLabel>
 #include <QPainter>
 #include <QPainterPath>
@@ -15,7 +14,6 @@
 #include <cmath>
 
 namespace {
-double value(const QJsonObject& object, const char* key) { return object.value(key).isDouble() ? object.value(key).toDouble() : -1; }
 QString shown(double n, const QString& unit = {}) { return n < 0 ? "—" : QString::number(n, 'f', 1) + unit; }
 class TrendChart final : public QWidget {
 public:
@@ -91,30 +89,29 @@ TelemetryPanel::TelemetryPanel(Controller* controller, QWidget* parent) : QWidge
     connect(metric_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &TelemetryPanel::redraw);
     redraw();
 }
-void TelemetryPanel::receive(const QJsonObject& sample) {
-    const double elapsed = value(sample, "elapsedMs");
+void TelemetryPanel::receive(const gps::TelemetrySample& sample) {
+    const double elapsed = sample.elapsedMs;
     const double seconds = lastElapsed_ >= 0 && elapsed > lastElapsed_ ? (elapsed - lastElapsed_) / 1000.0 : -1;
     lastElapsed_ = elapsed;
-    const QJsonArray elements = sample.value("elements").toArray();
-    table_->setRowCount(elements.size());
-    for (int row = 0; row < elements.size(); ++row) {
-        const QJsonObject object = elements[row].toObject();
-        const QString name = object.value("element").toString();
+    table_->setRowCount(static_cast<int>(sample.elements.size()));
+    for (int row = 0; row < static_cast<int>(sample.elements.size()); ++row) {
+        const gps::ElementTelemetry& item = sample.elements[row];
+        const QString name = QString::fromStdString(item.element);
         if (name.isEmpty()) continue;
         if (element_->findText(name) < 0) element_->addItem(name);
         TrendPoint point;
-        point.processing = value(object, "processingMs"); point.pending = value(object, "pendingMs");
-        point.drop = value(object, "dropRatePercent"); point.age = value(object, "ageMs"); point.queue = value(object, "queueMs");
+        point.processing = item.processingMs; point.pending = item.pendingMs;
+        point.drop = item.dropRatePercent; point.age = item.ageMs; point.queue = item.queueMs;
         if (seconds > 0) {
-            point.inputRate = value(object, "inputBuffers") / seconds;
-            point.outputRate = value(object, "outputBuffers") / seconds;
+            point.inputRate = item.inputBuffers / seconds;
+            point.outputRate = item.outputBuffers / seconds;
         }
         auto& series = history_[name]; series.push_back(point);
         if (series.size() > 120) series.remove(0, series.size() - 120);
         const QStringList cells = {name, shown(point.processing), shown(point.pending), shown(point.drop),
                                    shown(point.age), shown(point.queue), shown(point.inputRate), shown(point.outputRate),
-                                   point.drop < 0 ? "—" : QString::number(object.value("qosProcessed").toInteger()),
-                                   point.drop < 0 ? "—" : QString::number(object.value("qosDropped").toInteger())};
+                                   point.drop < 0 ? "—" : QString::number(item.qosProcessed),
+                                   point.drop < 0 ? "—" : QString::number(item.qosDropped)};
         for (int col = 0; col < cells.size(); ++col) table_->setItem(row, col, new QTableWidgetItem(cells[col]));
 
     }

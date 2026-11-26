@@ -7,6 +7,7 @@
 #include "canvasscene.h"
 #include "canvasview.h"
 #include "mainwindow.h"
+#include "panels.h"
 #include "telemetrypanel.h"
 #include "testsupport.h"
 #include "aboutdialog.h"
@@ -40,13 +41,15 @@ int main(int argc, char** argv) {
     window.scene()->rebuild(); window.view()->fitAll(); capture(12);
     const QString sink = support::addAfter(*controller, slow, "src", "fakesink", "sink",
                                            support::withProps({{"sync", "true"}, {"qos", "true"}, {"max-lateness", "1000000"}}));
-    if (sink.isEmpty() || !controller->result().isComplete()) return 5;
+    if (sink.isEmpty() || !controller->result().complete()) return 5;
     window.scene()->rebuild(); window.view()->fitAll(); capture(12);
-    if (!controller->arrangePipeline()) return 6;
+    QSignalSpy aligned(&controller->canvasLayout(), &CanvasLayout::aligned);
+    if (!controller->niceAlign() || !aligned.wait(30000)) return 6;
+    QTest::qWait(400);
     window.scene()->rebuild(); window.view()->fitAll(); capture(14);
     auto* panel = window.findChild<TelemetryPanel*>("telemetryPanel");
     if (!panel) return 7;
-    window.bottomTabs()->setCurrentWidget(panel);
+    window.panels()->show(panel);
     if (!controller->startMonitoring()) return 8;
     capture(20);
     panel->findChild<QComboBox*>("monitorElement")->setCurrentText(queue);
@@ -54,7 +57,7 @@ int main(int argc, char** argv) {
     capture(20);
     controller->stopMonitoring();
     support::waitFor([&] { return !controller->monitoring(); }, 4000);
-    AboutDialog about(controller->environment().statusText(), &window);
+    AboutDialog about(controller->services().environment().result().statusText(), &window);
     about.show(); QTest::qWait(200); about.grab().save(output + "/../about.png"); about.close();
     PipelineFileDialog picker(&window, false, "/workspace/examples/monitoring");
     picker.show(); QTest::qWait(200); picker.grab().save(output + "/../files.png"); picker.close();

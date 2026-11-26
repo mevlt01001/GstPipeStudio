@@ -1,5 +1,6 @@
 // elementitem.cpp
 #include "elementitem.h"
+#include "headerbutton.h"
 
 #include <QApplication>
 #include <QGraphicsSceneMouseEvent>
@@ -7,16 +8,14 @@
 
 #include "canvasscene.h"
 #include "paditem.h"
+#include "templatepeek.h"
 #include "theme.h"
 
 using metrics::kBoxWidth;
 using metrics::kHeader;
 using metrics::kPadRow;
 using metrics::kPropLine;
-
-namespace {
-double padY(int row) { return kHeader + 6 + (row + 0.5) * kPadRow; }
-}  // namespace
+using metrics::padY;
 
 ElementItem::PadLabel ElementItem::padLabel(const PadView& pad) {
     QFont small = QApplication::font();
@@ -46,7 +45,13 @@ ElementItem::ElementItem(const ElementView& view) : view_(view) {
     });
     setAcceptedMouseButtons(Qt::LeftButton | Qt::RightButton);
     setZValue(1);
-    setToolTip(view.note.isEmpty() ? view.factory : view.factory + "\n\n" + view.note);
+    peek_.setSingleShot(true);
+    peek_.setInterval(TemplatePeek::kHoverMs);
+    connect(&peek_, &QTimer::timeout, this, [this] {
+        if (auto* canvas = qobject_cast<CanvasScene*>(scene())) canvas->peekTemplate(view_.groupId);
+    });
+    // A collapsed template has its peek instead.
+    if (!view.isTemplate) setToolTip(view.note.isEmpty() ? view.factory : view.factory + "\n\n" + view.note);
 
     for (int i = 0; i < view.sinks.size(); ++i) {
         auto* pad = new PadItem(view.sinks[i], this);
@@ -100,11 +105,11 @@ void ElementItem::paint(QPainter* p, const QStyleOptionGraphicsItem*, QWidget*) 
     p->drawRoundedRect(box, 6, 6);
     p->save();
     p->setClipPath(shape());
-    p->fillRect(QRectF(0, 0, kBoxWidth, kHeader), view_.isCustomGroup ? QColor("#263526") : QColor("#333333"));
+    p->fillRect(QRectF(0, 0, kBoxWidth, kHeader), view_.isTemplate ? QColor("#263526") : QColor("#333333"));
     p->restore();
     p->setPen(Theme::line());
     p->drawLine(QPointF(1, kHeader), QPointF(kBoxWidth - 1, kHeader));
-    if (view_.isCustomGroup) p->fillRect(QRectF(1, 6, 4, kHeader - 12), Theme::accentHover());
+    if (view_.isTemplate) p->fillRect(QRectF(1, 6, 4, kHeader - 12), Theme::accentHover());
     else if (view_.nvidia) p->fillRect(QRectF(1, 8, 3, kHeader - 16), Theme::accent());
     p->setPen(QPen(border, borderWidth));
     p->setBrush(Qt::NoBrush);
@@ -116,19 +121,23 @@ void ElementItem::paint(QPainter* p, const QStyleOptionGraphicsItem*, QWidget*) 
     QFont small = base;
     small.setPointSizeF(8);
 
+    if (view_.isTemplate) {
+        headerbutton::paint(p, expandButton(), headerbutton::Glyph::Plus, Theme::accentHover());
+    }
     QString headerTitle = view_.displayTitle.isEmpty() ? view_.name : view_.displayTitle;
     p->setFont(bold);
-    p->setPen(view_.isCustomGroup ? Theme::accentHover() : Theme::text());
-    p->drawText(QRectF(12, 5, kBoxWidth - 24, 20), Qt::AlignLeft | Qt::AlignVCenter,
-                QFontMetrics(bold).elidedText(headerTitle, Qt::ElideRight, int(kBoxWidth - 24)));
+    p->setPen(view_.isTemplate ? Theme::accentHover() : Theme::text());
+    const double titleWidth = (view_.isTemplate ? expandButton().left() - 4 : kBoxWidth - 12) - 12;
+    p->drawText(QRectF(12, 5, titleWidth, 20), Qt::AlignLeft | Qt::AlignVCenter,
+                QFontMetrics(bold).elidedText(headerTitle, Qt::ElideRight, int(titleWidth)));
     p->setFont(small);
     p->setPen(Theme::muted());
-    QString subTitle = view_.factory;
-    if (!view_.isCustomGroup && !view_.groupId.isEmpty()) {
-        subTitle += "  [" + view_.groupId.section('#', 0, 0) + "]";
+    QString subTitle = view_.longName.isEmpty() ? view_.factory : view_.longName;
+    if (!view_.isTemplate && !view_.groupId.isEmpty()) {
+        subTitle += "  [" + view_.groupTitle + "]";
     }
-    p->drawText(QRectF(12, 24, kBoxWidth - 24, 16), Qt::AlignLeft | Qt::AlignVCenter,
-                QFontMetrics(small).elidedText(subTitle, Qt::ElideRight, int(kBoxWidth - 24)));
+    p->drawText(QRectF(12, 24, titleWidth, 16), Qt::AlignLeft | Qt::AlignVCenter,
+                QFontMetrics(small).elidedText(subTitle, Qt::ElideRight, int(titleWidth)));
 
     // Pad labels: name, then the media type. Sinks on the left half, srcs on the right half.
     QFontMetrics sm(small);
@@ -136,8 +145,8 @@ void ElementItem::paint(QPainter* p, const QStyleOptionGraphicsItem*, QWidget*) 
     auto label = [&](const PadView& pad, int row) {
         PadLabel text = padLabel(pad);
         double y = padY(row) - kPadRow / 2;
-        double x = pad.isSrc ? kBoxWidth / 2 + 4 : 12;
-        int align = (pad.isSrc ? Qt::AlignRight : Qt::AlignLeft) | Qt::AlignVCenter;
+        double x = pad.ref.isSrc() ? kBoxWidth / 2 + 4 : 12;
+        int align = (pad.ref.isSrc() ? Qt::AlignRight : Qt::AlignLeft) | Qt::AlignVCenter;
         bool linked = pad.state == PadView::Linked;
         if (text.media.isEmpty()) {
             p->setPen(linked ? Theme::text() : Theme::muted());
@@ -178,12 +187,12 @@ void ElementItem::paint(QPainter* p, const QStyleOptionGraphicsItem*, QWidget*) 
         const QString process = processingMs_ >= 0 ? QString::number(processingMs_, 'f', 1) + " ms" : "—";
         const QString drop = dropRatePercent_ >= 0 ? QString::number(dropRatePercent_, 'f', 1) + "%" : "—";
         p->drawText(QRectF(8, top + 2, kBoxWidth - 16, 15), Qt::AlignLeft,
-                    (view_.isCustomGroup ? "Max Avg. Processing Time  " : "Avg. Processing Time  ") + process);
+                    (view_.isTemplate ? "Max Avg. Processing Time  " : "Avg. Processing Time  ") + process);
         p->setPen(Theme::muted());
         p->drawText(QRectF(8, top + 16, kBoxWidth - 16, 15), Qt::AlignLeft,
-                    (view_.isCustomGroup ? "Max Drop Rate  " : "Drop Rate  ") + drop);
+                    (view_.isTemplate ? "Max Drop Rate  " : "Drop Rate  ") + drop);
         p->drawText(QRectF(8, top + 31, kBoxWidth - 16, 15), Qt::AlignLeft,
-                    QString(view_.isCustomGroup ? "Max Age  " : "Age  ") + (ageMs_ >= 0 ? QString::number(ageMs_, 'f', 1) + " ms" : "—"));
+                    QString(view_.isTemplate ? "Max Age  " : "Age  ") + (ageMs_ >= 0 ? QString::number(ageMs_, 'f', 1) + " ms" : "—"));
     }
 }
 
@@ -198,15 +207,27 @@ QVariant ElementItem::itemChange(GraphicsItemChange change, const QVariant& valu
 
 void ElementItem::hoverEnterEvent(QGraphicsSceneHoverEvent*) {
     hover_ = true;
+    if (view_.isTemplate) peek_.start();
     hoverAnimation_.stop(); hoverAnimation_.setStartValue(hoverProgress_); hoverAnimation_.setEndValue(1.0); hoverAnimation_.start();
 }
 
 void ElementItem::hoverLeaveEvent(QGraphicsSceneHoverEvent*) {
     hover_ = false;
+    peek_.stop();
+    TemplatePeek::hide();
     hoverAnimation_.stop(); hoverAnimation_.setStartValue(hoverProgress_); hoverAnimation_.setEndValue(0.0); hoverAnimation_.start();
 }
 
+QRectF ElementItem::expandButton() const { return headerbutton::at(kBoxWidth - 10, 10, 0); }
+
 void ElementItem::mousePressEvent(QGraphicsSceneMouseEvent* event) {
+    peek_.stop();
+    TemplatePeek::hide();
+    if (view_.isTemplate && event->button() == Qt::LeftButton && expandButton().contains(event->pos())) {
+        if (auto* canvas = qobject_cast<CanvasScene*>(scene())) canvas->frameExpanded(view_.groupId);
+        event->accept();
+        return;
+    }
     pressPos_ = pos();
     if (event->button() == Qt::RightButton) {
         if (!isSelected()) {
@@ -237,13 +258,16 @@ void ElementItem::mouseReleaseEvent(QGraphicsSceneMouseEvent* event) {
         if (auto* canvas = qobject_cast<CanvasScene*>(scene())) canvas->elementDragged(view_.name, pos());
     } else if (event->button() == Qt::LeftButton && event->modifiers() == Qt::NoModifier) {
         if (auto* canvas = qobject_cast<CanvasScene*>(scene())) {
-            if (canvas->selectedElementNames().size() <= 1 && !view_.isCustomGroup) {
-                canvas->elementDoubleClicked(view_.name);
-            }
+            // A click opens the Properties tab: a template's parameters, an element's properties.
+            if (view_.isTemplate) canvas->frameActivated(view_.groupId);
+            else if (canvas->selectedElementNames().size() <= 1) canvas->elementDoubleClicked(view_.name);
         }
     }
 }
 
 void ElementItem::mouseDoubleClickEvent(QGraphicsSceneMouseEvent*) {
-    if (auto* canvas = qobject_cast<CanvasScene*>(scene())) canvas->elementDoubleClicked(view_.name);
+    auto* canvas = qobject_cast<CanvasScene*>(scene());
+    if (!canvas) return;
+    if (view_.isTemplate) canvas->frameActivated(view_.groupId);
+    else canvas->elementDoubleClicked(view_.name);
 }

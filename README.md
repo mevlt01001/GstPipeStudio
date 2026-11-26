@@ -1,3 +1,7 @@
+
+
+
+
 <p align="center">
   <img src="gstpipestudio/assets/logo/animation.gif" alt="GstPipeStudio" width="540">
 </p>
@@ -13,9 +17,7 @@
 
 ## From an idea to a running pipeline
 
-<p align="center">
-  <video src="gstpipestudio/assets/logo/GstPipeStudioRTSPDemo.mp4" width="800" controls autoplay loop muted></video>
-</p>
+https://github.com/user-attachments/assets/2ef5ea61-c1c2-4e45-a5fc-c1454a72551e
 
 
 | Build | Understand | Reuse |
@@ -42,7 +44,13 @@ Qt is bundled in release packages. GStreamer **1.16+** and the plugins your pipe
 
 Open **View → Live metrics → Start monitoring**. Every element shows processing time, age and Drop Rate. The graph compares all elements; choose one for detail. A dash means the measurement is unavailable. Drop Rate requires QoS-reported buffer counts; it is not inferred from input/output differences.
 
-**Small conveniences:** reset properties to defaults, undo graph edits, copy one or several elements, arrange the graph, and enable **View → Move connected elements together**. Hover a value control for 500 ms before using the wheel to edit it.
+## Reuse groups of elements as templates
+
+Select elements and press **Save as template** (Ctrl+G): a green border is drawn around them, then name the template and **Add parameter** for the properties and fixed caps fields you want to set quickly. **Add template** (Ctrl+T) inserts one from your library; hold the pointer on it for a peek inside. A collapsed template behaves as one element whose properties are its parameters; **+** expands it into its frame, **−** collapses it. Changing a copy asks whether the template itself should change, and a template update reaches the other projects that use it when they open. Templates can hold templates.
+
+**Nice alignment** places every box (columns from sources to sinks, no link through a box, as few crossings as possible): when a file opens, when a template expands or collapses, and with **Arrange pipeline** or **Auto align** on a selection. **View → Link style** switches between curves and right-angle lines. Positions are not saved in the `.conf`.
+
+**Small conveniences:** reset properties to defaults, undo graph edits, copy one or several elements, **File → Version history** to go back to an earlier save, and **View → Move connected elements together**.
 
 ## Help improve it
 

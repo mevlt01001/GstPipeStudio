@@ -1,35 +1,79 @@
 # The GUI links gps_pipeline and Qt only. It never sees GStreamer: the helpers (gps-inspect, gps-update, gps-run) do.
 find_package(Qt6 REQUIRED COMPONENTS Widgets)
 set(CMAKE_AUTOMOC ON)
+add_subdirectory(${GPS_ROOT}/third_party/quickjs ${CMAKE_BINARY_DIR}/third_party/quickjs)
 
 add_library(gps_gui STATIC
+    backend/include/apppaths.h backend/src/apppaths.cpp
+    backend/include/saveresult.h
+    backend/include/savetarget.h backend/src/savetarget.cpp
+    backend/include/projectfile.h backend/src/projectfile.cpp
+    backend/include/versionhistory.h backend/src/versionhistory.cpp
+    backend/include/componentprovider.h backend/src/componentprovider.cpp
+    backend/include/pluginlibrary.h
+    backend/include/templatelibrary.h backend/src/templatelibrary.cpp
+    backend/include/settings.h backend/src/settings.cpp
+    backend/include/viewpreferences.h backend/src/viewpreferences.cpp
+    backend/include/environmentservice.h backend/src/environmentservice.cpp
+    backend/include/backupservice.h backend/src/backupservice.cpp
+    backend/include/appservices.h
     backend/include/executionbackend.h backend/src/executionbackend.cpp
+    backend/include/factorycatalog.h backend/src/factorycatalog.cpp
     backend/include/helperclient.h backend/src/helperclient.cpp
     backend/include/slowwatch.h backend/src/slowwatch.cpp
     backend/include/startupcheck.h backend/src/startupcheck.cpp
     backend/include/supportreport.h backend/src/supportreport.cpp
-    model/include/capsparse.h model/src/capsparse.cpp
     model/include/elementedit.h
-    model/include/elementinfo.h model/src/elementinfo.cpp
+    model/include/capslabel.h model/src/capslabel.cpp
+    model/include/contract.h model/src/contract.cpp
     model/include/elementview.h
-    model/include/updateresult.h model/src/updateresult.cpp
     controller/include/controller.h controller/src/controller.cpp
+    controller/include/editsession.h controller/src/editsession.cpp
+    controller/include/validationsession.h controller/src/validationsession.cpp
+    controller/include/runsession.h controller/src/runsession.cpp
+    controller/include/templateinstances.h controller/src/templateinstances.cpp
+    controller/include/documentviews.h controller/src/documentviews.cpp
     controller/include/flows.h controller/src/flows.cpp
+    controller/include/panelslot.h controller/src/panelslot.cpp
+    controller/include/canvaslayout.h controller/src/canvaslayout.cpp
+    controller/include/outline.h controller/src/outline.cpp
+    controller/include/documentbackup.h controller/src/documentbackup.cpp
+    layout/include/layoutgraph.h
+    layout/include/elkengine.h layout/src/elkengine.cpp
+    layout/include/layoutrunner.h layout/src/layoutrunner.cpp
     canvas/include/canvasmetrics.h
     canvas/include/canvasscene.h canvas/src/canvasscene.cpp
     canvas/include/canvasview.h canvas/src/canvasview.cpp
     canvas/include/elementitem.h canvas/src/elementitem.cpp
+    canvas/include/headerbutton.h canvas/src/headerbutton.cpp
     canvas/include/linkitem.h canvas/src/linkitem.cpp
     canvas/include/paditem.h canvas/src/paditem.cpp
+    canvas/include/templateframeitem.h canvas/src/templateframeitem.cpp
     ui/include/drawer.h ui/src/drawer.cpp
     ui/include/mainwindow.h ui/src/mainwindow.cpp
+    ui/include/panels.h ui/src/panels.cpp
+    ui/include/document.h ui/src/document.cpp
+    ui/include/documenttabs.h ui/src/documenttabs.cpp
+    ui/include/commandset.h ui/src/commandset.cpp
+    ui/include/contextmenus.h ui/src/contextmenus.cpp
+    ui/include/prompt.h ui/src/prompt.cpp
+    ui/include/saveflow.h ui/src/saveflow.cpp
+    ui/include/documentregistry.h ui/src/documentregistry.cpp
+    ui/widgets/include/newprojectdialog.h ui/widgets/src/newprojectdialog.cpp
+    ui/include/fileoperations.h ui/src/fileoperations.cpp
+    ui/explorer/include/explorerentry.h ui/explorer/src/explorerentry.cpp
+    ui/explorer/include/explorersource.h ui/explorer/src/explorersource.cpp
+    ui/explorer/include/explorerlook.h ui/explorer/src/explorerlook.cpp
+    ui/explorer/include/explorer.h ui/explorer/src/explorer.cpp
+    ui/widgets/include/tabclosebutton.h ui/widgets/src/tabclosebutton.cpp
     ui/include/theme.h ui/src/theme.cpp
     ui/pages/include/capspage.h ui/pages/src/capspage.cpp
     ui/pages/include/pickerpage.h ui/pages/src/pickerpage.cpp
     ui/pages/include/propertypage.h ui/pages/src/propertypage.cpp
     ui/pages/include/setuppage.h ui/pages/src/setuppage.cpp
+    ui/pages/include/templatepage.h ui/pages/src/templatepage.cpp
+    ui/pages/include/templateparamspage.h ui/pages/src/templateparamspage.cpp
     ui/widgets/include/capsfieldeditor.h ui/widgets/src/capsfieldeditor.cpp
-    ui/widgets/include/confirmdialog.h ui/widgets/src/confirmdialog.cpp
     ui/widgets/include/factorydelegate.h ui/widgets/src/factorydelegate.cpp
     ui/widgets/include/logpanel.h ui/widgets/src/logpanel.cpp
     ui/widgets/include/wheelguard.h ui/widgets/src/wheelguard.cpp
@@ -37,17 +81,20 @@ add_library(gps_gui STATIC
     ui/widgets/include/spinner.h ui/widgets/src/spinner.cpp
     ui/widgets/include/updatepanel.h ui/widgets/src/updatepanel.cpp
     ui/widgets/include/telemetrypanel.h ui/widgets/src/telemetrypanel.cpp
+    ui/widgets/include/templatepeek.h ui/widgets/src/templatepeek.cpp
     ui/widgets/include/validationindicator.h ui/widgets/src/validationindicator.cpp)
 target_include_directories(gps_gui PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/backend/include
     ${CMAKE_CURRENT_SOURCE_DIR}/model/include
     ${CMAKE_CURRENT_SOURCE_DIR}/controller/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/layout/include
     ${CMAKE_CURRENT_SOURCE_DIR}/canvas/include
     ${CMAKE_CURRENT_SOURCE_DIR}/ui/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/ui/explorer/include
     ${CMAKE_CURRENT_SOURCE_DIR}/ui/pages/include
     ${CMAKE_CURRENT_SOURCE_DIR}/ui/widgets/include)
-target_link_libraries(gps_gui PUBLIC Qt6::Widgets gps_pipeline)
+target_link_libraries(gps_gui PUBLIC Qt6::Widgets gps_pipeline PRIVATE gps_quickjs)
 
 add_executable(gstpipestudio ${GPS_ROOT}/main.cpp)
 target_link_libraries(gstpipestudio PRIVATE gps_gui)
@@ -91,6 +138,8 @@ qt_add_resources(gps_gui branding PREFIX "/brand" BASE "${GPS_ROOT}/assets/logo"
 target_sources(gps_gui PRIVATE ui/widgets/src/windowchrome.cpp ui/widgets/src/aboutdialog.cpp)
 
 target_sources(gps_gui PRIVATE canvas/src/connectionpreview.cpp)
+# elkjs 0.10.0 (EPL-2.0), unchanged: the ELK layout the layout::ElkEngine runs in QuickJS.
+qt_add_resources(gps_gui elk PREFIX "/layout" BASE "${GPS_ROOT}/third_party/elkjs" FILES "${GPS_ROOT}/third_party/elkjs/elk.bundled.js")
 
 qt_add_resources(gps_gui appicon PREFIX "/brand" BASE "${GPS_ROOT}/packaging/icons/hicolor/64x64/apps"
     FILES "${GPS_ROOT}/packaging/icons/hicolor/64x64/apps/gstpipestudio.png")

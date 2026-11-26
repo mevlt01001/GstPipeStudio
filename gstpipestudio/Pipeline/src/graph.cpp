@@ -1,9 +1,11 @@
 // plan.cpp – the rules of SPEC 4. Nothing in here knows an element by name except the queue (SPEC 4.4).
 #include "graph.h"
+#include "pipeline.h"
 
 #include <algorithm>
 #include <cctype>
 #include <set>
+#include <tuple>
 
 namespace gps {
 
@@ -22,6 +24,10 @@ bool splitPadIdentity(const std::string& identity, std::string* templateName, in
     return true;
 }
 
+Pad::Presence presenceOf(const std::string& text) {
+    return text == "always" ? Pad::Presence::Always : text == "request" ? Pad::Presence::Request : Pad::Presence::Sometimes;
+}
+
 bool isTemplateName(const std::string& padName) {
     return padName.find('%') != std::string::npos;
 }
@@ -34,6 +40,34 @@ std::map<std::string, int> defaultRequestSrc(const std::vector<std::pair<std::st
     if (allRequest) counts[srcTemplates.front().first] = 1;
     return counts;
 }
+
+// ---- addresses
+
+std::string PadRef::templateName() const {
+    std::string name;
+    return splitPadIdentity(identity, &name, nullptr) ? name : identity;
+}
+
+std::string PadRef::linkName() const { return isSrc() ? identity : templateName(); }
+
+std::string PadRef::key() const { return element + "|" + identity + (isSrc() ? "|src" : "|sink"); }
+
+std::optional<PadRef> PadRef::fromKey(const std::string& key) {
+    const size_t first = key.find('|'), last = key.rfind('|');
+    if (first == std::string::npos || first == last || first == 0 || last == first + 1) return std::nullopt;
+    const std::string side = key.substr(last + 1);
+    if (side != "src" && side != "sink") return std::nullopt;
+    return PadRef{key.substr(0, first), key.substr(first + 1, last - first - 1),
+                  side == "src" ? Pad::Direction::Source : Pad::Direction::Sink};
+}
+
+bool PadRef::operator==(const PadRef& o) const { return element == o.element && identity == o.identity && direction == o.direction; }
+
+bool PadRef::operator<(const PadRef& o) const {
+    return std::tie(element, identity, direction) < std::tie(o.element, o.identity, o.direction);
+}
+
+std::string LinkRef::id() const { return src.element + "|" + src.identity; }
 
 // ---- lookup
 
@@ -48,6 +82,17 @@ Element* Graph::find(const std::string& name) {
     return const_cast<Element*>(static_cast<const Graph*>(this)->find(name));
 }
 
+const TemplateInstance* Graph::instance(const std::string& id) const {
+    for (const TemplateInstance& t : instances) {
+        if (t.id == id) return &t;
+    }
+    return nullptr;
+}
+
+TemplateInstance* Graph::instance(const std::string& id) {
+    return const_cast<TemplateInstance*>(static_cast<const Graph*>(this)->instance(id));
+}
+
 std::string Graph::sinkIdentity(size_t index) const {
     const auto& link = links.at(index);
     if (!isTemplateName(link.sinkPad)) return link.sinkPad;
@@ -57,9 +102,55 @@ std::string Graph::sinkIdentity(size_t index) const {
     return padIdentity(link.sinkPad, ordinal);
 }
 
+std::vector<std::string> Graph::elementNames() const {
+    std::vector<std::string> out;
+    for (const Element& e : elements) out.push_back(e.name);
+    return out;
+}
+
+std::vector<std::string> Graph::factories() const {
+    std::vector<std::string> out;
+    for (const Element& e : elements) {
+        if (std::find(out.begin(), out.end(), e.factory) == out.end()) out.push_back(e.factory);
+    }
+    return out;
+}
+
+std::map<std::string, int> Graph::linkedRequestPads(const std::string& element, Pad::Direction direction) const {
+    std::map<std::string, int> out;
+    for (const Connection& l : links) {
+        std::string templateName;
+        int k = 0;
+        if (direction == Pad::Direction::Source) {
+            if (l.srcElement == element && splitPadIdentity(l.srcPad, &templateName, &k)) ++out[templateName];
+        } else if (l.sinkElement == element) {
+            ++out[l.sinkPad];
+        }
+    }
+    return out;
+}
+
+std::pair<double, double> Graph::topLeft() const {
+    if (elements.empty()) return {0, 0};
+    std::pair<double, double> corner{elements.front().x, elements.front().y};
+    for (const Element& e : elements) corner = {std::min(corner.first, e.x), std::min(corner.second, e.y)};
+    return corner;
+}
+
+PadRef Graph::srcOf(size_t link) const { return {links.at(link).srcElement, links.at(link).srcPad, Pad::Direction::Source}; }
+
+PadRef Graph::sinkOf(size_t link) const { return {links.at(link).sinkElement, sinkIdentity(link), Pad::Direction::Sink}; }
+
 int Graph::linkFrom(const std::string& srcElement, const std::string& srcPad) const {
     for (size_t i = 0; i < links.size(); ++i) {
         if (links[i].srcElement == srcElement && links[i].srcPad == srcPad) return static_cast<int>(i);
+    }
+    return -1;
+}
+
+int Graph::linkInto(const std::string& sinkElement, const std::string& sinkIdentity) const {
+    for (size_t i = 0; i < links.size(); ++i) {
+        if (links[i].sinkElement == sinkElement && this->sinkIdentity(i) == sinkIdentity) return static_cast<int>(i);
     }
     return -1;
 }
@@ -104,6 +195,28 @@ bool Graph::wouldCycle(const std::string& srcElement, const std::string& sinkEle
     return false;
 }
 
+std::map<std::string, int> Graph::levels() const {
+    std::map<std::string, int> level, waiting;  // waiting: links into an element not visited yet
+    for (const Element& e : elements) level[e.name] = 0, waiting[e.name] = 0;
+    for (const Connection& l : links) ++waiting[l.sinkElement];
+    std::vector<std::string> ready;
+    for (const Element& e : elements) {
+        if (waiting[e.name] == 0) ready.push_back(e.name);
+    }
+    size_t visited = 0;
+    while (!ready.empty()) {
+        std::string current = ready.back();
+        ready.pop_back();
+        ++visited;
+        for (const Connection& l : links) {
+            if (l.srcElement != current) continue;
+            level[l.sinkElement] = std::max(level[l.sinkElement], level[current] + 1);
+            if (--waiting[l.sinkElement] == 0) ready.push_back(l.sinkElement);
+        }
+    }
+    return visited == elements.size() ? level : std::map<std::string, int>();
+}
+
 std::string Graph::ouroborosMessage(const std::string& srcElement, const std::string& sinkElement) {
     if (srcElement == sinkElement) {
         return "Ouroboros!: You cannot link '" + srcElement + "' back into itself — an element cannot eat its own tail!";
@@ -141,21 +254,10 @@ bool Graph::isElementTracked(const std::string& name, const TraitsFn& traits) co
     return std::find(tracked.begin(), tracked.end(), name) != tracked.end();
 }
 
+// What runs: the tracked elements as a fragment of the graph, under its name.
 Graph Graph::trackedSubplan(const TraitsFn& traits) const {
-    std::vector<std::string> tracked = trackedElements(traits);
-    std::set<std::string> keep(tracked.begin(), tracked.end());
-    Graph sub;
+    Graph sub = GraphFragment(trackedElements(traits)).copy(*this);
     sub.name = name;
-    sub.nextId = nextId;
-    for (const Element& e : elements) {
-        if (keep.count(e.name)) sub.elements.push_back(e);
-    }
-    for (const Connection& l : links) {
-        if (keep.count(l.srcElement) && keep.count(l.sinkElement)) sub.links.push_back(l);
-    }
-    for (const ExposedParam& p : exposed) {
-        if (keep.count(p.element)) sub.exposed.push_back(p);
-    }
     return sub;
 }
 
@@ -246,6 +348,8 @@ bool Graph::setRequestSrc(const std::string& element, const std::string& templat
     Element* e = find(element);
     if (!e || count < 0) return false;
 
+    if (count < linkedRequestPads(element, Pad::Direction::Source)[templateName]) return false;
+
     std::vector<std::pair<int, int>> linked;  // (pad index, link index)
     for (size_t i = 0; i < links.size(); ++i) {
         std::string t;
@@ -254,7 +358,6 @@ bool Graph::setRequestSrc(const std::string& element, const std::string& templat
             linked.emplace_back(k, static_cast<int>(i));
         }
     }
-    if (count < static_cast<int>(linked.size())) return false;
 
     std::sort(linked.begin(), linked.end());
     for (size_t j = 0; j < linked.size(); ++j) links[linked[j].second].srcPad = padIdentity(templateName, static_cast<int>(j));
@@ -269,11 +372,7 @@ bool Graph::setRequestSrc(const std::string& element, const std::string& templat
 bool Graph::setRequestSink(const std::string& element, const std::string& templateName, int count) {
     Element* e = find(element);
     if (!e || count < 0) return false;
-    int linkedCount = 0;
-    for (const Connection& l : links) {
-        if (l.sinkElement == element && l.sinkPad == templateName) ++linkedCount;
-    }
-    if (count < linkedCount) return false;
+    if (count < linkedRequestPads(element, Pad::Direction::Sink)[templateName]) return false;
     if (count == 0) e->requestSink.erase(templateName);
     else e->requestSink[templateName] = count;
     return true;
@@ -284,6 +383,14 @@ void Graph::setExposed(const std::vector<ExposedParam>& params) {
     for (const ExposedParam& p : params) {
         if (find(p.element) && !p.name.empty()) exposed.push_back(p);
     }
+}
+
+bool Graph::disconnectBetween(const std::set<std::string>& chosen) {
+    size_t before = links.size();
+    links.erase(std::remove_if(links.begin(), links.end(),
+                               [&](const Connection& l) { return chosen.count(l.srcElement) && chosen.count(l.sinkElement); }),
+                links.end());
+    return links.size() != before;
 }
 
 bool Graph::disconnectLink(const std::string& srcElement, const std::string& srcPad) {
@@ -409,19 +516,28 @@ void Graph::dropElement(const std::string& name, Removal* removed) {
                 links.end());
     removed->links += static_cast<int>(before - links.size());
     removed->elements.push_back(name);
-    exposed.erase(std::remove_if(exposed.begin(), exposed.end(), [&](const ExposedParam& p) { return p.element == name; }),
-                  exposed.end());
+    auto owned = [&](const ExposedParam& p) { return p.element == name; };
+    exposed.erase(std::remove_if(exposed.begin(), exposed.end(), owned), exposed.end());
+    for (TemplateInstance& t : instances) {
+        t.params.erase(std::remove_if(t.params.begin(), t.params.end(), owned), t.params.end());
+        t.local.erase(name);
+    }
+    dropEmptyInstances();
 }
 
-Removal Graph::prune(const TraitsFn& traits) {
-    Removal removed;
-    for (;;) {
-        std::vector<std::string> dead;
-        for (const Element& e : elements) {
-            if (!traits(e.factory).isSource && linksInto(e.name).empty()) dead.push_back(e.name);
+// An instance without members is gone; the ones inside it move up to its parent.
+void Graph::dropEmptyInstances() {
+    for (bool dropped = true; dropped;) {
+        dropped = false;
+        for (size_t i = 0; i < instances.size() && !dropped; ++i) {
+            const std::string id = instances[i].id, parent = instances[i].parent;
+            const bool used = std::any_of(elements.begin(), elements.end(), [&](const Element& e) { return e.group == id; }) ||
+                              std::any_of(instances.begin(), instances.end(), [&](const TemplateInstance& t) { return t.parent == id; });
+            if (used) continue;
+            instances.erase(instances.begin() + static_cast<long>(i));
+            for (TemplateInstance& t : instances) t.local.erase(id);
+            dropped = true;
         }
-        if (dead.empty()) return removed;
-        for (const std::string& name : dead) dropElement(name, &removed);
     }
 }
 
@@ -431,11 +547,6 @@ Removal Graph::cut(const std::string& srcElement, const std::string& srcPad, con
     return removed;
 }
 
-Removal Graph::previewCut(const std::string& srcElement, const std::string& srcPad, const TraitsFn& traits) const {
-    Graph copy = *this;
-    return copy.cut(srcElement, srcPad, traits);
-}
-
 Addition Graph::replace(const std::string& srcElement, const std::string& srcPad, const std::string& factory,
                        const std::string& sinkPad, const Props& props, const TraitsFn&) {
     Addition result;
@@ -443,39 +554,30 @@ Addition Graph::replace(const std::string& srcElement, const std::string& srcPad
     if (old < 0) return result;
     std::string targetName = links[old].sinkElement;
     double x = 0, y = 0;
+    std::vector<TemplateInstance> before = instances;  // the new element takes the old one's place in its template
+    std::string group;
     if (const Element* replaced = find(targetName)) {
         x = replaced->x;
         y = replaced->y;
+        group = replaced->group;
         dropElement(targetName, &result.removed);
     } else {
         disconnectLink(srcElement, srcPad);
         result.removed.links = 1;
     }
     result.element = addAfter(srcElement, srcPad, factory, sinkPad, props, x, y);
-    return result;
-}
-
-Removal Graph::previewReplace(const std::string& srcElement, const std::string& srcPad, const TraitsFn&) const {
-    Removal removed;
-    int old = linkFrom(srcElement, srcPad);
-    if (old >= 0) {
-        Graph copy = *this;
-        copy.dropElement(links[old].sinkElement, &removed);
+    if (!group.empty() && !result.element.empty()) {
+        for (const TemplateInstance& t : before) {
+            if (!instance(t.id)) instances.push_back(t);  // the replaced element was its only member
+        }
+        for (TemplateInstance& t : instances) {
+            t.params.erase(std::remove_if(t.params.begin(), t.params.end(), [&](const ExposedParam& p) { return !find(p.element); }),
+                           t.params.end());
+            t.local.erase(targetName);
+        }
+        find(result.element)->group = group;
     }
-    return removed;
-}
-
-Removal Graph::deleteSource(const std::string& name, const TraitsFn& traits) {
-    Removal removed;
-    const Element* e = find(name);
-    if (!e || (traits && !traits(e->factory).isSource)) return removed;
-    dropElement(name, &removed);
-    return removed;
-}
-
-Removal Graph::previewDeleteSource(const std::string& name, const TraitsFn& traits) const {
-    Graph copy = *this;
-    return copy.deleteSource(name, traits);
+    return result;
 }
 
 // ---- the queue shortcut. Its pad names are part of the exception (SPEC 4.4).

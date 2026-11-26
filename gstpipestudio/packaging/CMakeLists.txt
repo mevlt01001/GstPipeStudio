@@ -2,6 +2,9 @@
 install(FILES gstpipestudio.desktop DESTINATION share/applications)
 install(DIRECTORY icons/hicolor DESTINATION share/icons)
 install(FILES ${GPS_ROOT}/../LICENSE DESTINATION share/doc/gstpipestudio RENAME copyright)
+# The vendored libraries the GUI is built with, each with its own licence text.
+install(FILES ${GPS_ROOT}/third_party/quickjs/LICENSE DESTINATION share/doc/gstpipestudio RENAME LICENSE.quickjs)
+install(FILES ${GPS_ROOT}/third_party/elkjs/LICENSE.md DESTINATION share/doc/gstpipestudio RENAME LICENSE.elkjs)
 
 # The programs are in GPS_PRIVATE_DIR/bin (see the top CMakeLists.txt); bin/ gets a link to each, so they are on the PATH.
 # A program started through its link still looks for its Qt and its helpers where it really is.

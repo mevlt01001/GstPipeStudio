@@ -10,11 +10,14 @@
 #include "canvasscene.h"
 #include "canvasview.h"
 #include "capspage.h"
-#include "confirmdialog.h"
 #include "drawer.h"
 #include "elementitem.h"
 #include "flows.h"
+#include "logpanel.h"
+#include "contextmenus.h"
+#include "document.h"
 #include "mainwindow.h"
+#include "panels.h"
 #include "pickerpage.h"
 #include "propertypage.h"
 #include "setuppage.h"
@@ -53,7 +56,6 @@ class ScreensTest : public QObject {
     void buildRichPipeline() {
         ElementEdit expose;
         expose.props = {{"pattern", "ball"}, {"num-buffers", "300"}};
-        expose.exposed = {"num-buffers"};
         QString cam = addSource(*c, "videotestsrc", expose);
         ElementEdit three;
         three.requestSrc["src_%u"] = 2;
@@ -98,14 +100,14 @@ private slots:
         MainWindow w(c.get());
         w.show();
         buildRichPipeline();
-        QVERIFY(c->result().isComplete());
+        QVERIFY(c->result().complete());
         settleWindow(w);
         save(&w, "ux_03_finished_pipeline");
         w.view()->resetTransform();
         w.view()->centerOn(w.scene()->element("tee_1"));
         QTest::qWait(100);
         save(w.view(), "ux_03b_canvas_1to1");
-        w.bottomTabs()->setCurrentIndex(0);
+        w.panels()->show(w.logPanel());
         QTest::qWait(100);
         save(&w, "ux_04_log_panel");
     }
@@ -129,7 +131,7 @@ private slots:
         QString conv = addAfter(*c, src, "src", "videoconvert");
         addAfter(*c, conv, "src", "fakesink", "sink", withProps({{"fake-error", "Could not open resource for writing: /readonly/out.mp4"}}));
         settleWindow(w);
-        QVERIFY(!c->canSave());
+        QVERIFY(!c->canRun());
         save(&w, "ux_06_failed_validation");
     }
 
@@ -148,7 +150,7 @@ private slots:
         addSource(*c, "videotestsrc");
         QString bad = addSource(*c, "audiotestsrc", withProps({{"fake-crash", "1"}}));
         settleWindow(w);
-        QCOMPARE(c->result().status, QString("crashed"));
+        QCOMPARE(fromStd(c->result().status), QString("crashed"));
         save(&w, "ux_08_crashed_helper");
     }
 
@@ -191,8 +193,8 @@ private slots:
         w.flows()->closeCaps();
         QTest::qWait(100);
 
-        // Add source (in right drawer).
-        w.flows()->chooseSource();
+        // Add element (in right drawer).
+        w.flows()->chooseElement();
         QVERIFY(w.drawer()->page<PickerPage>());
         saveWithDrawer(w, "ux_13_drawer_add_source");
         w.drawer()->dismiss();
@@ -206,12 +208,6 @@ private slots:
         w.drawer()->dismiss();
         w.flows()->closeCaps();
         QTest::qWait(300);
-
-        ConfirmDialog confirm("Remove elements", "These 3 elements will be removed, with 3 links",
-                              {"nvvideoconvert_5   (nvvideoconvert)", "textoverlay_6   (textoverlay)", "fakesink_7   (fakesink)"}, "Remove 3 elements");
-        confirm.show();
-        QTest::qWait(100);
-        save(&confirm, "ux_14_confirm");
     }
 
     void menus() {
@@ -219,13 +215,13 @@ private slots:
         w.show();
         buildRichPipeline();
         settleWindow(w);
-        w.flows()->showLinkMenu("videotestsrc_0", "src", w.mapToGlobal(QPoint(400, 300)));
+        w.contextMenus()->link("videotestsrc_0", "src", w.mapToGlobal(QPoint(400, 300)));
         QTest::qWait(100);
         QMenu* menu = w.findChild<QMenu*>("linkMenu");
         QVERIFY(menu);
         save(menu, "ux_15_link_menu");
         menu->close();
-        w.flows()->showElementMenu("videotestsrc_0", w.mapToGlobal(QPoint(400, 300)));
+        w.contextMenus()->element(*w.front(), "videotestsrc_0", w.mapToGlobal(QPoint(400, 300)));
         QTest::qWait(100);
         menu = w.findChild<QMenu*>("elementMenu");
         QVERIFY(menu);

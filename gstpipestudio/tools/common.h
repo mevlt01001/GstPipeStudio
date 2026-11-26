@@ -11,6 +11,8 @@
 
 #include <gst/gst.h>
 
+#include "wire.h"
+
 namespace gps {
 
 // Plugins sometimes print to stdout. After this, fd 1 is stderr, and only json() reaches the real stdout.
@@ -58,9 +60,7 @@ inline void logLine(const std::string& line) { std::fprintf(stderr, "%s\n", line
 // Exit code 2 (SPEC 7): the message on stderr, and a JSON object so a caller that only reads stdout sees it too.
 inline int usageError(Output& out, const std::string& message) {
     logLine(message);
-    std::string escaped;
-    for (char c : message) escaped += (c == '"' || c == '\\') ? std::string("\\") + c : std::string(1, c == '\n' ? ' ' : c);
-    out.json("{\"error\":\"" + escaped + "\"}");
+    out.json(toJson(ErrorReply{message}));
     return 2;
 }
 

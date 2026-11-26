@@ -1,9 +1,13 @@
 // plan_test.cpp – every rule of SPEC 3 and 4. Factories whose name starts with "src" are sources.
 #include <algorithm>
+#include <filesystem>
+#include <fstream>
+#include <unistd.h>
 #include <iostream>
 
 #include "capstext.h"
 #include "check.h"
+#include "files.h"
 #include "pipeline.h"
 #include "graph.h"
 
@@ -67,11 +71,6 @@ static void chain() {
     CHECK_EQ(p.linkFrom(a, "src"), 1);
     CHECK_EQ(p.linkFrom(b, "src"), -1);
 
-    Removal preview = p.previewCut(a, "src", T);
-    CHECK(preview.elements.empty());
-    CHECK_EQ(preview.links, 1);
-    CHECK_EQ(p.elements.size(), size_t(3));  // the preview changed nothing
-
     Removal r = p.cut(a, "src", T);
     CHECK(r.elements.empty());
     CHECK_EQ(r.links, 1);
@@ -87,7 +86,7 @@ static void chain() {
     // Names are never reused.
     Graph q;
     std::string first = q.addSource("src");
-    q.deleteSource(first, T);
+    q.deleteElement(first, false);
     CHECK_EQ(q.addSource("src"), std::string("src_1"));
 }
 
@@ -118,14 +117,6 @@ static void pruning() {
     CHECK_EQ(h.links[0].srcElement, hs);
     CHECK_EQ(h.links[0].sinkElement, hc);
 
-    // An element with one linked input stays although another sink pad is free (textoverlay).
-    Graph o;
-    std::string v = o.addSource("src");
-    std::string overlay = o.addAfter(v, "src", "overlay", "video_sink");
-    std::string out = o.addAfter(overlay, "src", "sink", "sink");
-    CHECK(o.prune(T).elements.empty());
-    CHECK(o.find(overlay) && o.find(out));
-
     // Two sources into a mixer: deleting a source only deletes that source; downstream elements stay on canvas.
     Graph m;
     std::string s1 = m.addSource("src");
@@ -133,26 +124,15 @@ static void pruning() {
     std::string mix = m.addAfter(s1, "src", "mixer", "sink_%u");
     CHECK(m.linkExisting(s2, "src", mix, "sink_%u", "video/x-raw, width=(int)160"));
     std::string end = m.addAfter(mix, "src", "sink", "sink");
-    Removal one = m.previewDeleteSource(s1, T);
-    CHECK_EQ(one.elements, Names({s1}));
-    CHECK_EQ(one.links, 1);
-    CHECK_EQ(m.elements.size(), size_t(4));
-    m.deleteSource(s1, T);
+    CHECK(m.deleteElement(s1, false));
+    CHECK_EQ(m.links.size(), size_t(2));
     CHECK(m.find(mix) && m.find(end));
     CHECK(m.isElementTracked(mix, T));
-    Removal both = m.deleteSource(s2, T);
-    CHECK_EQ(both.elements, Names({s2}));
+    CHECK(m.deleteElement(s2, false));
     CHECK_EQ(m.elements.size(), size_t(2));  // mix and end stay on the free canvas
     CHECK(!m.isElementTracked(mix, T));
     CHECK(!m.isElementTracked(end, T));
-
-    // Only sources can be deleted this way.
-    Graph n;
-    std::string ns = n.addSource("src");
-    std::string nf = n.addAfter(ns, "src", "f", "sink");
-    CHECK(n.deleteSource(nf, T).elements.empty());
-    CHECK(n.find(nf));
-    CHECK(n.deleteSource("nope", T).elements.empty());
+    CHECK(!m.deleteElement("nope", false));
 }
 
 static void linking() {
@@ -174,6 +154,15 @@ static void linking() {
     CHECK(!p.linkExisting(g, "src", mix, "sink_%u"));
     CHECK(p.wouldCycle(g, g));
     CHECK(!p.wouldCycle(s2, g));
+    {   // levels: the longest chain before each element; a cycle has none
+        Graph chain;
+        std::string a = chain.addSource("src"), b = chain.addElement("f"), c = chain.addElement("f");
+        chain.links = {{a, "src", b, "sink", "", {}}, {b, "src", c, "sink", "", {}}, {a, "src_1", c, "sink_1", "", {}}};
+        CHECK(chain.levels() == (std::map<std::string, int>{{a, 0}, {b, 1}, {c, 2}}));
+        CHECK(chain.disconnectBetween({b, c}) && chain.links.size() == 2 && !chain.disconnectBetween({b, c}));
+        chain.links.push_back({c, "src", a, "sink", "", {}});
+        CHECK(chain.levels().empty());
+    }
     // Unknown elements.
     CHECK(!p.linkExisting("nope", "src", mix, "sink_%u"));
     CHECK(!p.linkExisting(g, "src", "nope", "sink"));
@@ -186,7 +175,6 @@ static void replacing() {
     std::string b = p.addAfter(a, "src", "f", "sink");
     CHECK(p.setCaps(s, "src", "video/x-raw, width=(int)640"));
 
-    CHECK_EQ(p.previewReplace(s, "src", T).elements, Names({a}));
     Addition r = p.replace(s, "src", "other", "video_sink", {{"k", "v"}}, T);
     CHECK_EQ(r.removed.elements, Names({a}));
     CHECK(!r.element.empty());
@@ -295,7 +283,7 @@ static void edits() {
     // An exposed parameter goes with its element.
     p.cut(s, "src", T);
     CHECK_EQ(p.exposed.size(), size_t(1));  // the source stays
-    p.deleteSource(s, T);
+    p.deleteElement(s, false);
     CHECK(p.exposed.empty());
 }
 
@@ -321,8 +309,8 @@ static void confRoundTrip() {
     CHECK(q.complete);
     CHECK_EQ(q.find(s)->props.at("note"), std::string("line1\nline2\\end"));
     CHECK_EQ(q.find(s)->props.at("location"), std::string("/data/my file=1.avi"));
-    CHECK_EQ(q.find(s)->x, 40.5);
-    CHECK_EQ(q.find(s)->y, -80.0);
+    CHECK_EQ(q.find(s)->x, 0.0);  // positions are not saved: nice alignment places the boxes
+    CHECK(text.find("\nx=") == std::string::npos);
     CHECK_EQ(q.links[1].caps, std::string("video/x-raw, width=(int)640, format=(string)\"A B\""));
     CHECK_EQ(q.links[1].sinkPadProps.at("alpha"), std::string("0.5"));
     CHECK_EQ(q.find(tee)->requestSrc.at("src_%u"), 2);
@@ -346,6 +334,35 @@ static void confRoundTrip() {
     Graph u;
     CHECK(Graph::fromConf(text + "\n[future:thing]\nx=1\n", &u, &error));
     CHECK_EQ(u.elements.size(), p.elements.size());
+}
+
+// One writer: the folder is made, the file replaced whole (its mode and links kept), nothing left beside it; one
+// sanitizer for file names.
+static void fileWrites() {
+    const std::filesystem::path folder = std::filesystem::temp_directory_path() / ("gps_files_" + std::to_string(::getpid()));
+    const std::string path = (folder / "new" / "a.conf").string();
+    std::string error;
+    CHECK(files::writeAtomic(path, "one", &error));
+    CHECK(files::writeAtomic(path, "two", &error));
+    std::ifstream in(path);
+    std::string back((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    CHECK_EQ(back, std::string("two"));
+    CHECK_EQ(std::distance(std::filesystem::directory_iterator(folder / "new"), std::filesystem::directory_iterator()), 1L);
+    // The file keeps its mode, and a link to it stays a link while the file it points at is replaced.
+    namespace fs = std::filesystem;
+    fs::permissions(path, fs::perms::owner_read | fs::perms::owner_write | fs::perms::group_write);
+    const fs::path link = folder / "link.conf";
+    fs::create_symlink(path, link);
+    CHECK(files::writeAtomic(link.string(), "three", &error));
+    CHECK(fs::is_symlink(link));
+    CHECK((fs::status(path).permissions() & fs::perms::group_write) != fs::perms::none);
+    std::ifstream again(path);
+    std::string through((std::istreambuf_iterator<char>(again)), std::istreambuf_iterator<char>());
+    CHECK_EQ(through, std::string("three"));
+    CHECK(!files::writeAtomic("/proc/no/such.conf", "x", &error));
+    CHECK(error.find("cannot write") == 0);
+    CHECK_EQ(files::safeName("My cam: 2/ü"), std::string("My_cam__2___"));
+    std::filesystem::remove_all(folder);
 }
 
 static void confErrors() {
@@ -404,6 +421,18 @@ static void capsText() {
     s.media = "application/x-test";
     s.fields = {{"note", "gchararray", "a b"}};
     CHECK_EQ(s.toText(), std::string("application/x-test, note=(string)\"a\\ b\""));
+
+    // fromText() reads back what toText() writes
+    for (const char* t : {"video/x-raw", "video/x-raw, width=(int)640",
+                          "video/x-raw(memory:NVMM), format=(string)NV12, framerate=(fraction)30/1",
+                          "audio/x-raw, layout=(string)\"a\\ b,\\ c\", rate=(gint64)44100, ok=(boolean)true"}) {
+        CHECK_EQ(CapsChoice::fromText(t).toText(), std::string(t));
+    }
+    // the older spelling, with plain spaces inside the quotes, reads as the same value and is written back escaped
+    CHECK_EQ(CapsChoice::fromText("audio/x-raw, layout=(string)\"a b, c\"").toText(), std::string("audio/x-raw, layout=(string)\"a\\ b,\\ c\""));
+    CHECK(CapsChoice::fromText("").media.empty());
+    CHECK_EQ(CapsChoice::fromText("video/x-raw(memory:NVMM, memory:DMABuf)").features.size(), size_t(2));
+    CHECK_EQ(mediaOf(" video/x-raw(memory:NVMM), width=(int)1"), std::string("video/x-raw(memory:NVMM)"));
 }
 
 static void freeFormAndOopPipeline() {
@@ -461,6 +490,7 @@ int main() {
     requestSources();
     edits();
     confRoundTrip();
+    fileWrites();
     confErrors();
     capsText();
     freeFormAndOopPipeline();

@@ -2,42 +2,18 @@
 #include "linkitem.h"
 
 #include <QFontMetrics>
+#include <QLineF>
 #include <QGraphicsSceneMouseEvent>
 #include <QPainter>
 #include <QPainterPathStroker>
-#include <QRegularExpression>
 #include <QStyleOptionGraphicsItem>
 
 #include "canvasmetrics.h"
+#include "capslabel.h"
+#include "contract.h"
 #include "canvasscene.h"
 #include "paditem.h"
 #include "theme.h"
-
-QStringList LinkItem::capsFields(const QString& capsText) {
-    QString first = capsText.split(';').first().trimmed();
-    if (first.isEmpty() || first == "ANY" || first == "EMPTY") return {};
-    QStringList parts = first.split(',');
-    QStringList out;
-    out << "mediatype=" + parts[0].trimmed();
-    static const QRegularExpression typeCast("\\([^)]+\\)");
-    for (int i = 1; i < parts.size(); ++i) {
-        QString field = parts[i].trimmed();
-        field.remove(typeCast);
-        if (!field.isEmpty()) out << field;
-    }
-    return out;
-}
-
-QString LinkItem::formatSingleLine(const QString& capsText) {
-    const QString full = capsFields(capsText).join(" · ");
-    return full.size() > 60 ? full.left(57) + "…" : full;
-}
-
-QString LinkItem::formatMultiLine(const QString& capsText) {
-    QStringList fields = capsFields(capsText);
-    if (fields.size() > 5) { fields = fields.mid(0, 5); fields << "…"; }
-    return fields.join("\n");
-}
 
 LinkItem::LabelLayout LinkItem::decideLayout(double pipeLength, double singleLineWidth, double zoomLevel) {
     if (singleLineWidth <= 0.0) return Hidden;
@@ -57,12 +33,28 @@ LinkItem::LinkItem(const LinkView& view, PadItem* from, PadItem* to) : view_(vie
 
 void LinkItem::updatePath() {
     prepareGeometryChange();
-    // The curve starts and ends at the pad's edge, so the pad circles stay visible.
-    double edge = metrics::kPadRadius + 2;
-    QPointF a = from_->center() + QPointF(edge, 0), b = to_->center() - QPointF(edge, 0);
-    double reach = qBound(30.0, qAbs(b.x() - a.x()) / 2, 150.0);
-    path_ = QPainterPath(a);
-    path_.cubicTo(a + QPointF(reach, 0), b - QPointF(reach, 0), b);
+    // The line starts and ends at the pad's edge, so the pad circles stay visible.
+    const double edge = metrics::kPadRadius + 2;
+    const QPointF from = from_->center(), to = to_->center();
+    auto at = [](QPointF p, QPointF q) { return QLineF(p, q).length() < 1.5; };
+    // The route of the last nice alignment, while both pads are where it left them. Its pieces inside expanded templates
+    // belong to their frames (the connectors from border pads); the link draws the piece between its own two pads.
+    QList<QPointF> piece;
+    for (const QList<QPointF>& candidate : view_.route) {
+        if (candidate.size() >= 2 && at(candidate.front(), from) && at(candidate.back(), to)) piece = candidate;
+    }
+    path_ = QPainterPath();
+    if (!piece.isEmpty()) {
+        piece.front() += QPointF(edge, 0);
+        piece.back() -= QPointF(edge, 0);
+        path_.moveTo(piece.front());
+        for (int i = 1; i < piece.size(); ++i) path_.lineTo(piece[i]);
+    } else {
+        const QPointF a = from + QPointF(edge, 0), b = to - QPointF(edge, 0);
+        const double reach = qBound(30.0, qAbs(b.x() - a.x()) / 2, 150.0);
+        path_.moveTo(a);
+        path_.cubicTo(a + QPointF(reach, 0), b - QPointF(reach, 0), b);
+    }
     update();
 }
 
@@ -111,10 +103,9 @@ void LinkItem::paint(QPainter* p, const QStyleOptionGraphicsItem* option, QWidge
     if (!caps.isEmpty()) {
         double lod = option ? QStyleOptionGraphicsItem::levelOfDetailFromTransform(p->worldTransform()) : 1.0;
         if (lod <= 0.0) lod = 1.0;
-        QString single = formatSingleLine(caps);
-        QString multi = formatMultiLine(caps);
-        QFont baseFont = p->font();
-        baseFont.setPointSizeF(7.5);
+        QString single = capslabel::singleLine(caps);
+        QString multi = capslabel::multiLine(caps);
+        QFont baseFont = capslabel::font(p->font());
         QFontMetricsF fm(baseFont);
         double wSingle = fm.horizontalAdvance(single);
         double lPipe = pipeLength();
@@ -183,8 +174,8 @@ void LinkItem::mouseReleaseEvent(QGraphicsSceneMouseEvent* event) {
     auto* canvas = qobject_cast<CanvasScene*>(scene());
     if (!canvas) return;
     if (event->button() == Qt::LeftButton) {
-        canvas->linkClicked(view_.srcElement, view_.srcIdentity);
+        canvas->linkClicked(fromStd(view_.src.element), fromStd(view_.src.identity));
     } else if (event->button() == Qt::RightButton) {
-        canvas->linkContext(view_.srcElement, view_.srcIdentity, event->screenPos());
+        canvas->linkContext(fromStd(view_.src.element), fromStd(view_.src.identity), event->screenPos());
     }
 }

@@ -3,31 +3,32 @@
 #pragma once
 
 #include <QList>
+#include <QPointF>
 #include <QString>
 
 #include "canvasmetrics.h"
+#include "graph.h"
 
 struct PadView {
     enum State { Free, Linked, Unknown, Empty };  // Free/Unknown/Linked for src pads, Empty/Linked for sink pads
 
-    QString element;
-    QString identity;      // src: pad name or "<template>#<k>"; sink: pad name or "<template>#<k>" for Request
+    gps::PadRef ref;       // which pad it is: element, identity and side
     QString label;         // the name to show (the real pad name when the last update knew it)
-    QString templateName;
     QString media;         // media type of the caps, "" when unknown
     QString tip;           // full caps text for the tooltip
     QString caps;          // live negotiated caps or user filter
-    bool isSrc = false;
     State state = Free;
     int link = -1;         // index in Graph::links, -1 when free
 };
 
 struct ElementView {
     QString name, factory;
-    QString displayTitle;       // shown as header title when non-empty (e.g. Custom Element name)
-    QString groupId;            // "<CustomTitle>#<id>" when part of a custom element/group
-    bool isCustomGroup = false; // true when this item is a collapsed multi-element Custom Element
-    QStringList groupMembers;   // member element names when part of a group
+    QString displayTitle;       // shown as header title when non-empty (e.g. Template name)
+    QString longName;           // the factory's long name, under the title
+    QString groupId;            // the template instance it is drawn in
+    QString groupTitle;         // what that copy is called (Names::instance)
+    bool isTemplate = false; // true when this item is a collapsed multi-element Template
+    QStringList templateMembers;   // member element names when part of a group
     bool isSource = false;
     bool isSink = false;
     bool isTracked = true;
@@ -43,19 +44,21 @@ struct ElementView {
     }
 };
 
-struct CustomElementInfo {
-    QString name;         // custom element name, e.g. "MyDecoder"
-    QString description;  // summary, e.g. "videoconvert → videoscale"
-    bool isSource = false;
-    bool isSink = false;
-    bool hasFreeSink = false;
-    bool hasFreeSrc = false;
-    int elementCount = 0;
+// What the canvas shows of an expanded template: a border around its members, its name, and the template's pads on the
+// border (its free pads and the ones linked to the outside, like the ghost pads of a GstBin).
+struct FrameView {
+    QString id, title;
+    QStringList members;  // every element inside, nested ones too
+    QStringList inner;    // the visible frames inside it, at any depth (Outline): its border goes around them too
+    QList<PadView> pads;
+    int depth = 0;        // templates around it
 };
 
 struct LinkView {
     int index = -1;
-    QString srcElement, srcIdentity, sinkElement, sinkIdentity;
+    QString id;             // gps::LinkRef::id(): the name the layout gives its route
+    QList<QList<QPointF>> route;  // pieces of the route of the last nice alignment, empty when the canvas changed since
+    gps::PadRef src, sink;  // the pads at its two ends
     QString badge;          // "caps · 2": the link carries a caps choice with 2 pinned fields; "" when Auto
     QString tip;            // the choice itself
     QString negotiatedCaps; // live negotiated caps from GStreamer (or user caps filter)

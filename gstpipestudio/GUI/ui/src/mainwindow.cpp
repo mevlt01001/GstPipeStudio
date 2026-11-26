@@ -1,266 +1,349 @@
-// mainwindow.cpp
+// mainwindow.cpp – see mainwindow.h.
 #include "mainwindow.h"
-#include "windowchrome.h"
-#include "aboutdialog.h"
-#include "buildinfo.h"
-#include "pipelinefiledialog.h"
 
-#include <QAction>
+#include <QActionGroup>
+#include <QClipboard>
 #include <QCloseEvent>
-#include <QDockWidget>
-#include <QFileDialog>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QFileInfo>
-#include <QHBoxLayout>
+#include <QGuiApplication>
 #include <QLabel>
+#include <QListWidget>
+#include <QLocale>
 #include <QMenuBar>
-#include <QMessageBox>
-#include <QSettings>
+#include <QPointer>
+#include <QPushButton>
 #include <QStackedWidget>
 #include <QStatusBar>
-#include <QTabWidget>
+#include <QTabBar>
 #include <QTimer>
 #include <QToolBar>
+#include <QVBoxLayout>
+#include <tuple>
 
+#include "aboutdialog.h"
+#include "appservices.h"
+#include "buildinfo.h"
 #include "canvasscene.h"
 #include "canvasview.h"
-#include "capspage.h"
+#include "contextmenus.h"
 #include "controller.h"
+#include "document.h"
+#include "documentbackup.h"
+#include "documenttabs.h"
 #include "drawer.h"
-#include "elementitem.h"
-#include "flows.h"
-#include "linkitem.h"
+#include "explorer.h"
+#include "explorersource.h"
+#include "fileoperations.h"
 #include "logpanel.h"
+#include "flows.h"
+#include "panels.h"
+#include "pipelinefiledialog.h"
+#include "prompt.h"
 #include "propertypage.h"
+#include "saveflow.h"
+#include "savetarget.h"
+#include "settings.h"
 #include "setuppage.h"
+#include "telemetrypanel.h"
+#include "templates.h"
 #include "theme.h"
 #include "updatepanel.h"
-#include "telemetrypanel.h"
 #include "validationindicator.h"
+#include "versionhistory.h"
+#include "windowchrome.h"
 
-#include <QClipboard>
-#include <QGuiApplication>
-#include <QInputDialog>
-#include <QVBoxLayout>
-#include <set>
-
-MainWindow::MainWindow(Controller* controller, QWidget* parent) : QMainWindow(parent), controller_(controller) {
+MainWindow::MainWindow(Controller* controller, QWidget* parent)
+    : QMainWindow(parent), services_(controller->services()), saveFlow_(new SaveFlow(this)), registry_(new DocumentRegistry(this)),
+      files_(new FileOperations(services_, this)), tabs_(new DocumentTabs(services_, this)), commands_(new CommandSet(this)),
+      menus_(new ContextMenus(*commands_, this)) {
     setObjectName("mainWindow");
     setWindowFlag(Qt::FramelessWindowHint);
     setWindowIcon(QIcon(":/brand/gstpipestudio.png"));
     setMinimumSize(960, 600);
     resize(1360, 860);
 
-    drawer_ = new Drawer(this);
-    flows_ = new Flows(controller, drawer_, this);
-    scene_ = new CanvasScene(controller, this);
-    view_ = new CanvasView(scene_, this);
-
-    // The drawer slides in on the right side of the canvas; the canvas keeps its own scroll position.
-    auto* canvasPage = new QWidget(this);
-    auto* canvasRow = new QHBoxLayout(canvasPage);
-    canvasRow->setContentsMargins(0, 0, 0, 0);
-    canvasRow->setSpacing(0);
-    canvasRow->addWidget(view_, 1);
-    canvasRow->addWidget(drawer_);
-    setup_ = new SetupPage(this);
-    centre_ = new QStackedWidget(this);
-    centre_->setObjectName("centre");
-    centre_->addWidget(canvasPage);
-    centre_->addWidget(setup_);
-    setCentralWidget(centre_);
-
-    buildActions();
-    buildPanels();
-    auto* menus = menuBar();
-    auto* chrome = new WindowChrome(this, menus);
-    setMenuWidget(chrome);
-
-    // The canvas reports clicks; the work happens after the item's event handler has returned.
-    connect(scene_, &CanvasScene::freeSrcPadClicked, flows_, [this](const QString& e, const QString& id, const QPoint&) { flows_->fromFreePad(e, id); }, Qt::QueuedConnection);
-    connect(scene_, &CanvasScene::linkClickedSignal, flows_, &Flows::editCaps, Qt::QueuedConnection);
-    connect(scene_, &CanvasScene::linkMenuRequested, flows_, &Flows::showLinkMenu, Qt::QueuedConnection);
-    connect(scene_, &CanvasScene::elementMenuRequested, this, &MainWindow::onElementMenuRequested, Qt::QueuedConnection);
-    connect(scene_, &CanvasScene::canvasContextMenuRequested, this, [this](const QPoint& screenPos, const QPointF&) { showCanvasMenu(screenPos); }, Qt::QueuedConnection);
-    connect(scene_, &CanvasScene::elementActivated, flows_, &Flows::editProperties, Qt::QueuedConnection);
-    connect(scene_, &CanvasScene::elementsMoved, controller_, &Controller::setPositions, Qt::QueuedConnection);
-    connect(scene_, &CanvasScene::elementSpliced, this, [this](const QString& element, const QString& linkSrc, const QString& linkPad) {
-        QStringList sel = scene_->selectedElementNames();
-        if (sel.contains(element) && sel.size() > 1) {
-            controller_->spliceElements(sel, linkSrc, linkPad);
-        } else {
-            controller_->spliceElement(element, linkSrc, linkPad);
-        }
-    }, Qt::QueuedConnection);
-    connect(scene_, &CanvasScene::rebuilt, this, &MainWindow::onRebuilt);
-    connect(view_, &CanvasView::deletePressed, this, &MainWindow::deleteSelected);
-    connect(setup_, &SetupPage::retry, controller_, &Controller::checkEnvironment);
-
-    connect(controller_, &Controller::changed, scene_, &CanvasScene::scheduleRebuild);
-    connect(controller_, &Controller::changed, this, &MainWindow::refreshState);
-    connect(controller_, &Controller::environmentChecked, this, &MainWindow::onEnvironment);
-    connect(controller_, &Controller::logLine, log_, &LogPanel::append);
-    connect(controller_, &Controller::notice, this, [this](const QString& text) {
-        log_->append(text);
-        statusBar()->showMessage(text, 10000);
+    // The tabs over the canvas, as editors have them: one per open file.
+    auto* centre = new QWidget(this);
+    auto* column = new QVBoxLayout(centre);
+    column->setContentsMargins(0, 0, 0, 0);
+    column->setSpacing(0);
+    column->addWidget(tabs_->bar());
+    column->addWidget(tabs_->pages(), 1);
+    setCentralWidget(centre);
+    connect(tabs_, &DocumentTabs::added, this, &MainWindow::added);
+    connect(tabs_, &DocumentTabs::activated, this, &MainWindow::activated);
+    connect(tabs_, &DocumentTabs::closeRequested, this, &MainWindow::closeDocument);
+    connect(tabs_, &DocumentTabs::menuRequested, menus_, &ContextMenus::tab);
+    connect(registry_, &DocumentRegistry::changedOnDisk, this, [this](Document* d) { onChangedOnDisk(d, DiskChange::External); });
+    connect(registry_, &DocumentRegistry::deletedOnDisk, this, [this](Document* d) {
+        statusBar()->showMessage(d->controller()->target().title() + " was deleted on disk: save to keep it", 10000);
     });
+    // After the writing tab has taken its save: only the other tabs of that template are told.
+    connect(&services_.library(), &TemplateLibrary::changed, this, &MainWindow::onLibraryChanged, Qt::QueuedConnection);
 
-    QSettings settings;
-    restoreGeometry(settings.value("window/geometry").toByteArray());
-    restoreState(settings.value("window/state").toByteArray());
-    refreshState();
-    controller_->checkEnvironment();
+    panels_ = new Panels(this);
+    buildStatusBar();
+    tabs_->add(controller);
+    explorer_ = new Explorer(ExplorerSource::standard(services_, this), *files_, this);
+    panels_->add(explorer_, "Explorer", 0, Qt::LeftDockWidgetArea);
+    resizeDocks({panels_->dock(logPanel())}, {240}, Qt::Vertical);
+    resizeDocks({panels_->dock(explorer_)}, {260}, Qt::Horizontal);
+    panels_->show(updatePanel());
+
+    buildCommands();
+    buildMenus();
+    setMenuWidget(new WindowChrome(this, menuBar()));
+    restoreGeometry(Settings::windowGeometry());
+    restoreState(Settings::windowState());
+    built_ = true;
+    connect(&services_.view(), &ViewPreferences::changed, this, &MainWindow::scheduleRefresh);
+    if (QClipboard* clipboard = QGuiApplication::clipboard()) connect(clipboard, &QClipboard::dataChanged, this, &MainWindow::scheduleRefresh);
+    // GStreamer is checked once for the whole window; every tab shows the answer.
+    connect(&services_.environment(), &EnvironmentService::checked, this, &MainWindow::onEnvironment);
+    services_.environment().check();
+    activate(front());
 }
 
-bool MainWindow::showingSetup() const { return centre_->currentWidget() == setup_; }
+// The documents go first, while the docks and stacks that show their pages still stand.
+MainWindow::~MainWindow() { delete tabs_; }
 
-void MainWindow::buildActions() {
-    auto make = [this](const QString& name, const QString& text, const QList<QKeySequence>& keys, auto slot) {
-        auto* a = new QAction(text, this);
-        a->setObjectName(name);
-        a->setShortcuts(keys);
-        connect(a, &QAction::triggered, this, slot);
-        return a;
-    };
-    auto* newPlan = make("actionNew", "&New", {QKeySequence::New}, [this] {
-        if (confirmDiscard()) controller_->newPlan();
-    });
-    auto* open = make("actionOpen", "&Open…", {QKeySequence::Open}, [this] {
-        if (!confirmDiscard()) return;
-        QSettings settings;
-        QString path = PipelineFileDialog::choose(this, false, settings.value("lastDir").toString());
-        if (!path.isEmpty()) openFile(path);
-    });
-    auto* import = make("actionImportLaunch", "Import gst-launch pipeline…", {}, [this] {
-        if (!confirmDiscard()) return;
-        bool accepted = false;
-        QString description = QInputDialog::getMultiLineText(this, "Import gst-launch pipeline",
-            "Paste a gst-launch-1.0 command or its pipeline description.\n"
-            "The pipeline runs briefly in the background to discover dynamic pads.", QString(), &accepted);
-        if (!accepted || description.trimmed().isEmpty()) return;
-        fitNext_ = true;
-        controller_->importLaunch(description);
-    });
-    auto* save = make("actionSave", "&Save", {QKeySequence::Save}, [this] {
-        if (controller_->filePath().isEmpty()) saveAs();
-        else saveFile(QString());
-    });
-    auto* saveAs = make("actionSaveAs", "Save &as…", {QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_S)}, [this] { this->saveAs(); });
-    auto* update = make("actionUpdate", "&Validate", {QKeySequence(Qt::CTRL | Qt::Key_R), QKeySequence(Qt::Key_F5)}, [this] { controller_->refresh(); });
-    auto* run = make("actionRun", "&Run", {QKeySequence(Qt::CTRL | Qt::Key_Return)}, [this] { toggleRun(); });
-    auto* addSource = make("actionAddSource", "Add &source…", {QKeySequence(Qt::CTRL | Qt::Key_E)}, [this] { flows_->chooseSource(); });
-    addSource->setIconText("Add source");
-    auto* addElement = make("actionAddElement", "Add &element…", {QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_E)}, [this] { flows_->chooseElement(); });
-    addElement->setIconText("Add element");
-    auto* undoAct = make("actionUndo", "&Undo", {QKeySequence::Undo}, [this] { controller_->undo(); });
-    undoAct->setIconText("Undo");
-    auto* redoAct = make("actionRedo", "&Redo", {QKeySequence::Redo, QKeySequence(Qt::CTRL | Qt::Key_Y)}, [this] { controller_->redo(); });
-    redoAct->setIconText("Redo");
-    auto* dupAct = make("actionDuplicate", "&Duplicate", {QKeySequence(Qt::CTRL | Qt::Key_D)}, [this] { duplicateSelected(); });
-    auto* selAllAct = make("actionSelectAll", "Select &All", {QKeySequence::SelectAll}, [this] { selectAll(); });
-    auto* delAct = make("actionDelete", "De&lete", {QKeySequence::Delete, QKeySequence(Qt::Key_Backspace)}, [this] { deleteSelected(); });
-    auto* copyAct = make("actionCopy", "&Copy", {QKeySequence::Copy}, [this] { copySelected(); });
-    auto* cutAct = make("actionCut", "Cu&t", {QKeySequence::Cut}, [this] { cutSelected(); });
-    auto* pasteAct = make("actionPaste", "&Paste", {QKeySequence::Paste}, [this] { pasteClipboard(); });
-    auto* connectSelAct = make("actionConnectSelected", "Connect &selected", {QKeySequence(Qt::CTRL | Qt::Key_L)}, [this] { connectSelected(); });
-    auto* saveCustomAct = make("actionSaveCustomElement", "Save as &custom element…", {QKeySequence(Qt::CTRL | Qt::Key_G)}, [this] { saveSelectedAsCustomElement(); });
-    saveCustomAct->setIconText("Save custom");
-    auto* find = make("actionFind", "&Find element", {QKeySequence::Find}, [this] {
-        if (drawer_->isOpen()) drawer_->focusSearch();
-        else if (flows_->propertyPage()) flows_->propertyPage()->focusFirst();
-    });
-    auto* showLog = make("actionShowLog", "&Log", {}, [this] { tabs_->setCurrentWidget(log_); });
-    auto* showValidation = make("actionShowValidation", "&Validation", {}, [this] { tabs_->setCurrentWidget(updates_); });
-    auto* showTelemetry = make("actionShowTelemetry", "&Live metrics", {}, [this] { tabs_->setCurrentWidget(telemetry_); });
-    auto* showProps = make("actionShowProperties", "&Properties", {}, [this] { tabs_->setCurrentWidget(propsTab_); });
-    auto* showCaps = make("actionShowCaps", "&Caps", {}, [this] { tabs_->setCurrentWidget(capsTab_); });
-    auto* fit = make("actionFit", "Zoom to &fit", {QKeySequence(Qt::CTRL | Qt::Key_0)}, [this] { view_->fitAll(); });
-    auto* arrange = make("actionArrange", "Arrange &pipeline", {QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_L)}, [this] {
-        if (controller_->arrangePipeline()) QTimer::singleShot(0, view_, &CanvasView::fitAll);
-    });
-    auto* zoomIn = make("actionZoomIn", "Zoom &in", {QKeySequence::ZoomIn}, [this] { view_->zoomBy(1.25); });
-    auto* zoomOut = make("actionZoomOut", "Zoom &out", {QKeySequence::ZoomOut}, [this] { view_->zoomBy(0.8); });
-    auto* quit = make("actionQuit", "&Quit", {QKeySequence::Quit}, [this] { close(); });
-    auto* support = make("actionSupport", "&Request support…", {}, [this] { controller_->requestSupport("Problem report"); });
-    auto* about = make("actionAbout", "&About GstPipeStudio", {}, [this] { showAbout(); });
-    auto* gstInfo = make("actionGstInfo", "&GStreamer information", {}, [this] {
-        const StartupResult& env = controller_->environment();
-        QMessageBox::information(this, "GStreamer information", env.version.isEmpty() ? "GStreamer was not checked or not found." : env.statusText());
-    });
+// ---- the front document
 
+Document* MainWindow::front() const { return tabs_->front(); }
+Controller* MainWindow::controller() const { return front()->controller(); }
+QList<Document*> MainWindow::documents() const { return tabs_->all(); }
+QTabBar* MainWindow::tabs() const { return tabs_->bar(); }
+CanvasScene* MainWindow::scene() const { return front()->scene(); }
+CanvasView* MainWindow::view() const { return front()->view(); }
+Flows* MainWindow::flows() const { return front()->flows(); }
+Drawer* MainWindow::drawer() const { return front()->drawer(); }
+UpdatePanel* MainWindow::updatePanel() const { return front()->updates(); }
+LogPanel* MainWindow::logPanel() const { return front()->log(); }
+QWidget* MainWindow::propertiesTab() const { return front()->propsTab(); }
+QWidget* MainWindow::capsTab() const { return front()->capsTab(); }
+SetupPage* MainWindow::setupPage() const { return front()->setup(); }
+ValidationIndicator* MainWindow::indicator() const { return front()->indicator(); }
+bool MainWindow::showingSetup() const { return front()->centre()->currentWidget() == front()->setup(); }
+
+// ---- commands
+
+namespace {
+// The first reason a command is off: a general one (busy, not editable) before the command's own.
+QString firstOf(const QString& general, const QString& own) { return general.isEmpty() ? own : general; }
+}  // namespace
+
+QString MainWindow::environmentReason() const { return services_.environment().blocked() ? "GStreamer is not ready" : QString(); }
+
+QString MainWindow::busyReason() const { return firstOf(environmentReason(), controller()->busyReason()); }
+
+QString MainWindow::editReason() const { return controller()->saveBlockedReason(); }
+
+QString MainWindow::addReason() const { return firstOf(environmentReason(), editReason()); }
+
+QString MainWindow::selectionReason(int least) const {
+    const QString own = front()->selection().size() >= least ? QString() : least == 1 ? "Nothing is selected" : "Select two elements or more";
+    return firstOf(editReason(), own);
+}
+
+QString MainWindow::copyTitle() const { return fromStd(controller()->names().instance(toStd(commands_->target().instance))); }
+
+// The one table of commands: what each does, and why it is off.
+void MainWindow::buildCommands() {
+    using C = Command;
+    auto environment = [this] { return environmentReason(); };  // a new tab never waits for the front one (DocumentTabs::target)
+    auto edit = [this] { return editReason(); };
+    auto add = [this] { return addReason(); };
+    auto selected = [this] { return selectionReason(); };
+    auto pair = [this] { return selectionReason(2); };
+    auto withPlan = [this] { return firstOf(editReason(), controller()->plan().empty() ? "The canvas is empty" : QString()); };
+    auto target = [this] { return commands_->target(); };
+    commands_->add({
+        {C::New, "actionNew", "&New", {QKeySequence::New}, [this] { if (!front()->pristine()) newDocument(); }, environment},
+        {C::NewProject, "actionNewProject", "New &project…", {QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_N)}, [this] { files_->newProject(); }},
+        {C::Open, "actionOpen", "&Open…", {QKeySequence::Open}, [this] {
+             if (const QString path = PipelineFileDialog::choose(this, false, Settings::lastDir()); !path.isEmpty()) openFile(path);
+         }, environment},
+        {C::Save, "actionSave", "&Save", {QKeySequence::Save}, [this] { saveFlow_->save(front()); }, edit},
+        {C::SaveAs, "actionSaveAs", "Save &as…", {QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_S)}, [this] { saveFlow_->saveAs(front()); }, [this] {
+             return firstOf(editReason(), controller()->target().saveAsBlockedReason());
+         }},
+        {C::SaveAll, "actionSaveAll", "Save a&ll", {QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_S)}, [this] { saveFlow_->saveAll(documents()); }, [this] {
+             const QList<Document*> all = documents();
+             return std::any_of(all.cbegin(), all.cend(), [](const Document* d) { return d->controller()->hasUnsavedWork(); }) ? QString() : "Nothing is unsaved";
+         }},
+        {C::Revert, "actionRevert", "Re&vert file", {}, [this] { controller()->revert(); }, [this] { return controller()->canRevert() ? QString() : "Nothing to revert"; }},
+        {C::CloseTab, "actionCloseTab", "&Close tab", {QKeySequence(Qt::CTRL | Qt::Key_W), QKeySequence(Qt::CTRL | Qt::Key_F4)}, [this] { closeDocument(front()); }},
+        {C::ImportLaunch, "actionImportLaunch", "Import gst-launch pipeline…", {}, [this] { importLaunch(); }, environment},
+        {C::VersionHistory, "actionVersionHistory", "Version &history…", {}, [this] { showVersionHistory(); }, [this] {
+             return firstOf(busyReason(), VersionHistory::versions(front()->path()).isEmpty() ? "No earlier versions" : QString());
+         }},
+        {C::Quit, "actionQuit", "&Quit", {QKeySequence::Quit}, [this] { close(); }},
+
+        {C::Undo, "actionUndo", "&Undo", {QKeySequence::Undo}, [this] { controller()->undo(); }, [this] { return controller()->canUndo() ? QString() : "Nothing to undo"; }},
+        {C::Redo, "actionRedo", "&Redo", {QKeySequence::Redo, QKeySequence(Qt::CTRL | Qt::Key_Y)}, [this] { controller()->redo(); },
+         [this] { return controller()->canRedo() ? QString() : "Nothing to redo"; }},
+        {C::Cut, "actionCut", "Cu&t", {QKeySequence::Cut}, [this] { front()->cutSelection(); }, selected},
+        {C::Copy, "actionCopy", "&Copy", {QKeySequence::Copy}, [this] { front()->copySelection(); }, [this] { return front()->selection().isEmpty() ? "Nothing is selected" : QString(); }},
+        {C::Paste, "actionPaste", "&Paste", {QKeySequence::Paste}, [this] { front()->paste(); }, [this] {
+             const QClipboard* clipboard = QGuiApplication::clipboard();
+             return firstOf(editReason(), !clipboard || clipboard->text().isEmpty() ? "The clipboard is empty" : QString());
+         }},
+        {C::Duplicate, "actionDuplicate", "&Duplicate", {QKeySequence(Qt::CTRL | Qt::Key_D)}, [this] { front()->duplicateSelection(); }, selected},
+        {C::Delete, "actionDelete", "De&lete", {QKeySequence::Delete, QKeySequence(Qt::Key_Backspace)}, [this] { front()->deleteSelection(); }, [this] {
+             return firstOf(editReason(), front()->hasSelectedItems() ? QString() : "Nothing is selected");
+         }},
+        {C::SelectAll, "actionSelectAll", "Select &All", {QKeySequence::SelectAll}, [this] { front()->selectAll(); }},
+        {C::Find, "actionFind", "&Find element", {QKeySequence::Find}, [this] { focusSearch(); }},
+
+        {C::NextTab, "actionNextTab", "&Next tab", {QKeySequence(Qt::CTRL | Qt::Key_Tab), QKeySequence(Qt::CTRL | Qt::Key_PageDown)}, [this] { tabs_->step(1); }},
+        {C::PreviousTab, "actionPreviousTab", "Pre&vious tab", {QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Backtab), QKeySequence(Qt::CTRL | Qt::Key_PageUp)},
+         [this] { tabs_->step(-1); }},
+        {C::ZoomIn, "actionZoomIn", "Zoom &in", {QKeySequence::ZoomIn}, [this] { view()->zoomBy(1.25); }},
+        {C::ZoomOut, "actionZoomOut", "Zoom &out", {QKeySequence::ZoomOut}, [this] { view()->zoomBy(0.8); }},
+        {C::Fit, "actionFit", "Zoom to &fit", {QKeySequence(Qt::CTRL | Qt::Key_0)}, [this] { view()->fitAll(); }},
+        {C::Arrange, "actionArrange", "Arrange &pipeline", {QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_L)}, [this] { controller()->niceAlign(); }, withPlan},
+        // The view preferences are the process's: the menu sets them once, every tab follows.
+        {C::AutoAlignment, "actionAutoAlignment", "&Auto alignment", {}, [this] {
+             services_.view().setAutoAlign(!services_.view().autoAlign());
+             if (services_.view().autoAlign()) controller()->niceAlign();
+         }},
+        {C::LinkCurves, "actionLinkCurves", "&Curves", {}, [this] { services_.view().setRouting(layout::Routing::Curves); controller()->niceAlign(); }},
+        {C::LinkRightAngles, "actionLinkRightAngles", "&Right angles", {}, [this] { services_.view().setRouting(layout::Routing::RightAngles); controller()->niceAlign(); }},
+        {C::ConnectedMove, "actionConnectedMove", "Move connected elements together", {}, [this] { services_.view().setConnectedMove(!services_.view().connectedMove()); }},
+
+        {C::AddElement, "actionAddElement", "Add &element…", {QKeySequence(Qt::CTRL | Qt::Key_E), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_E)},
+         [this] { flows()->chooseElement(); }, add},
+        {C::AddTemplate, "actionAddTemplate", "Add &template…", {QKeySequence(Qt::CTRL | Qt::Key_T)}, [this] { flows()->chooseComponent(); }, add},
+        {C::SaveAsTemplate, "actionSaveTemplateElement", "Save as &template…", {QKeySequence(Qt::CTRL | Qt::Key_G)}, [this] { flows()->saveAsTemplate(front()->selection()); }, selected},
+        {C::TemplateParameters, "actionTemplateParameters", "Template &parameters…", {}, [this] { flows()->editTemplateParameters(); }, [this] {
+             return firstOf(editReason(), controller()->target().libraryTemplate().isEmpty() ? "Only a library template has parameters" : QString());
+         }},
+        {C::ConnectSelected, "actionConnectSelected", "Connect &selected", {QKeySequence(Qt::CTRL | Qt::Key_L)}, [this] { controller()->connectSelectedElements(front()->selection()); }, pair},
+        {C::DisconnectSelected, "actionDisconnectSelected", "Disconnect selected", {}, [this] { controller()->disconnectBetweenElements(front()->selection()); }, pair},
+        {C::AlignSelection, "actionAlignSelection", "Auto align", {}, [this] { front()->alignSelection(); }, selected},
+        {C::Validate, "actionUpdate", "&Validate", {QKeySequence(Qt::CTRL | Qt::Key_R), QKeySequence(Qt::Key_F5)}, [this] { controller()->refresh(); }, [this] {
+             return firstOf(busyReason(), controller()->plan().empty() ? "The canvas is empty" : QString());
+         }},
+        {C::Run, "actionRun", "&Run", {QKeySequence(Qt::CTRL | Qt::Key_Return)}, [this] { controller()->running() ? controller()->stopRun() : (void)controller()->run(); },
+         [this] { return controller()->running() ? QString() : firstOf(environmentReason(), controller()->runBlockedReason()); }},
+
+        {C::GstInfo, "actionGstInfo", "&GStreamer information", {}, [this] {
+             const StartupResult& env = services_.environment().result();
+             Prompt::inform(this, "GStreamer information", env.version.isEmpty() ? "GStreamer was not checked or not found." : env.statusText());
+         }},
+        {C::Support, "actionSupport", "&Request support…", {}, [this] { controller()->requestSupport("Problem report"); }},
+        {C::About, "actionAbout", "&About GstPipeStudio", {}, [this] { showAbout(); }},
+
+        {C::EditProperties, "actionProperties", "Edit properties…", {}, [this, target] { flows()->editProperties(target().element); }},
+        {C::RemoveQueue, "actionRemoveQueue", "Remove queue", {}, [this, target] { controller()->removeQueue(target().element); }},
+        {C::EditCaps, "actionEditCaps", "Edit caps…", {}, [this, target] { flows()->editCaps(target().element, target().pad); }},
+        {C::ReplaceBehind, "actionReplace", "Replace element…", {}, [this, target] { flows()->replaceBehind(target().element, target().pad); }},
+        {C::CutLink, "actionCutLink", "Cut link", {}, [this, target] { controller()->cut(target().element, target().pad); }},
+        {C::InsertQueue, "actionInsertQueue", "Insert queue", {}, [this, target] { flows()->addQueue(target().element, target().pad); }},
+        {C::EditTemplate, "actionEditTemplate", "Edit template", {}, [this, target] { openTemplate(controller()->templateOf(target().instance)); }, [this, target] {
+             return services_.library().plan(controller()->templateOf(target().instance)) ? QString() : "The template is not in the library";
+         }},
+        {C::ToggleTemplate, "actionToggleTemplate", "Collapse", {}, [this, target] {
+             controller()->setTemplateExpanded(target().instance, !controller()->isTemplateExpanded(target().instance));
+         }},
+        {C::DetachTemplate, "actionDetachTemplate", "Detach from template", {}, [this, target] { controller()->detachTemplate(target().instance); }},
+    });
+    commands_->setLabel(C::Run, [this] { return controller()->running() ? "&Stop" : "&Run"; });
+    commands_->setLabel(C::EditTemplate, [this, target] { return "Edit template '" + controller()->templateOf(target().instance) + "'"; });
+    commands_->setLabel(C::DetachTemplate, [this] { return "Detach from template '" + copyTitle() + "'"; });
+    commands_->setLabel(C::ToggleTemplate, [this, target] {
+        const QString id = target().instance;
+        return controller()->isTemplateExpanded(id) ? "Collapse '" + copyTitle() + "'"
+                                                     : QString("Expand '%1' (%2 elements)").arg(copyTitle()).arg(controller()->outline().membersOf(id).size());
+    });
+    commands_->setTip(C::Validate, "Validate the pipeline (Ctrl+R)");
+    commands_->setTip(C::AddElement, "Add an element: a source, a filter or a sink (Ctrl+E)");
+    commands_->setTip(C::AutoAlignment, "Align the whole canvas after every edit; a dragged box slides back into place");
+    commands_->setTip(C::ConnectedMove, "Drag an element to move its connected component; undo restores all positions");
+    commands_->setChecked(C::AutoAlignment, [this] { return services_.view().autoAlign(); });
+    commands_->setChecked(C::LinkCurves, [this] { return services_.view().routing() == layout::Routing::Curves; });
+    commands_->setChecked(C::LinkRightAngles, [this] { return services_.view().routing() == layout::Routing::RightAngles; });
+    commands_->setChecked(C::ConnectedMove, [this] { return services_.view().connectedMove(); });
+    for (auto [id, words] : {std::pair{C::AddElement, "Add element"}, {C::AddTemplate, "Add template"}, {C::Undo, "Undo"}, {C::Redo, "Redo"},
+                             {C::Delete, "Delete"}, {C::SaveAsTemplate, "Save as template"}})
+        (*commands_)[id]->setIconText(words);
+    commands_->refresh();
+}
+
+// The menus as desktop applications have them: File, Edit, View, then the application's own, then Help.
+void MainWindow::buildMenus() {
+    using C = Command;
+    CommandSet& c = *commands_;
     QMenu* file = menuBar()->addMenu("&File");
-    file->addActions({newPlan, open, import, save, saveAs});
+    file->addActions({c[C::NewProject], c[C::New], c[C::Open]});
+    QMenu* recent = file->addMenu("Open &recent");
+    recent->setObjectName("menuRecent");
+    connect(recent, &QMenu::aboutToShow, this, [this, recent] {
+        recent->clear();
+        const QStringList files = Settings::recentFiles();
+        for (const QString& path : files) recent->addAction(QFileInfo(path).fileName(), this, [this, path] { openFile(path); })->setToolTip(path);
+        if (files.isEmpty()) recent->addAction("No recent files")->setEnabled(false);
+    });
     file->addSeparator();
-    file->addAction(quit);
-    QMenu* pipeline = menuBar()->addMenu("&Pipeline");
-    pipeline->addActions({addSource, addElement, update, run});
-    pipeline->addSeparator();
-    pipeline->addActions({undoAct, redoAct});
-    pipeline->addSeparator();
-    pipeline->addActions({copyAct, cutAct, pasteAct, dupAct, selAllAct, delAct});
-    pipeline->addSeparator();
-    pipeline->addActions({connectSelAct, saveCustomAct});
+    file->addActions({c[C::Save], c[C::SaveAs], c[C::SaveAll]});
+    file->addSeparator();
+    file->addActions({c[C::Revert], c[C::CloseTab]});
+    file->addSeparator();
+    file->addActions({c[C::ImportLaunch], c[C::VersionHistory]});
+    file->addSeparator();
+    file->addAction(c[C::Quit]);
+
+    QMenu* edit = menuBar()->addMenu("&Edit");
+    edit->addActions({c[C::Undo], c[C::Redo]});
+    edit->addSeparator();
+    edit->addActions({c[C::Cut], c[C::Copy], c[C::Paste], c[C::Duplicate], c[C::Delete]});
+    edit->addSeparator();
+    edit->addActions({c[C::SelectAll], c[C::Find]});
+
     QMenu* viewMenu = menuBar()->addMenu("&View");
-    viewMenu->addActions({showLog, showValidation, showTelemetry, showProps, showCaps, find});
+    QMenu* panels = viewMenu->addMenu("&Panels");
+    panels->addActions(panels_->toggles());
+    panels->addSeparator();
+    panels->addAction("&Reset layout", this, [this] { panels_->reset(updatePanel()); })->setObjectName("actionResetLayout");
+    viewMenu->addActions({c[C::NextTab], c[C::PreviousTab]});
     viewMenu->addSeparator();
-    viewMenu->addActions({arrange, fit, zoomIn, zoomOut});
-    auto* connectedMove = viewMenu->addAction("Move connected elements together");
-    connectedMove->setObjectName("actionConnectedMove"); connectedMove->setCheckable(true);
-    connectedMove->setToolTip("Drag an element to move its connected component; undo restores all positions");
-    connect(connectedMove, &QAction::toggled, scene_, &CanvasScene::setConnectedMoveEnabled);
+    viewMenu->addActions({c[C::ZoomIn], c[C::ZoomOut], c[C::Fit]});
+    viewMenu->addSeparator();
+    viewMenu->addActions({c[C::Arrange], c[C::AutoAlignment]});
+    QMenu* linkStyle = viewMenu->addMenu("&Link style");  // the next nice alignment routes links as curves or right-angle lines
+    auto* styles = new QActionGroup(this);
+    for (Command style : {C::LinkCurves, C::LinkRightAngles}) linkStyle->addAction(styles->addAction(c[style]));
+    viewMenu->addAction(c[C::ConnectedMove]);
+
+    QMenu* pipeline = menuBar()->addMenu("&Pipeline");
+    pipeline->addActions({c[C::AddElement], c[C::AddTemplate], c[C::SaveAsTemplate], c[C::TemplateParameters], c[C::ConnectSelected]});
+    pipeline->addSeparator();
+    pipeline->addActions({c[C::Validate], c[C::Run]});
+
     QMenu* help = menuBar()->addMenu("&Help");
-    help->addActions({support, gstInfo, about});
+    help->addActions({c[C::GstInfo], c[C::Support]});
+    help->addSeparator();
+    help->addAction(c[C::About]);
 
     QToolBar* bar = addToolBar("Tools");
     bar->setObjectName("toolbar");
     bar->setMovable(false);
     bar->setToolButtonStyle(Qt::ToolButtonTextOnly);
-    bar->addActions({newPlan, open, save, saveAs});
+    bar->addActions({c[C::New], c[C::Open], c[C::Save], c[C::SaveAs]});
     bar->addSeparator();
-    bar->addActions({undoAct, redoAct});
+    bar->addActions({c[C::Undo], c[C::Redo]});
     bar->addSeparator();
-    bar->addActions({update, run});
+    bar->addActions({c[C::Validate], c[C::Run]});
     bar->addSeparator();
-    bar->addAction(addSource);
-    bar->addAction(addElement);
-    bar->addAction(saveCustomAct);
-    bar->widgetForAction(run)->setObjectName("primaryAction");
+    bar->addActions({c[C::AddElement], c[C::AddTemplate], c[C::SaveAsTemplate]});
+    bar->addSeparator();
+    bar->addAction(c[C::Delete]);
+    bar->widgetForAction(c[C::Run])->setObjectName("primaryAction");
 }
 
-void MainWindow::buildPanels() {
-    log_ = new LogPanel(this);
-    updates_ = new UpdatePanel(controller_, this);
-    telemetry_ = new TelemetryPanel(controller_, this);
-    propsTab_ = new QWidget(this);
-    propsTab_->setObjectName("propsTab");
-    new QVBoxLayout(propsTab_);
-    capsTab_ = new QWidget(this);
-    capsTab_->setObjectName("capsTab");
-    new QVBoxLayout(capsTab_);
-
-    tabs_ = new QTabWidget(this);
-    tabs_->setObjectName("bottomTabs");
-    tabs_->addTab(log_, "Log");
-    tabs_->addTab(updates_, "Validation");
-    tabs_->addTab(telemetry_, "Live metrics");
-    tabs_->addTab(propsTab_, "Properties");
-    tabs_->addTab(capsTab_, "Caps");
-    tabs_->setCurrentWidget(updates_);
-    flows_->setBottomPanels(tabs_, propsTab_, capsTab_, updates_);
-    auto* bottom = new QDockWidget("Panels", this);
-    bottom->setObjectName("bottomDock");
-    bottom->setFeatures(QDockWidget::NoDockWidgetFeatures);
-    bottom->setTitleBarWidget(new QWidget(bottom));  // the tabs are the title
-    bottom->setWidget(tabs_);
-    bottom->setMinimumHeight(180);
-    addDockWidget(Qt::BottomDockWidgetArea, bottom);
-    resizeDocks({bottom}, {240}, Qt::Vertical);
-    // Forms and the live overview need room for their controls and table.
-    connect(tabs_, &QTabWidget::currentChanged, this, [this, bottom] {
-        QWidget* cur = tabs_->currentWidget();
-        if ((cur == propsTab_ || cur == capsTab_ || cur == telemetry_) && bottom->height() < 400)
-            resizeDocks({bottom}, {400}, Qt::Vertical);
-    });
-
+void MainWindow::buildStatusBar() {
     state_ = new QLabel(this);
     state_->setObjectName("stateLabel");
     environment_ = new QLabel(this);
@@ -270,373 +353,344 @@ void MainWindow::buildPanels() {
     command_->setObjectName("commandLabel");
     command_->setTextInteractionFlags(Qt::TextSelectableByMouse);
     command_->setStyleSheet("font-family: 'DejaVu Sans Mono'; color: " + Theme::muted().name() + ";");
-    indicator_ = new ValidationIndicator(controller_, this);
     statusBar()->setSizeGripEnabled(false);
     statusBar()->addWidget(state_);
     statusBar()->addWidget(environment_);
     statusBar()->addPermanentWidget(command_);
-    statusBar()->addPermanentWidget(indicator_);
 }
 
-// A disabled action says why, in its tooltip.
-void MainWindow::setReason(QAction* action, const QString& text, const QString& reason) {
-    action->setToolTip(reason.isEmpty() ? text : text + " is off. " + reason);
+// ---- documents
+
+void MainWindow::added(Document* d) {
+    for (auto [page, title, room] : {std::tuple{static_cast<QWidget*>(d->log()), "Log", 0}, {d->updates(), "Validation", 0},
+                                     {d->telemetry(), "Live metrics", 400}, {d->propsTab(), "Properties", 400}, {d->capsTab(), "Caps", 400}})
+        panels_->add(page, title, room);
+    d->flows()->setBottomPanels(panels_, d->propsTab(), d->capsTab(), d->updates());
+    statusBar()->addPermanentWidget(d->indicator());
+    registry_->track(d);
+    wire(d);
+}
+
+// What of a document the window answers: menus on its canvas, questions about templates, its tab and the state shown.
+void MainWindow::wire(Document* d) {
+    Controller* c = d->controller();
+    CanvasScene* scene = d->scene();
+    auto isFront = [this, d] { return d == front(); };
+    connect(scene, &CanvasScene::elementMenuRequested, this, [this, d](const QString& e, const QPoint& at) { menus_->element(*d, e, at); }, Qt::QueuedConnection);
+    connect(scene, &CanvasScene::templateMenuRequested, this, [this, d](const QString& id, const QPoint& at) { menus_->templateFrame(*d, id, at); }, Qt::QueuedConnection);
+    connect(scene, &CanvasScene::canvasContextMenuRequested, this, [this, d](const QPoint& at, const QPointF&) { menus_->canvas(*d, at); }, Qt::QueuedConnection);
+    connect(scene, &CanvasScene::linkMenuRequested, menus_, &ContextMenus::link, Qt::QueuedConnection);
+    connect(scene, &QGraphicsScene::selectionChanged, this, [this, isFront] { if (isFront()) scheduleRefresh(); });
+    connect(d->view(), &CanvasView::deletePressed, d, &Document::deleteSelection);
+    connect(d->flows(), &Flows::componentMenuRequested, files_, &FileOperations::componentMenu);
+    connect(d->flows(), &Flows::importRequested, files_, &FileOperations::importInto);
+    // The document is their context: the caller's controller outlives the first tab when that tab closes.
+    connect(c, &Controller::templateChanged, d, [this, isFront](const QString& id) { if (isFront()) askTemplateChange(id); }, Qt::QueuedConnection);
+    connect(c, &Controller::templatesOutdated, d, [this, d, isFront](const QStringList& ids) {
+        if (isFront()) askTemplatesOutdated(ids);
+        else d->deferOutdated(ids);
+    }, Qt::QueuedConnection);
+    connect(c, &Controller::changed, d, [this, d] {
+        tabs_->refresh(d);
+        scheduleRefresh();
+    });
+    connect(c, &Controller::notice, d, [this, isFront](const QString& text) { if (isFront()) statusBar()->showMessage(text, 10000); });
+}
+
+void MainWindow::activate(Document* d) { tabs_->activate(d); }
+
+// Its pages in the panels, its indicator in the status bar; what was deferred while it was behind is asked now.
+void MainWindow::activated(Document* d) {
+    for (QWidget* page : d->panelPages()) panels_->bring(page);
+    for (Document* other : documents()) other->indicator()->setVisible(other == d);
+    if (!built_) return;
+    onEnvironment();
+    const QStringList outdated = d->takeOutdated();
+    if (!outdated.isEmpty()) QTimer::singleShot(0, this, [this, d, outdated] { if (d == front()) askTemplatesOutdated(outdated); });
+    if (const auto why = d->takeChangedOnDisk()) QTimer::singleShot(0, this, [this, d, why] { if (d == front()) onChangedOnDisk(d, *why); });
+}
+
+Document* MainWindow::newDocument() { return tabs_->add(); }
+
+bool MainWindow::closeDocument(Document* d) {
+    if (!d || !documents().contains(d) || !saveFlow_->confirmClose({d})) return false;
+    tabs_->close(d);
+    scheduleRefresh();
+    return true;
+}
+
+void MainWindow::restoreSession() { tabs_->restoreSession(); }
+
+void MainWindow::openFile(const QString& path) {
+    Settings::addRecent(path);
+    tabs_->open(std::make_unique<ProjectConfTarget>(path));
+}
+
+// From a list in the drawer or the Explorer: the drawer's list has done its part.
+Document* MainWindow::openComponent(const ComponentRef& component) {
+    if (component.provider != TemplateLibrary::kKind) return nullptr;
+    drawer()->dismiss();
+    return openTemplate(component.id);
+}
+
+Document* MainWindow::openTemplate(const QString& name) {
+    if (!services_.library().plan(name)) {
+        statusBar()->showMessage("Template " + name + " is not in the library", 10000);
+        return nullptr;
+    }
+    return tabs_->open(std::make_unique<LibraryTemplateTarget>(name, services_.library()));
+}
+
+void MainWindow::openCapsTab(const QString& srcElement, const QString& srcIdentity) { flows()->editCaps(srcElement, srcIdentity); }
+
+// ---- the state shown
+
+void MainWindow::scheduleRefresh() {
+    if (std::exchange(refreshDue_, true)) return;
+    QMetaObject::invokeMethod(this, [this] {
+        refreshDue_ = false;
+        refreshState();
+    }, Qt::QueuedConnection);
 }
 
 void MainWindow::refreshState() {
-    auto act = [this](const char* name) { return findChild<QAction*>(name); };
-    bool blocked = controller_->environmentBlocked();
-    bool busy = controller_->busy();
-    bool editBlocked = controller_->editingBlocked();
-    bool hasPlan = !controller_->plan().empty();
+    if (!built_) return;
+    commands_->refresh();
+    showExplorer();
+    showStatus();
+    setWindowTitle(BuildInfo::title() + " " + BuildInfo::version() + " – " + front()->title() + (controller()->hasUnsavedWork() ? " *" : ""));
+}
 
-    act("actionNew")->setEnabled(!busy && !blocked);
-    act("actionOpen")->setEnabled(!busy && !blocked);
-    act("actionImportLaunch")->setEnabled(!busy && !blocked);
-    act("actionAddSource")->setEnabled(!editBlocked && !blocked);
-    act("actionAddElement")->setEnabled(!editBlocked && !blocked);
-    act("actionUndo")->setEnabled(controller_->canUndo());
-    act("actionRedo")->setEnabled(controller_->canRedo());
-    act("actionSave")->setEnabled(controller_->canSave());
-    act("actionSaveAs")->setEnabled(controller_->canSave());
-    act("actionUpdate")->setEnabled(!busy && hasPlan);
-    act("actionArrange")->setEnabled(!editBlocked && hasPlan);
-    act("actionRun")->setText(controller_->running() ? "&Stop" : "&Run");
-    act("actionRun")->setEnabled(controller_->canRun() || controller_->running());
+// The front tab, its project and every tab's state; the Explorer's title counts the unsaved ones.
+void MainWindow::showExplorer() {
+    EditorState editor;
+    editor.front = controller()->target().sessionKey();
+    editor.projectConf = controller()->target().projectConf();
+    for (const Document* d : documents()) {
+        const bool unsaved = d->controller()->hasUnsavedWork();
+        editor.open[d->controller()->target().sessionKey()] = d->fileDeleted() ? ExplorerEntry::State::Deleted
+                                                              : unsaved          ? ExplorerEntry::State::Unsaved
+                                                                                 : ExplorerEntry::State::Open;
+        editor.unsaved += unsaved;
+    }
+    explorer_->present(editor);
+    panels_->retitle(explorer_, explorer_->title());
+}
 
-    QString saveReason = controller_->saveBlockedReason();
-    QString runReason = controller_->runBlockedReason();
-    QString busyReason = controller_->running() ? "The pipeline is running" : controller_->updating() ? "Validation is running" : QString();
-    setReason(act("actionNew"), "New", busyReason);
-    setReason(act("actionOpen"), "Open", busyReason);
-    setReason(act("actionSave"), "Save", saveReason);
-    setReason(act("actionSaveAs"), "Save as", saveReason);
-    setReason(act("actionRun"), controller_->running() ? "Stop" : "Run", controller_->running() ? QString() : runReason);
-    act("actionUpdate")->setToolTip(!hasPlan ? "Validate is off. The canvas is empty" : busy ? "Validate is off. Wait for the running step to finish" : "Validate the pipeline (Ctrl+R)");
-    act("actionAddSource")->setToolTip(blocked ? "Add source is off. GStreamer is not ready" : editBlocked ? "Add source is off. Wait for the running step to finish" : "Add a source element (Ctrl+E)");
-
-    const UpdateResult& r = controller_->result();
+void MainWindow::showStatus() {
+    const Controller* c = controller();
+    const UpdateResult& r = c->result();
     QString text;
     QString colour = Theme::text().name();
-    if (blocked) text = "GStreamer is not ready";
-    else if (controller_->updating()) text = "Validating the latest changes… You can keep editing";
-    else if (controller_->running()) text = "Running…";
-    else if (controller_->monitoring()) text = "Monitoring live metrics…";
-    else if (!hasPlan) text = "Empty canvas: choose Add source to start";
-    else if (controller_->notValidated()) text = "Validation was cancelled — press Validate. Save and Run are off", colour = Theme::warning().name();
-    else if (r.valid() && !r.ok()) text = "Validation reported a problem. Save and Run are off", colour = Theme::error().name();
-    else if (r.valid() && !r.complete) text = "Pipeline is not complete (free src pad). Save is on, Run is off", colour = Theme::warning().name();
+    if (const QString env = environmentReason(); !env.isEmpty()) text = env;
+    else if (c->updating()) text = "Validating the latest changes… You can keep editing";
+    else if (c->running()) text = "Running…";
+    else if (c->monitoring()) text = "Monitoring live metrics…";
+    else if (c->plan().empty()) text = "Empty canvas: choose Add source to start";
+    else if (c->notValidated()) text = "Validation was cancelled — press Validate. Run is off", colour = Theme::warning().name();
+    else if (r.valid() && !r.ok()) text = "Validation reported a problem. Run is off", colour = Theme::error().name();
+    else if (r.valid() && !r.complete()) text = "Pipeline is not complete (free src pad). Run is off", colour = Theme::warning().name();
     else if (r.valid()) text = "Pipeline is complete", colour = Theme::accent().name();
     else text = "Not validated yet — press Validate";
     state_->setText(text);
     state_->setStyleSheet("color: " + colour + ";");
-    const StartupResult& env = controller_->environment();
+    const StartupResult& env = services_.environment().result();
     environment_->setText(env.state == StartupResult::Ready ? env.statusText() : QString());
-    command_->setText(controller_->launchCommand());
-
-    scene_->setLocked(editBlocked);
-    scene_->setStale(controller_->notValidated());
-    view_->setDimmed(controller_->running());
-    drawer_->setBusy(editBlocked);
-    flows_->setBusy(editBlocked);
-
-    QString name = controller_->filePath().isEmpty() ? "untitled" : QFileInfo(controller_->filePath()).fileName();
-    setWindowTitle(BuildInfo::title() + " " + BuildInfo::version() + " – " + name + (controller_->dirty() ? " *" : ""));
+    command_->setText(c->launchCommand());
 }
 
+// The front tab shows the setup page while GStreamer is not ready.
 void MainWindow::onEnvironment() {
-    const StartupResult& env = controller_->environment();
+    const StartupResult& env = services_.environment().result();
     if (env.bad()) {
-        setup_->show(env);
-        centre_->setCurrentWidget(setup_);
-        drawer_->dismiss();
-        flows_->closeProperties();
-        flows_->closeCaps();
+        setupPage()->show(env);
+        front()->centre()->setCurrentWidget(setupPage());
+        drawer()->dismiss();
+        flows()->closeProperties();
+        flows()->closeCaps();
     } else {
-        centre_->setCurrentIndex(0);
+        front()->centre()->setCurrentIndex(0);
     }
-    refreshState();
+    scheduleRefresh();
 }
 
-void MainWindow::onRebuilt() {
-    QStringList names;
-    for (const gps::Element& e : controller_->plan().elements) names << QString::fromStdString(e.name);
-    bool changed = names != lastNames_;
-    lastNames_ = names;
-    if (changed && !names.isEmpty() && !fitNext_) QTimer::singleShot(0, view_, &CanvasView::fitAll);
-    if (fitNext_ && !controller_->busy() && !names.isEmpty()) {
-        fitNext_ = false;
-        QTimer::singleShot(0, view_, &CanvasView::fitAll);
+// ---- files changed by someone else
+
+namespace {
+// What the user reads about a tab whose file changed: another program wrote it, or another tab saved a newer revision
+// of the template it edits to the library.
+struct ChangeWords {
+    QString title, headline, reloaded;
+};
+ChangeWords wordsFor(const Document* d, DiskChange why) {
+    if (why == DiskChange::Library)
+        return {"Template updated", d->title() + " has a newer revision, saved from another tab.", d->title() + " has a newer revision from another tab and was reloaded"};
+    return {"File changed on disk", d->title() + " was changed on disk by another program.", d->title() + " changed on disk and was reloaded"};
+}
+}  // namespace
+
+// Someone else changed a tab's file: without unsaved work it is read again; with some, the user chooses, when the tab
+// is in front. Asked again when a deferred tab comes to the front, it may be clean or saved by then. A busy tab is
+// asked once it has finished, once for all the changes meanwhile.
+void MainWindow::onChangedOnDisk(Document* d, DiskChange why) {
+    tabs_->refresh(d);                            // a deleted file that is back loses its mark
+    scheduleRefresh();
+    if (!registry_->changedSinceRead(d)) return;  // saved or reloaded meanwhile, or back as it was
+    if (d->controller()->busy()) {
+        whenIdle(d, [this, d, why] { onChangedOnDisk(d, why); });
+    } else if (!d->controller()->hasUnsavedWork()) {
+        d->controller()->reload();
+        statusBar()->showMessage(wordsFor(d, why).reloaded, 10000);
+    } else if (d == front()) {
+        askReload(d, why);
+    } else {
+        d->deferChangedOnDisk(why);
     }
 }
 
-void MainWindow::openFile(const QString& path) {
-    fitNext_ = true;
-    QSettings().setValue("lastDir", QFileInfo(path).absolutePath());
-    controller_->open(path);
-}
-
-bool MainWindow::saveFile(const QString& path) {
-    QString error;
-    if (controller_->save(path, &error)) {
-        if (!path.isEmpty()) QSettings().setValue("lastDir", QFileInfo(path).absolutePath());
-        return true;
+// The library wrote: a tab editing one of its templates whose file is not what it read was not the writer.
+void MainWindow::onLibraryChanged() {
+    for (Document* d : documents()) {
+        if (!d->controller()->target().libraryTemplate().isEmpty() && registry_->catchUp(d)) onChangedOnDisk(d, DiskChange::Library);
     }
-    statusBar()->showMessage(error, 10000);
-    log_->append(error);
-    return false;
 }
 
-void MainWindow::saveAs() {
-    QSettings settings;
-    QString start = controller_->filePath().isEmpty() ? settings.value("lastDir").toString() : controller_->filePath();
-    QString path = PipelineFileDialog::choose(this, true, start);
-    if (path.isEmpty()) return;
-    if (!path.endsWith(".conf")) path += ".conf";
-    saveFile(path);
-}
-
-void MainWindow::toggleRun() {
-    if (controller_->running()) controller_->stopRun();
-    else controller_->run();
-}
-
-void MainWindow::openPropertiesTab(const QString& element) {
-    flows_->editProperties(element);
-}
-
-void MainWindow::resetPropertiesTab() {
-    flows_->closeProperties();
-}
-
-void MainWindow::resetCapsTab() {
-    flows_->closeCaps();
-}
-
-void MainWindow::openCapsTab(const QString& srcElement, const QString& srcIdentity) {
-    flows_->editCaps(srcElement, srcIdentity);
-}
-
-void MainWindow::showCanvasMenu(const QPoint& screenPos) {
-    if (controller_->editingBlocked() || controller_->environmentBlocked()) return;
-    auto* menu = new QMenu(this);
-    menu->setObjectName("canvasMenu");
-    menu->setAttribute(Qt::WA_DeleteOnClose);
-    menu->addAction("Add element…", this, [this] { flows_->chooseElement(); })->setObjectName("actionCanvasAddElement");
-    menu->addAction("Add source…", this, [this] { flows_->chooseSource(); })->setObjectName("actionCanvasAddSource");
-    if (!controller_->customElements().isEmpty()) {
-        QMenu* customSub = menu->addMenu("Add custom element");
-        for (const CustomElementInfo& c : controller_->customElements()) {
-            customSub->addAction(c.name + "  (" + c.description + ")", this, [this, name = c.name] {
-                QStringList created = controller_->addCustomElement(name);
-                if (!created.isEmpty()) scene_->setSelectedElements(created);
-            });
-        }
-    }
-    QStringList sel = scene_->selectedElementNames();
-    if (!sel.isEmpty()) {
-        menu->addSeparator();
-        menu->addAction(QString("Save selection (%1) as custom element…").arg(sel.size()), this, [this] { saveSelectedAsCustomElement(); })
-            ->setObjectName("actionCanvasSaveCustom");
-        if (sel.size() >= 2) {
-            menu->addAction("Connect selected elements", this, [this] { connectSelected(); })->setObjectName("actionCanvasConnectSelected");
-            menu->addAction("Align horizontally", this, [this, sel] { controller_->alignElementsHorizontally(sel); });
-            menu->addAction("Align vertically", this, [this, sel] { controller_->alignElementsVertically(sel); });
-        }
-        menu->addAction("Duplicate selected", this, [this] { duplicateSelected(); });
-        menu->addAction("Copy selected", this, [this] { copySelected(); });
-        menu->addAction("Cut selected", this, [this] { cutSelected(); });
-        menu->addAction("Delete selected", this, [this] { deleteSelected(); });
-    }
-    menu->addSeparator();
-    auto* u = menu->addAction("Undo", this, [this] { controller_->undo(); });
-    u->setEnabled(controller_->canUndo());
-    auto* r = menu->addAction("Redo", this, [this] { controller_->redo(); });
-    r->setEnabled(controller_->canRedo());
-    auto* p = menu->addAction("Paste", this, [this] { pasteClipboard(); });
-    p->setEnabled(QGuiApplication::clipboard() && !QGuiApplication::clipboard()->text().isEmpty());
-    menu->addSeparator();
-    menu->addAction("Select all", this, [this] { selectAll(); });
-    menu->addAction("Zoom to fit", this, [this] { view_->fitAll(); });
-    menu->addAction("Arrange pipeline", this, [this] {
-        if (controller_->arrangePipeline()) QTimer::singleShot(0, view_, &CanvasView::fitAll);
+// Opened, not run: the event loop goes on (saves, runs, the watcher) while it waits.
+void MainWindow::askReload(Document* d, DiskChange why) {
+    const ChangeWords words = wordsFor(d, why);
+    QPointer<Document> asked(d);
+    Prompt::askLater(this, {"changedOnDisk", words.title, words.headline, "Reload it and lose your changes, or keep your version?",
+                            {{"Reload", "reloadFromDisk", QMessageBox::DestructiveRole}, {"Keep mine", "keepMine", QMessageBox::RejectRole}},
+                            1, QMessageBox::Warning},
+                     [this, asked](int answer) {
+        if (!asked) return;
+        if (answer == 0) whenIdle(asked, [asked] { if (asked) asked->controller()->reload(); });  // a validation may still run
+        else registry_->accept(asked);
     });
-    auto* v = menu->addAction("Validate", this, [this] { controller_->refresh(); });
-    v->setEnabled(!controller_->plan().empty());
-    menu->popup(screenPos);
 }
 
-void MainWindow::onElementMenuRequested(const QString& element, const QPoint& screenPos) {
-    if (controller_->editingBlocked()) return;
-    QStringList sel = scene_->selectedElementNames();
-    QString grp = controller_->elementGroup(element);
-    if (sel.size() > 1 || !grp.isEmpty()) {
-        showSelectionMenu(element, screenPos);
+void MainWindow::whenIdle(Document* d, const std::function<void()>& then) {
+    if (!d->controller()->busy()) {
+        then();
+    } else if (d->startWaiting()) {
+        QTimer::singleShot(DocumentRegistry::kSettleMs, d, [this, d, then] {
+            d->stopWaiting();
+            whenIdle(d, then);
+        });
+    }
+}
+
+// ---- templates
+
+// "Template changes, what now?" (TEMPLATE_PLAN D17, D30): the change, the projects the template is used in, and four
+// answers. Closing the window is Undo: nothing was decided.
+void MainWindow::askTemplateChange(const QString& id) {
+    const QString name = controller()->templateOf(id);
+    if (name.isEmpty()) return;
+    QStringList used;
+    for (const QString& project : services_.library().projectsUsing(name)) used << QFileInfo(project).absolutePath();
+    const QString details = "Change: " + controller()->lastAction() + "\n\n" +
+                            (used.isEmpty() ? QString("No saved project uses this template yet.")
+                                            : "Used in:\n  " + used.join("\n  ") + "\n\nUpdating it changes these projects too.");
+    enum { Update, AsNew, Detach };
+    const int answer = Prompt::ask(this, {"templateChange", "Template changes", QString("<b>'%1' template changes</b>").arg(name.toHtmlEscaped()), details,
+                                          {{"Update template", "updateTemplate"}, {"Save as new template…", "saveAsNewTemplate", QMessageBox::ActionRole},
+                                           {"Detach", "detachTemplate", QMessageBox::ActionRole}, {"Undo", "undoTemplateChange", QMessageBox::RejectRole}}});
+    if (answer == Update) {
+        controller()->keepEditingTemplate(id);
+        statusBar()->showMessage("Editing template " + name + ": the change goes to the library when it collapses or the file is saved.", 8000);
+    } else if (answer == AsNew) {
+        const auto newName = Prompt::text(this, "Save as new template", "Name of the new template:", name + " 2");
+        QString error;
+        if (!newName || !controller()->saveTemplateAsNew(id, *newName, &error)) {
+            if (!error.isEmpty()) Prompt::error(this, "Save as new template", error);
+            controller()->undo();
+        }
+    } else if (answer == Detach) {
+        controller()->detachTemplate(id);
     } else {
-        flows_->showElementMenu(element, screenPos);
+        controller()->undo();
     }
 }
 
-void MainWindow::showSelectionMenu(const QString& clickedElement, const QPoint& screenPos) {
-    if (controller_->editingBlocked()) return;
-    QStringList sel = scene_->selectedElementNames();
-    if (!sel.contains(clickedElement)) sel << clickedElement;
-    sel = controller_->expandSelectionWithGroups(sel);
-
-    auto* menu = new QMenu(this);
-    menu->setObjectName("selectionMenu");
-    menu->setAttribute(Qt::WA_DeleteOnClose);
-
-    QString grp = controller_->elementGroup(clickedElement);
-    if (!grp.isEmpty()) {
-        QString title = grp.section('#', 0, 0);
-        bool expanded = controller_->isGroupExpanded(grp);
-        menu->addAction(expanded ? ("Collapse '" + title + "' to single element") : ("Expand '" + title + "' (" + QString::number(controller_->groupMembers(grp).size()) + " elements)"),
-                        this, [this, grp, expanded] { controller_->setGroupExpanded(grp, !expanded); })
-            ->setObjectName("actionToggleGroupExpand");
-        menu->addAction("Ungroup '" + title + "'", this, [this, grp] { controller_->ungroupElements(grp); })->setObjectName("actionUngroup");
-        if (expanded) {
-            menu->addAction("Edit properties of " + clickedElement + "…", this, [this, clickedElement] { flows_->editProperties(clickedElement); });
-        }
-        menu->addSeparator();
+// An opened file holds older versions of templates the library has newer ones of.
+void MainWindow::askTemplatesOutdated(const QStringList& ids) {
+    QStringList lines;
+    for (const QString& id : ids) {
+        const gps::TemplateInstance* t = controller()->plan().instance(toStd(id));
+        if (!t) continue;
+        const QString name = fromStd(t->templateName);
+        lines << QString("%1: revision %2 → %3%4").arg(name).arg(t->revision).arg(services_.library().revision(name))
+                     .arg(gps::templates::modified(controller()->plan(), t->id) ? "  (its changes here would be lost)" : "");
     }
-
-    menu->addAction(QString("Save as custom element (%1)…").arg(sel.size()), this, [this] { saveSelectedAsCustomElement(); })
-        ->setObjectName("actionSaveCustomElementMenu");
-    if (grp.isEmpty() && sel.size() >= 2) {
-        menu->addAction("Combine into single group on canvas", this, [this, sel] {
-            controller_->groupSelectedElements(sel, "CustomChain");
-        })->setObjectName("actionGroupSelected");
-    }
-    if (sel.size() >= 2) {
-        menu->addSeparator();
-        menu->addAction("Connect selected elements", this, [this, sel] { controller_->connectSelectedElements(sel); })
-            ->setObjectName("actionConnectSelectedMenu");
-        menu->addAction("Disconnect links between selected", this, [this, sel] { controller_->disconnectBetweenElements(sel); })
-            ->setObjectName("actionDisconnectSelectedMenu");
-        menu->addAction("Align horizontally", this, [this, sel] { controller_->alignElementsHorizontally(sel); })
-            ->setObjectName("actionAlignHorizontally");
-        menu->addAction("Align vertically", this, [this, sel] { controller_->alignElementsVertically(sel); })
-            ->setObjectName("actionAlignVertically");
-    }
-    menu->addSeparator();
-    menu->addAction(QString("Duplicate (%1)").arg(sel.size()), this, [this] { duplicateSelected(); })->setObjectName("actionDuplicateSelection");
-    menu->addAction(QString("Copy (%1)").arg(sel.size()), this, [this] { copySelected(); })->setObjectName("actionCopySelection");
-    menu->addAction(QString("Cut (%1)").arg(sel.size()), this, [this] { cutSelected(); })->setObjectName("actionCutSelection");
-    menu->addAction(QString("Delete (%1)").arg(sel.size()), this, [this] { deleteSelected(); })->setObjectName("actionDeleteSelection");
-    menu->popup(screenPos);
+    if (lines.isEmpty()) return;
+    if (Prompt::yes(this, "Templates were updated",
+                    "The library has newer versions of templates this file uses:\n\n  " + lines.join("\n  ") + "\n\nUse the newer versions?"))
+        controller()->updateTemplates(ids);
 }
 
-void MainWindow::saveSelectedAsCustomElement() {
-    if (controller_->editingBlocked()) return;
-    QStringList sel = scene_->selectedElementNames();
-    if (sel.isEmpty()) {
-        statusBar()->showMessage("Select one or more elements on the canvas first to save as a custom element.", 6000);
-        return;
+// ---- dialogs
+
+// The earlier versions of the open file, newest first; the chosen one comes back as an unsaved change.
+void MainWindow::showVersionHistory() {
+    const QString file = front()->path();
+    const QList<VersionHistory::Version> versions = VersionHistory::versions(file);
+    if (file.isEmpty() || versions.isEmpty()) return;
+    QDialog dialog(this);
+    dialog.setObjectName("versionHistory");
+    dialog.setWindowTitle("Version history · " + QFileInfo(file).fileName());
+    auto* layout = new QVBoxLayout(&dialog);
+    auto* hint = new QLabel(QString("Every save keeps the file as it was (the newest %1). Restoring one replaces the canvas; "
+                                    "save to keep it.").arg(VersionHistory::kKept), &dialog);
+    hint->setWordWrap(true);
+    layout->addWidget(hint);
+    auto* list = new QListWidget(&dialog);
+    list->setObjectName("versionList");
+    for (const VersionHistory::Version& v : versions) {
+        auto* item = new QListWidgetItem(QLocale().toString(v.saved, QLocale::LongFormat), list);
+        item->setData(Qt::UserRole, v.path);
     }
-    QStringList factories;
-    for (const QString& n : sel) {
-        if (const gps::Element* e = controller_->plan().find(n.toStdString())) {
-            factories << QString::fromStdString(e->factory);
-        }
-    }
-    QString suggested = factories.join("_");
-    if (suggested.size() > 28) suggested = suggested.left(28);
-    bool ok = false;
-    QString name = QInputDialog::getText(this, "Save as Custom Element",
-                                         QString("Save %1 selected element(s) as a reusable Custom Element:\n(%2)").arg(sel.size()).arg(factories.join(" → ")),
-                                         QLineEdit::Normal, suggested, &ok);
-    if (!ok || name.trimmed().isEmpty()) return;
-    if (controller_->saveCustomElement(name.trimmed(), sel)) {
-        statusBar()->showMessage(QString("Saved custom element '%1' (%2 elements). Available in Add Element.").arg(name.trimmed()).arg(sel.size()), 8000);
-    }
+    list->setCurrentRow(0);
+    layout->addWidget(list, 1);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Cancel, &dialog);
+    QPushButton* restore = buttons->addButton("Restore", QDialogButtonBox::AcceptRole);
+    restore->setObjectName("restoreVersion");
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    connect(list, &QListWidget::itemDoubleClicked, &dialog, &QDialog::accept);
+    layout->addWidget(buttons);
+    dialog.resize(460, 380);
+    if (dialog.exec() != QDialog::Accepted || !list->currentItem()) return;  // one undoable change: nothing to ask
+    controller()->restoreVersion(list->currentItem()->data(Qt::UserRole).toString());
 }
 
-void MainWindow::connectSelected() {
-    QStringList sel = scene_->selectedElementNames();
-    if (sel.size() >= 2) controller_->connectSelectedElements(sel);
+void MainWindow::importLaunch() {
+    const auto description = Prompt::lines(this, "Import gst-launch pipeline",
+        "Paste a gst-launch-1.0 command or its pipeline description.\n"
+        "The pipeline runs briefly in the background to discover dynamic pads.");
+    if (!description || description->trimmed().isEmpty()) return;
+    Document* d = tabs_->target();
+    d->opening("imported");
+    d->controller()->importLaunch(*description);
 }
 
-// Delete on the canvas: a single selected source asks confirmation; multi-selection or non-source elements/links delete atomically.
-void MainWindow::deleteSelected() {
-    QStringList selectedElements = scene_->selectedElementNames();
-    QList<QPair<QString, QString>> selectedLinks;
-    for (QGraphicsItem* item : scene_->selectedItems()) {
-        if (auto* link = dynamic_cast<LinkItem*>(item)) {
-            selectedLinks.append({link->view().srcElement, link->view().srcIdentity});
-        }
-    }
-    if (selectedElements.size() == 1 && selectedLinks.isEmpty()) {
-        const QString& only = selectedElements.first();
-        if (controller_->elementGroup(only).isEmpty() && controller_->view(only).isSource) {
-            flows_->deleteSource(only);
-            return;
-        }
-    }
-    if (!selectedElements.isEmpty() || !selectedLinks.isEmpty()) {
-        controller_->deleteSelection(selectedElements, selectedLinks);
-    }
-}
-
-void MainWindow::duplicateSelected() {
-    QStringList names = scene_->selectedElementNames();
-    if (names.isEmpty()) return;
-    QStringList created = controller_->duplicateElements(names);
-    if (!created.isEmpty()) scene_->setSelectedElements(created);
-}
-
-void MainWindow::selectAll() {
-    for (QGraphicsItem* item : scene_->items()) {
-        if (item->flags() & QGraphicsItem::ItemIsSelectable) item->setSelected(true);
-    }
-}
-
-void MainWindow::copySelected() {
-    QStringList names = scene_->selectedElementNames();
-    if (names.isEmpty()) return;
-    gps::Graph sub = controller_->copySubplan(names);
-    if (sub.elements.empty()) return;
-    if (QClipboard* cb = QGuiApplication::clipboard()) cb->setText(QString::fromStdString(sub.toConf()));
-}
-
-void MainWindow::cutSelected() {
-    QStringList names = scene_->selectedElementNames();
-    if (names.isEmpty()) return;
-    copySelected();
-    controller_->deleteSelection(names);
-}
-
-void MainWindow::pasteClipboard() {
-    if (controller_->editingBlocked()) return;
-    QClipboard* cb = QGuiApplication::clipboard();
-    if (!cb || cb->text().isEmpty()) return;
-    gps::Graph clip;
-    std::string err;
-    if (!gps::Graph::fromConf(cb->text().toStdString(), &clip, &err)) return;
-    QStringList created = controller_->pasteSubplan(clip);
-    if (!created.isEmpty()) scene_->setSelectedElements(created);
+// The drawer's search when it is open, else the Properties tab's first field.
+void MainWindow::focusSearch() {
+    if (drawer()->isOpen()) drawer()->focusSearch();
+    else if (flows()->propertyPage()) flows()->propertyPage()->focusFirst();
 }
 
 void MainWindow::showAbout() {
-    AboutDialog dialog(controller_->environment().statusText(), this);
+    AboutDialog dialog(services_.environment().result().statusText(), this);
     dialog.exec();
 }
 
-bool MainWindow::confirmDiscard() {
-    if (!controller_->dirty() || controller_->plan().empty()) return true;
-    auto answer = QMessageBox::question(this, "Unsaved changes", "The changes on the canvas have not been saved. Discard them?",
-                                        QMessageBox::Discard | QMessageBox::Cancel, QMessageBox::Cancel);
-    return answer == QMessageBox::Discard;
-}
-
 void MainWindow::closeEvent(QCloseEvent* event) {
-    if (controller_->running()) controller_->stopRun();
-    if (!confirmDiscard()) {
-        event->ignore();
-        return;
+    for (Document* d : documents()) {
+        d->controller()->stopAll();
+        d->backup()->flush();
     }
-    QSettings settings;
-    settings.setValue("window/geometry", saveGeometry());
-    settings.setValue("window/state", saveState());
+    tabs_->saveSession();
+    Settings::setWindow(saveGeometry(), saveState());
     event->accept();
 }
