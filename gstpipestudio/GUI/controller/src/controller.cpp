@@ -659,7 +659,11 @@ void Controller::load(const QString& source, std::shared_ptr<SaveTarget> target,
         }
         std::string failure;
         if (how != Load::Replace) {
-            if (!pipeline_.reset(*loaded, &failure)) { emit notice(fromStd(failure)); return; }
+            if (!pipeline_.reset(*loaded, &failure)) {
+                emit notice(fromStd(failure));
+                emit changed();  // no longer opening: the canvas and the tab title follow
+                return;
+            }
             if (target) target_ = target;
             if (how == Load::Open) edits_.markSaved();
             else edits_.markModified();
