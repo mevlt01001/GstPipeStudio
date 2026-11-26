@@ -56,7 +56,15 @@ inline std::unique_ptr<Controller> makeController() {
     return c;
 }
 
-inline bool settle(Controller& c) { return waitFor([&] { return !c.busy(); }); }
+// The window shows the state it was asked to show: it refreshes its commands and status once per turn of the event loop.
+inline void refreshed() { QCoreApplication::processEvents(); }
+
+// Nothing running in the document any more, and the window showing it.
+inline bool settle(Controller& c) {
+    const bool done = waitFor([&] { return !c.busy(); });
+    refreshed();
+    return done;
+}
 
 // Save as a project conf at path, as File > Save as does.
 inline SaveResult saveAs(Controller& c, const QString& path) { return c.saveAs(std::make_unique<ProjectConfTarget>(path)); }

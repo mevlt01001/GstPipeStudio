@@ -261,6 +261,7 @@ private slots:
         QCOMPARE(w.indicator()->mode(), ValidationIndicator::Validating);
         QVERIFY(w.indicator()->findChild<Spinner*>()->animating());
         QVERIFY(!w.scene()->locked()); QVERIFY(!w.view()->dimmed());
+        refreshed();
         QVERIFY(w.findChild<QAction*>("actionAddElement")->isEnabled());
         QVERIFY(w.findChild<QLabel*>("stateLabel")->text().contains("keep editing"));
         w.scene()->rebuild();
@@ -345,6 +346,7 @@ private slots:
         QVERIFY(!c->busy());
         QCOMPARE(c->plan().find(src.toStdString())->props.at("fake-slow"), std::string("30000"));
         QVERIFY(!ind->isVisible());
+        refreshed();
         QVERIFY(w.findChild<QAction*>("actionSave")->isEnabled());
         QVERIFY(!w.findChild<QAction*>("actionRun")->isEnabled());
         QVERIFY(w.findChild<QAction*>("actionRun")->toolTip().contains("Validation was cancelled — press Validate"));
@@ -497,6 +499,7 @@ private slots:
         QCOMPARE(page->findChild<QLabel*>("setupTitle")->text(), QString("GStreamer was not found"));
         QCOMPARE(page->command(), QString("sudo apt install gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good"));
         QVERIFY(page->findChild<QLabel*>("setupCommand")->text().contains("sudo apt install"));
+        refreshed();
         QVERIFY(!w.findChild<QAction*>("actionAddElement")->isEnabled());  // with the reason in its tooltip
         QVERIFY(w.findChild<QAction*>("actionAddElement")->toolTip().contains("GStreamer is not ready"));
         QVERIFY(w.findChild<QLabel*>("environmentLabel")->text().isEmpty());
@@ -525,6 +528,7 @@ private slots:
         env("1.20.3", "", "");
         QTest::mouseClick(page->findChild<QPushButton*>("retryButton"), Qt::LeftButton);
         QVERIFY(waitFor([&] { return !w.showingSetup(); }));
+        refreshed();
         QVERIFY(w.findChild<QAction*>("actionAddElement")->isEnabled());
         QVERIFY(w.findChild<QLabel*>("environmentLabel")->text().startsWith("GStreamer 1.20.3 · NVIDIA elements: "));
     }

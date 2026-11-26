@@ -238,7 +238,10 @@ class IntegrationTest : public QObject {
         QPointer<QMenu> menu;
         (void)QTest::qWaitFor([&] { return (menu = visibleChild<QMenu>()) != nullptr; }, 5000);
         QVERIFY2(menu, "no menu is open");
-        QAction* a = menu->findChild<QAction*>(action);
+        QAction* a = nullptr;  // the menus show the window's commands, which belong to the window
+        for (QAction* candidate : menu->actions()) {
+            if (candidate->objectName() == action) a = candidate;
+        }
         QVERIFY2(a, action);
         a->trigger();
         if (menu) menu->close();
@@ -601,12 +604,14 @@ private slots:
 
         // Save, then Run through the toolbar
         QString conf = work.filePath("avi.conf");
-        QVERIFY(w->saveFlow()->saveAs(w->document(), conf));
+        QVERIFY(w->saveFlow()->saveAs(w->front(), conf));
+        refreshed();
         QVERIFY(w->findChild<QLabel*>("commandLabel")->text().contains("gst-launch-1.0 avi"));
         QSignalSpy ended(c.get(), &Controller::runFinished);
         QElapsedTimer clock;
         clock.start();
         w->findChild<QAction*>("actionRun")->trigger();
+        refreshed();
         QCOMPARE(w->findChild<QAction*>("actionRun")->text(), QString("&Stop"));
         QVERIFY(waitFor([&] { return ended.count() == 1; }, 30000));
         qInfo() << "TIMING Run (avi pipeline):" << clock.elapsed() << "ms, result" << ended[0][0].toString();
@@ -770,7 +775,7 @@ private slots:
         QTest::qWait(50);
 
         // run it for real (saved through the window)
-        QVERIFY(w->saveFlow()->saveAs(w->document(), work.filePath("mix.conf")));
+        QVERIFY(w->saveFlow()->saveAs(w->front(), work.filePath("mix.conf")));
         QSignalSpy ended(c.get(), &Controller::runFinished);
         w->findChild<QAction*>("actionRun")->trigger();
         QVERIFY(waitFor([&] { return ended.count() == 1; }, 30000));
@@ -790,7 +795,7 @@ private slots:
         QVERIFY2(c->result().complete(), c->result().message.c_str());
 
         // Cut link on b.src: only the link b -> cc is removed; cc and d remain on the free canvas as untracked!
-        timed("Cut link (no cascade delete)", [&] { linkMenu(b, "src", "actionCut"); });
+        timed("Cut link (no cascade delete)", [&] { linkMenu(b, "src", "actionCutLink"); });
         idle();
         QCOMPARE(c->plan().elements.size(), size_t(4));
         QCOMPARE(c->plan().links.size(), size_t(2));  // a -> b and cc -> d remain
@@ -848,7 +853,7 @@ private slots:
         QVERIFY(c->plan().find(convA.toStdString()));  // convA stays on the free canvas!
         QCOMPARE(c->plan().elements.size(), size_t(4));  // convA (untracked), bb, mix, sink
         // Cut convA -> mix so mix has only bb's tracked input and is complete
-        timed("Cut untracked convA -> mix link", [&] { linkMenu(convA, "src", "actionCut"); });
+        timed("Cut untracked convA -> mix link", [&] { linkMenu(convA, "src", "actionCutLink"); });
         idle();
         QVERIFY2(c->result().complete(), (c->result().status + ": " + c->result().message).c_str());
         QCOMPARE(c->view(mix).sinks.size(), 1);
@@ -889,7 +894,7 @@ private slots:
         QVERIFY(c->canSave());
         QVERIFY(w->findChild<QAction*>("actionSave")->isEnabled());
         QVERIFY(!w->scene()->element(file)->view().isError);
-        QVERIFY(w->saveFlow()->saveAs(w->document(), work.filePath("fixed.conf")));
+        QVERIFY(w->saveFlow()->saveAs(w->front(), work.filePath("fixed.conf")));
     }
 
     void refusedLinkIsReportedAndNothingBreaks() {
@@ -938,7 +943,8 @@ private slots:
         QVERIFY(fromStd(c->result().pad(toStd(src), toStd("src"), true)->caps).contains("format=(string)I420"));
 
         QString conf = work.filePath("expose.conf");
-        QVERIFY(w->saveFlow()->saveAs(w->document(), conf));
+        QVERIFY(w->saveFlow()->saveAs(w->front(), conf));
+        refreshed();
         QString launch = w->findChild<QLabel*>("commandLabel")->text();
         QVERIFY2(launch.contains("gst-launch-1.0 expose"), qPrintable(launch));
         QFile f(conf);
@@ -984,7 +990,7 @@ private slots:
         QVERIFY(!p.asink.isEmpty());
         QVERIFY(c->result().complete());
         QString conf = work.filePath("roundtrip.conf");
-        QVERIFY(w->saveFlow()->saveAs(w->document(), conf));
+        QVERIFY(w->saveFlow()->saveAs(w->front(), conf));
         QString links = linkText();
         QString planText = text(c->plan().toConf());
         QStringList names;
@@ -1016,7 +1022,7 @@ private slots:
         QVERIFY(shot("17_opened_file"));
 
         // saving the opened plan again writes the same text (names, links; positions are never saved)
-        QVERIFY(w->saveFlow()->saveAs(w->document(), work.filePath("roundtrip2.conf")));
+        QVERIFY(w->saveFlow()->saveAs(w->front(), work.filePath("roundtrip2.conf")));
         QFile a(conf), b(work.filePath("roundtrip2.conf"));
         QVERIFY(a.open(QIODevice::ReadOnly) && b.open(QIODevice::ReadOnly));
         QString first = QString::fromUtf8(a.readAll()), second = QString::fromUtf8(b.readAll());
@@ -1072,6 +1078,7 @@ private slots:
         clock.start();
         QVERIFY(c->addAfter(src, "src", "videoconvert", "sink", {}));
         QVERIFY(c->busy());
+        refreshed();
         // while the helper hangs, the GUI is still alive: it paints, Run is off and editing goes on
         QVERIFY(!w->findChild<QAction*>("actionRun")->isEnabled());
         QVERIFY(w->findChild<QAction*>("actionAddElement")->isEnabled());

@@ -52,6 +52,9 @@ add_library(gps_gui STATIC
     ui/include/mainwindow.h ui/src/mainwindow.cpp
     ui/include/panels.h ui/src/panels.cpp
     ui/include/document.h ui/src/document.cpp
+    ui/include/documenttabs.h ui/src/documenttabs.cpp
+    ui/include/commandset.h ui/src/commandset.cpp
+    ui/include/contextmenus.h ui/src/contextmenus.cpp
     ui/include/prompt.h ui/src/prompt.cpp
     ui/include/saveflow.h ui/src/saveflow.cpp
     ui/include/documentregistry.h ui/src/documentregistry.cpp

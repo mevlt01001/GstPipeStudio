@@ -13,6 +13,7 @@
 #include "appservices.h"
 #include "controller.h"
 #include "document.h"
+#include "documenttabs.h"
 #include "explorerlook.h"
 #include "mainwindow.h"
 #include "newprojectdialog.h"
@@ -184,7 +185,7 @@ void FileOperations::importInto(const QString& providerKind) {
 // Asks its name; nothing is written yet: the first save makes the folder.
 void FileOperations::newProject() {
     const QString conf = NewProjectDialog::ask(window_);
-    if (!conf.isEmpty()) window_->blankTab()->controller()->newPlan(std::make_unique<ProjectConfTarget>(conf));
+    if (!conf.isEmpty()) window_->documentTabs()->target()->controller()->newPlan(std::make_unique<ProjectConfTarget>(conf));
 }
 
 QList<Document*> FileOperations::tabsOf(const ExplorerEntry& entry) const {

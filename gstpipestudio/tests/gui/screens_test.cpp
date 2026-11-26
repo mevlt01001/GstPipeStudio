@@ -15,6 +15,8 @@
 #include "elementitem.h"
 #include "flows.h"
 #include "logpanel.h"
+#include "contextmenus.h"
+#include "document.h"
 #include "mainwindow.h"
 #include "panels.h"
 #include "pickerpage.h"
@@ -220,13 +222,13 @@ private slots:
         w.show();
         buildRichPipeline();
         settleWindow(w);
-        w.flows()->showLinkMenu("videotestsrc_0", "src", w.mapToGlobal(QPoint(400, 300)));
+        w.contextMenus()->link("videotestsrc_0", "src", w.mapToGlobal(QPoint(400, 300)));
         QTest::qWait(100);
         QMenu* menu = w.findChild<QMenu*>("linkMenu");
         QVERIFY(menu);
         save(menu, "ux_15_link_menu");
         menu->close();
-        w.flows()->showElementMenu("videotestsrc_0", w.mapToGlobal(QPoint(400, 300)));
+        w.contextMenus()->element(*w.front(), "videotestsrc_0", w.mapToGlobal(QPoint(400, 300)));
         QTest::qWait(100);
         menu = w.findChild<QMenu*>("elementMenu");
         QVERIFY(menu);

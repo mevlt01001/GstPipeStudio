@@ -40,18 +40,11 @@ public:
     void editTemplateParameters();  // of the library template being edited on the canvas
     // Left click on a free src pad (opens PickerPage in the right drawer)
     void fromFreePad(const QString& element, const QString& identity);
-    // Right click on a linked pad or a link
-    void showLinkMenu(const QString& element, const QString& identity, const QPoint& at);
+    // A link's caps, the element behind a pad replaced, a queue inserted (the link menu)
     void editCaps(const QString& element, const QString& identity);
     void replaceBehind(const QString& element, const QString& identity);
-    void cutLink(const QString& element, const QString& identity);
-    void disconnectLinkOnly(const QString& element, const QString& identity);
     void addQueue(const QString& element, const QString& identity);
-    // Element menu
-    void showElementMenu(const QString& element, const QPoint& at);
     void editProperties(const QString& element);
-    void deleteSource(const QString& element);
-    void deleteElementOnly(const QString& element);
     // Save as template: the selection becomes a template at once (its border is drawn); the Properties tab asks for its
     // name and parameters. Cancel, or leaving the page unsaved, makes the elements plain again.
     void saveAsTemplate(const QStringList& elements);

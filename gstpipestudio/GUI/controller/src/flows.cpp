@@ -3,14 +3,10 @@
 
 #include "panels.h"
 
-#include <QAction>
 #include <algorithm>
 #include <memory>
-#include <QClipboard>
-#include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QLabel>
-#include <QMenu>
 #include <QTabWidget>
 #include <QVBoxLayout>
 
@@ -59,7 +55,6 @@ void Flows::setBusy(bool busy) {
 }
 
 void Flows::saveAsTemplate(const QStringList& elements) {
-    if (controller_->editingBlocked() || elements.isEmpty()) return;
     const QString id = controller_->beginTemplate(elements);
     if (id.isEmpty()) return;
     TemplatePageInput input;
@@ -394,50 +389,6 @@ void Flows::openCaps(const QString& element, const QString& identity, bool after
     presentCaps(page, title, sub);
 }
 
-// ---- menus
-
-void Flows::showLinkMenu(const QString& element, const QString& identity, const QPoint& at) {
-    if (controller_->editingBlocked()) return;
-    auto* menu = new QMenu(window_);
-    menu->setObjectName("linkMenu");
-    menu->setAttribute(Qt::WA_DeleteOnClose);
-    menu->addAction("Edit caps…", this, [=] { editCaps(element, identity); })->setObjectName("actionEditCaps");
-    menu->addAction("Replace element…", this, [=] { replaceBehind(element, identity); })->setObjectName("actionReplace");
-    menu->addAction("Cut link", this, [=] { cutLink(element, identity); })->setObjectName("actionCut");
-    menu->addAction("Insert queue", this, [=] { addQueue(element, identity); })->setObjectName("actionInsertQueue");
-    menu->popup(at);
-}
-
-void Flows::showElementMenu(const QString& element, const QPoint& at) {
-    if (controller_->editingBlocked()) return;
-    const gps::Element* e = controller_->plan().find(element.toStdString());
-    if (!e) return;
-    auto* menu = new QMenu(window_);
-    menu->setObjectName("elementMenu");
-    menu->setAttribute(Qt::WA_DeleteOnClose);
-    menu->addAction("Edit properties…", this, [=] { editProperties(element); })->setObjectName("actionProperties");
-    menu->addAction("Copy element", this, [=] {
-        if (auto* clipboard = QGuiApplication::clipboard())
-            clipboard->setText(QString::fromStdString(controller_->copySubplan({element}).toConf()));
-    })->setObjectName("actionCopyElement");
-    menu->addAction("Duplicate element", this, [=] { controller_->duplicateElements({element}); })->setObjectName("actionDuplicateElement");
-    menu->addAction("Paste", this, [=] {
-        auto* clipboard = QGuiApplication::clipboard();
-        if (!clipboard) return;
-        gps::Graph graph; std::string error;
-        if (gps::Graph::fromConf(clipboard->text().toStdString(), &graph, &error)) controller_->pasteSubplan(graph);
-    })->setObjectName("actionPasteElement");
-    if (controller_->view(element).isSource) {
-        menu->addAction("Delete source", this, [=] { deleteSource(element); })->setObjectName("actionDelete");
-    } else {
-        menu->addAction("Delete element", this, [=] { deleteElementOnly(element); })->setObjectName("actionDeleteElement");
-    }
-    if (e->factory == gps::kQueueFactory) {
-        menu->addAction("Remove queue", this, [=] { controller_->removeQueue(element); })->setObjectName("actionRemoveQueue");
-    }
-    menu->popup(at);
-}
-
 // ---- link and element actions
 
 void Flows::editCaps(const QString& element, const QString& identity) {
@@ -459,18 +410,8 @@ void Flows::replaceBehind(const QString& element, const QString& identity) {
     });
 }
 
-void Flows::cutLink(const QString& element, const QString& identity) {
-    if (controller_->editingBlocked()) return;
-    controller_->cut(element, identity);
-}
-
-void Flows::disconnectLinkOnly(const QString& element, const QString& identity) {
-    if (controller_->editingBlocked()) return;
-    controller_->disconnectLink(element, identity);
-}
-
+// The edit itself is refused while editing is blocked.
 void Flows::addQueue(const QString& element, const QString& identity) {
-    if (controller_->editingBlocked()) return;
     catalog().fetchInfo(gps::kQueueFactory, this, [this, element, identity](const ElementInfo* info) {
         if (info) controller_->insertQueue(element, identity);
     });
@@ -506,17 +447,9 @@ void Flows::editProperties(const QString& element) {
     });
     connect(page, &PropertyPage::deleteRequested, this, [this, element] {
         closeProperties();
-        deleteElementOnly(element);
+        controller_->deleteElement(element);
     });
     presentProperties(page, "Edit properties · " + title(element));
 }
 
-void Flows::deleteSource(const QString& element) {
-    if (controller_->editingBlocked()) return;
-    controller_->deleteSource(element);
-}
 
-void Flows::deleteElementOnly(const QString& element) {
-    if (controller_->editingBlocked()) return;
-    controller_->deleteElement(element, true);
-}

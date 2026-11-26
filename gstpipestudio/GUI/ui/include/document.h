@@ -48,6 +48,17 @@ public:
     DocumentBackup* backup() const { return backup_; }  // its hot-exit backup
     QList<QWidget*> panelPages() const;  // what it shows in the panels, in their order
 
+    // ---- the canvas selection, as the Edit menu and the context menus act on it
+    QStringList selection() const;  // the selected elements, each collapsed template whole
+    bool hasSelectedItems() const;  // elements or links
+    void selectAll();
+    void copySelection() const;     // to the clipboard, as conf text
+    void cutSelection();
+    void paste();                   // the clipboard's conf text, selected once it is on the canvas
+    void duplicateSelection();
+    void deleteSelection();         // elements and links; a source alone leaves its neighbours as they are
+    void alignSelection();
+
     QString title() const;  // its target's: the file's name, "Template: <name>", or "Untitled-N"; "(deleted)" after it
     QString path() const;   // the file it is, "" when it has none yet
     bool pristine() const;  // untitled, empty and unchanged: opening a file may use it instead of a new tab
@@ -69,6 +80,7 @@ public:
     std::optional<DiskChange> takeChangedOnDisk() { return std::exchange(changedOnDisk_, std::nullopt); }
 
 private:
+    void showState();  // its canvas and pages follow whether it can be edited now
     void rebuilt();
 
     Controller* controller_ = nullptr;

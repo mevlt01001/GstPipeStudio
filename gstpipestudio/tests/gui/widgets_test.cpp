@@ -60,6 +60,8 @@
 #include "capslabel.h"
 #include "linkitem.h"
 #include "logpanel.h"
+#include "commandset.h"
+#include "contextmenus.h"
 #include "mainwindow.h"
 #include "saveflow.h"
 #include "paditem.h"
@@ -131,11 +133,19 @@ QStringList takeMenu(QWidget* window) {
     return offered;
 }
 
+// The action of a menu by its object name: the menus show the window's commands, which belong to the window.
+QAction* actionOf(QMenu* menu, const char* name) {
+    for (QAction* a : menu->actions()) {
+        if (a->objectName() == name) return a;
+    }
+    return nullptr;
+}
+
 // Triggers an action of the open menu. A dialog opened by the action closes the popup, so look at the menu first.
 void choose(QWidget* window, const char* action) {
     QPointer<QMenu> menu = visibleChild<QMenu>(window);
     QVERIFY2(menu, "no menu is open");
-    QAction* a = menu->findChild<QAction*>(action);
+    QAction* a = actionOf(menu, action);
     QVERIFY2(a, action);
     a->trigger();
     if (menu) menu->close();
@@ -227,14 +237,14 @@ private slots:
         MainWindow w(c.get()); w.show();
         const QString source = addSource(*c, "videotestsrc");
         w.scene()->rebuild();
-        w.flows()->showElementMenu(source, QPoint(10, 10));
-        choose(&w, "actionCopyElement");
+        w.contextMenus()->element(*w.front(), source, QPoint(10, 10));
+        choose(&w, "actionCopy");
         gps::Graph copied; std::string error;
         QVERIFY(gps::Graph::fromConf(QGuiApplication::clipboard()->text().toStdString(), &copied, &error));
         QCOMPARE(copied.elements.size(), size_t(1));
         QVERIFY(copied.links.empty());
-        w.flows()->showElementMenu(source, QPoint(10, 10));
-        choose(&w, "actionPasteElement");
+        w.contextMenus()->element(*w.front(), source, QPoint(10, 10));
+        choose(&w, "actionPaste");
         QCOMPARE(c->plan().elements.size(), size_t(2));
         QVERIFY(c->undo());
         QCOMPARE(c->plan().elements.size(), size_t(1));
@@ -348,7 +358,7 @@ private slots:
         QVERIFY(c->saveTemplate("Tail", {convert, sink}));
         QVERIFY(settle(*c));
         scene_rebuild(w);
-        Document* project = w.document();
+        Document* project = w.front();
 
         w.scene()->elementContext(convert, QPoint(20, 20));
         QVERIFY(waitFor([&] { return visibleChild<QMenu>(&w) != nullptr; }));
@@ -357,7 +367,7 @@ private slots:
         QCOMPARE(w.tabs()->count(), 2);
         QCOMPARE(w.tabs()->tabText(1), QString("Template: Tail"));
         QCOMPARE(w.tabs()->currentIndex(), 1);
-        Controller* other = w.document()->controller();
+        Controller* other = w.front()->controller();
         QVERIFY(other != c.get());
         QSignalSpy laidOut(&other->canvasLayout(), &CanvasLayout::aligned);  // an opened file is laid out once
         QVERIFY(waitFor([&] { return other->target().libraryTemplate() == "Tail" && other->plan().elements.size() == 2; }, 30000));
@@ -370,7 +380,7 @@ private slots:
         // Asking for it again brings the same tab to the front.
         w.activate(project);
         Document* again = w.openTemplate("Tail");
-        QCOMPARE(again, w.document());
+        QCOMPARE(again, w.front());
         QCOMPARE(w.tabs()->currentIndex(), 1);
         QCOMPARE(w.documents().size(), 2);
 
@@ -407,7 +417,7 @@ private slots:
         QVERIFY(dot(0)->dirty());
         QCOMPARE(dot(0)->text(), QString("●"));
         const QString conf = root.filePath("one.conf");
-        QVERIFY(w.saveFlow()->saveAs(w.document(), conf));
+        QVERIFY(w.saveFlow()->saveAs(w.front(), conf));
         QVERIFY(!dot(0)->dirty());
         QCOMPARE(dot(0)->text(), QString("×"));
         QCOMPARE(w.tabs()->tabText(0), QString("one.conf"));
@@ -426,7 +436,7 @@ private slots:
         QVERIFY(w.scene() != w.documents().front()->scene());  // the menus act on the tab in front
 
         // An unsaved tab asks: Cancel keeps it, Don't save closes it.
-        Document* second = w.document();
+        Document* second = w.front();
         QVERIFY(addSource(*second->controller(), "videotestsrc").size());
         QVERIFY(dot(1)->dirty());
         QString asked;
@@ -441,13 +451,13 @@ private slots:
         answer(&w, "saveChangesDiscard");
         w.findChild<QAction*>("actionCloseTab")->trigger();
         QCOMPARE(w.tabs()->count(), 1);
-        QCOMPARE(w.document(), w.documents().front());
+        QCOMPARE(w.front(), w.documents().front());
         // The last tab closed leaves an untitled one: the window always has a canvas.
-        QVERIFY(w.closeDocument(w.document()));
+        QVERIFY(w.closeDocument(w.front()));
         QCOMPARE(w.tabs()->count(), 1);
         QCOMPARE(w.tabs()->tabText(0), QString("Untitled-1"));
         // The tab that replaces a closed Untitled-1 takes its number again.
-        QVERIFY(w.closeDocument(w.document()));
+        QVERIFY(w.closeDocument(w.front()));
         QCOMPARE(w.tabs()->tabText(0), QString("Untitled-1"));
     }
 
@@ -463,7 +473,7 @@ private slots:
         QVERIFY(!addSource(*c, "videotestsrc").isEmpty());
         w->findChild<QAction*>("actionNew")->trigger();
         QCOMPARE(w->tabs()->tabText(1), QString("Untitled-2"));
-        Document* second = w->document();
+        Document* second = w->front();
         QVERIFY(!addSource(*second->controller(), "videotestsrc").isEmpty());
 
         // Save of an untitled tab: New project names it, and the first save makes its folder.
@@ -482,6 +492,7 @@ private slots:
         QVERIFY(w->findChild<QAction*>("actionSaveAll")->isEnabled());
         w->findChild<QAction*>("actionSaveAll")->trigger();
         for (Document* d : w->documents()) QVERIFY(!d->controller()->modified());
+        refreshed();
         QVERIFY(!w->findChild<QAction*>("actionSaveAll")->isEnabled());
 
         // Several unsaved tabs closed together are asked about once, in one list.
@@ -510,7 +521,7 @@ private slots:
         QSignalSpy checked(&shared.environment(), &EnvironmentService::checked);
         QSignalSpy listed(&shared.catalog(), &FactoryCatalog::ready);
         w.findChild<QAction*>("actionNew")->trigger();
-        Controller* second = w.document()->controller();
+        Controller* second = w.front()->controller();
         QVERIFY(second != c.get());
         QCOMPARE(&second->services(), &shared);
         QVERIFY(!w.showingSetup());
@@ -551,11 +562,11 @@ private slots:
             MainWindow w(c.get());
             w.show();
             QVERIFY(!addSource(*c, "videotestsrc").isEmpty());
-            QVERIFY(w.saveFlow()->saveAs(w.document(), a));
+            QVERIFY(w.saveFlow()->saveAs(w.front(), a));
             QVERIFY(QFile::copy(a, b));
             w.openFile(b);
-            QVERIFY(waitFor([&] { return w.document()->controller()->target().path() == b; }, 30000));
-            QVERIFY(settle(*w.document()->controller()));
+            QVERIFY(waitFor([&] { return w.front()->controller()->target().path() == b; }, 30000));
+            QVERIFY(settle(*w.front()->controller()));
             w.activate(w.documents().front());
             QVERIFY(w.close());
         }
@@ -583,7 +594,7 @@ private slots:
         BackupService& backups = c->services().backups();
         QVERIFY(waitFor([&] { return backups.list().size() == 1; }, 3000));
         const Backup backup = backups.list().front();
-        QCOMPARE(backup.id, w.document()->backup()->id());
+        QCOMPARE(backup.id, w.front()->backup()->id());
         QCOMPARE(backup.key, QString("untitled:1"));
         QCOMPARE(backup.title, QString("Untitled-1"));
         gps::Graph content;
@@ -595,13 +606,13 @@ private slots:
         QVERIFY(backups.list().isEmpty());
         QVERIFY(c->redo());
         QVERIFY(waitFor([&] { return backups.list().size() == 1; }, 3000));
-        QVERIFY(w.saveFlow()->saveAs(w.document(), root.filePath("one.conf")));
+        QVERIFY(w.saveFlow()->saveAs(w.front(), root.filePath("one.conf")));
         QVERIFY(backups.list().isEmpty());
         // Closed after Don't save, the tab takes its backup with it.
         QVERIFY(!addSource(*c, "audiotestsrc").isEmpty());
         QVERIFY(waitFor([&] { return backups.list().size() == 1; }, 3000));
         answer(&w, "saveChangesDiscard");
-        QVERIFY(w.closeDocument(w.document()));
+        QVERIFY(w.closeDocument(w.front()));
         QVERIFY(backups.list().isEmpty());
         useUserDir({});
     }
@@ -616,10 +627,10 @@ private slots:
             MainWindow w(c.get());
             w.show();
             const QString src = addSource(*c, "videotestsrc");
-            QVERIFY(w.saveFlow()->saveAs(w.document(), a));
+            QVERIFY(w.saveFlow()->saveAs(w.front(), a));
             QVERIFY(!addAfter(*c, src, "src", "fakesink").isEmpty());
             w.findChild<QAction*>("actionNew")->trigger();
-            QVERIFY(!addSource(*w.document()->controller(), "videotestsrc").isEmpty());
+            QVERIFY(!addSource(*w.front()->controller(), "videotestsrc").isEmpty());
             QVERIFY(w.close());  // a question would block here
         }
         // The tabs a crash leaves come back in the order their backups were written.
@@ -674,7 +685,7 @@ private slots:
         MainWindow w(c.get());
         w.show();
         QVERIFY(!addSource(*c, "videotestsrc").isEmpty());
-        QVERIFY(w.saveFlow()->saveAs(w.document(), a));
+        QVERIFY(w.saveFlow()->saveAs(w.front(), a));
         QTest::qWait(2 * DocumentRegistry::kSettleMs);
         QCOMPARE(c->plan().elements.size(), size_t(1));  // its own save is no change
 
@@ -695,10 +706,10 @@ private slots:
         // Changed on disk again, saved before the watcher tells: Save asks; Cancel writes nothing, Overwrite does.
         QVERIFY(overwrite(a, two));
         answer(&w, "cancel");
-        QVERIFY(!w.saveFlow()->save(w.document()));
+        QVERIFY(!w.saveFlow()->save(w.front()));
         QVERIFY(c->modified());
         answer(&w, "overwriteOnDisk");
-        QVERIFY(w.saveFlow()->save(w.document()));
+        QVERIFY(w.saveFlow()->save(w.front()));
         QVERIFY(!c->modified());
         gps::Graph written;
         std::string error;
@@ -707,16 +718,16 @@ private slots:
 
         // Deleted on disk: the tab stays, marked deleted and modified, so Save writes it again.
         QVERIFY(QFile::remove(a));
-        QVERIFY(waitFor([&] { return w.document()->title() == "a.conf (deleted)"; }));
+        QVERIFY(waitFor([&] { return w.front()->title() == "a.conf (deleted)"; }));
         QVERIFY(c->modified());
-        QVERIFY(w.saveFlow()->save(w.document()));
+        QVERIFY(w.saveFlow()->save(w.front()));
         QVERIFY(QFile::exists(a) && !c->modified());
-        QCOMPARE(w.document()->title(), QString("a.conf"));
+        QCOMPARE(w.front()->title(), QString("a.conf"));
 
         // In the background, a modified tab is asked about once it comes to the front.
         auto question = [&] { auto* box = w.findChild<QMessageBox*>("changedOnDisk"); return box && box->isVisible() ? box : nullptr; };
         QVERIFY(!addSource(*c, "audiotestsrc").isEmpty());
-        Document* file = w.document();
+        Document* file = w.front();
         w.newDocument();
         QVERIFY(overwrite(a, one));
         QTest::qWait(4 * DocumentRegistry::kSettleMs);
@@ -740,9 +751,11 @@ private slots:
         auto* save = w.findChild<QAction*>("actionSaveTemplateElement");
         w.scene()->setSelectedElements({});
         auto* remove = w.findChild<QAction*>("actionDelete");
+        refreshed();
         QVERIFY(!save->isEnabled());  // nothing to save
         QVERIFY(!remove->isEnabled());
         w.scene()->setSelectedElements({convert, sink});
+        refreshed();
         QVERIFY(save->isEnabled());
         QVERIFY(remove->isEnabled());
         save->trigger();
@@ -790,6 +803,7 @@ private slots:
         QString src, convert, sink;
         buildChain(w, &src, &convert, &sink);
         w.scene()->setSelectedElements({convert, sink});
+        refreshed();
         w.findChild<QAction*>("actionSaveTemplateElement")->trigger();
         auto* page = pageOf<TemplatePage>(w);
         QVERIFY(page);
@@ -901,9 +915,10 @@ private slots:
         QVERIFY(settle(*c));
         const QString conf = root.filePath("door/door.conf");
         QVERIFY(QDir().mkpath(root.filePath("door")));
-        QVERIFY(w.saveFlow()->saveAs(w.document(), conf));
+        QVERIFY(w.saveFlow()->saveAs(w.front(), conf));
         QVERIFY(QDir().mkpath(root.filePath("yard")));
         QVERIFY(QFile::copy(conf, root.filePath("yard/yard.conf")));
+        refreshed();
 
         QCOMPARE(w.panels()->dock(w.explorer())->windowTitle(), QString("Explorer"));
         QCOMPARE(w.dockWidgetArea(w.panels()->dock(w.explorer())), Qt::LeftDockWidgetArea);
@@ -925,19 +940,19 @@ private slots:
         // A project opens with a double click, in a tab of its own; a template opens in its own tab too.
         emit tree->itemActivated(tree->topLevelItem(1)->child(1), 0);
         QCOMPARE(w.tabs()->count(), 2);
-        Controller* yard = w.document()->controller();
+        Controller* yard = w.front()->controller();
         QVERIFY(waitFor([&] { return yard->target().path() == root.filePath("yard/yard.conf"); }, 30000));
         QVERIFY(settle(*yard));
         QVERIFY(waitFor([&] { return tree->topLevelItem(0)->text(0) == "Project · yard"; }));
         emit tree->itemActivated(tree->topLevelItem(2)->child(0), 0);
         QCOMPARE(w.tabs()->count(), 3);
-        QCOMPARE(w.document()->controller()->target().libraryTemplate(), QString("Tail"));
+        QCOMPARE(w.front()->controller()->target().libraryTemplate(), QString("Tail"));
         // A template's right click is the library's menu.
         QTreeWidgetItem* tail = tree->topLevelItem(2)->child(0);
         tree->scrollToItem(tail);
         emit tree->customContextMenuRequested(tree->visualItemRect(tail).center());
         QCOMPARE(takeMenu(&w), QStringList({"Edit template", "Rename", "Export…", "Delete"}));
-        QVERIFY(settle(*w.document()->controller()));
+        QVERIFY(settle(*w.front()->controller()));
         Settings::setProjectsLocation({});
         useUserDir({});
     }
@@ -952,7 +967,7 @@ private slots:
         w.show();
         QVERIFY(!addSource(*c, "videotestsrc").isEmpty());
         const QString door = root.filePath("door/door.conf");
-        QVERIFY(w.saveFlow()->saveAs(w.document(), door));
+        QVERIFY(w.saveFlow()->saveAs(w.front(), door));
         QTreeWidget* tree = w.explorer()->tree();
         auto row = [&](const QString& origin, const QString& path) { return w.explorer()->itemOf(origin + "|" + path); };
         QVERIFY(waitFor([&] { return row("project", door) && tree->currentItem() == row("project", door); }));
@@ -962,18 +977,20 @@ private slots:
         QCOMPARE(w.panels()->dock(w.explorer())->windowTitle(), QString("Explorer"));
 
         QVERIFY(!addAfter(*c, fromStd(c->plan().elements.front().name), "src", "fakesink").isEmpty());
+        refreshed();
         QCOMPARE(row("project", door)->text(0), QString("door.conf ●"));
         QCOMPARE(w.panels()->dock(w.explorer())->windowTitle(), QString("Explorer · 1 unsaved"));
         QCOMPARE(w.findChild<QAction*>("actionPanelExplorer")->text(), QString("Explorer"));  // View > Panels keeps its name
         QVERIFY(c->undo());
+        refreshed();
         QCOMPARE(row("project", door)->text(0), QString("door.conf"));
         QCOMPARE(w.panels()->dock(w.explorer())->windowTitle(), QString("Explorer"));
 
         // Another tab in front: its file is selected; the first stays bold, it is still open.
         w.newDocument();
-        QVERIFY(!addSource(*w.document()->controller(), "videotestsrc").isEmpty());
+        QVERIFY(!addSource(*w.front()->controller(), "videotestsrc").isEmpty());
         const QString yard = root.filePath("yard/yard.conf");
-        QVERIFY(w.saveFlow()->saveAs(w.document(), yard));
+        QVERIFY(w.saveFlow()->saveAs(w.front(), yard));
         QVERIFY(waitFor([&] { return row("project", yard) && tree->currentItem() == row("project", yard); }));
         QVERIFY(row("projects", door)->font(0).bold());
 
@@ -981,7 +998,7 @@ private slots:
         QVERIFY(QFile::remove(yard));
         QVERIFY(waitFor([&] { return row("project", yard) && w.explorer()->entryOf(row("project", yard)).state == ExplorerEntry::State::Deleted; }));
         QVERIFY(row("project", yard)->font(0).strikeOut());
-        QVERIFY(w.saveFlow()->save(w.document()));
+        QVERIFY(w.saveFlow()->save(w.front()));
         QVERIFY(waitFor([&] { return row("project", yard) && w.explorer()->entryOf(row("project", yard)).state == ExplorerEntry::State::Open; }));
         Settings::setProjectsLocation({});
         useUserDir({});
@@ -996,7 +1013,7 @@ private slots:
         w.show();
         QVERIFY(!addSource(*c, "videotestsrc").isEmpty());
         const QString door = root.filePath("door/door.conf"), front = root.filePath("door/front.conf");
-        QVERIFY(w.saveFlow()->saveAs(w.document(), door));
+        QVERIFY(w.saveFlow()->saveAs(w.front(), door));
         QFile taken(root.filePath("door/taken.conf"));
         QVERIFY(taken.open(QIODevice::WriteOnly));
         taken.close();
@@ -1022,7 +1039,7 @@ private slots:
         QCOMPARE(ProjectFile::load(ProjectFile::pathForConf(front)).confs(), QStringList({"front.conf"}));
         QVERIFY(!c->modified());
         QVERIFY(waitFor([&] { return w.explorer()->itemOf("project|" + front) && tree->currentItem() == w.explorer()->itemOf("project|" + front); }));
-        QVERIFY(w.saveFlow()->save(w.document()));
+        QVERIFY(w.saveFlow()->save(w.front()));
         QVERIFY(QFile::exists(front) && !QFile::exists(door));
         useUserDir({});
     }
@@ -1064,7 +1081,7 @@ private slots:
         w.show();
         QVERIFY(!addSource(*c, "videotestsrc").isEmpty());
         const QString door = root.filePath("door/door.conf"), notes = root.filePath("door/notes.txt");
-        QVERIFY(w.saveFlow()->saveAs(w.document(), door));
+        QVERIFY(w.saveFlow()->saveAs(w.front(), door));
         QFile file(notes);
         QVERIFY(file.open(QIODevice::WriteOnly) && file.write("x") == 1);
         file.close();
@@ -1888,6 +1905,7 @@ private slots:
         auto act = [&](const char* name) { return w.findChild<QAction*>(name); };
         auto label = [&] { return w.findChild<QLabel*>("stateLabel")->text(); };
         // empty canvas
+        refreshed();
         QVERIFY(act("actionNew")->isEnabled() && act("actionOpen")->isEnabled() && act("actionAddElement")->isEnabled());
         QVERIFY(act("actionSave")->isEnabled() && !act("actionRun")->isEnabled() && !act("actionUpdate")->isEnabled());
         QVERIFY(label().contains("Empty canvas"));
@@ -1896,6 +1914,7 @@ private slots:
         // updating: document replacement waits; canvas edits stay available
         need(*c, "videotestsrc");
         QVERIFY(c->addElement("videotestsrc", {}));
+        refreshed();
         QVERIFY(!act("actionNew")->isEnabled() && !act("actionOpen")->isEnabled() && act("actionAddElement")->isEnabled());
         QVERIFY(act("actionSave")->isEnabled() && !act("actionRun")->isEnabled());
         QVERIFY(label().contains("keep editing"));
@@ -1932,13 +1951,14 @@ private slots:
         QString sink = addAfter(*c, src, "src", "fakesink");
         QCOMPARE(w.findChild<QLabel*>("commandLabel")->text(), QString());
         QTemporaryDir dir;
-        QVERIFY(w.saveFlow()->saveAs(w.document(), dir.filePath("demo.conf")));
-        QString shown = w.findChild<QLabel*>("commandLabel")->text();
-        QVERIFY(shown.contains("gst-launch-1.0 demo"));
-        QVERIFY(shown.contains("GPS_PIPELINE_PATH="));
+        QVERIFY(w.saveFlow()->saveAs(w.front(), dir.filePath("demo.conf")));
+        refreshed();
+        const QString command = w.findChild<QLabel*>("commandLabel")->text();
+        QVERIFY(command.contains("gst-launch-1.0 demo"));
+        QVERIFY(command.contains("GPS_PIPELINE_PATH="));
         QVERIFY(w.windowTitle().contains("demo.conf"));
         QVERIFY(!w.windowTitle().endsWith("*"));
-        QVERIFY(w.saveFlow()->save(w.document()));  // Save again, same file
+        QVERIFY(w.saveFlow()->save(w.front()));  // Save again, same file
     }
 
     void updateAndLogPanelsShowTheHelpersAnswer() {
@@ -2212,7 +2232,7 @@ private slots:
         w.show();
         QString src, convert, sink;
         buildChain(w, &src, &convert, &sink);
-        w.flows()->showLinkMenu(src, "src", QPoint(200, 200));
+        w.contextMenus()->link(src, "src", QPoint(200, 200));
         auto* menu = visibleChild<QMenu>(&w);
         QVERIFY(menu);
         QCOMPARE(menu->objectName(), QString("linkMenu"));
@@ -2221,19 +2241,42 @@ private slots:
         QCOMPARE(texts, QStringList({"Edit caps…", "Replace element…", "Cut link", "Insert queue"}));
         menu->close();
 
-        w.flows()->showElementMenu(src, QPoint(200, 200));
+        w.contextMenus()->element(*w.front(), src, QPoint(200, 200));
         menu = visibleChild<QMenu>(&w);
         QVERIFY(menu);
         texts.clear();
         for (QAction* a : menu->actions()) texts << a->text();
-        QCOMPARE(texts, QStringList({"Edit properties…", "Copy element", "Duplicate element", "Paste", "Delete source"}));
+        QCOMPARE(texts, QStringList({"Edit properties…", "&Copy", "&Duplicate", "&Paste", "De&lete"}));  // the Edit menu's own
         menu->close();
-        w.flows()->showElementMenu(convert, QPoint(200, 200));
+        w.contextMenus()->element(*w.front(), convert, QPoint(200, 200));
         menu = visibleChild<QMenu>(&w);
         texts.clear();
         for (QAction* a : menu->actions()) texts << a->text();
-        QCOMPARE(texts, QStringList({"Edit properties…", "Copy element", "Duplicate element", "Paste", "Delete element"}));
+        QCOMPARE(texts, QStringList({"Edit properties…", "&Copy", "&Duplicate", "&Paste", "De&lete"}));
         menu->close();
+    }
+
+    // The context menus show the window's own commands: the same actions as the menu bar, with the same rules.
+    void contextMenusShareTheWindowsCommands() {
+        MainWindow w(c.get());
+        w.show();
+        QString src, convert, sink;
+        buildChain(w, &src, &convert, &sink);
+        w.scene()->setSelectedElements({});
+        w.contextMenus()->element(*w.front(), convert, QPoint(200, 200));
+        QMenu* menu = visibleChild<QMenu>(&w);
+        QVERIFY(menu);
+        QCOMPARE(actionOf(menu, "actionCopy"), (*w.commands())[Command::Copy]);
+        QCOMPARE(w.front()->selection(), QStringList({convert}));  // the element it was opened on is the selection
+        QVERIFY(actionOf(menu, "actionDelete")->isEnabled());
+        menu->close();
+
+        // A tab's menu: the tab comes to the front, and its file commands act on it.
+        Document* first = w.front();
+        w.newDocument();
+        emit w.tabs()->customContextMenuRequested(w.tabs()->tabRect(0).center());
+        QCOMPARE(w.front(), first);
+        QCOMPARE(takeMenu(&w), QStringList({"&Save", "Save &as…", "Re&vert file", "Version &history…", "&Close tab"}));
     }
 
     void queueInsertAndRemoveThroughTheMenus() {
@@ -2241,14 +2284,14 @@ private slots:
         w.show();
         QString src, convert, sink;
         buildChain(w, &src, &convert, &sink);
-        w.flows()->showLinkMenu(src, "src", QPoint(200, 200));
+        w.contextMenus()->link(src, "src", QPoint(200, 200));
         choose(&w, "actionInsertQueue");
         QVERIFY(waitFor([&] { return c->plan().elements.size() == 4 && !c->busy(); }, 8000));
         QString queue = text(c->plan().elements.back().name);
         QCOMPARE(text(c->plan().find(queue.toStdString())->factory), QString("queue"));
 
-        w.flows()->showElementMenu(queue, QPoint(200, 200));
-        QVERIFY(visibleChild<QMenu>(&w)->findChild<QAction*>("actionRemoveQueue"));
+        w.contextMenus()->element(*w.front(), queue, QPoint(200, 200));
+        QVERIFY(actionOf(visibleChild<QMenu>(&w), "actionRemoveQueue"));
         choose(&w, "actionRemoveQueue");
         QVERIFY(waitFor([&] { return c->plan().elements.size() == 3 && !c->busy(); }, 8000));
     }
@@ -2260,8 +2303,8 @@ private slots:
         buildChain(w, &src, &convert, &sink);
 
         // Free-canvas rule: cutting a link only disconnects the link, leaving downstream elements on the canvas.
-        w.flows()->showLinkMenu(src, "src", QPoint(200, 200));
-        choose(&w, "actionCut");
+        w.contextMenus()->link(src, "src", QPoint(200, 200));
+        choose(&w, "actionCutLink");
         QVERIFY(waitFor([&] { return c->plan().links.size() == 1 && !c->busy(); }, 8000));
         QCOMPARE(c->plan().elements.size(), size_t(3));
         QVERIFY(c->plan().find(convert.toStdString()));
@@ -2274,7 +2317,7 @@ private slots:
         QString src, convert, sink;
         buildChain(w, &src, &convert, &sink);
 
-        w.flows()->showLinkMenu(src, "src", QPoint(200, 200));
+        w.contextMenus()->link(src, "src", QPoint(200, 200));
         choose(&w, "actionReplace");
         auto* picker = pageOf<PickerPage>(w);
         QVERIFY(picker);
@@ -2301,7 +2344,7 @@ private slots:
         w.show();
         QString src, convert, sink;
         buildChain(w, &src, &convert, &sink);
-        w.flows()->showElementMenu(src, QPoint(200, 200));
+        w.contextMenus()->element(*w.front(), src, QPoint(200, 200));
         choose(&w, "actionDelete");
         // Free-canvas rule: deleting a source only removes the source element; downstream elements remain on canvas.
         QVERIFY(waitFor([&] { return c->plan().elements.size() == 2 && !c->busy(); }, 8000));
@@ -2359,7 +2402,7 @@ private slots:
         w.show();
         QString src, convert, sink;
         buildChain(w, &src, &convert, &sink);
-        w.flows()->showLinkMenu(src, "src", QPoint(200, 200));
+        w.contextMenus()->link(src, "src", QPoint(200, 200));
         choose(&w, "actionEditCaps");
         auto* caps = pageOf<CapsPage>(w);
         QVERIFY(caps);
@@ -2394,9 +2437,9 @@ private slots:
         QVERIFY(c->run());
         QVERIFY(c->editingBlocked());
         w.flows()->fromFreePad(src, "src");
-        w.flows()->showLinkMenu(src, "src", QPoint(10, 10));
-        w.flows()->showElementMenu(src, QPoint(10, 10));
-        w.flows()->deleteSource(src);
+        w.scene()->linkContext(src, "src", QPoint(10, 10));  // the locked canvas offers no menu
+        w.scene()->elementContext(src, QPoint(10, 10));
+        QVERIFY(!c->deleteSource(src));
         w.flows()->editProperties(src);
         w.flows()->chooseElement();
         QTest::qWait(50);
@@ -2417,8 +2460,10 @@ private slots:
         QCOMPARE(run->text(), QString("&Run"));
         QSignalSpy ended(c.get(), &Controller::runFinished);
         run->trigger();
+        refreshed();
         QCOMPARE(run->text(), QString("&Stop"));
         QVERIFY(waitFor([&] { return ended.count() == 1; }));
+        refreshed();
         QCOMPARE(run->text(), QString("&Run"));
         QVERIFY(w.logPanel()->toPlainText().contains("Run finished: eos"));
     }
@@ -2439,6 +2484,7 @@ private slots:
         w.openFile(path);
         QVERIFY(waitFor([&] { return other->result().valid() && !other->busy() && w.scene()->element(sink) != nullptr; }, 8000));
         QCOMPARE(w.scene()->links().size(), 2);
+        refreshed();
         QCOMPARE(w.windowTitle(), BuildInfo::title() + " " + BuildInfo::version() + " – keep.conf");
         QVERIFY(w.findChild<QAction*>("actionRun")->isEnabled());
         QTest::qWait(100);
