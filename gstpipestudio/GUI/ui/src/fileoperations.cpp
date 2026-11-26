@@ -38,8 +38,7 @@ FileOperations::FileOperations(AppServices& services, MainWindow* window) : QObj
     // Renamed anywhere (here, the picker, a test), a component's tab follows: it saves under the new name.
     for (ComponentProvider* provider : services.providers()) {
         connect(provider, &ComponentProvider::renamed, this, [this, provider](const QString& from, const QString& to) {
-            const QString key = ComponentSection::entryOf(*provider, to).key();
-            rebind(ComponentSection::entryOf(*provider, from).key(), SaveTarget::fromKey(key, services_.library()));
+            rebind(ComponentSection::entryOf(*provider, from).key(), provider->documentTarget(to, ComponentProvider::DocumentAccess::Restore));
         });
     }
 }

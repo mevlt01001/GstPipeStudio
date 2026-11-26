@@ -1,12 +1,16 @@
 // componentprovider.cpp – see componentprovider.h. By default a provider only lists and places its components.
 #include "componentprovider.h"
 
+#include "savetarget.h"
+
 namespace {
 bool refused(QString* error) {
     if (error) *error = "This kind of component cannot be changed here.";
     return false;
 }
 }  // namespace
+
+std::unique_ptr<SaveTarget> ComponentProvider::documentTarget(const QString&, DocumentAccess, QString*) { return nullptr; }
 
 QList<ComponentAction> ComponentProvider::actions(const QString&) const { return {}; }
 

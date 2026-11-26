@@ -32,6 +32,7 @@ public:
     QList<ComponentInfo> components() const override;
     gps::Graph peek(const QString& name) const override { return content(name); }
     std::optional<gps::NodeRef> place(gps::Graph& g, const QString& name, double x, double y) const override;
+    std::unique_ptr<SaveTarget> documentTarget(const QString& id, DocumentAccess access, QString* error = nullptr) override;
     QList<ComponentAction> actions(const QString& name) const override;
     bool canImport() const override { return true; }
 

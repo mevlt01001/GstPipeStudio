@@ -11,6 +11,7 @@
 #include "contract.h"
 #include "factorycatalog.h"
 #include "projectfile.h"
+#include "savetarget.h"
 #include "templates.h"
 #include "versionhistory.h"
 
@@ -104,6 +105,14 @@ std::optional<gps::NodeRef> TemplateLibrary::place(gps::Graph& g, const QString&
     if (!tmpl || tmpl->elements.empty()) return std::nullopt;
     const auto [left, top] = tmpl->topLeft();
     return gps::NodeRef::instance(gps::templates::insertTemplate(g, *tmpl, x - left, y - top));
+}
+
+std::unique_ptr<SaveTarget> TemplateLibrary::documentTarget(const QString& name, DocumentAccess access, QString* error) {
+    if (name.isEmpty() || (access == DocumentAccess::Open && !plan(name))) {
+        if (error) *error = "Template " + name + " is not in the library";
+        return nullptr;
+    }
+    return std::make_unique<LibraryTemplateTarget>(name, *this);
 }
 
 QList<ComponentAction> TemplateLibrary::actions(const QString& name) const {

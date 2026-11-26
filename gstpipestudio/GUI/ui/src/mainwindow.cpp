@@ -436,17 +436,22 @@ void MainWindow::openFile(const QString& path) {
 
 // From a list in the drawer or the Explorer: the drawer's list has done its part.
 Document* MainWindow::openComponent(const ComponentRef& component) {
-    if (component.provider != TemplateLibrary::kKind) return nullptr;
-    drawer()->dismiss();
-    return openTemplate(component.id);
+    return openComponent(component, true);
 }
 
-Document* MainWindow::openTemplate(const QString& name) {
-    if (!services_.library().plan(name)) {
-        statusBar()->showMessage("Template " + name + " is not in the library", 10000);
+Document* MainWindow::openTemplate(const QString& name) { return openComponent(TemplateLibrary::ref(name), false); }
+
+Document* MainWindow::openComponent(const ComponentRef& component, bool dismissDrawer) {
+    ComponentProvider* provider = services_.provider(component.provider);
+    if (!provider) return nullptr;
+    QString error;
+    auto target = provider->documentTarget(component.id, ComponentProvider::DocumentAccess::Open, &error);
+    if (dismissDrawer && (target || !error.isEmpty())) drawer()->dismiss();
+    if (!target) {
+        if (!error.isEmpty()) statusBar()->showMessage(error, 10000);
         return nullptr;
     }
-    return tabs_->open(std::make_unique<LibraryTemplateTarget>(name, services_.library()));
+    return tabs_->open(std::move(target));
 }
 
 void MainWindow::openCapsTab(const QString& srcElement, const QString& srcIdentity) { flows()->editCaps(srcElement, srcIdentity); }

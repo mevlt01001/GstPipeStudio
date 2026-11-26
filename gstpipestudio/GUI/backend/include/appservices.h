@@ -1,4 +1,4 @@
-// appservices.h – what every document of the process shares, built once in main(): the GStreamer check, the factory
+// appservices.h – what every document of the process shares, owned by GstPipeStudio: the GStreamer check, the factory
 // catalog (one gps-inspect for all tabs), the component providers (the template library, the plugins), the view
 // preferences and the hot-exit backups. Every
 // Controller and the window get it; a new tab costs no probe and no helper process. What is remembered between starts

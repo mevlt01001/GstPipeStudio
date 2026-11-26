@@ -10,7 +10,7 @@ QString ExplorerEntry::key() const {
     switch (kind) {
     case Kind::Conf:
     case Kind::Project: return ProjectConfTarget::keyFor(path);
-    case Kind::Component: return SaveTarget::key(origin.toUtf8().constData(), path);
+    case Kind::Component: return SaveTarget::key(origin, path);
     default: return QString();
     }
 }

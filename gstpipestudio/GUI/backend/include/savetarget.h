@@ -12,6 +12,7 @@
 #include "graph.h"
 #include "saveresult.h"
 
+class AppServices;
 class TemplateLibrary;
 
 class SaveTarget {
@@ -30,11 +31,11 @@ public:
     virtual SaveResult write(const gps::Graph& plan) = 0;    // the plan as the document holds it
 
     // A session key is "<kind>:<value>", the kind being a target's kKind.
-    static QString key(const char* kind, const QString& value) { return QString(kind) + ":" + value; }
+    static QString key(const QString& kind, const QString& value) { return kind + ":" + value; }
     static QString kindOf(const QString& entry) { return entry.section(':', 0, 0); }
     static QString valueOf(const QString& entry) { return entry.section(':', 1); }
     // The target a session key names; null when the key is of no known kind.
-    static std::unique_ptr<SaveTarget> fromKey(const QString& entry, TemplateLibrary& library);
+    static std::unique_ptr<SaveTarget> fromKey(const QString& entry, AppServices& services);
 };
 
 // A canvas never saved: "Untitled-N". Its first Save asks for a project.
@@ -76,13 +77,11 @@ private:
 // A template of the library, edited as a canvas: Save writes its next revision.
 class LibraryTemplateTarget final : public SaveTarget {
 public:
-    static constexpr const char* kKind = "template";
     LibraryTemplateTarget(const QString& name, TemplateLibrary& library) : name_(name), library_(library) {}
-    static QString keyFor(const QString& name) { return key(kKind, name); }
 
     QString title() const override { return "Template: " + name_; }
     QString path() const override;
-    QString sessionKey() const override { return keyFor(name_); }
+    QString sessionKey() const override;
     QString libraryTemplate() const override { return name_; }
     QString runBlockedReason() const override { return "A template runs inside a pipeline: add it to one with Add template"; }
     QString saveAsBlockedReason() const override { return "A template is saved to the library: use Save as template"; }

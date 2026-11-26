@@ -53,7 +53,7 @@ public:
     void openFile(const QString& path);
     // A library template on a canvas tab of its own: Save writes its next revision, the other tabs are offered it.
     Document* openTemplate(const QString& name);
-    Document* openComponent(const ComponentRef& component);  // a template: openTemplate; nothing else opens yet
+    Document* openComponent(const ComponentRef& component);
     void openCapsTab(const QString& srcElement, const QString& srcIdentity);
 
     // ---- the front document's parts
@@ -104,6 +104,7 @@ private:
     void onLibraryChanged();  // a template a tab edits may have a newer revision, saved from another tab
     void askTemplateChange(const QString& id);
     void askTemplatesOutdated(const QStringList& ids);
+    Document* openComponent(const ComponentRef& component, bool dismissDrawer);
     void showVersionHistory();
     void importLaunch();
     void focusSearch();

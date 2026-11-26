@@ -7,6 +7,7 @@
 #include <QMetaType>
 #include <QObject>
 #include <QString>
+#include <memory>
 #include <optional>
 
 #include "graph.h"
@@ -31,6 +32,8 @@ struct ComponentInfo {
 };
 
 // What a component's context menu may offer; the window carries them out (they ask for names and files).
+class SaveTarget;
+
 enum class ComponentAction { Edit, Rename, Export, Delete };
 
 class ComponentProvider : public QObject {
@@ -45,6 +48,10 @@ public:
     virtual gps::Graph peek(const QString& id) const = 0;  // what is inside, for a quick look; empty when there is none
     // Places it on g with the top left corner of its content at (x, y): the node it became, nothing when there is none.
     virtual std::optional<gps::NodeRef> place(gps::Graph& g, const QString& id, double x, double y) const = 0;
+
+    // A restored document may have a backup even after its library entry disappears.
+    enum class DocumentAccess { Open, Restore };
+    virtual std::unique_ptr<SaveTarget> documentTarget(const QString& id, DocumentAccess access, QString* error = nullptr);
 
     // Managing the components. A provider offers in actions() what it supports; the rest refuse.
     virtual QList<ComponentAction> actions(const QString& id) const;

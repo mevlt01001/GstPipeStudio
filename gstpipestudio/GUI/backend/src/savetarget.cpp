@@ -4,6 +4,7 @@
 #include <QDir>
 #include <QFileInfo>
 
+#include "appservices.h"
 #include "contract.h"
 #include "projectfile.h"
 #include "settings.h"
@@ -12,11 +13,12 @@
 
 QStringList SaveTarget::templateFolders() const { return {TemplateLibrary::directory()}; }
 
-std::unique_ptr<SaveTarget> SaveTarget::fromKey(const QString& entry, TemplateLibrary& library) {
+std::unique_ptr<SaveTarget> SaveTarget::fromKey(const QString& entry, AppServices& services) {
     const QString kind = kindOf(entry), value = valueOf(entry);
     if (kind == UntitledTarget::kKind && value.toInt() > 0) return std::make_unique<UntitledTarget>(value.toInt());
     if (kind == ProjectConfTarget::kKind && !value.isEmpty()) return std::make_unique<ProjectConfTarget>(value);
-    if (kind == LibraryTemplateTarget::kKind && !value.isEmpty()) return std::make_unique<LibraryTemplateTarget>(value, library);
+    if (auto* provider = services.provider(kind); provider && !value.isEmpty())
+        return provider->documentTarget(value, ComponentProvider::DocumentAccess::Restore);
     return nullptr;
 }
 
@@ -62,6 +64,8 @@ SaveResult ProjectConfTarget::write(const gps::Graph& plan) {
     Settings::addRecent(path_);
     return SaveResult::written(path_);
 }
+
+QString LibraryTemplateTarget::sessionKey() const { return key(library_.kind(), name_); }
 
 QString LibraryTemplateTarget::path() const { return library_.file(name_); }
 

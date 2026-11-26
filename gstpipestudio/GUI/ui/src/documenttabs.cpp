@@ -175,7 +175,7 @@ void DocumentTabs::restoreSession() {
 
 // Without a backup there must be a file to read: an untitled tab without changes, or a file gone, is not reopened.
 Document* DocumentTabs::reopen(const Backup& tab) {
-    std::unique_ptr<SaveTarget> wanted = SaveTarget::fromKey(tab.key, services_.library());
+    std::unique_ptr<SaveTarget> wanted = SaveTarget::fromKey(tab.key, services_);
     if (!wanted || (tab.id.isEmpty() && !QFileInfo::exists(wanted->path()))) return nullptr;
     return open(std::move(wanted), tab.id);
 }

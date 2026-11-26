@@ -90,7 +90,7 @@ One `QFileSystemWatcher` over the open files (the document registry):
 | a node (element, template copy, later a plugin node) | `gps::NodeRef` + `gps::NodeShape` (members, external and free pads, Request sinks, role, `firstFree`) computed from factory definitions and links, so drafts work too; the pad rule itself is one function, `gps::padsOf` | free-pad and is-source questions answered three ways; "Add after → template" never linking |
 | what is drawn as one box | `Outline` (box of an element, members and anchor of a box, frames around it, visible frames, selection expansion), kept per revision and expanded set | box/member questions in Controller, CanvasLayout and CanvasScene |
 | every human name | `gps::Names`, kept per revision: element, pad (its label read from the graph's pads, which the last run names), template copy (from `templateName`, never parsed from its id), parameter | display names rebuilt per element; 4 texts for one pad |
-| what can be placed | `ComponentProvider` (kind, title, empty hint, components with ports and role, peek, place on a graph, actions); `TemplateLibrary` implements it, `PluginLibrary` is the empty Plugins section; `Controller::place/placeAfter` place any `ComponentRef` | picker and Explorer hard-coding templates |
+| what can be placed | `ComponentProvider` (kind, title, empty hint, components with ports and role, peek, place on a graph, actions); `TemplateLibrary` implements it, `PluginLibrary` is the empty Plugins section; `Controller::place/placeAfter` place any `ComponentRef`. The provider also supplies the save target for opening, restoring and rebinding its editable components | picker and Explorer hard-coding templates |
 
 ## Explorer
 
