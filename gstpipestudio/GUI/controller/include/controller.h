@@ -51,7 +51,8 @@ public:
     bool updating() const { return validation_.updating(); }
     bool running() const { return runs_.running(); }
     bool monitoring() const { return runs_.monitoring(); }
-    bool busy() const { return updating() || running() || monitoring() || opening_; }
+    bool busy() const { return !busyReason().isEmpty(); }
+    QString busyReason() const;  // why a step is running (editing is blocked, or validation runs), "" when none is
     bool editingBlocked() const { return edits_.blocked(); }
     bool canSave() const { return saveBlockedReason().isEmpty(); }  // Save always writes, unless a file opens or it runs
     bool canRun() const { return runBlockedReason().isEmpty(); }    // validated, no problem, and complete

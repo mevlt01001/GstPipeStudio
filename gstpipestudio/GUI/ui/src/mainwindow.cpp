@@ -134,16 +134,13 @@ namespace {
 QString firstOf(const QString& general, const QString& own) { return general.isEmpty() ? own : general; }
 }  // namespace
 
-QString MainWindow::busyReason() const {
-    if (services_.environment().blocked()) return "GStreamer is not ready";
-    if (controller()->running()) return "The pipeline is running";
-    if (controller()->updating()) return "Validation is running";
-    return controller()->busy() ? "Wait for the running step to finish" : QString();
-}
+QString MainWindow::environmentReason() const { return services_.environment().blocked() ? "GStreamer is not ready" : QString(); }
+
+QString MainWindow::busyReason() const { return firstOf(environmentReason(), controller()->busyReason()); }
 
 QString MainWindow::editReason() const { return controller()->saveBlockedReason(); }
 
-QString MainWindow::addReason() const { return firstOf(services_.environment().blocked() ? "GStreamer is not ready" : QString(), editReason()); }
+QString MainWindow::addReason() const { return firstOf(environmentReason(), editReason()); }
 
 QString MainWindow::selectionReason(int least) const {
     const QString own = front()->selection().size() >= least ? QString() : least == 1 ? "Nothing is selected" : "Select two elements or more";
@@ -225,7 +222,7 @@ void MainWindow::buildCommands() {
         {C::DisconnectSelected, "actionDisconnectSelected", "Disconnect selected", {}, [this] { controller()->disconnectBetweenElements(front()->selection()); }, pair},
         {C::AlignSelection, "actionAlignSelection", "Auto align", {}, [this] { front()->alignSelection(); }, selected},
         {C::Validate, "actionUpdate", "&Validate", {QKeySequence(Qt::CTRL | Qt::Key_R), QKeySequence(Qt::Key_F5)}, [this] { controller()->refresh(); }, [this] {
-             return controller()->plan().empty() ? "The canvas is empty" : controller()->busy() ? "Wait for the running step to finish" : QString();
+             return controller()->plan().empty() ? "The canvas is empty" : controller()->busyReason();
          }},
         {C::Run, "actionRun", "&Run", {QKeySequence(Qt::CTRL | Qt::Key_Return)}, [this] { controller()->running() ? controller()->stopRun() : (void)controller()->run(); },
          [this] { return controller()->running() ? QString() : controller()->runBlockedReason(); }},
@@ -488,7 +485,7 @@ void MainWindow::showStatus() {
     const UpdateResult& r = c->result();
     QString text;
     QString colour = Theme::text().name();
-    if (services_.environment().blocked()) text = "GStreamer is not ready";
+    if (const QString env = environmentReason(); !env.isEmpty()) text = env;
     else if (c->updating()) text = "Validating the latest changes… You can keep editing";
     else if (c->running()) text = "Running…";
     else if (c->monitoring()) text = "Monitoring live metrics…";

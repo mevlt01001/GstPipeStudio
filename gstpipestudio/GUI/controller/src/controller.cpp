@@ -86,11 +86,15 @@ QString Controller::blockedReason() const {
     return QString();
 }
 
+QString Controller::busyReason() const {
+    if (const QString blocked = blockedReason(); !blocked.isEmpty()) return blocked;
+    return updating() ? "Validation is running" : QString();
+}
+
 QString Controller::runBlockedReason() const {
     if (const QString own = target_->runBlockedReason(); !own.isEmpty()) return own;
-    if (const QString busy = saveBlockedReason(); !busy.isEmpty()) return busy;
+    if (const QString busy = busyReason(); !busy.isEmpty()) return busy;
     if (plan().empty()) return "The canvas is empty";
-    if (updating()) return "Validation is running";
     if (notValidated()) return "Validation was cancelled — press Validate";
     if (!result().valid()) return "The pipeline is not validated yet — press Validate";
     if (!result().ok()) return "The last validation reported a problem (see the Validation tab)";

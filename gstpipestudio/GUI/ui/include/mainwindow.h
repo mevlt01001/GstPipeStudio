@@ -102,7 +102,9 @@ private:
     void importLaunch();
     void focusSearch();
     void showAbout();
-    // Why commands are off: a file cannot be replaced now, the canvas cannot be edited now, or nothing fit is selected.
+    // Why commands are off: GStreamer is not ready, a step is running, the canvas cannot be edited now, or nothing fit is
+    // selected.
+    QString environmentReason() const;
     QString busyReason() const;
     QString editReason() const;
     QString addReason() const;
