@@ -5,6 +5,9 @@
 
 #include <QObject>
 #include <QStringList>
+#include <optional>
+
+#include "documentregistry.h"
 
 class AppServices;
 class CanvasScene;
@@ -62,8 +65,8 @@ public:
     void deferOutdated(const QStringList& ids) { outdated_ = ids; }
     QStringList takeOutdated() { return std::exchange(outdated_, {}); }
     // Its file changed on disk while it had unsaved work and another tab was in front: asked when it comes to the front.
-    void deferChangedOnDisk() { changedOnDisk_ = true; }
-    bool takeChangedOnDisk() { return std::exchange(changedOnDisk_, false); }
+    void deferChangedOnDisk(DiskChange why) { changedOnDisk_ = why; }
+    std::optional<DiskChange> takeChangedOnDisk() { return std::exchange(changedOnDisk_, std::nullopt); }
 
 private:
     void rebuilt();
@@ -86,6 +89,6 @@ private:
     bool fitNext_ = false;
     QString opening_;
     QStringList outdated_;
-    bool changedOnDisk_ = false;
+    std::optional<DiskChange> changedOnDisk_;
     bool fileDeleted_ = false;
 };

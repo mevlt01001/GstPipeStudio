@@ -96,7 +96,9 @@ MainWindow::MainWindow(Controller* controller, QWidget* parent)
     connect(tabs_, &QTabBar::currentChanged, this, [this](int index) {
         if (Document* d = docAt(index); d && d != doc_) activate(d);
     });
-    connect(registry_, &DocumentRegistry::changedOnDisk, this, &MainWindow::onChangedOnDisk);
+    connect(registry_, &DocumentRegistry::changedOnDisk, this, [this](Document* d) { onChangedOnDisk(d, DiskChange::External); });
+    // After the writing tab has taken its save: only the other tabs of that template are told.
+    connect(&services_.library(), &TemplateLibrary::changed, this, &MainWindow::onLibraryChanged, Qt::QueuedConnection);
     connect(registry_, &DocumentRegistry::deletedOnDisk, this, [this](Document* d) {
         statusBar()->showMessage(d->controller()->target().title() + " was deleted on disk: save to keep it", 10000);
     });
@@ -403,7 +405,7 @@ void MainWindow::activate(Document* d) {
     onEnvironment();
     const QStringList outdated = d->takeOutdated();
     if (!outdated.isEmpty()) QTimer::singleShot(0, this, [this, d, outdated] { if (d == doc_) askTemplatesOutdated(outdated); });
-    if (d->takeChangedOnDisk()) QTimer::singleShot(0, this, [this, d] { if (d == doc_) onChangedOnDisk(d); });
+    if (const auto why = d->takeChangedOnDisk()) QTimer::singleShot(0, this, [this, d, why] { if (d == doc_) onChangedOnDisk(d, *why); });
 }
 
 void MainWindow::refreshTab(Document* d) {
@@ -502,25 +504,48 @@ Document* MainWindow::reopen(const Backup& tab) {
     return open(std::move(target), tab.id);
 }
 
+namespace {
+// What the user reads about a tab whose file changed: another program wrote it, or another tab saved a newer revision
+// of the template it edits to the library.
+struct ChangeWords {
+    QString title, headline, reloaded;
+};
+ChangeWords wordsFor(const Document* d, DiskChange why) {
+    if (why == DiskChange::Library)
+        return {"Template updated", d->title() + " has a newer revision, saved from another tab.", d->title() + " has a newer revision from another tab and was reloaded"};
+    return {"File changed on disk", d->title() + " was changed on disk by another program.", d->title() + " changed on disk and was reloaded"};
+}
+}  // namespace
+
 // Someone else changed a tab's file: without unsaved work it is read again; with some, the user chooses, when the tab
-// is in front. Asked again when a deferred tab comes to the front, it may be clean or saved by then.
-void MainWindow::onChangedOnDisk(Document* d) {
+// is in front. Asked again when a deferred tab comes to the front, it may be clean or saved by then. A busy tab is
+// asked once it has finished.
+void MainWindow::onChangedOnDisk(Document* d, DiskChange why) {
     refreshTab(d);                                // a deleted file that is back loses its mark
     if (!registry_->changedSinceRead(d)) return;  // saved or reloaded meanwhile, or back as it was
-    if (!d->controller()->hasUnsavedWork()) {
+    if (d->controller()->busy()) {
+        QTimer::singleShot(DocumentRegistry::kSettleMs, d, [this, d, why] { onChangedOnDisk(d, why); });
+    } else if (!d->controller()->hasUnsavedWork()) {
         d->controller()->reload();
-        statusBar()->showMessage(d->title() + " changed on disk and was reloaded", 10000);
+        statusBar()->showMessage(wordsFor(d, why).reloaded, 10000);
     } else if (d == doc_) {
-        askReload(d);
+        askReload(d, why);
     } else {
-        d->deferChangedOnDisk();
+        d->deferChangedOnDisk(why);
+    }
+}
+
+// The library wrote: a tab editing one of its templates whose file is not what it read was not the writer.
+void MainWindow::onLibraryChanged() {
+    for (Document* d : std::as_const(docs_)) {
+        if (!d->controller()->target().libraryTemplate().isEmpty() && registry_->catchUp(d)) onChangedOnDisk(d, DiskChange::Library);
     }
 }
 
 // Opened, not run: the event loop goes on (saves, runs, the watcher) while it waits.
-void MainWindow::askReload(Document* d) {
-    auto* box = new QMessageBox(QMessageBox::Warning, "File changed on disk",
-                                d->title() + " was changed on disk by another program.", QMessageBox::NoButton, this);
+void MainWindow::askReload(Document* d, DiskChange why) {
+    const ChangeWords words = wordsFor(d, why);
+    auto* box = new QMessageBox(QMessageBox::Warning, words.title, words.headline, QMessageBox::NoButton, this);
     box->setObjectName("changedOnDisk");
     box->setAttribute(Qt::WA_DeleteOnClose);
     box->setInformativeText("Reload it and lose your changes, or keep your version?");

@@ -1077,6 +1077,44 @@ private slots:
         useUserDir({});
     }
 
+    // Another tab saved a newer revision of the template a tab edits: said as the library's news, not as another
+    // program's edit; a clean tab reads it, a modified one is asked once.
+    void aTemplateTabHearsOfANewerRevisionFromTheLibrary() {
+        QTemporaryDir library;
+        useUserDir(library.path());
+        MainWindow w(c.get());
+        w.show();
+        QString src, convert, sink;
+        buildChain(w, &src, &convert, &sink);
+        QVERIFY(c->saveTemplate("Tail", {convert, sink}));
+        QVERIFY(settle(*c));
+        Document* tab = w.openTemplate("Tail");
+        Controller* t = tab->controller();
+        QVERIFY(waitFor([&] { return settle(*t) && t->plan().elements.size() == 2; }, 30000));
+        TemplateLibrary& lib = c->services().library();
+        auto revise = [&] {
+            gps::Graph next = lib.content("Tail");
+            next.revision = lib.nextRevision("Tail", next.revision);
+            return lib.save("Tail", next).ok;
+        };
+        QVERIFY(revise());
+        QVERIFY(waitFor([&] { return t->plan().revision == 2 && !t->busy(); }));
+        QVERIFY(w.statusBar()->currentMessage().contains("has a newer revision from another tab"));
+        QVERIFY(!w.findChild<QMessageBox*>("changedOnDisk"));
+
+        QVERIFY(t->editElement(fromStd(t->plan().elements.front().name), withProps({{"qos", "false"}})));
+        QVERIFY(t->modified());
+        QVERIFY(revise());
+        QVERIFY(waitFor([&] { auto* box = w.findChild<QMessageBox*>("changedOnDisk"); return box && box->isVisible(); }));
+        auto* box = w.findChild<QMessageBox*>("changedOnDisk");
+        QVERIFY(box->text().contains("newer revision, saved from another tab"));
+        box->findChild<QPushButton*>("keepMine")->click();
+        QTest::qWait(4 * DocumentRegistry::kSettleMs);
+        QVERIFY(!w.findChild<QMessageBox*>("changedOnDisk"));  // the watcher does not say it again
+        QVERIFY(t->modified());
+        useUserDir({});
+    }
+
     // The peek shows the real pipeline: a branch is two rows, not one chain.
     void thePeekLaysOutTheRealPipeline() {
         gps::Graph content;

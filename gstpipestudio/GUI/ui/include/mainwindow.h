@@ -7,13 +7,13 @@
 #include <memory>
 
 #include "componentprovider.h"
+#include "documentregistry.h"
 
 class AppServices;
 class CanvasScene;
 class CanvasView;
 class Controller;
 class Document;
-class DocumentRegistry;
 class Drawer;
 class Explorer;
 class FileOperations;
@@ -93,8 +93,9 @@ private:
     int indexOf(Document* document) const;
     void saveSession();
     Document* reopen(const Backup& tab);  // a tab of restoreSession; null when there is nothing to reopen
-    void onChangedOnDisk(Document* document);
-    void askReload(Document* document);
+    void onChangedOnDisk(Document* document, DiskChange why);
+    void askReload(Document* document, DiskChange why);
+    void onLibraryChanged();  // a template a tab edits may have a newer revision, saved from another tab
     void showExplorer();      // what the editor shows, for the Explorer and its title
 
     void showVersionHistory();

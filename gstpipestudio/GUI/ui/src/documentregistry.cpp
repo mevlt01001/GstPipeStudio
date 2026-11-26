@@ -42,6 +42,14 @@ void DocumentRegistry::accept(Document* d) {
     e.read = e.seen = stamp(e.path);
 }
 
+bool DocumentRegistry::catchUp(Document* d) {
+    Entry& e = entries_[d];
+    const QByteArray now = stamp(e.path);
+    if (now.isEmpty() || now == e.seen) return false;
+    e.seen = now;
+    return now != e.read;
+}
+
 void DocumentRegistry::remember(Document* d) {
     Entry& e = entries_[d];
     const bool moved = e.path != d->path();

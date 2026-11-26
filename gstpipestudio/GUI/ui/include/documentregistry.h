@@ -12,6 +12,10 @@
 
 class Document;
 
+// Why a tab's file changed: another program wrote it, or the template library wrote a newer revision of the template
+// the tab edits (another tab saved it).
+enum class DiskChange { External, Library };
+
 class DocumentRegistry : public QObject {
     Q_OBJECT
 public:
@@ -22,6 +26,9 @@ public:
     void track(Document* document);  // from now until it is destroyed, whatever file it is bound to
     bool changedSinceRead(Document* document) const;  // its file on disk is not what it read or wrote (Save asks)
     void accept(Document* document);  // the user keeps the document's content over the file on disk (Keep mine)
+    // The application itself wrote the document's file elsewhere (the library, for another tab): it is not said as a
+    // change by another program. True when the file is not what the document read.
+    bool catchUp(Document* document);
 
 signals:
     void changedOnDisk(Document* document);  // not while it is busy: it is told once it has finished
