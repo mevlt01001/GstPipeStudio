@@ -63,6 +63,8 @@ public:
 
     // ---- what the document is saved to, and whether it holds changes it has not saved
     const SaveTarget& target() const { return *target_; }
+    // The target, or while a file opens in it the one that file binds it to: the tab already is that file's.
+    const SaveTarget& intendedTarget() const { return opening_ && pending_ ? *pending_ : *target_; }
     void setTarget(std::unique_ptr<SaveTarget> target);  // binds the document to another target; the content stays
     bool modified() const { return edits_.modified(); }  // changed since its last save or load
     void markModified();  // it no longer matches its target's file (the file was deleted), whatever the undo history says
@@ -228,6 +230,7 @@ private:
     TemplateInstances templates_;
     DocumentViews views_;
     bool opening_ = false;  // a file is being opened: its elements' info is on its way
+    std::shared_ptr<SaveTarget> pending_;  // what the file being opened binds the document to, null for none
     bool alignWhenValidated_ = false;  // an opened file is laid out once its first validation tells every pad
     bool alignQueued_ = false;         // automatic alignment follows the current burst of edits
     QTemporaryDir tmp_;                // where an imported pipeline is written

@@ -184,7 +184,7 @@ void FileOperations::importInto(const QString& providerKind) {
 
 // Asks its name; nothing is written yet: the first save makes the folder.
 void FileOperations::newProject() {
-    const QString conf = NewProjectDialog::ask(window_);
+    const QString conf = NewProjectDialog::ask(window_, window_->documentTabs()->openFiles());
     if (!conf.isEmpty()) window_->documentTabs()->target()->controller()->newPlan(std::make_unique<ProjectConfTarget>(conf));
 }
 

@@ -78,6 +78,14 @@ Document* DocumentTabs::find(const QString& sessionKey) const {
 }
 
 // A pristine tab is a blank to fill, even when it reads the same Untitled-N as a backup to reopen.
+QStringList DocumentTabs::openFiles() const {
+    QStringList out;
+    for (const Document* d : std::as_const(docs_)) {
+        if (const QString path = d->controller()->intendedTarget().path(); !path.isEmpty()) out << path;
+    }
+    return out;
+}
+
 Document* DocumentTabs::open(std::unique_ptr<SaveTarget> wanted, const QString& backup) {
     if (Document* d = find(wanted->sessionKey())) {
         activate(d);
@@ -143,7 +151,7 @@ void DocumentTabs::saveSession() const {
 // What the session remembers of a tab: its target with the backup it writes, or the backup it holds and could not
 // load; nothing for an untitled tab without changes.
 std::optional<Backup> DocumentTabs::sessionTab(const Document* d) {
-    const SaveTarget& target = d->controller()->target();
+    const SaveTarget& target = d->controller()->intendedTarget();  // a file still opening is that file's tab
     if (d->backup()->active()) return Backup{d->backup()->id(), target.sessionKey(), target.title()};
     if (std::optional<Backup> held = d->backup()->held()) return held;
     if (target.needsDestination()) return std::nullopt;

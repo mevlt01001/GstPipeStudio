@@ -2522,6 +2522,33 @@ private slots:
         QCOMPARE(c->plan().elements.size(), size_t(2));
     }
 
+    // A file opens once: a second open while the first still loads finds its tab, and Save as onto it is refused.
+    void aFileOpensOnceEvenWhileItLoads() {
+        QTemporaryDir root;
+        const QString file = root.filePath("once.conf");
+        gps::Graph g;
+        const std::string src = g.addSource("videotestsrc");
+        g.addAfter(src, "src", "avidemux", "sink");  // a factory no other test asked about: the open waits for it
+        std::string error;
+        QVERIFY(g.save(file.toStdString(), &error));
+        MainWindow w(c.get());
+        w.show();
+        w.openFile(file);
+        QVERIFY(w.front()->controller()->busy());
+        w.openFile(file);
+        QCOMPARE(w.documents().size(), 1);
+        QVERIFY(waitFor([&] { return !w.front()->controller()->busy(); }));
+        QCOMPARE(w.front()->path(), file);
+
+        Document* other = w.newDocument();
+        QVERIFY(!addSource(*other->controller(), "videotestsrc").isEmpty());
+        QString asked;
+        answer(&w, "ok", &asked);
+        QVERIFY(!w.saveFlow()->saveAs(other, file));
+        QVERIFY(asked.contains("once.conf is open in another tab"));
+        QVERIFY(other->controller()->target().needsDestination());
+    }
+
     // Closing a running tab with unsaved work: Save stops the run first, then writes, and the tab goes.
     void closingARunningTabSavesItOnceTheRunStops() {
         QTemporaryDir root;

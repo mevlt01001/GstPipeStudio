@@ -161,7 +161,7 @@ void Document::setFileDeleted(bool deleted) {
     if (deleted) controller_->markModified();
 }
 
-bool Document::shows(const QString& sessionKey) const { return controller_->target().sessionKey() == sessionKey; }
+bool Document::shows(const QString& sessionKey) const { return controller_->intendedTarget().sessionKey() == sessionKey; }
 
 // While editing is blocked the canvas is locked and the pages wait; a cancelled validation greys it; a run dims it.
 void Document::showState() {

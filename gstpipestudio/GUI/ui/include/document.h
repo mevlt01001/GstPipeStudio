@@ -62,7 +62,7 @@ public:
     QString title() const;  // its target's: the file's name, "Template: <name>", or "Untitled-N"; "(deleted)" after it
     QString path() const;   // the file it is, "" when it has none yet
     bool pristine() const;  // untitled, empty and unchanged: opening a file may use it instead of a new tab
-    bool shows(const QString& sessionKey) const;  // it is bound to the target of that session key
+    bool shows(const QString& sessionKey) const;  // it is bound to the target of that session key, or a file of it opens
     bool fileDeleted() const { return fileDeleted_; }
     // Its file was deleted on disk, or is back (DocumentRegistry). Deleted, it is modified: Save writes the file again.
     void setFileDeleted(bool deleted);

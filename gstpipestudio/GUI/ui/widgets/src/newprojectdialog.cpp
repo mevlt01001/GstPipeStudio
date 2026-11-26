@@ -20,7 +20,7 @@ namespace {
 QString safe(const QString& name) { return QString::fromStdString(gps::files::safeName(name.trimmed().toStdString())); }
 }  // namespace
 
-NewProjectDialog::NewProjectDialog(QWidget* parent) : QDialog(parent), location_(Settings::projectsLocation()) {
+NewProjectDialog::NewProjectDialog(QWidget* parent, const QStringList& open) : QDialog(parent), open_(open), location_(Settings::projectsLocation()) {
     setObjectName("newProjectDialog");
     setWindowTitle("New project");
     auto* root = new QVBoxLayout(this);
@@ -70,13 +70,14 @@ QString NewProjectDialog::confPath() const {
 void NewProjectDialog::check() {
     const QString name = safe(name_->text());
     where_->setText(QDir(location_).filePath(name.isEmpty() ? "<name>" : name) + "/");
-    const bool taken = !name.isEmpty() && QFileInfo::exists(confPath());
-    error_->setText("A project named " + name + " is already there. Choose another name.");
+    const bool there = QFileInfo::exists(confPath()), inTab = open_.contains(confPath());
+    const bool taken = !name.isEmpty() && (there || inTab);
+    error_->setText("A project named " + name + (there ? " is already there" : " is open in a tab") + ". Choose another name.");
     error_->setVisible(taken);
     findChild<QPushButton*>("createProject")->setEnabled(!name.isEmpty() && !taken);
 }
 
-QString NewProjectDialog::ask(QWidget* parent) {
-    NewProjectDialog dialog(parent);
+QString NewProjectDialog::ask(QWidget* parent, const QStringList& open) {
+    NewProjectDialog dialog(parent, open);
     return dialog.exec() == QDialog::Accepted ? dialog.confPath() : QString();
 }

@@ -37,6 +37,7 @@ public:
     Document* add(Controller* controller = nullptr);
     Document* target();                                 // where a file opens: the front tab when it is pristine, else a new one
     Document* find(const QString& sessionKey) const;    // the tab bound to that target; a pristine tab is a blank, not a find
+    QStringList openFiles() const;                      // the files of the tabs, those still opening too
     // The tab of a target, opened as above; with a backup (its id), the backup's content on it, modified.
     Document* open(std::unique_ptr<SaveTarget> wanted, const QString& backup = QString());
     void activate(Document* document);  // brings its tab to the front

@@ -2,12 +2,14 @@
 #include "saveflow.h"
 
 #include <QEventLoop>
+#include <QFileInfo>
 #include <QStatusBar>
 #include <QTimer>
 
 #include "controller.h"
 #include "document.h"
 #include "documentregistry.h"
+#include "documenttabs.h"
 #include "logpanel.h"
 #include "mainwindow.h"
 #include "newprojectdialog.h"
@@ -22,7 +24,7 @@ bool SaveFlow::save(Document* d) {
     Controller* c = d->controller();
     if (!c->target().needsDestination()) return overwrite(d) && report(d, c->save());
     window_->activate(d);  // the project asked for is this tab's
-    const QString conf = NewProjectDialog::ask(window_);
+    const QString conf = NewProjectDialog::ask(window_, window_->documentTabs()->openFiles());
     return !conf.isEmpty() && report(d, c->saveAs(std::make_unique<ProjectConfTarget>(conf)));
 }
 
@@ -31,6 +33,10 @@ bool SaveFlow::saveAs(Document* d, const QString& path) {
     if (file.isEmpty()) file = PipelineFileDialog::choose(window_, true, d->path().isEmpty() ? Settings::lastDir() : d->path());
     if (file.isEmpty()) return false;
     if (!file.endsWith(".conf")) file += ".conf";
+    if (const Document* other = window_->documentTabs()->find(ProjectConfTarget::keyFor(file)); other && other != d) {
+        Prompt::error(window_, "Save as", QFileInfo(file).fileName() + " is open in another tab: save it there, or close that tab first.");
+        return false;  // a file opens once
+    }
     return report(d, d->controller()->saveAs(std::make_unique<ProjectConfTarget>(file)));
 }
 

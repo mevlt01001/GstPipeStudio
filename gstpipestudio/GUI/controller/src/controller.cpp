@@ -655,8 +655,10 @@ void Controller::load(const QString& source, std::shared_ptr<SaveTarget> target,
         return;
     }
     opening_ = true;
+    pending_ = how == Load::Replace ? nullptr : target;
     catalog().fetchMissing(*loaded, this, [this, loaded, target, how, action](bool ok) {
         opening_ = false;
+        pending_.reset();
         if (!ok) {
             emit notice("Unable to open the file: the plan uses an element this installation does not have.");
             emit changed();
