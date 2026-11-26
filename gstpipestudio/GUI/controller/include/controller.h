@@ -109,9 +109,7 @@ public:
     std::vector<gps::ExposedParam> templateParams(const QString& id) const;
     bool setTemplateParams(const QString& id, const std::map<std::string, std::string>& values);  // name -> value, "" = default
 
-    // ---- the template library, like a folder of modules: what a project imports
-    bool renameTemplate(const QString& from, const QString& to, QString* error);  // the library renames it; copies here follow
-    bool renameComponent(const ComponentRef& component, const QString& to, QString* error);  // a template: renameTemplate
+    // ---- the template library, like a folder of modules: what a project imports. Renamed there, the copies here follow.
     // A library template's parameters (the plan's exposed list) while it is the document (a LibraryTemplateTarget).
     void setTemplateParameters(const std::vector<gps::ExposedParam>& params);
     // A component (a template, later a plugin) on the canvas, at (x, y) or a free spot; or fed by a free src pad.
@@ -228,6 +226,7 @@ private:
         savedState_ = pipeline_.editor().state();
         emit synced();
     }
+    void followRename(const QString& from, const QString& to);  // the library renamed a template: its copies here say so
     void checkTemplates(bool ask);
     void offerNewerTemplates();  // templatesOutdated soon, when the library holds newer versions of copies on this canvas
     void offerNow();

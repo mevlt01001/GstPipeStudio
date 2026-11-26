@@ -52,6 +52,10 @@ QDockWidget* Panels::dock(QWidget* panel) const {
     return nullptr;
 }
 
+void Panels::retitle(QWidget* panel, const QString& title) {
+    if (QDockWidget* d = dock(panel); d && d->windowTitle() != title) d->setWindowTitle(title);
+}
+
 void Panels::bring(QWidget* panel) {
     if (QDockWidget* d = dock(panel)) static_cast<QStackedWidget*>(d->widget())->setCurrentWidget(panel);
 }

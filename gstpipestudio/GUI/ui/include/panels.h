@@ -29,6 +29,7 @@ public:
     QList<QAction*> toggles() const;           // one checkable action per panel, for View > Panels
     void reset(QWidget* front);                // every panel docked on its side, tabbed there, front in front
     QDockWidget* dock(QWidget* panel) const;
+    void retitle(QWidget* panel, const QString& title);  // its dock's title: the Explorer counts unsaved tabs
 
 private:
     QMainWindow* window_;

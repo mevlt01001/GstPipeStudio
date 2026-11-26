@@ -34,9 +34,9 @@ public:
 
     // Any element: a source, a filter or a sink (opens PickerPage in the right drawer)
     void chooseElement();
-    // A component to place: the templates, later the plugins (a list in the right drawer; hovering one shows a peek)
+    // A component to place: the templates, later the plugins (a list in the right drawer; hovering one shows a peek).
+    // Its right click and Import are the window's file operations; the list follows the providers' changes.
     void chooseComponent();
-    void componentMenu(const ComponentRef& component, const QPoint& at);  // right click on a component in a list
     void editTemplateParameters();  // of the library template being edited on the canvas
     // Left click on a free src pad (opens PickerPage in the right drawer)
     void fromFreePad(const QString& element, const QString& identity);
@@ -59,7 +59,8 @@ public:
     void editTemplateParams(const QString& instanceId);
 
 signals:
-    void editComponentRequested(const ComponentRef& component);  // the window opens it in a window of its own
+    void componentMenuRequested(const ComponentRef& component, const QPoint& at);  // right click on a component
+    void importRequested(const QString& providerKind);                             // Import… under the list
 
 private:
     // What the user reads: "<element>.<pad>" (Names::pad) for a src pad or any pad, and an element's own name.
@@ -81,7 +82,6 @@ private:
     std::vector<FactoryEntry> factories(bool sources) const;
     FactoryCatalog& catalog() const { return controller_->services().catalog(); }
     QList<const ComponentProvider*> providers() const;
-    void importInto(ComponentProvider& provider);
 
     Controller* controller_;
     Drawer* drawer_;

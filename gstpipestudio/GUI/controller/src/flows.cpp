@@ -1,10 +1,6 @@
 // flows.cpp
 #include "flows.h"
 
-#include <QFileDialog>
-#include <QInputDialog>
-#include <QMessageBox>
-#include <QDir>
 #include "panels.h"
 
 #include <QAction>
@@ -257,10 +253,10 @@ void Flows::chooseComponent() {
     if (controller_->editingBlocked()) return;
     PickerData data;
     data.providers = providers();
-    data.componentMenu = [this](const ComponentRef& component, const QPoint& at) { componentMenu(component, at); };
+    data.componentMenu = [this](const ComponentRef& component, const QPoint& at) { emit componentMenuRequested(component, at); };
     for (ComponentProvider* provider : controller_->services().providers()) {
         if (!provider->canImport()) continue;
-        data.importComponent = [this, provider] { importInto(*provider); };
+        data.importComponent = [this, kind = provider->kind()] { emit importRequested(kind); };
         break;
     }
     auto* page = new PickerPage(data);
@@ -269,6 +265,12 @@ void Flows::chooseComponent() {
         drawer_->dismiss();
         controller_->place(choice.component);
     });
+    // Renamed, deleted or imported from anywhere: the list is shown again, with it.
+    for (ComponentProvider* provider : controller_->services().providers()) {
+        connect(provider, &ComponentProvider::changed, page, [this, page] {
+            if (drawer_->page() == page) chooseComponent();
+        }, Qt::QueuedConnection);
+    }
     const bool none = std::all_of(data.providers.begin(), data.providers.end(), [](const ComponentProvider* p) { return p->components().isEmpty(); });
     drawer_->present(page, "Add template",
                      none ? "No templates yet: select elements and use Save as template."
@@ -280,61 +282,6 @@ QList<const ComponentProvider*> Flows::providers() const {
     QList<const ComponentProvider*> out;
     for (const ComponentProvider* p : controller_->services().providers()) out << p;
     return out;
-}
-
-void Flows::importInto(ComponentProvider& provider) {
-    const QString file = QFileDialog::getOpenFileName(window_, "Import " + provider.kind(), QDir::homePath(), "Templates (*.conf)");
-    if (file.isEmpty()) return;
-    QString error;
-    if (provider.importFrom(file, &error).isEmpty()) QMessageBox::warning(window_, "Import " + provider.kind(), error);
-    else chooseComponent();  // the list again, with it
-}
-
-// A component's own menu, from what its provider offers: edit it in its own window, rename, export or delete it.
-void Flows::componentMenu(const ComponentRef& component, const QPoint& at) {
-    ComponentProvider* provider = controller_->services().provider(component.provider);
-    if (!provider) return;
-    const QString kind = provider->kind(), name = component.id;
-    QMenu menu(window_);
-    for (ComponentAction action : provider->actions(name)) {
-        switch (action) {
-        case ComponentAction::Edit:
-            menu.addAction("Edit " + kind, this, [this, component] {
-                drawer_->dismiss();
-                emit editComponentRequested(component);
-            })->setObjectName("actionEditLibraryTemplate");
-            break;
-        case ComponentAction::Rename:
-            menu.addAction("Rename…", this, [this, component, kind, name] {
-                bool ok = false;
-                const QString to = QInputDialog::getText(window_, "Rename " + kind, "New name of " + name, QLineEdit::Normal, name, &ok);
-                QString error;
-                if (!ok) return;
-                if (!controller_->renameComponent(component, to, &error)) QMessageBox::warning(window_, "Rename " + kind, error);
-                else chooseComponent();
-            });
-            break;
-        case ComponentAction::Export:
-            menu.addAction("Export…", this, [this, provider, kind, name] {
-                const QString file = QFileDialog::getSaveFileName(window_, "Export " + kind, QDir::home().filePath(name + ".conf"), "Templates (*.conf)");
-                QString error;
-                if (!file.isEmpty() && !provider->exportTo(name, file, &error)) QMessageBox::warning(window_, "Export " + kind, error);
-            });
-            break;
-        case ComponentAction::Delete:
-            menu.addSeparator();
-            menu.addAction("Delete…", this, [this, provider, kind, name] {
-                const QString note = provider->removalNote(name);
-                if (QMessageBox::question(window_, "Delete " + kind, "Delete the " + kind + " " + name + " from the library?" + (note.isEmpty() ? QString() : "\n\n" + note),
-                                          QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
-                    return;
-                provider->remove(name);
-                chooseComponent();
-            })->setObjectName("actionDeleteLibraryTemplate");
-            break;
-        }
-    }
-    if (!menu.isEmpty()) menu.exec(at);
 }
 
 // The template being edited on the canvas: its parameters, chosen like when it was saved.

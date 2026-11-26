@@ -73,6 +73,7 @@ Controller::Controller(AppServices& services, QObject* parent)
         emit changed();
         offerNewerTemplates();
     });
+    connect(&services_.library(), &TemplateLibrary::renamed, this, &Controller::followRename);
     offerTimer_.setSingleShot(true);
     connect(&offerTimer_, &QTimer::timeout, this, &Controller::offerNow);
 }
@@ -242,27 +243,16 @@ bool Controller::finishTemplate(const QString& id, const QString& name, const st
 
 void Controller::cancelTemplate(const QString& id) { detachTemplate(id); }
 
-bool Controller::renameComponent(const ComponentRef& component, const QString& to, QString* error) {
-    if (component.provider == TemplateLibrary::kKind) return renameTemplate(component.id, to, error);
-    ComponentProvider* provider = services_.provider(component.provider);
-    QString renamed;
-    return provider && provider->rename(component.id, to, &renamed, error);
-}
-
-bool Controller::renameTemplate(const QString& from, const QString& to, QString* error) {
-    QString clean;
-    if (!services_.library().rename(from, to, &clean, error)) return false;
-    if (clean == from) return true;
+void Controller::followRename(const QString& from, const QString& to) {
     transact([&](gps::Graph& g, Edit& edit) {
         bool any = false;
         for (gps::TemplateInstance& t : g.instances) {
-            if (t.templateName == toStd(from)) t.templateName = toStd(clean), any = true;
+            if (t.templateName == toStd(from)) t.templateName = toStd(to), any = true;
         }
-        edit.action = "Renamed template " + from + " to " + clean;
+        edit.action = "Renamed template " + from + " to " + to;
         edit.presentation = true;
         return any;
     });
-    return true;
 }
 
 void Controller::setTemplateParameters(const std::vector<gps::ExposedParam>& params) {

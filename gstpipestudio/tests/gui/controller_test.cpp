@@ -794,9 +794,10 @@ private slots:
         QCOMPARE(library.content("Tail").exposed.size(), size_t(1));
         QVERIFY(!c->modified());
 
-        QVERIFY(c->renameTemplate("Tail", "End", &error));
+        QString clean;
+        QVERIFY(library.rename("Tail", "End", &clean, &error));
         QVERIFY(library.content("Tail").elements.empty() && !library.content("End").elements.empty());
-        QVERIFY(!c->renameTemplate("Nope", "Other", &error));
+        QVERIFY(!library.rename("Nope", "Other", &clean, &error));
         QVERIFY(library.exportTo("End", dir.filePath("End.conf"), &error));
         QVERIFY(!library.importFrom(dir.filePath("End.conf"), &error).size());  // the name is taken
         QVERIFY(library.remove("End"));
@@ -851,8 +852,8 @@ private slots:
         QVERIFY(settle(*c));
         const QString id = c->outline().collapsedTemplate(chain.convert);
         QCOMPARE(fromStd(c->names().instance(toStd(id))), QString("Tail"));
-        QString error;
-        QVERIFY(c->renameTemplate("Tail", "Ending", &error));
+        QString clean, error;
+        QVERIFY(c->services().library().rename("Tail", "Ending", &clean, &error));
         QVERIFY(c->plan().instance(toStd(id)) && !id.contains("Ending"));  // the id is not the name
         QCOMPARE(fromStd(c->names().instance(toStd(id))), QString("Ending"));
         QCOMPARE(c->templateView(id).displayTitle, QString("Ending"));

@@ -41,6 +41,8 @@
 #include "documentregistry.h"
 #include "elementitem.h"
 #include "explorer.h"
+#include "explorersource.h"
+#include "fileoperations.h"
 #include "flows.h"
 #include "linkitem.h"
 #include "logpanel.h"
@@ -48,7 +50,6 @@
 #include "setuppage.h"
 #include "settings.h"
 #include "templates.h"
-#include "newprojectdialog.h"
 #include "saveflow.h"
 #include "savetarget.h"
 #include "panels.h"
@@ -66,7 +67,8 @@
 #include <set>
 
 MainWindow::MainWindow(Controller* controller, QWidget* parent)
-    : QMainWindow(parent), services_(controller->services()), saveFlow_(new SaveFlow(this)), registry_(new DocumentRegistry(this)) {
+    : QMainWindow(parent), services_(controller->services()), saveFlow_(new SaveFlow(this)), registry_(new DocumentRegistry(this)),
+      files_(new FileOperations(services_, this)) {
     setObjectName("mainWindow");
     setWindowFlag(Qt::FramelessWindowHint);
     setWindowIcon(QIcon(":/brand/gstpipestudio.png"));
@@ -101,11 +103,8 @@ MainWindow::MainWindow(Controller* controller, QWidget* parent)
 
     buildPanels();
     addDocument(controller);
-    explorer_ = new Explorer(services_.providers(), this);
+    explorer_ = new Explorer(ExplorerSource::standard(services_, this), *files_, this);
     panels_->add(explorer_, "Explorer", 0, Qt::LeftDockWidgetArea);
-    connect(explorer_, &Explorer::openRequested, this, &MainWindow::openFile);
-    connect(explorer_, &Explorer::componentRequested, this, &MainWindow::openComponent);
-    connect(explorer_, &Explorer::componentMenuRequested, this, [this](const ComponentRef& c, const QPoint& at) { flows_->componentMenu(c, at); });
     resizeDocks({panels_->dock(log_)}, {240}, Qt::Vertical);
     resizeDocks({panels_->dock(explorer_)}, {260}, Qt::Horizontal);
     panels_->show(updates_);
@@ -152,10 +151,7 @@ void MainWindow::buildActions() {
         d->opening("imported");
         d->controller()->importLaunch(description);
     });
-    auto* newProject = make("actionNewProject", "New &project…", {QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_N)}, [this] {
-        const QString conf = NewProjectDialog::ask(this);
-        if (!conf.isEmpty()) blankTab()->controller()->newPlan(std::make_unique<ProjectConfTarget>(conf));
-    });
+    auto* newProject = make("actionNewProject", "New &project…", {QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_N)}, [this] { files_->newProject(); });
     // A canvas never saved becomes a project: its name is asked, and its first save makes the folder.
     auto* save = make("actionSave", "&Save", {QKeySequence::Save}, [this] { saveFlow_->save(doc_); });
     auto* saveAll = make("actionSaveAll", "Save a&ll", {QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_S)}, [this] { saveFlow_->saveAll(documents()); });
@@ -365,7 +361,8 @@ void MainWindow::wire(Document* d) {
     connect(scene, &CanvasScene::canvasContextMenuRequested, this, [this](const QPoint& screenPos, const QPointF&) { showCanvasMenu(screenPos); }, Qt::QueuedConnection);
     connect(scene, &QGraphicsScene::selectionChanged, this, [this, front] { if (front()) refreshState(); });
     connect(d->view(), &CanvasView::deletePressed, this, &MainWindow::deleteSelected);
-    connect(d->flows(), &Flows::editComponentRequested, this, &MainWindow::openComponent);
+    connect(d->flows(), &Flows::componentMenuRequested, files_, &FileOperations::componentMenu);
+    connect(d->flows(), &Flows::importRequested, files_, &FileOperations::importInto);
     connect(c, &Controller::templateChanged, this, [this, front](const QString& id) { if (front()) askTemplateChange(id); }, Qt::QueuedConnection);
     connect(c, &Controller::templatesOutdated, this, [this, d, front](const QStringList& ids) {
         if (front()) askTemplatesOutdated(ids);
@@ -417,6 +414,24 @@ void MainWindow::refreshTab(Document* d) {
     if (auto* close = qobject_cast<TabCloseButton*>(tabs_->tabButton(index, QTabBar::RightSide)))
         close->setDirty(d->controller()->hasUnsavedWork());
     showSaveAll();
+    showExplorer();
+}
+
+// The front tab, its project and every tab's state; the Explorer's title counts the unsaved ones.
+void MainWindow::showExplorer() {
+    if (!explorer_ || !doc_) return;
+    EditorState editor;
+    editor.front = controller_->target().sessionKey();
+    editor.projectConf = controller_->target().projectConf();
+    for (const Document* d : std::as_const(docs_)) {
+        const bool unsaved = d->controller()->hasUnsavedWork();
+        editor.open[d->controller()->target().sessionKey()] = d->fileDeleted() ? ExplorerEntry::State::Deleted
+                                                              : unsaved          ? ExplorerEntry::State::Unsaved
+                                                                                 : ExplorerEntry::State::Open;
+        editor.unsaved += unsaved;
+    }
+    explorer_->present(editor);
+    panels_->retitle(explorer_, explorer_->title());
 }
 
 // Save all is on while any tab has unsaved work: a change in any tab, or a closed one, can turn it on or off.
@@ -542,7 +557,7 @@ void MainWindow::setReason(QAction* action, const QString& text, const QString& 
 void MainWindow::refreshState() {
     if (!built_) return;
     auto act = [this](const char* name) { return findChild<QAction*>(name); };
-    explorer_->present(controller_->target().projectConf());
+    showExplorer();
     bool blocked = services_.environment().blocked();
     bool busy = controller_->busy();
     bool editBlocked = controller_->editingBlocked();
@@ -974,8 +989,11 @@ void MainWindow::closeEvent(QCloseEvent* event) {
     event->accept();
 }
 
+// From a list in the drawer or the Explorer: the drawer's list has done its part.
 Document* MainWindow::openComponent(const ComponentRef& component) {
-    return component.provider == TemplateLibrary::kKind ? openTemplate(component.id) : nullptr;
+    if (component.provider != TemplateLibrary::kKind) return nullptr;
+    drawer_->dismiss();
+    return openTemplate(component.id);
 }
 
 Document* MainWindow::openTemplate(const QString& name) {

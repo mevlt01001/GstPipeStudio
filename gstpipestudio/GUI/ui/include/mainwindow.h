@@ -16,6 +16,7 @@ class Document;
 class DocumentRegistry;
 class Drawer;
 class Explorer;
+class FileOperations;
 class Flows;
 class LogPanel;
 class QAction;
@@ -47,6 +48,7 @@ public:
     LogPanel* logPanel() const { return log_; }
     Panels* panels() const { return panels_; }
     Explorer* explorer() const { return explorer_; }
+    FileOperations* fileOperations() const { return files_; }  // every file operation the user asks for
     SaveFlow* saveFlow() const { return saveFlow_; }
     DocumentRegistry* registry() const { return registry_; }  // the open tabs' files, watched on disk
     QWidget* propertiesTab() const { return propsTab_; }
@@ -60,6 +62,7 @@ public:
     Document* document() const { return doc_; }
     QList<Document*> documents() const;  // in tab order
     Document* newDocument();                    // an untitled tab, in front
+    Document* blankTab();                       // where a file opens: the front tab when it is pristine, else a new one
     bool closeDocument(Document* document);     // asks to save unsaved changes (SaveFlow); false when the user cancels
     void activate(Document* document);          // brings its tab to the front
     // The tabs open when the window last closed, and the ones a crash left: each with its unsaved changes (hot exit).
@@ -88,11 +91,11 @@ private:
     void showSaveAll();
     Document* docAt(int index) const;
     int indexOf(Document* document) const;
-    Document* blankTab();               // where a file opens: the front tab when it is pristine, else a new one
     void saveSession();
     Document* reopen(const Backup& tab);  // a tab of restoreSession; null when there is nothing to reopen
     void onChangedOnDisk(Document* document);
     void askReload(Document* document);
+    void showExplorer();      // what the editor shows, for the Explorer and its title
 
     void showVersionHistory();
     void askTemplateChange(const QString& id);
@@ -122,6 +125,7 @@ private:
     AppServices& services_;  // the process's, shared by every tab
     SaveFlow* saveFlow_;      // every save the user asks for, and every question about unsaved changes
     DocumentRegistry* registry_;
+    FileOperations* files_;
 
     // The front document's parts: the menus, panels and status bar act on these.
     Controller* controller_ = nullptr;
@@ -133,7 +137,7 @@ private:
     SetupPage* setup_;
     UpdatePanel* updates_;
     TelemetryPanel* telemetry_;
-    Explorer* explorer_;
+    Explorer* explorer_ = nullptr;
     LogPanel* log_;
     QWidget* propsTab_ = nullptr;
     QWidget* capsTab_ = nullptr;
