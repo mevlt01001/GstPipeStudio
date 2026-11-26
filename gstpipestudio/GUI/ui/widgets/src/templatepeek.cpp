@@ -11,6 +11,7 @@
 #include "contract.h"
 #include "elkengine.h"
 #include "layoutrunner.h"
+#include "names.h"
 #include "templates.h"
 #include "theme.h"
 
@@ -63,7 +64,8 @@ TemplatePeek::TemplatePeek(const gps::Graph& content, QWidget* parent) : QFrame(
     setAttribute(Qt::WA_ShowWithoutActivating);
     QToolTip::hideText();
     qApp->installEventFilter(this);
-    for (const gps::ExposedParam& p : content.exposed) params_ << fromStd(p.name.empty() ? gps::templates::paramName(content, p) : p.name);
+    const gps::Names names(content);
+    for (const gps::ExposedParam& p : content.exposed) params_ << fromStd(p.name.empty() ? names.param(p) : p.name);
     const quint64 ticket = runner().request(tree(content), layout::Routing::Curves);
     connect(&runner(), &layout::Runner::finished, this, [this, ticket](quint64 answered, bool ok, const layout::Result& result) {
         if (answered == ticket && ok) place(result);
@@ -154,7 +156,7 @@ void TemplatePeek::paintEvent(QPaintEvent*) {
         }
     }
     // Boxes with the name the user reads, and their linked pads.
-    const auto names = content_.displayNames();
+    const gps::Names names(content_);
     for (const gps::Element& e : content_.elements) {
         const QRectF r = laid_.nodes.value(fromStd(e.name));
         if (r.isNull()) continue;
@@ -164,7 +166,7 @@ void TemplatePeek::paintEvent(QPaintEvent*) {
         p.setFont(small);
         p.setPen(Theme::text());
         p.drawText(r.adjusted(8, 4, -8, -(r.height() - kHead)), Qt::AlignLeft | Qt::AlignVCenter,
-                   QFontMetrics(small).elidedText(fromStd(names.at(e.name)), Qt::ElideRight, int(r.width() - 16)));
+                   QFontMetrics(small).elidedText(fromStd(names.element(e.name)), Qt::ElideRight, int(r.width() - 16)));
     }
     p.setPen(Qt::NoPen);
     p.setBrush(Theme::accent());

@@ -35,27 +35,8 @@ CanvasLayout::CanvasLayout(Controller& controller)
 
 const ViewPreferences& CanvasLayout::preferences() const { return controller_.services().view(); }
 
-QString CanvasLayout::boxOf(const QString& element) const {
-    QString box;
-    containers(element, &box);
-    return box;
-}
-
-QString CanvasLayout::anchorOf(const QString& box) const {
-    return controller_.plan().find(toStd(box)) ? box : controller_.templateMembers(box).value(0);
-}
-
-QStringList CanvasLayout::boxesOf(const QStringList& elements) const {
-    QStringList out;
-    for (const QString& e : elements) {
-        const QString box = boxOf(e);
-        if (!out.contains(box)) out << box;
-    }
-    return out;
-}
-
 QRectF CanvasLayout::boxRect(const QString& box) const {
-    const gps::Element* at = controller_.plan().find(toStd(anchorOf(box)));
+    const gps::Element* at = controller_.plan().find(toStd(controller_.outline().anchorOf(box)));
     if (!at) return QRectF();
     const ElementView v = at->name == toStd(box) ? controller_.view(box) : controller_.templateView(box);
     return QRectF(at->x, at->y, metrics::kBoxWidth, v.height());
@@ -63,27 +44,13 @@ QRectF CanvasLayout::boxRect(const QString& box) const {
 
 CanvasLayout::Pin CanvasLayout::pinOf(const QStringList& elements, bool gather) const {
     QList<QRectF> drawn;
-    for (const QString& box : boxesOf(elements)) drawn << boxRect(box);
+    for (const QString& box : controller_.outline().boxesOf(elements)) drawn << boxRect(box);
     return {elements, bounds(drawn).center(), gather};
-}
-
-QStringList CanvasLayout::containers(const QString& element, QString* box) const {
-    QStringList out;
-    *box = element;
-    const std::vector<std::string> around = gps::templates::chain(controller_.plan(), toStd(element));
-    for (auto up = around.rbegin(); up != around.rend(); ++up) {
-        const QString id = fromStd(*up);
-        if (!controller_.isTemplateExpanded(id)) {
-            *box = id;
-            break;
-        }
-        out << id;
-    }
-    return out;
 }
 
 layout::Node CanvasLayout::tree(const QStringList& elements) const {
     const gps::Graph& g = controller_.plan();
+    const Outline outline = controller_.outline();
     const QSet<QString> chosen(elements.begin(), elements.end());
     QHash<QString, QList<layout::Node>> leaves;   // container ("" = canvas) -> its boxes
     QHash<QString, QList<layout::Edge>> edges;    // container -> link pieces inside it
@@ -111,12 +78,12 @@ layout::Node CanvasLayout::tree(const QStringList& elements) const {
 
     for (const gps::Element& e : g.elements) {
         const QString name = fromStd(e.name);
-        QString box;
-        const QStringList path = containers(name, &box);
+        const QString box = outline.boxOf(name);
+        const QStringList path = outline.framesAround(name);
         if (placed.contains(box)) continue;
         const bool instance = box != name;
         if (!chosen.isEmpty()) {
-            const QStringList inside = instance ? controller_.templateMembers(box) : QStringList{name};
+            const QStringList inside = outline.membersOf(box);
             if (std::none_of(inside.begin(), inside.end(), [&](const QString& m) { return chosen.contains(m); })) continue;
         }
         placed.insert(box);
@@ -142,8 +109,8 @@ layout::Node CanvasLayout::tree(const QStringList& elements) const {
     for (size_t i = 0; i < g.links.size(); ++i) {
         const gps::Connection& l = g.links[i];
         const QString src = fromStd(l.srcElement), sink = fromStd(l.sinkElement);
-        QString srcBox, sinkBox;
-        const QStringList from = containers(src, &srcBox), to = containers(sink, &sinkBox);
+        const QString srcBox = outline.boxOf(src), sinkBox = outline.boxOf(sink);
+        const QStringList from = outline.framesAround(src), to = outline.framesAround(sink);
         if (srcBox == sinkBox || !placed.contains(srcBox) || !placed.contains(sinkBox)) continue;
         int shared = 0;
         while (shared < from.size() && shared < to.size() && from[shared] == to[shared]) ++shared;
@@ -193,13 +160,14 @@ void CanvasLayout::finished(quint64 ticket, bool ok, const layout::Result& resul
     }
     // Where the laid-out boxes go: around the pin's centre, or without one from the top left corner.
     const gps::Graph& g = controller_.plan();
+    const Outline outline = controller_.outline();
     QList<QRectF> laid, pinned;
     QHash<QString, QString> anchor;  // box -> the element whose position the canvas draws it at
-    const QStringList pinnedBoxes = pin ? boxesOf(pin->elements) : QStringList();
+    const QStringList pinnedBoxes = pin ? outline.boxesOf(pin->elements) : QStringList();
     for (const gps::Element& e : g.elements) {
-        const QString box = boxOf(fromStd(e.name));
+        const QString box = outline.boxOf(fromStd(e.name));
         if (!result.nodes.contains(box) || anchor.contains(box)) continue;
-        anchor[box] = anchorOf(box);
+        anchor[box] = outline.anchorOf(box);
         laid << result.nodes[box];
         if (pinnedBoxes.contains(box)) pinned << result.nodes[box];
     }

@@ -80,34 +80,15 @@ PadItem* CanvasScene::pad(const QString& element, const QString& identity, bool 
     return pad(gps::PadRef{toStd(element), toStd(identity), isSrc ? gps::Pad::Direction::Source : gps::Pad::Direction::Sink});
 }
 
+// A selected box stands for every element it holds, a selected frame for every member of its template.
 QStringList CanvasScene::selectedElementNames() const {
+    const Outline outline = controller_->outline();
     QStringList names;
-    QSet<QString> seen;
     for (QGraphicsItem* item : selectedItems()) {
-        if (auto* frame = dynamic_cast<TemplateFrameItem*>(item)) {
-            for (const QString& m : frame->view().members) {
-                if (!seen.contains(m)) {
-                    seen.insert(m);
-                    names << m;
-                }
-            }
-            continue;
-        }
-        if (auto* el = dynamic_cast<ElementItem*>(item)) {
-            if (el->view().isTemplate && !el->view().templateMembers.isEmpty()) {
-                for (const QString& m : el->view().templateMembers) {
-                    if (!seen.contains(m)) {
-                        seen.insert(m);
-                        names << m;
-                    }
-                }
-            } else if (!seen.contains(el->view().name)) {
-                seen.insert(el->view().name);
-                names << el->view().name;
-            }
-        }
+        if (auto* frame = dynamic_cast<TemplateFrameItem*>(item)) names << outline.membersOf(frame->view().id);
+        else if (auto* box = dynamic_cast<ElementItem*>(item)) names << box->view().name;
     }
-    return names;
+    return outline.expand(names);
 }
 
 void CanvasScene::setSelectedElements(const QStringList& names) {
@@ -160,49 +141,36 @@ void CanvasScene::rebuild() {
         frames_.clear();
     }
 
-    QSet<QString> builtCollapsedGroups;
+    // One item per box: an element, or a collapsed template drawn at its first member. Every member finds the item.
+    const Outline outline = controller_->outline();
+    QSet<QString> built;
     for (const gps::Element& e : pipeline().graph().elements) {
-        QString name = QString::fromStdString(e.name);
-        QString grp = controller_->templateBox(name);
-        if (!grp.isEmpty()) {
-            if (builtCollapsedGroups.contains(grp)) continue;
-            builtCollapsedGroups.insert(grp);
-            ElementView gv = controller_->templateView(grp);
-            auto* item = new ElementItem(gv);
-            item->setPos(e.x, e.y);
-            item->setFlag(QGraphicsItem::ItemIsMovable, !locked_);
-            item->setOpacity(stale_ ? 0.5 : 1.0);
-            addItem(item);
-            bool anySelected = false;
-            for (const QString& m : gv.templateMembers) {
-                elements_.insert(m, item);
-                if (selectedElements_.contains(m)) anySelected = true;
-            }
-            if (anySelected) item->setSelected(true);
-            for (PadItem* p : item->pads()) pads_.insert(fromStd(p->view().ref.key()), p);
-        } else {
-            auto* item = new ElementItem(controller_->view(name));
-            item->setPos(e.x, e.y);
-            item->setFlag(QGraphicsItem::ItemIsMovable, !locked_);
-            item->setOpacity(stale_ ? 0.5 : 1.0);
-            addItem(item);
-            elements_.insert(item->view().name, item);
-            if (selectedElements_.contains(name)) item->setSelected(true);
-            for (PadItem* p : item->pads()) pads_.insert(fromStd(p->view().ref.key()), p);
-        }
+        const QString box = outline.boxOf(QString::fromStdString(e.name));
+        if (built.contains(box)) continue;
+        built.insert(box);
+        const QString group = outline.collapsedTemplate(QString::fromStdString(e.name));
+        auto* item = new ElementItem(group.isEmpty() ? controller_->view(box) : controller_->templateView(group));
+        item->setPos(e.x, e.y);
+        item->setFlag(QGraphicsItem::ItemIsMovable, !locked_);
+        item->setOpacity(stale_ ? 0.5 : 1.0);
+        addItem(item);
+        const QStringList members = outline.membersOf(box);
+        for (const QString& m : members) elements_.insert(m, item);
+        if (std::any_of(members.begin(), members.end(), [&](const QString& m) { return selectedElements_.contains(m); })) item->setSelected(true);
+        for (PadItem* p : item->pads()) pads_.insert(fromStd(p->view().ref.key()), p);
     }
     // A template opening or closing is drawn gathered at its centre until the layout's answer slides it out of there.
     const auto& pin = controller_->canvasLayout().pending();
     if (pin && pin->gather) {
-        for (const QString& box : controller_->canvasLayout().boxesOf(pin->elements)) {
-            ElementItem* item = elements_.value(controller_->canvasLayout().anchorOf(box));
+        for (const QString& box : outline.boxesOf(pin->elements)) {
+            ElementItem* item = elements_.value(outline.anchorOf(box));
             if (item) item->setPos(pin->centre - QPointF(metrics::kBoxWidth, item->view().height()) / 2);
         }
     }
     // Expanded templates: a frame around their members, with the template's pads on its border. Inner frames first, so
     // a pad shown on several borders belongs to the outermost one, where its outside link attaches.
     QList<FrameView> shown;
-    for (const QString& id : controller_->visibleFrames()) shown << controller_->frameView(id);
+    for (const QString& id : outline.visibleFrames()) shown << controller_->frameView(id);
     std::sort(shown.begin(), shown.end(), [](const FrameView& a, const FrameView& b) { return a.depth > b.depth; });
     QSet<QString> nowShown;
     for (const FrameView& fv : shown) {
@@ -229,7 +197,7 @@ void CanvasScene::rebuild() {
     for (const QPointer<FrameGhost>& g : std::as_const(ghosts_)) addItem(g);
     for (auto it = closing.cbegin(); it != closing.cend(); ++it) {
         if (nowShown.contains(it.key())) continue;
-        ElementItem* box = elements_.value(controller_->templateMembers(it.key()).value(0));
+        ElementItem* box = elements_.value(outline.anchorOf(it.key()));
         const bool closed = box && box->view().isTemplate && box->view().groupId == it.key();  // else deleted, detached
         auto* ghost = new FrameGhost(it.value(), closed ? box->sceneBoundingRect() : it.value(), closed ? FrameGhost::Shrink : FrameGhost::Untrace);
         addItem(ghost);
@@ -351,7 +319,7 @@ void CanvasScene::elementDragged(const QString& element, const QPointF& pos) {
     emit elementsMoved(positions);
     if (this->element(element)) {
         QStringList selNames = selectedElementNames();
-        if (!selNames.contains(element)) selNames = controller_->expandSelection({element});
+        if (!selNames.contains(element)) selNames = controller_->outline().expand({element});
         QSet<QString> draggedSet(selNames.begin(), selNames.end());
         QList<ElementItem*> draggedItems;
         for (const QString& n : selNames) {

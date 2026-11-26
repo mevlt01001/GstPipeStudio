@@ -39,6 +39,11 @@ const ElementInfo* FactoryCatalog::info(const QString& factory) const {
     return found == infos_.end() ? nullptr : &found->second;
 }
 
+const gps::FactoryDefinition* FactoryCatalog::definition(const QString& factory) const {
+    auto found = definitions_.find(factory);
+    return found == definitions_.end() ? nullptr : &found->second;
+}
+
 void FactoryCatalog::forEachInfo(const std::function<void(const QString&, const ElementInfo&)>& visit) const {
     for (const auto& [factory, info] : infos_) visit(factory, info);
 }
@@ -63,6 +68,7 @@ void FactoryCatalog::fetchInfo(const QString& factory, QObject* context, InfoCal
     ask({"element", factory}, [this, factory](const HelperResult& r) {
         ElementInfo answer;
         if (r.read(&answer) && answer.entry.factory == toStd(factory)) {
+            definitions_[factory] = gps::definitionOf(answer);
             infos_[factory] = std::move(answer);
             emit infoArrived(factory);
         } else {

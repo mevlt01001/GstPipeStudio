@@ -72,7 +72,10 @@ Role NodeShape::role(const NodeRef& node) const {
         if (!definition) return Role::Filter;
         return definition->isSource ? Role::Source : definition->isSink ? Role::Sink : Role::Filter;
     }
-    const NodePorts p = ports(node);
+    return role(ports(node));
+}
+
+Role NodeShape::role(const NodePorts& p) {
     const bool in = !p.sinks.empty() || !p.requests.empty(), out = !p.srcs.empty();
     return in == out ? Role::Filter : in ? Role::Sink : Role::Source;
 }

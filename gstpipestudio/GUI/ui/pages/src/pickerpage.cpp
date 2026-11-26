@@ -26,7 +26,8 @@ constexpr int kIsSinkRole = Qt::UserRole + 23;
 constexpr int kHasAlwaysRole = Qt::UserRole + 24;
 constexpr int kHasSometimesRole = Qt::UserRole + 25;
 constexpr int kHasRequestRole = Qt::UserRole + 26;
-constexpr int kTemplateRole = Qt::UserRole + 27;    // name of a saved template
+constexpr int kProviderRole = Qt::UserRole + 27;    // a component's provider (ComponentRef::provider)
+constexpr int kComponentRole = Qt::UserRole + 28;   // its id there
 }  // namespace
 
 PickerPage::PickerPage(const PickerData& data, QWidget* parent) : DrawerPage(parent), data_(data) {
@@ -84,7 +85,7 @@ PickerPage::PickerPage(const PickerData& data, QWidget* parent) : DrawerPage(par
     peek_->setSingleShot(true);
     peek_->setInterval(TemplatePeek::kHoverMs);
     connect(peek_, &QTimer::timeout, this, [this] {
-        if (data_.templateContent && !peeked_.isEmpty()) TemplatePeek::show(data_.templateContent(peeked_), QCursor::pos(), this);
+        if (const ComponentProvider* provider = providerOf(peeked_)) TemplatePeek::show(provider->peek(peeked_.id), QCursor::pos(), this);
     });
 
     auto addHeader = [&](const QString& text) {
@@ -105,16 +106,22 @@ PickerPage::PickerPage(const PickerData& data, QWidget* parent) : DrawerPage(par
         }
     }
 
-    if (!data.templates.isEmpty()) {
-        addHeader("Templates");
-        for (const TemplateInfo& c : data.templates) {
-            auto* item = new QListWidgetItem(c.name, list_);
+    for (const ComponentProvider* provider : data.providers) {
+        QList<ComponentInfo> offered;
+        for (const ComponentInfo& c : provider->components()) {
+            if (!data.offers || data.offers(c)) offered << c;
+        }
+        if (offered.isEmpty()) continue;
+        addHeader(provider->title());
+        for (const ComponentInfo& c : offered) {
+            auto* item = new QListWidgetItem(c.title, list_);
             item->setData(LongNameRole, c.description);
-            item->setData(HintRole, QString("template · %1").arg(c.elementCount));
-            item->setData(SearchRole, (c.name + " " + c.description + " template").toLower());
-            item->setData(kTemplateRole, c.name);
-            item->setData(kIsSourceRole, c.isSource);
-            item->setData(kIsSinkRole, c.isSink);
+            item->setData(HintRole, c.hint);
+            item->setData(SearchRole, (c.title + " " + c.description + " " + provider->kind()).toLower());
+            item->setData(kProviderRole, c.ref.provider);
+            item->setData(kComponentRole, c.ref.id);
+            item->setData(kIsSourceRole, c.role == gps::Role::Source);
+            item->setData(kIsSinkRole, c.role == gps::Role::Sink);
             item->setData(kHasAlwaysRole, true);
         }
     }
@@ -155,18 +162,18 @@ PickerPage::PickerPage(const PickerData& data, QWidget* parent) : DrawerPage(par
 
     QHBoxLayout* footer = addFooter(root, "Choose");
     connect(primary_, &QPushButton::clicked, this, [this] { choose(); });
-    if (data.importTemplate) {
+    if (data.importComponent) {
         auto* import = new QPushButton("Import…", this);
         import->setObjectName("importTemplate");
         import->setToolTip("Add a template file to the library");
         footer->insertWidget(0, import);
-        connect(import, &QPushButton::clicked, this, data.importTemplate);
+        connect(import, &QPushButton::clicked, this, data.importComponent);
     }
-    if (data.templateMenu) {
+    if (data.componentMenu) {
         list_->setContextMenuPolicy(Qt::CustomContextMenu);
-        connect(list_, &QWidget::customContextMenuRequested, this, [this, menu = data.templateMenu](const QPoint& at) {
-            QListWidgetItem* item = list_->itemAt(at);
-            if (item && !item->data(kTemplateRole).toString().isEmpty()) menu(item->data(kTemplateRole).toString(), list_->viewport()->mapToGlobal(at));
+        connect(list_, &QWidget::customContextMenuRequested, this, [this](const QPoint& at) {
+            const ComponentRef component = componentAt(list_->itemAt(at));
+            if (!component.id.isEmpty()) data_.componentMenu(component, list_->viewport()->mapToGlobal(at));
         });
     }
 
@@ -217,7 +224,7 @@ void PickerPage::filter(const QString& text) {
             continue;
         }
         bool match = needle.isEmpty() || item->data(SearchRole).toString().contains(needle);
-        if (match && (item->data(kFactoryRole).isValid() || item->data(kTemplateRole).isValid())) {
+        if (match && (item->data(kFactoryRole).isValid() || item->data(kComponentRole).isValid())) {
             bool isSrc = item->data(kIsSourceRole).toBool();
             bool isSnk = item->data(kIsSinkRole).toBool();
             if (roleFilter_ == RoleSrc && !isSrc) match = false;
@@ -244,6 +251,18 @@ PickerPage::~PickerPage() {
     if (TemplatePeek::current() && TemplatePeek::current()->parent() == this) TemplatePeek::hide();
 }
 
+ComponentRef PickerPage::componentAt(const QListWidgetItem* item) const {
+    if (!item || !item->data(kComponentRole).isValid()) return {};
+    return {item->data(kProviderRole).toString(), item->data(kComponentRole).toString()};
+}
+
+const ComponentProvider* PickerPage::providerOf(const ComponentRef& component) const {
+    for (const ComponentProvider* provider : data_.providers) {
+        if (provider->kind() == component.provider) return provider;
+    }
+    return nullptr;
+}
+
 PickerChoice PickerPage::choice() const {
     PickerChoice c;
     QListWidgetItem* item = list_->currentItem();
@@ -251,9 +270,9 @@ PickerChoice PickerPage::choice() const {
     if (item->data(kExistingRole).isValid()) {
         c.kind = PickerChoice::Existing;
         c.existing = data_.existing[item->data(kExistingRole).toInt()];
-    } else if (item->data(kTemplateRole).isValid()) {
-        c.kind = PickerChoice::Template;
-        c.factory = item->data(kTemplateRole).toString();
+    } else if (item->data(kComponentRole).isValid()) {
+        c.kind = PickerChoice::Component;
+        c.component = componentAt(item);
     } else {
         c.kind = PickerChoice::NewElement;
         c.factory = item->data(kFactoryRole).toString();
@@ -266,11 +285,11 @@ bool PickerPage::eventFilter(QObject* watched, QEvent* event) {
     // A template under the pointer for a moment: a peek inside it. Moving off it, or leaving the list, hides it.
     if (watched == list_->viewport() && (event->type() == QEvent::MouseMove || event->type() == QEvent::Leave)) {
         QListWidgetItem* item = event->type() == QEvent::MouseMove ? list_->itemAt(static_cast<QMouseEvent*>(event)->position().toPoint()) : nullptr;
-        const QString name = item ? item->data(kTemplateRole).toString() : QString();
-        if (name != peeked_) {
-            peeked_ = name;
+        const ComponentRef component = componentAt(item);
+        if (!(component == peeked_)) {
+            peeked_ = component;
             TemplatePeek::hide();
-            if (name.isEmpty()) peek_->stop();
+            if (component.id.isEmpty()) peek_->stop();
             else peek_->start();
         }
     }

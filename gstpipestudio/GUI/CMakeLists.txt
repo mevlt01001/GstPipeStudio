@@ -9,6 +9,8 @@ add_library(gps_gui STATIC
     backend/include/savetarget.h backend/src/savetarget.cpp
     backend/include/projectfile.h backend/src/projectfile.cpp
     backend/include/versionhistory.h backend/src/versionhistory.cpp
+    backend/include/componentprovider.h backend/src/componentprovider.cpp
+    backend/include/pluginlibrary.h
     backend/include/templatelibrary.h backend/src/templatelibrary.cpp
     backend/include/settings.h backend/src/settings.cpp
     backend/include/viewpreferences.h backend/src/viewpreferences.cpp
@@ -28,6 +30,7 @@ add_library(gps_gui STATIC
     controller/include/controller.h controller/src/controller.cpp
     controller/include/flows.h controller/src/flows.cpp
     controller/include/canvaslayout.h controller/src/canvaslayout.cpp
+    controller/include/outline.h controller/src/outline.cpp
     controller/include/documentbackup.h controller/src/documentbackup.cpp
     layout/include/layoutgraph.h
     layout/include/elkengine.h layout/src/elkengine.cpp

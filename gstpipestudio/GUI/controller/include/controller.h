@@ -26,7 +26,9 @@
 #include "helperclient.h"
 #include "canvaslayout.h"
 #include "executionbackend.h"
+#include "names.h"
 #include "nodes.h"
+#include "outline.h"
 #include "pipeline.h"
 #include "savetarget.h"
 #include "slowwatch.h"
@@ -109,23 +111,23 @@ public:
 
     // ---- the template library, like a folder of modules: what a project imports
     bool renameTemplate(const QString& from, const QString& to, QString* error);  // the library renames it; copies here follow
+    bool renameComponent(const ComponentRef& component, const QString& to, QString* error);  // a template: renameTemplate
     // A library template's parameters (the plan's exposed list) while it is the document (a LibraryTemplateTarget).
     void setTemplateParameters(const std::vector<gps::ExposedParam>& params);
-    QStringList addTemplate(const QString& templateName, double x = std::numeric_limits<double>::quiet_NaN(), double y = std::numeric_limits<double>::quiet_NaN());
-    QStringList addTemplateAfter(const QString& srcElement, const QString& srcPad, const QString& templateName);
+    // A component (a template, later a plugin) on the canvas, at (x, y) or a free spot; or fed by a free src pad.
+    // The elements it placed, none when it was refused.
+    QStringList place(const ComponentRef& component, double x = std::numeric_limits<double>::quiet_NaN(), double y = std::numeric_limits<double>::quiet_NaN());
+    QStringList placeAfter(const QString& srcElement, const QString& srcPad, const ComponentRef& component);
     bool detachTemplate(const QString& groupId);
     bool isTemplateExpanded(const QString& groupId) const { return expandedTemplates_.contains(groupId); }
     void setTemplateExpanded(const QString& groupId, bool expanded);
-    QStringList templateMembers(const QString& groupId) const;
-    QString templateBox(const QString& elementName) const;  // the collapsed instance it is drawn in, "" when none
-    QStringList expandSelection(const QStringList& elementNames) const;
+    Outline outline() const;  // what is drawn as one box, of the plan as it is; kept per revision and expanded set
 
     // ---- what the canvas and the drawer show
-    QString displayName(const QString& element) const;  // what the user reads: "filesrc", "filesrc 2"…
+    gps::Names names() const;  // every name the user reads, of the plan as it is; kept per revision
     ElementView view(const QString& element) const;
     ElementView templateView(const QString& groupId) const;
     FrameView frameView(const QString& instanceId) const;
-    QStringList visibleFrames() const;  // expanded templates whose every enclosing template is expanded too
     QList<LinkView> linkViews() const;
     std::vector<StructureInfo> padStructures(const QString& element, const QString& identity) const;  // allowed by a src pad
     QString padAllowed(const QString& element, const QString& identity) const;
@@ -202,7 +204,7 @@ signals:
 private:
     void log(const QString& line);
     void note(const QString& action, const QString& linking = QString());  // what the support report says we did
-    QString padText(const QString& element, const QString& identity) const;
+    QString padName(const gps::PadRef& pad) const;  // names().pad() as text, for the support report
     std::function<void(const QString&)> logger();  // log() as a callback
     bool move(const QList<QPair<QString, QPointF>>& placements);  // one undoable presentation change
     // What one user edit says about itself; its change fills it in.
@@ -232,7 +234,8 @@ private:
     bool onCanvas(const QString& instanceId, QString* error) const;  // false, with the reason, when it is gone
     static bool wrote(const SaveResult& r, QString* error);  // r.ok; its error in error when it failed
     bool infosReady(const gps::Graph& clip, std::function<void()> retry);
-    static QPointF topLeft(const gps::Graph& clip);
+    QStringList land(const ComponentRef& component, const QPointF& at, const std::optional<gps::PadRef>& after,
+                     const std::function<void()>& retry);
     QString runFile(const QString& name);
     gps::Graph& editGraph() { return pipeline_.editor().draft(); }
     bool commitTransaction();
@@ -290,5 +293,11 @@ private:
     DesktopUrlOpener desktopOpener_;
     UrlOpener* opener_ = &desktopOpener_;
     QString action_, linking_;
+    // Kept for the committed plan at a revision; kNeverKept: worked out again on the next call.
+    static constexpr std::uint64_t kNeverKept = std::numeric_limits<std::uint64_t>::max();
+    mutable gps::Names names_;
+    mutable std::uint64_t namesRevision_ = kNeverKept;
+    mutable Outline outline_;
+    mutable std::uint64_t outlineRevision_ = kNeverKept;
     QStringList logTail_;
 };

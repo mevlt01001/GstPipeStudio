@@ -14,7 +14,7 @@
 #include "templates.h"
 #include "versionhistory.h"
 
-TemplateLibrary::TemplateLibrary(const FactoryCatalog& catalog, QObject* parent) : QObject(parent), catalog_(catalog) {
+TemplateLibrary::TemplateLibrary(const FactoryCatalog& catalog, QObject* parent) : ComponentProvider(parent), catalog_(catalog) {
     connect(&catalog, &FactoryCatalog::ready, this, &TemplateLibrary::reload);
     reload();
 }
@@ -41,7 +41,7 @@ QString TemplateLibrary::file(const QString& name) const {
 }
 
 void TemplateLibrary::reload() {
-    list_.clear();
+    names_.clear();
     plans_.clear();
     files_.clear();
     QDir dir(directory());
@@ -53,24 +53,53 @@ void TemplateLibrary::reload() {
         for (const gps::TemplateInstance& t : std::vector<gps::TemplateInstance>(sub.instances)) {
             if (t.parent.empty() && t.templateName == sub.name) gps::templates::detach(sub, t.id);
         }
-        TemplateInfo ci;
-        ci.name = sub.name.empty() ? QFileInfo(f).completeBaseName() : fromStd(sub.name);
-        ci.elementCount = static_cast<int>(sub.elements.size());
-        QStringList factories;
-        for (const gps::Element& e : sub.elements) {
-            factories << fromStd(e.factory);
-            const FactoryEntry* entry = catalog_.entry(fromStd(e.factory));
-            if (!(entry && entry->isSource) && sub.linksInto(e.name).empty()) ci.hasFreeSink = true;
-            if (!(entry && entry->isSink) && sub.linksFromElement(e.name).empty()) ci.hasFreeSrc = true;
-        }
-        ci.description = factories.join(" → ");
-        ci.isSource = !ci.hasFreeSink && ci.hasFreeSrc;
-        ci.isSink = ci.hasFreeSink && !ci.hasFreeSrc;
-        plans_[ci.name] = sub;
-        files_[ci.name] = dir.filePath(f);
-        list_ << ci;
+        const QString name = sub.name.empty() ? QFileInfo(f).completeBaseName() : fromStd(sub.name);
+        plans_[name] = sub;
+        files_[name] = dir.filePath(f);
+        names_ << name;
     }
     emit changed();
+}
+
+// A template is described as one node: its pads are those its members leave free. A factory the catalog has not
+// described yet gives no pads, so such a template may still take an input.
+QList<ComponentInfo> TemplateLibrary::components() const {
+    QList<ComponentInfo> out;
+    for (const QString& name : names_) {
+        const gps::Graph& content = plans_.at(name);
+        QStringList factories;
+        bool known = true;
+        std::vector<std::string> all;
+        for (const gps::Element& e : content.elements) {
+            factories << fromStd(e.factory);
+            known = known && catalog_.definition(fromStd(e.factory));
+            all.push_back(e.name);
+        }
+        const gps::NodeShape shape(content, [this](const std::string& factory) { return catalog_.definition(fromStd(factory)); });
+        const gps::NodePorts ports = shape.ports(all);
+        ComponentInfo info;
+        info.ref = ref(name);
+        info.title = name;
+        info.description = factories.join(" → ");
+        info.hint = QString("template · %1").arg(content.elements.size());
+        info.takesInput = !known || !ports.free(gps::Pad::Direction::Sink).empty() || !ports.requests.empty();
+        info.givesOutput = !ports.free(gps::Pad::Direction::Source).empty();
+        info.role = gps::NodeShape::role(ports);
+        out << info;
+    }
+    return out;
+}
+
+std::optional<gps::NodeRef> TemplateLibrary::place(gps::Graph& g, const QString& name, double x, double y) const {
+    const gps::Graph* tmpl = plan(name);
+    if (!tmpl || tmpl->elements.empty()) return std::nullopt;
+    const auto [left, top] = tmpl->topLeft();
+    return gps::NodeRef::instance(gps::templates::insertTemplate(g, *tmpl, x - left, y - top));
+}
+
+QList<ComponentAction> TemplateLibrary::actions(const QString& name) const {
+    if (!plan(name)) return {};
+    return {ComponentAction::Edit, ComponentAction::Rename, ComponentAction::Export, ComponentAction::Delete};
 }
 
 const gps::Graph* TemplateLibrary::plan(const QString& name) const {
@@ -148,6 +177,11 @@ bool TemplateLibrary::remove(const QString& name) {
     if (!plan(name) || !QFile::remove(file(name))) return false;
     reload();
     return true;
+}
+
+QString TemplateLibrary::removalNote(const QString& name) const {
+    const int projects = projectsUsing(name).size();
+    return projects ? QString("%1 project(s) use it; each keeps its own copy.").arg(projects) : QString();
 }
 
 bool TemplateLibrary::exportTo(const QString& name, const QString& file, QString* error) const {

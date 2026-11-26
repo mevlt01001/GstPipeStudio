@@ -40,11 +40,7 @@ public:
     const std::optional<Pin>& pending() const { return pin_; }  // the pin of the answer on its way
     bool applying() const { return applying_; }  // its move is being made (not an edit of the user's)
 
-    // The box an element is drawn in (itself, or the outermost collapsed template around it), and where it is drawn.
-    QString boxOf(const QString& element) const;
-    QString anchorOf(const QString& box) const;  // the element whose position the canvas draws the box at
-    QStringList boxesOf(const QStringList& elements) const;
-    QRectF boxRect(const QString& box) const;
+    QRectF boxRect(const QString& box) const;  // where a box (Outline) is drawn now
 
     // The last answer, while the canvas is as it left it.
     bool fresh() const;
@@ -67,7 +63,6 @@ signals:
 private:
     const ViewPreferences& preferences() const;  // the link style it routes with
     void finished(quint64 ticket, bool ok, const layout::Result& result, const QString& error);
-    QStringList containers(const QString& element, QString* box) const;  // expanded templates around it, outermost first
 
     Controller& controller_;
     layout::Runner runner_;

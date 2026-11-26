@@ -41,9 +41,8 @@ TemplatePage::TemplatePage(const TemplatePageInput& input, QWidget* parent) : Dr
     element_ = new QComboBox(this);
     element_->setObjectName("paramElement");
     for (const gps::ExposedParam& p : input.choices) {
-        // A choice is named "<element as the user reads it>.<property>"; the combo keeps the unique name underneath.
-        const QString name = fromStd(p.name), property = fromStd(p.property);
-        if (element_->findData(fromStd(p.element)) < 0) element_->addItem(name.left(name.size() - property.size() - 1), fromStd(p.element));
+        // The element as the user reads it; the combo keeps the unique name underneath.
+        if (element_->findData(fromStd(p.element)) < 0) element_->addItem(fromStd(input.names.element(p.element)), fromStd(p.element));
     }
     property_ = new QComboBox(this);
     property_->setObjectName("paramProperty");

@@ -6,6 +6,7 @@
 
 #include "check.h"
 #include "graph.h"
+#include "names.h"
 #include "pipeline.h"
 #include "templates.h"
 
@@ -71,11 +72,14 @@ static void parameters() {
     // An empty value clears the property and the caps field.
     CHECK(tpl::setParam(g, width, ""));
     CHECK_EQ(g.links.back().caps, std::string("video/x-h264"));
-    CHECK_EQ(tpl::paramName(g, bitrate), std::string("dec.bitrate"));
+    CHECK_EQ(Names(g).param(bitrate), std::string("dec.bitrate"));
     // The user reads factories, numbered from the second one on; the unique names stay underneath.
     const std::string again = tpl::insertTemplate(g, decodeTemplate(), 0, 0);
-    CHECK_EQ(tpl::paramName(g, g.instance(again)->params[0]), std::string("dec 2.bitrate"));
-    CHECK_EQ(g.displayNames().at(g.instance(again)->params[0].element), std::string("dec 2"));
+    CHECK_EQ(Names(g).param(g.instance(again)->params[0]), std::string("dec 2.bitrate"));
+    CHECK_EQ(Names(g).element(g.instance(again)->params[0].element), std::string("dec 2"));
+    // A copy is called by its template's name, which may change; its id does not.
+    g.instance(again)->templateName = "Decoder";
+    CHECK_EQ(Names(g).instance(again), std::string("Decoder"));
 }
 
 static void structureChanges() {

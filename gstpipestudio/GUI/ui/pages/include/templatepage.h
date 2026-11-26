@@ -8,6 +8,7 @@
 
 #include "drawer.h"
 #include "graph.h"
+#include "names.h"
 
 class QComboBox;
 class QLabel;
@@ -19,6 +20,7 @@ struct TemplatePageInput {
     std::vector<gps::ExposedParam> choices;     // every parameter Add parameter may offer
     std::vector<gps::ExposedParam> chosen = {}; // parameters it has already
     bool fixedName = false;                     // the name is shown, not asked
+    gps::Names names = {};                      // what the elements are called in the element list
 };
 
 class TemplatePage : public DrawerPage {

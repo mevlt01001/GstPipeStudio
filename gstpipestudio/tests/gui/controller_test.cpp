@@ -4,7 +4,9 @@
 #include <QFileInfo>
 #include <QTemporaryDir>
 
+#include "outline.h"
 #include "projectfile.h"
+#include "templates.h"
 #include "testsupport.h"
 #include "versionhistory.h"
 
@@ -109,8 +111,8 @@ private slots:
         QVERIFY(settle(*c));
         QVERIFY(c->saveTemplate("Tail", {chain.convert, chain.sink}));
         QVERIFY(settle(*c));
-        const QString id = c->templateBox(chain.convert);
-        const QStringList members = c->templateMembers(id);
+        const QString id = c->outline().collapsedTemplate(chain.convert);
+        const QStringList members = c->outline().membersOf(id);
         QSignalSpy done(&c->canvasLayout(), &CanvasLayout::aligned);
         for (bool open : {true, false}) {
             const QPointF centre = c->canvasLayout().pinOf(members).centre;
@@ -759,7 +761,7 @@ private slots:
         c->open(std::make_unique<ProjectConfTarget>(dir.filePath("uses.conf")));
         QVERIFY(settle(*c));
         QCOMPARE(c->plan().instances.size(), size_t(1));
-        QCOMPARE(c->templateMembers(fromStd(c->plan().instances.front().id)).size(), 2);
+        QCOMPARE(c->outline().membersOf(fromStd(c->plan().instances.front().id)).size(), 2);
     }
 
     // The library is a folder of modules: a template is edited on the canvas (Save is its next revision), renamed,
@@ -801,6 +803,61 @@ private slots:
         QVERIFY(library.content("End").elements.empty());
         QCOMPARE(library.importFrom(dir.filePath("End.conf"), &error), QString("End"));
         QCOMPARE(library.content("End").revision, 2);
+    }
+
+    // Nested templates: an element is drawn in the outermost collapsed copy around it; expanded copies around it are
+    // frames, shown only while every copy around them is expanded too.
+    void theOutlineOfNestedTemplates() {
+        gps::Graph g;
+        const std::string src = g.addElement("videotestsrc"), a = g.addElement("queue"), b = g.addElement("identity");
+        const std::string sink = g.addElement("fakesink");
+        const QString inner = fromStd(gps::templates::wrap(g, {a, b}, "Inner", {}));
+        const QString outer = fromStd(gps::templates::wrap(g, {a, b, sink}, "Outer", {}));
+        const QString qa = fromStd(a), qb = fromStd(b), qsink = fromStd(sink), qsrc = fromStd(src);
+
+        const Outline collapsed(g, {});
+        QCOMPARE(collapsed.boxOf(qa), outer);
+        QCOMPARE(collapsed.collapsedTemplate(qsrc), QString());
+        QCOMPARE(collapsed.anchorOf(outer), qa);
+        QCOMPARE(collapsed.membersOf(outer), QStringList({qa, qb, qsink}));
+        QCOMPARE(collapsed.boxesOf({qsrc, qa, qb}), QStringList({qsrc, outer}));
+        QCOMPARE(collapsed.expand({qb}), QStringList({qa, qb, qsink}));
+        QVERIFY(collapsed.visibleFrames().isEmpty());
+
+        const Outline open(g, {outer});
+        QCOMPARE(open.boxOf(qa), inner);
+        QCOMPARE(open.boxOf(qsink), qsink);
+        QCOMPARE(open.framesAround(qa), QStringList({outer}));
+        QCOMPARE(open.expand({qsink, qb}), QStringList({qsink, qa, qb}));
+        QCOMPARE(open.visibleFrames(), QStringList({outer}));
+
+        const Outline innerOnly(g, {inner});  // its parent is collapsed: no frame is drawn
+        QCOMPARE(innerOnly.boxOf(qa), outer);
+        QVERIFY(innerOnly.visibleFrames().isEmpty());
+        const Outline both(g, {inner, outer});
+        QCOMPARE(both.boxOf(qa), qa);
+        QCOMPARE(both.framesAround(qa), QStringList({outer, inner}));
+        QCOMPARE(both.visibleFrames().size(), 2);
+    }
+
+    // A copy on the canvas is called by its template: renamed in the library, the box and the menus read the new name;
+    // the copy's id stays what it was.
+    void aTemplateCopyIsCalledByItsTemplatesNewName() {
+        QTemporaryDir state;
+        useUserDir(state.path());
+        const Chain chain = makeChain();
+        QVERIFY(settle(*c));
+        QVERIFY(c->saveTemplate("Tail", {chain.convert, chain.sink}));
+        QVERIFY(settle(*c));
+        const QString id = c->outline().collapsedTemplate(chain.convert);
+        QCOMPARE(fromStd(c->names().instance(toStd(id))), QString("Tail"));
+        QString error;
+        QVERIFY(c->renameTemplate("Tail", "Ending", &error));
+        QVERIFY(c->plan().instance(toStd(id)) && !id.contains("Ending"));  // the id is not the name
+        QCOMPARE(fromStd(c->names().instance(toStd(id))), QString("Ending"));
+        QCOMPARE(c->templateView(id).displayTitle, QString("Ending"));
+        QCOMPARE(c->lastAction(), QString("Renamed template Tail to Ending"));
+        useUserDir({});
     }
 
     // One file per template: names that share a file name are refused, and a template an earlier version saved under
@@ -864,7 +921,7 @@ private slots:
         QVERIFY(settle(*c));
         const QString src = addSource(*c, "videotestsrc");
         QVERIFY(!src.isEmpty());
-        const QStringList placed = c->addTemplateAfter(src, "src", "Tail");
+        const QStringList placed = c->placeAfter(src, "src", TemplateLibrary::ref("Tail"));
         QCOMPARE(placed.size(), 2);
         QVERIFY(settle(*c));
         const int link = c->plan().linkFrom(toStd(src), "src");
@@ -882,11 +939,11 @@ private slots:
         QVERIFY(settle(*c));
         QVERIFY(c->saveTemplate("Tail", {chain.convert, chain.sink}));
         QVERIFY(settle(*c));
-        const QString first = c->templateBox(chain.convert);
-        const QStringList second = c->addTemplate("Tail");
+        const QString first = c->outline().collapsedTemplate(chain.convert);
+        const QStringList second = c->place(TemplateLibrary::ref("Tail"));
         QVERIFY(!second.isEmpty());
         QVERIFY(settle(*c));
-        const QString other = c->templateBox(second.first());
+        const QString other = c->outline().collapsedTemplate(second.first());
         QVERIFY(saved(saveAs(*c, dir.filePath("old.conf"))));  // holds revision 1
 
         QSignalSpy asked(c.get(), &Controller::templateChanged);
@@ -904,7 +961,7 @@ private slots:
         QCOMPARE(c->services().library().content("Tail").revision, 2);
         QVERIFY(waitFor([&] { return c->plan().instance(toStd(other)) && c->plan().instance(toStd(other))->revision == 2; }, 5000));
         bool followed = false;
-        for (const QString& m : c->templateMembers(other)) {
+        for (const QString& m : c->outline().membersOf(other)) {
             const gps::Element* e = c->plan().find(toStd(m));
             followed = followed || (e->factory == "videoconvert" && e->props.count("dither"));
         }
@@ -1108,15 +1165,16 @@ private slots:
 
         // 4. Save the connected pair (conv -> scale) as a reusable Template ("ScaleConvert").
         QVERIFY(c->saveTemplate("ScaleConvert", {conv, scale}));
-        const QList<TemplateInfo>& templates = c->services().library().list();
+        const QList<ComponentInfo> templates = c->services().library().components();
         QCOMPARE(templates.size(), 1);
-        QCOMPARE(templates.first().name, QString("ScaleConvert"));
-        QCOMPARE(templates.first().elementCount, 2);
-        QVERIFY(templates.first().hasFreeSink);
-        QVERIFY(templates.first().hasFreeSrc);
+        QCOMPARE(templates.first().title, QString("ScaleConvert"));
+        QCOMPARE(templates.first().hint, QString("template · 2"));
+        QVERIFY(templates.first().takesInput);
+        QVERIFY(templates.first().givesOutput);
+        QVERIFY(templates.first().role == gps::Role::Filter);
 
         // The pair on canvas is now grouped as a collapsed Template with 1 external sink and 1 external src!
-        QString grp = c->templateBox(conv);
+        QString grp = c->outline().collapsedTemplate(conv);
         QVERIFY(!grp.isEmpty());
         QVERIFY(!c->isTemplateExpanded(grp));
         ElementView gv = c->templateView(grp);
@@ -1148,14 +1206,14 @@ private slots:
         QCOMPARE(text(c->plan().links[0].srcElement), src);
         QCOMPARE(text(c->plan().links[0].sinkElement), snk);
 
-        // 7. Re-insert the saved Template from catalog via addTemplate.
-        QStringList inserted = c->addTemplate("ScaleConvert", 250, 250);
+        // 7. Re-insert the saved Template from the library via place.
+        QStringList inserted = c->place(TemplateLibrary::ref("ScaleConvert"), 250, 250);
         QCOMPARE(inserted.size(), 2);
         QCOMPARE(c->plan().elements.size(), size_t(4));
         QCOMPARE(c->plan().links.size(), size_t(2));
 
         // 8. Ungroup the inserted pair, disconnect them, then splice the multi-selection directly onto src -> snk!
-        QString insGrp = c->templateBox(inserted.first());
+        QString insGrp = c->outline().collapsedTemplate(inserted.first());
         QVERIFY(c->detachTemplate(insGrp));
         QVERIFY(c->disconnectBetweenElements(inserted));
         QCOMPARE(c->plan().links.size(), size_t(1));  // only src -> snk

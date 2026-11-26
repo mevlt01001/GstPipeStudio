@@ -150,14 +150,13 @@ public:
     bool wouldCycle(const std::string& srcElement, const std::string& sinkElement) const;
     // Column of every element: the longest chain of links that leads to it (sources are 0). Empty when links form a cycle.
     std::map<std::string, int> levels() const;
-    // What the user reads instead of the unique name: the factory, then "<factory> 2", "<factory> 3"… in canvas order.
-    std::map<std::string, std::string> displayNames() const;
     static std::string ouroborosMessage(const std::string& srcElement, const std::string& sinkElement);
     // Elements reachable from a Source (SRC): an element with an empty sink has an empty src and is not tracked.
     std::vector<std::string> trackedElements(const TraitsFn& traits) const;
     bool isElementTracked(const std::string& name, const TraitsFn& traits) const;
     Graph trackedSubplan(const TraitsFn& traits) const;
     bool empty() const { return elements.empty(); }
+    std::pair<double, double> topLeft() const;  // the top left corner of its elements' positions; (0, 0) when empty
 
     // ---- additions
     std::string addElement(const std::string& factory, const Props& props = {}, double x = 0, double y = 0);

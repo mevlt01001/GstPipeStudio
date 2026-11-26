@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "contract.h"
+#include "catalog.h"
 #include "graph.h"
 
 class HelperClient;
@@ -28,6 +29,7 @@ public:
     const std::vector<FactoryEntry>& entries() const { return entries_; }
 
     const ElementInfo* info(const QString& factory) const;  // nullptr until fetchInfo() brought it
+    const gps::FactoryDefinition* definition(const QString& factory) const;  // its pad templates, as the Pipeline reads them
     void forEachInfo(const std::function<void(const QString&, const ElementInfo&)>& visit) const;  // every one fetched so far
     // The factory's row: from its fetched information, else from the list; nullptr when neither knows it.
     const FactoryEntry* entry(const QString& factory) const;
@@ -50,6 +52,7 @@ private:
     std::vector<FactoryEntry> entries_;
     bool loaded_ = false;
     std::map<QString, ElementInfo> infos_;  // node based: pointers handed out stay valid
+    std::map<QString, gps::FactoryDefinition> definitions_;  // one for every info
     QHash<QString, QList<InfoCallback>> pending_;
     QHash<QString, QStringList> compatible_;
 };

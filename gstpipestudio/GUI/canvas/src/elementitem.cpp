@@ -134,7 +134,7 @@ void ElementItem::paint(QPainter* p, const QStyleOptionGraphicsItem*, QWidget*) 
     p->setPen(Theme::muted());
     QString subTitle = view_.longName.isEmpty() ? view_.factory : view_.longName;
     if (!view_.isTemplate && !view_.groupId.isEmpty()) {
-        subTitle += "  [" + view_.groupId.section('#', 0, 0) + "]";
+        subTitle += "  [" + view_.groupTitle + "]";
     }
     p->drawText(QRectF(12, 24, titleWidth, 16), Qt::AlignLeft | Qt::AlignVCenter,
                 QFontMetrics(small).elidedText(subTitle, Qt::ElideRight, int(titleWidth)));

@@ -8,6 +8,7 @@
 #include "panels.h"
 
 #include <QAction>
+#include <algorithm>
 #include <memory>
 #include <QClipboard>
 #include <QGuiApplication>
@@ -69,7 +70,10 @@ void Flows::saveAsTemplate(const QStringList& elements) {
     if (controller_->editingBlocked() || elements.isEmpty()) return;
     const QString id = controller_->beginTemplate(elements);
     if (id.isEmpty()) return;
-    auto* page = new TemplatePage({QString(), controller_->parameterChoices(controller_->templateMembers(id))});
+    TemplatePageInput input;
+    input.choices = controller_->parameterChoices(controller_->outline().membersOf(id));
+    input.names = controller_->names();
+    auto* page = new TemplatePage(input);
     auto saved = std::make_shared<bool>(false);
     connect(page, &TemplatePage::confirmed, this, [this, page, id, saved] {
         QString error;
@@ -87,8 +91,12 @@ void Flows::saveAsTemplate(const QStringList& elements) {
 }
 
 QString Flows::path(const QString& element, const QString& identity) const {
-    return controller_->displayName(element) + "." + identity;
+    return path(gps::PadRef{toStd(element), toStd(identity), gps::Pad::Direction::Source});
 }
+
+QString Flows::path(const gps::PadRef& pad) const { return fromStd(controller_->names().pad(controller_->plan(), pad)); }
+
+QString Flows::title(const QString& element) const { return fromStd(controller_->names().element(toStd(element))); }
 
 void Flows::editTemplateParams(const QString& instanceId) {
     const gps::TemplateInstance* t = controller_->plan().instance(toStd(instanceId));
@@ -245,69 +253,97 @@ void Flows::chooseElement() {
     drawer_->present(page, "Add element", "Choose an element to place on the canvas: a source, a filter or a sink.", Drawer::Replace);
 }
 
-void Flows::chooseTemplate() {
+void Flows::chooseComponent() {
     if (controller_->editingBlocked()) return;
     PickerData data;
-    data.templates = library().list();
-    data.templateContent = [this](const QString& name) { return library().content(name); };
-    data.templateMenu = [this](const QString& name, const QPoint& at) { templateMenu(name, at); };
-    data.importTemplate = [this] {
-        const QString file = QFileDialog::getOpenFileName(window_, "Import template", QDir::homePath(), "Templates (*.conf)");
-        if (file.isEmpty()) return;
-        QString error;
-        if (library().importFrom(file, &error).isEmpty()) QMessageBox::warning(window_, "Import template", error);
-        else chooseTemplate();  // the list again, with it
-    };
+    data.providers = providers();
+    data.componentMenu = [this](const ComponentRef& component, const QPoint& at) { componentMenu(component, at); };
+    data.importComponent = [this] { importInto(library()); };
     auto* page = new PickerPage(data);
     connect(page, &PickerPage::picked, this, [this](const PickerChoice& choice) {
-        if (choice.kind != PickerChoice::Template) return;
+        if (choice.kind != PickerChoice::Component) return;
         drawer_->dismiss();
-        controller_->addTemplate(choice.factory);
+        controller_->place(choice.component);
     });
+    const bool none = std::all_of(data.providers.begin(), data.providers.end(), [](const ComponentProvider* p) { return p->components().isEmpty(); });
     drawer_->present(page, "Add template",
-                     data.templates.isEmpty() ? "No templates yet: select elements and use Save as template."
-                                              : "Choose a saved template; hover one for a quick look inside.",
+                     none ? "No templates yet: select elements and use Save as template."
+                          : "Choose a saved template; hover one for a quick look inside.",
                      Drawer::Replace);
 }
 
-// The library's own menu on a template: edit it on the canvas, rename, export or delete it.
-void Flows::templateMenu(const QString& name, const QPoint& at) {
+QList<const ComponentProvider*> Flows::providers() const {
+    QList<const ComponentProvider*> out;
+    for (const ComponentProvider* p : controller_->services().providers()) out << p;
+    return out;
+}
+
+void Flows::importInto(ComponentProvider& provider) {
+    const QString file = QFileDialog::getOpenFileName(window_, "Import " + provider.kind(), QDir::homePath(), "Templates (*.conf)");
+    if (file.isEmpty()) return;
+    QString error;
+    if (provider.importFrom(file, &error).isEmpty()) QMessageBox::warning(window_, "Import " + provider.kind(), error);
+    else chooseComponent();  // the list again, with it
+}
+
+// A component's own menu, from what its provider offers: edit it in its own window, rename, export or delete it.
+void Flows::componentMenu(const ComponentRef& component, const QPoint& at) {
+    ComponentProvider* provider = controller_->services().provider(component.provider);
+    if (!provider) return;
+    const QString kind = provider->kind(), name = component.id;
     QMenu menu(window_);
-    menu.addAction("Edit template", this, [this, name] {
-        drawer_->dismiss();
-        emit editTemplateRequested(name);
-    })->setObjectName("actionEditLibraryTemplate");
-    menu.addAction("Rename…", this, [this, name] {
-        bool ok = false;
-        const QString to = QInputDialog::getText(window_, "Rename template", "New name of " + name, QLineEdit::Normal, name, &ok);
-        QString error;
-        if (!ok) return;
-        if (!controller_->renameTemplate(name, to, &error)) QMessageBox::warning(window_, "Rename template", error);
-        else chooseTemplate();
-    });
-    menu.addAction("Export…", this, [this, name] {
-        const QString file = QFileDialog::getSaveFileName(window_, "Export template", QDir::home().filePath(name + ".conf"), "Templates (*.conf)");
-        QString error;
-        if (!file.isEmpty() && !library().exportTo(name, file, &error)) QMessageBox::warning(window_, "Export template", error);
-    });
-    menu.addSeparator();
-    menu.addAction("Delete…", this, [this, name] {
-        const int projects = library().projectsUsing(name).size();
-        const QString note = projects ? QString("\n\n%1 project(s) use it; each keeps its own copy.").arg(projects) : QString();
-        if (QMessageBox::question(window_, "Delete template", "Delete the template " + name + " from the library?" + note,
-                                  QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
-            return;
-        library().remove(name);
-        chooseTemplate();
-    })->setObjectName("actionDeleteLibraryTemplate");
-    menu.exec(at);
+    for (ComponentAction action : provider->actions(name)) {
+        switch (action) {
+        case ComponentAction::Edit:
+            menu.addAction("Edit " + kind, this, [this, component] {
+                drawer_->dismiss();
+                emit editComponentRequested(component);
+            })->setObjectName("actionEditLibraryTemplate");
+            break;
+        case ComponentAction::Rename:
+            menu.addAction("Rename…", this, [this, component, kind, name] {
+                bool ok = false;
+                const QString to = QInputDialog::getText(window_, "Rename " + kind, "New name of " + name, QLineEdit::Normal, name, &ok);
+                QString error;
+                if (!ok) return;
+                if (!controller_->renameComponent(component, to, &error)) QMessageBox::warning(window_, "Rename " + kind, error);
+                else chooseComponent();
+            });
+            break;
+        case ComponentAction::Export:
+            menu.addAction("Export…", this, [this, provider, kind, name] {
+                const QString file = QFileDialog::getSaveFileName(window_, "Export " + kind, QDir::home().filePath(name + ".conf"), "Templates (*.conf)");
+                QString error;
+                if (!file.isEmpty() && !provider->exportTo(name, file, &error)) QMessageBox::warning(window_, "Export " + kind, error);
+            });
+            break;
+        case ComponentAction::Delete:
+            menu.addSeparator();
+            menu.addAction("Delete…", this, [this, provider, kind, name] {
+                const QString note = provider->removalNote(name);
+                if (QMessageBox::question(window_, "Delete " + kind, "Delete the " + kind + " " + name + " from the library?" + (note.isEmpty() ? QString() : "\n\n" + note),
+                                          QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
+                    return;
+                provider->remove(name);
+                chooseComponent();
+            })->setObjectName("actionDeleteLibraryTemplate");
+            break;
+        }
+    }
+    if (!menu.isEmpty()) menu.exec(at);
 }
 
 // The template being edited on the canvas: its parameters, chosen like when it was saved.
 void Flows::editTemplateParameters() {
     QStringList all;
     for (const gps::Element& e : controller_->plan().elements) all << fromStd(e.name);
-    auto* page = new TemplatePage({controller_->target().libraryTemplate(), controller_->parameterChoices(all), controller_->plan().exposed, true});
+    TemplatePageInput input;
+    input.name = controller_->target().libraryTemplate();
+    input.choices = controller_->parameterChoices(all);
+    input.chosen = controller_->plan().exposed;
+    input.fixedName = true;
+    input.names = controller_->names();
+    auto* page = new TemplatePage(input);
     connect(page, &TemplatePage::confirmed, this, [this, page] {
         controller_->setTemplateParameters(page->params());
         closeProperties();
@@ -338,9 +374,8 @@ void Flows::fromFreePad(const QString& element, const QString& identity) {
     catalog().fetchCompatible(allowed, this, [this, element, identity, allowed](const QStringList& compatible) {
         PickerData data;
         data.existing = controller_->existingTargets(element, identity);
-        for (const TemplateInfo& c : library().list()) {
-            if (c.hasFreeSink) data.templates << c;
-        }
+        data.providers = providers();
+        data.offers = [](const ComponentInfo& c) { return c.takesInput; };
         data.compatible = compatible;
         data.candidates = factories(false);
         auto* page = new PickerPage(data);
@@ -350,16 +385,16 @@ void Flows::fromFreePad(const QString& element, const QString& identity) {
                 editThenCaps(element, identity, [=] {
                     return controller_->linkExisting(element, identity, choice.existing.element, choice.existing.sinkPad);
                 });
-            } else if (choice.kind == PickerChoice::Template) {
+            } else if (choice.kind == PickerChoice::Component) {
                 drawer_->dismiss();
                 editThenCaps(element, identity, [=] {
-                    return !controller_->addTemplateAfter(element, identity, choice.factory).isEmpty();
+                    return !controller_->placeAfter(element, identity, choice.component).isEmpty();
                 });
             } else {
                 newElement(Mode::Add, element, identity, choice.factory);
             }
         });
-        drawer_->present(page, "Add after " + controller_->displayName(element) + " · " + identity, allowed.isEmpty() ? QString() : fromStd(gps::mediaOf(toStd(allowed))), Drawer::Replace);
+        drawer_->present(page, "Add after " + title(element) + " · " + identity, allowed.isEmpty() ? QString() : fromStd(gps::mediaOf(toStd(allowed))), Drawer::Replace);
     });
 }
 
@@ -426,7 +461,7 @@ void Flows::openCaps(const QString& element, const QString& identity, bool after
         closeCaps();
     });
     QString title = (afterEdit ? "Caps · " : "Edit caps · ") + path(element, identity);
-    QString sub = path(element, identity) + "  →  " + path(fromStd(l.sinkElement), fromStd(l.sinkPad));
+    QString sub = path(element, identity) + "  →  " + path(controller_->plan().sinkOf(static_cast<size_t>(link)));
     presentCaps(page, title, sub);
 }
 
@@ -514,8 +549,8 @@ void Flows::addQueue(const QString& element, const QString& identity) {
 
 void Flows::editProperties(const QString& element) {
     if (controller_->editingBlocked()) return;
-    QString grp = controller_->templateBox(element);
-    if (!grp.isEmpty() && !controller_->isTemplateExpanded(grp)) {
+    const QString grp = controller_->outline().collapsedTemplate(element);
+    if (!grp.isEmpty()) {
         controller_->setTemplateExpanded(grp, true);
         return;
     }
@@ -544,7 +579,7 @@ void Flows::editProperties(const QString& element) {
         closeProperties();
         deleteElementOnly(element);
     });
-    presentProperties(page, "Edit properties · " + controller_->displayName(element));
+    presentProperties(page, "Edit properties · " + title(element));
 }
 
 void Flows::deleteSource(const QString& element) {

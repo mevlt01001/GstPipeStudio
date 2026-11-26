@@ -57,6 +57,7 @@ public:
     NodePorts ports(const std::vector<std::string>& members) const;  // of any group of elements
     // An element: its factory (a source has no sink template, a sink no src template). A template copy: its ports.
     Role role(const NodeRef& node) const;
+    static Role role(const NodePorts& ports);  // a way in and no way out: a sink; the other way round: a source
     // The pad a new link on this side would use: the first free one, else a new pad of a Request sink template.
     std::optional<PadRef> firstFree(const NodeRef& node, Pad::Direction side) const;
 

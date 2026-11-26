@@ -406,7 +406,8 @@ private slots:
         QCOMPARE(capture.urls.size(), 1);
         QCOMPARE(QUrlQuery(capture.urls[0]).queryItemValue("title", QUrl::FullyDecoded), QString("The validator stopped unexpectedly"));
         QString body = QUrlQuery(capture.urls[0]).queryItemValue("body", QUrl::FullyDecoded);
-        QVERIFY(body.contains(src + ".src (videotestsrc) -> " + bad + ".sink (fakesink)"));
+        const gps::Names names = c->names();  // the link as the user reads it
+        QVERIFY(body.contains(fromStd(names.element(toStd(src))) + ".src -> " + fromStd(names.element(toStd(bad))) + ".sink"));
         QVERIFY(body.contains("stopped unexpectedly"));
 
         // Retry runs the validation again (it crashes again: the element is still there), then a fix clears the message.

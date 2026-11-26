@@ -53,7 +53,5 @@ std::map<std::string, std::string> placeReference(Graph& g, const std::string& i
 // ---- parameters
 std::string paramValue(const Graph& g, const ExposedParam& p);  // "" when not set (the element's default)
 bool setParam(Graph& g, const ExposedParam& p, const std::string& value);
-// Name a parameter gets by default: "<element as the user reads it>.<property>".
-std::string paramName(const Graph& g, const ExposedParam& p);
 
 }  // namespace gps::templates

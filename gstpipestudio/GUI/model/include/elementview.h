@@ -26,6 +26,7 @@ struct ElementView {
     QString displayTitle;       // shown as header title when non-empty (e.g. Template name)
     QString longName;           // the factory's long name, under the title
     QString groupId;            // the template instance it is drawn in
+    QString groupTitle;         // what that copy is called (Names::instance)
     bool isTemplate = false; // true when this item is a collapsed multi-element Template
     QStringList templateMembers;   // member element names when part of a group
     bool isSource = false;
@@ -41,16 +42,6 @@ struct ElementView {
     double height() const {
         return metrics::boxHeight(qMax(sinks.size(), srcs.size()), propLines.size(), !note.isEmpty());
     }
-};
-
-struct TemplateInfo {
-    QString name;         // template name, e.g. "MyDecoder"
-    QString description;  // summary, e.g. "videoconvert → videoscale"
-    bool isSource = false;
-    bool isSink = false;
-    bool hasFreeSink = false;
-    bool hasFreeSrc = false;
-    int elementCount = 0;
 };
 
 // What the canvas shows of an expanded template: a border around its members, its name, and the template's pads on the

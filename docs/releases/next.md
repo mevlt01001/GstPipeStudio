@@ -7,6 +7,8 @@
 - Edit template, from a template's right click on the canvas, a template in the Explorer, or the library (right click a template in Add template), opens it in a tab of its own as "Template: <name>". There Pipeline > Template parameters… chooses its parameters and Save writes its next revision, which the other tabs offer to their copies. The library menu also has Rename…, Export… and Delete…; Import… adds a template file.
 - Changing a copy asks: Update template, Save as new template, Detach or Undo. An update reaches the other copies at once and other projects when they open.
 - One file per template: a name whose file another template already has ("a b" and "a_b") is refused, and a template an earlier version saved under another file name can still be renamed and deleted. A newer revision is offered to a copy once.
+- Add after a free pad, then a template: the copy now lands linked to that pad, through its first free sink pad (or a new Request pad). Dropping a wire on a box, Connect selected and dragging onto a link use the same rule, and a box takes a wire on a Request sink too.
+- A copy shows the current name of its template, also right after a rename.
 - Add source, Save custom, Combine into group and the Expose checkbox are gone: Add element lists every factory, and parameters belong to templates.
 
 ## Layout
@@ -54,7 +56,7 @@ Processing time measures first sink arrival to first src departure, including wa
 - Menus in the usual order: File (New, Open, Open recent, Save, Save as…, Save all, Revert file), Edit (Undo, Redo, Cut, Copy, Paste, Duplicate, Delete, Select all, Find), View, Pipeline, Help.
 - Log, Validation, Live metrics, Properties and Caps are dock panels: move, tab, split, float or close them; View > Panels brings one back, Reset layout restores the row under the canvas, and the window remembers the layout.
 - Every open file is a tab over the canvas, as in code editors: ● marks unsaved changes (× on hover closes), a file already open comes to the front, closing an unsaved tab asks Save / Don't save / Cancel, middle click or Ctrl+W closes, Ctrl+Tab and Ctrl+PgDn/PgUp switch. The panels and menus follow the tab in front, and the open tabs come back on the next start.
-- The Explorer, left of the canvas: the open project's files, every project in the projects folder and the template library. Double click a project or a .conf to open it in a tab, a template to edit it.
+- The Explorer, left of the canvas: the open project's files, every project in the projects folder, Templates and Plugins (empty for now: custom elements will appear there). Double click a project or a .conf to open it in a tab, a template to edit it.
 - A new tab opens at once: every tab shares one GStreamer check, one element list and one template library, so a template saved in one tab is offered to the copies in all the others. The View menu's link style, auto alignment and connected move apply to every tab.
 - Validation follows what runs: adding or changing an element no source feeds keeps the last result; a change to the fed part is validated again.
 - Unified menu and window controls, animated About dialog, and visible version/build identity.

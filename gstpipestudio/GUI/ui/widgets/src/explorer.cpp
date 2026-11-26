@@ -11,8 +11,8 @@
 
 namespace {
 
-enum Role { Kind = Qt::UserRole, Value };
-const QString kConf = "conf", kTemplate = "template";
+enum Role { Kind = Qt::UserRole, Value, Provider };
+const QString kConf = "conf", kComponent = "component";
 
 QTreeWidgetItem* section(QTreeWidget* tree, const QString& objectName) {
     auto* item = new QTreeWidgetItem(tree);
@@ -37,7 +37,7 @@ void clear(QTreeWidgetItem* item) { qDeleteAll(item->takeChildren()); }
 
 }  // namespace
 
-Explorer::Explorer(QWidget* parent) : QWidget(parent) {
+Explorer::Explorer(const QList<ComponentProvider*>& providers, QWidget* parent) : QWidget(parent) {
     setObjectName("explorer");
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
@@ -48,26 +48,30 @@ Explorer::Explorer(QWidget* parent) : QWidget(parent) {
     layout->addWidget(tree_);
     project_ = section(tree_, "project");
     projects_ = section(tree_, "projects");
-    templates_ = section(tree_, "templates");
+    for (ComponentProvider* provider : providers) {
+        components_.append({provider, section(tree_, provider->kind())});
+        connect(provider, &ComponentProvider::changed, this, &Explorer::rebuild);
+    }
 
-    connect(tree_, &QTreeWidget::itemActivated, this, [this](QTreeWidgetItem* item) {
-        const QString kind = item->data(0, Kind).toString(), value = item->data(0, Value).toString();
-        if (kind == kConf) emit openRequested(value);
-        else if (kind == kTemplate) emit templateRequested(value);
+    auto componentOf = [](const QTreeWidgetItem* item) {
+        return ComponentRef{item->data(0, Provider).toString(), item->data(0, Value).toString()};
+    };
+    connect(tree_, &QTreeWidget::itemActivated, this, [this, componentOf](QTreeWidgetItem* item) {
+        const QString kind = item->data(0, Kind).toString();
+        if (kind == kConf) emit openRequested(item->data(0, Value).toString());
+        else if (kind == kComponent) emit componentRequested(componentOf(item));
     });
-    connect(tree_, &QWidget::customContextMenuRequested, this, [this](const QPoint& at) {
+    connect(tree_, &QWidget::customContextMenuRequested, this, [this, componentOf](const QPoint& at) {
         QTreeWidgetItem* item = tree_->itemAt(at);
-        if (item && item->data(0, Kind).toString() == kTemplate)
-            emit templateMenuRequested(item->data(0, Value).toString(), tree_->viewport()->mapToGlobal(at));
+        if (item && item->data(0, Kind).toString() == kComponent) emit componentMenuRequested(componentOf(item), tree_->viewport()->mapToGlobal(at));
     });
     connect(&watcher_, &QFileSystemWatcher::directoryChanged, this, &Explorer::rebuild);
     rebuild();
 }
 
-void Explorer::present(const QString& projectConf, const QStringList& templates) {
-    if (projectConf == conf_ && templates == names_) return;  // the window asks after every change; most change nothing here
+void Explorer::present(const QString& projectConf) {
+    if (projectConf == conf_) return;  // the window asks after every change; most change nothing here
     conf_ = projectConf;
-    names_ = templates;
     rebuild();
 }
 
@@ -98,11 +102,22 @@ void Explorer::rebuild() {
         }
     }
 
-    clear(templates_);
-    templates_->setText(0, "Template library");
-    for (const QString& name : names_) leaf(templates_, name, kTemplate, name);
+    for (const auto& [provider, section] : std::as_const(components_)) fillComponents(section, *provider);
 
     watch({folder, folder.isEmpty() ? QString() : QDir(folder).filePath("templates"), location});
+}
+
+// A provider's section: its components, or a muted line saying what will appear here.
+void Explorer::fillComponents(QTreeWidgetItem* section, const ComponentProvider& provider) {
+    clear(section);
+    section->setText(0, provider.title());
+    const QList<ComponentInfo> components = provider.components();
+    if (components.isEmpty()) leaf(section, provider.emptyHint(), QString(), QString())->setForeground(0, Theme::muted());
+    for (const ComponentInfo& c : components) {
+        QTreeWidgetItem* item = leaf(section, c.title, kComponent, c.ref.id);
+        item->setData(0, Provider, c.ref.provider);
+        item->setToolTip(0, c.description);
+    }
 }
 
 // The folder's sub-folders, then its files; a .conf opens. Deep trees stop after a few levels.

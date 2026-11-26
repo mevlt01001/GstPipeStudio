@@ -34,9 +34,9 @@ public:
 
     // Any element: a source, a filter or a sink (opens PickerPage in the right drawer)
     void chooseElement();
-    // A saved template (opens the template list in the right drawer; hovering one shows a peek)
-    void chooseTemplate();
-    void templateMenu(const QString& name, const QPoint& at);  // right click on a template in the library
+    // A component to place: the templates, later the plugins (a list in the right drawer; hovering one shows a peek)
+    void chooseComponent();
+    void componentMenu(const ComponentRef& component, const QPoint& at);  // right click on a component in a list
     void editTemplateParameters();  // of the library template being edited on the canvas
     // Left click on a free src pad (opens PickerPage in the right drawer)
     void fromFreePad(const QString& element, const QString& identity);
@@ -59,10 +59,13 @@ public:
     void editTemplateParams(const QString& instanceId);
 
 signals:
-    void editTemplateRequested(const QString& name);  // the window opens a Template window for it
+    void editComponentRequested(const ComponentRef& component);  // the window opens it in a window of its own
 
 private:
-    QString path(const QString& element, const QString& identity) const;  // "<element as the user reads it>.<pad>"
+    // What the user reads: "<element>.<pad>" (Names::pad) for a src pad or any pad, and an element's own name.
+    QString path(const QString& element, const QString& identity) const;
+    QString path(const gps::PadRef& pad) const;
+    QString title(const QString& element) const;
     enum class Mode { Add, Replace };
 
     void presentProperties(DrawerPage* page, const QString& title);  // the one way a page enters the Properties tab
@@ -78,6 +81,8 @@ private:
     std::vector<FactoryEntry> factories(bool sources) const;
     FactoryCatalog& catalog() const { return controller_->services().catalog(); }
     TemplateLibrary& library() const { return controller_->services().library(); }
+    QList<const ComponentProvider*> providers() const;
+    void importInto(ComponentProvider& provider);
 
     Controller* controller_;
     Drawer* drawer_;

@@ -279,7 +279,7 @@ private slots:
         buildChain(w, &src, &convert, &sink);
         QVERIFY(c->saveTemplate("Tail", {convert, sink}));
         QVERIFY(settle(*c));
-        const QString id = c->templateBox(convert);
+        const QString id = c->outline().collapsedTemplate(convert);
         QVERIFY(!id.isEmpty());
         QVERIFY(!w.scene()->frame(id));  // a new template is one box
 
@@ -733,15 +733,14 @@ private slots:
         save->trigger();
         auto* page = pageOf<TemplatePage>(w);
         QVERIFY(page);
-        QCOMPARE(c->visibleFrames().size(), 1);  // the border is drawn while the name is asked
-        const QString id = c->visibleFrames().front();
+        QCOMPARE(c->outline().visibleFrames().size(), 1);  // the border is drawn while the name is asked
+        const QString id = c->outline().visibleFrames().front();
 
         // Add parameter: an element first, then one of its properties or a field of its fixed caps.
         auto* element = page->findChild<QComboBox*>("paramElement");
         auto* property = page->findChild<QComboBox*>("paramProperty");
         QCOMPARE(element->count(), 2);
-        const auto shown = c->plan().displayNames();
-        QCOMPARE(element->itemText(0), fromStd(shown.at(toStd(convert))));  // the user reads factories, not unique names
+        QCOMPARE(element->itemText(0), fromStd(c->names().element(toStd(convert))));  // the user reads factories, not unique names
         element->setCurrentIndex(element->findData(convert));
         QVERIFY(property->findText("caps.width") >= 0);
         property->setCurrentText("caps.width");
@@ -757,12 +756,11 @@ private slots:
         QTest::keyClicks(page->findChild<QLineEdit*>("templateName"), "Tail");
         press(page, "saveButton");
         QVERIFY(waitFor([&] { return !w.flows()->propertyPage() && !visibleChild<TemplatePage>(&w); }));
-        QCOMPARE(c->services().library().list().size(), 1);
-        QCOMPARE(c->services().library().list().front().name, QString("Tail"));
+        QCOMPARE(c->services().library().names(), QStringList({"Tail"}));
         const auto params = c->templateParams(id);
         QCOMPARE(params.size(), size_t(2));
-        QCOMPARE(params[0].name, shown.at(toStd(convert)) + ".caps.width");
-        QCOMPARE(params[1].name, shown.at(toStd(sink)) + ".sync");
+        QCOMPARE(params[0].name, c->names().element(toStd(convert)) + ".caps.width");
+        QCOMPARE(params[1].name, c->names().element(toStd(sink)) + ".sync");
         QFile file(library.path() + "/data/templates/Tail.conf");
         QVERIFY(file.open(QIODevice::ReadOnly));
         const QString saved = QString::fromUtf8(file.readAll());
@@ -788,7 +786,7 @@ private slots:
         QVERIFY(waitFor([&] { return c->plan().instances.empty(); }));
         QVERIFY(waitFor([&] { return !w.scene()->ghosts().isEmpty(); }));
         QCOMPARE(w.scene()->ghosts().front()->kind(), FrameGhost::Untrace);
-        QVERIFY(c->services().library().list().isEmpty());
+        QVERIFY(c->services().library().names().isEmpty());
         QVERIFY(c->plan().find(toStd(convert))->group.empty());
     }
 
@@ -844,7 +842,7 @@ private slots:
         QVERIFY(aligned.wait(30000));
         const QString placed = fromStd(c->plan().instances.back().id);
         QVERIFY(!c->isTemplateExpanded(placed));
-        QCOMPARE(c->templateMembers(placed).size(), 2);
+        QCOMPARE(c->outline().membersOf(placed).size(), 2);
     }
 
     // A new project: a name, and its folder under the projects location; Save of a never saved canvas asks the same.
@@ -901,10 +899,12 @@ private slots:
         QCOMPARE(childTexts(tree->topLevelItem(0)), QStringList({"templates/", "door.conf", "door.gpsproj"}));
         QCOMPARE(childTexts(tree->topLevelItem(0)->child(0)), QStringList({"Tail.conf"}));
         QCOMPARE(childTexts(tree->topLevelItem(2)), QStringList({"Tail"}));
+        QCOMPARE(tree->topLevelItem(3)->text(0), QString("Plugins"));  // no plugins yet: it says where they will appear
+        QCOMPARE(childTexts(tree->topLevelItem(3)), QStringList({"Custom elements will appear here"}));
         QVERIFY(w.grab().save(shotDir() + "/explorer.png"));
 
         // A project opens with a double click; a template opens in its own window, and its right click is the library menu.
-        QSignalSpy opened(w.explorer(), &Explorer::openRequested), edited(w.explorer(), &Explorer::templateRequested);
+        QSignalSpy opened(w.explorer(), &Explorer::openRequested), edited(w.explorer(), &Explorer::componentRequested);
         emit tree->itemActivated(tree->topLevelItem(1)->child(1), 0);
         QCOMPARE(opened.count(), 1);
         QCOMPARE(w.tabs()->count(), 2);  // a tab of its own
@@ -912,10 +912,10 @@ private slots:
         QVERIFY(waitFor([&] { return yard->target().path() == root.filePath("yard/yard.conf"); }, 30000));
         QVERIFY(settle(*yard));
         QVERIFY(waitFor([&] { return tree->topLevelItem(0)->text(0) == "Project · yard"; }));
-        QObject::disconnect(w.explorer(), &Explorer::templateRequested, &w, nullptr);  // the window is tested on its own
+        QObject::disconnect(w.explorer(), &Explorer::componentRequested, &w, nullptr);  // the window is tested on its own
         emit tree->itemActivated(tree->topLevelItem(2)->child(0), 0);
         QCOMPARE(edited.count(), 1);
-        QCOMPARE(edited.first().first().toString(), QString("Tail"));
+        QVERIFY(edited.first().first().value<ComponentRef>() == TemplateLibrary::ref("Tail"));
         Settings::setProjectsLocation({});
         useUserDir({});
     }
@@ -949,8 +949,8 @@ private slots:
         QVERIFY(settle(*c));
         const QString id = c->beginTemplate({convert, sink});
         std::vector<gps::ExposedParam> chosen;
-        for (const gps::ExposedParam& p : c->parameterChoices(c->templateMembers(id))) {
-            if (p.name == c->plan().displayNames().at(toStd(convert)) + ".caps.width" || p.name == c->plan().displayNames().at(toStd(sink)) + ".sync")
+        for (const gps::ExposedParam& p : c->parameterChoices(c->outline().membersOf(id))) {
+            if (p.name == c->names().element(toStd(convert)) + ".caps.width" || p.name == c->names().element(toStd(sink)) + ".sync")
                 chosen.push_back(p);
         }
         QCOMPARE(chosen.size(), size_t(2));
@@ -963,11 +963,11 @@ private slots:
         auto* page = w.propertiesTab()->findChild<TemplateParamsPage*>();
         QVERIFY(page);
         QCOMPARE(w.flows()->propertiesTitle(), QString("Template · Tail"));
-        auto* width = page->findChild<QLineEdit*>("param_" + c->displayName(convert) + ".caps.width");
+        auto* width = page->findChild<QLineEdit*>("param_" + fromStd(c->names().element(toStd(convert))) + ".caps.width");
         QVERIFY(width);
         QCOMPARE(width->text(), QString("320"));
-        QVERIFY(page->findChild<QWidget*>("param_" + c->displayName(sink) + ".sync"));
-        QVERIFY(!page->findChild<QWidget*>("param_" + c->displayName(sink) + ".async"));  // not a parameter: stays inside
+        QVERIFY(page->findChild<QWidget*>("param_" + fromStd(c->names().element(toStd(sink))) + ".sync"));
+        QVERIFY(!page->findChild<QWidget*>("param_" + fromStd(c->names().element(toStd(sink))) + ".async"));  // not a parameter: stays inside
         width->clear();
         QTest::keyClicks(width, "640");
         press(page, "saveButton");
@@ -985,7 +985,7 @@ private slots:
         buildChain(w, &src, &convert, &sink);
         QVERIFY(c->saveTemplate("Tail", {convert, sink}));
         QVERIFY(settle(*c));
-        const QString id = c->templateBox(convert);
+        const QString id = c->outline().collapsedTemplate(convert);
         c->setTemplateExpanded(id, true);
         // Answers the question the window asks, with the button named, from inside the dialog's own event loop.
         QString asked;
@@ -1869,7 +1869,7 @@ private slots:
         clickFreePad(src);
         auto* picker = pageOf<PickerPage>(w);
         QVERIFY(picker);
-        QCOMPARE(w.drawer()->title(), "Add after " + c->displayName(src) + " · src");
+        QCOMPARE(w.drawer()->title(), "Add after " + fromStd(c->names().element(toStd(src))) + " · src");
         QCOMPARE(w.drawer()->subtitle(), QString("video/x-raw"));
         QCOMPARE(picker->findChild<QListWidget*>("pickerList")->item(0)->text(), QString("New element"));  // nothing existing yet
         press(picker, "cancelButton");
@@ -2135,7 +2135,7 @@ private slots:
         QVERIFY(page);
         QVERIFY(!w.drawer()->isOpen());
         QVERIFY(w.panels()->showing(w.propertiesTab()));
-        QCOMPARE(w.flows()->propertiesTitle(), "Edit properties · " + c->displayName(src));
+        QCOMPARE(w.flows()->propertiesTitle(), "Edit properties · " + fromStd(c->names().element(toStd(src))));
         QCOMPARE(page->primary()->text(), QString("Save"));
         in<QComboBox>(*page, "editor_pattern")->setCurrentIndex(1);
         QVERIFY(!page->findChild<QCheckBox*>("expose_num-buffers"));  // parameters belong to templates only
@@ -2300,7 +2300,7 @@ private slots:
         QCOMPARE(w.scene()->links().size(), 1);
 
         // Expanding the template shows individual ElementItems and all 2 links.
-        QString grp = c->templateBox(convert);
+        QString grp = c->outline().collapsedTemplate(convert);
         c->setTemplateExpanded(grp, true);
         scene_rebuild(w);
         QVERIFY(w.scene()->element(convert) != w.scene()->element(sink));

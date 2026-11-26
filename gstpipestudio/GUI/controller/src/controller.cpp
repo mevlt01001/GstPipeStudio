@@ -22,12 +22,9 @@
 
 namespace {
 
-// "video_%u" and 1 -> "video_1"
-QString fillTemplate(const QString& name, int k) {
-    QString out = name;
-    out.replace("%u", QString::number(k)).replace("%d", QString::number(k));
-    return out;
-}
+// The pads an edit names: a src pad by its identity, a sink pad by what the link names it.
+gps::PadRef srcRef(const QString& element, const QString& pad) { return {toStd(element), toStd(pad), gps::Pad::Direction::Source}; }
+gps::PadRef sinkRef(const QString& element, const QString& pad) { return {toStd(element), toStd(pad), gps::Pad::Direction::Sink}; }
 
 QString shellQuote(const QString& s) {
     static const QRegularExpression plain("^[A-Za-z0-9_./=:+-]+$");
@@ -81,7 +78,7 @@ Controller::Controller(AppServices& services, QObject* parent)
 }
 
 void Controller::registerFactory(const QString& factory) {
-    pipeline_.registerFactory(toStd(factory), gps::definitionOf(*catalog().info(factory)));
+    pipeline_.registerFactory(toStd(factory), *catalog().definition(factory));
 }
 
 // ---- state
@@ -128,10 +125,16 @@ void Controller::note(const QString& action, const QString& linking) {
     linking_ = linking;
 }
 
-QString Controller::padText(const QString& element, const QString& identity) const {
-    const gps::Element* e = plan().find(toStd(element));
-    return element + "." + identity + (e ? " (" + fromStd(e->factory) + ")" : QString());
+gps::Names Controller::names() const {
+    if (pipeline_.editor().editing()) return gps::Names(plan());  // a draft is never kept
+    if (namesRevision_ != pipeline_.lastChange().revision) {
+        names_ = gps::Names(plan());
+        namesRevision_ = pipeline_.lastChange().revision;
+    }
+    return names_;
 }
+
+QString Controller::padName(const gps::PadRef& pad) const { return fromStd(names().pad(plan(), pad)); }
 
 SupportInfo Controller::supportInfo(const QString& title) const {
     SupportInfo i = SupportReport::systemInfo();
@@ -168,70 +171,42 @@ QString Controller::launchCommand() const {
 
 // ---- templates & groups
 
-// The box an element is drawn in: the outermost collapsed instance around it, "" when every one around it is expanded.
-QString Controller::templateBox(const QString& elementName) const {
-    const std::vector<std::string> around = gps::templates::chain(plan(), toStd(elementName));
-    for (auto up = around.rbegin(); up != around.rend(); ++up) {
-        if (!isTemplateExpanded(fromStd(*up))) return fromStd(*up);
+Outline Controller::outline() const {
+    if (pipeline_.editor().editing()) return Outline(plan(), expandedTemplates_);  // a draft is never kept
+    if (outlineRevision_ != pipeline_.lastChange().revision) {
+        outline_ = Outline(plan(), expandedTemplates_);
+        outlineRevision_ = pipeline_.lastChange().revision;
     }
-    return QString();
-}
-
-QStringList Controller::templateMembers(const QString& groupId) const {
-    QStringList out;
-    if (!groupId.isEmpty()) {
-        for (const std::string& m : gps::templates::members(plan(), toStd(groupId))) out << fromStd(m);
-    }
-    return out;
-}
-
-QStringList Controller::expandSelection(const QStringList& elementNames) const {
-    QStringList out;
-    QSet<QString> seen;
-    for (const QString& n : elementNames) {
-        if (!plan().find(toStd(n))) continue;
-        QString grp = templateBox(n);
-        if (!grp.isEmpty()) {
-            for (const QString& m : templateMembers(grp)) {
-                if (!seen.contains(m)) {
-                    seen.insert(m);
-                    out << m;
-                }
-            }
-        } else if (!seen.contains(n)) {
-            seen.insert(n);
-            out << n;
-        }
-    }
-    return out;
+    return outline_;
 }
 
 void Controller::setTemplateExpanded(const QString& groupId, bool expanded) {
     if (groupId.isEmpty() || isTemplateExpanded(groupId) == expanded) return;
     if (!expanded && editingTemplates_.contains(groupId)) commitTemplateEdit(groupId);  // collapsing ends its editing
     // The box grows into its frame from its centre, or the frame shrinks into it; everything around it makes room.
-    const CanvasLayout::Pin pin = layout_->pinOf(templateMembers(groupId), true);
+    const CanvasLayout::Pin pin = layout_->pinOf(outline().membersOf(groupId), true);
     if (expanded) expandedTemplates_.insert(groupId);
     else expandedTemplates_.remove(groupId);
+    outlineRevision_ = kNeverKept;
     layout_->invalidate();
     layout_->align({}, pin);
     emit changed();
 }
 
 bool Controller::detachTemplate(const QString& groupId) {
-    QStringList members = templateMembers(groupId);
-    if (groupId.isEmpty() || members.isEmpty()) return false;
+    if (groupId.isEmpty() || !plan().instance(toStd(groupId))) return false;
     return transact([&](gps::Graph& g, Edit& edit) {
         gps::templates::detach(g, toStd(groupId));
         expandedTemplates_.remove(groupId);
-        edit.action = "Detached from template " + groupId.section('#', 0, 0);
+        outlineRevision_ = kNeverKept;
+        edit.action = "Detached from template " + fromStd(names().instance(toStd(groupId)));
         edit.presentation = true;
         return true;
     });
 }
 
 QString Controller::beginTemplate(const QStringList& elementNames) {
-    const QStringList members = expandSelection(elementNames);
+    const QStringList members = outline().expand(elementNames);
     if (members.isEmpty()) return QString();
     QString id;
     const bool made = transact([&](gps::Graph& g, Edit& edit) {
@@ -266,6 +241,13 @@ bool Controller::finishTemplate(const QString& id, const QString& name, const st
 }
 
 void Controller::cancelTemplate(const QString& id) { detachTemplate(id); }
+
+bool Controller::renameComponent(const ComponentRef& component, const QString& to, QString* error) {
+    if (component.provider == TemplateLibrary::kKind) return renameTemplate(component.id, to, error);
+    ComponentProvider* provider = services_.provider(component.provider);
+    QString renamed;
+    return provider && provider->rename(component.id, to, &renamed, error);
+}
 
 bool Controller::renameTemplate(const QString& from, const QString& to, QString* error) {
     QString clean;
@@ -310,9 +292,10 @@ bool Controller::saveTemplate(const QString& templateName, const QStringList& el
 
 std::vector<gps::ExposedParam> Controller::parameterChoices(const QStringList& elements) const {
     std::vector<gps::ExposedParam> out;
+    const gps::Names names = this->names();
     auto offer = [&](const std::string& element, const std::string& property) {
         gps::ExposedParam p{"", element, property};
-        p.name = gps::templates::paramName(plan(), p);
+        p.name = names.param(p);
         out.push_back(p);
     };
     for (const QString& member : elements) {
@@ -353,43 +336,46 @@ bool Controller::setTemplateParams(const QString& id, const std::map<std::string
             if (value != values.end()) gps::templates::setParam(g, p, value->second);
         }
         edit.action = "Set the parameters of template " + title;
-        edit.touched = templateMembers(id).value(0);
+        edit.touched = outline().membersOf(id).value(0);
         return true;
     });
 }
 
-QStringList Controller::addTemplate(const QString& templateName, double x, double y) {
-    const gps::Graph* tmpl = services_.library().plan(templateName);
-    if (!tmpl || tmpl->elements.empty() || editingBlocked()) return {};
-    if (!infosReady(*tmpl, [=] { addTemplate(templateName, x, y); })) return {};
+QStringList Controller::place(const ComponentRef& component, double x, double y) {
     const QPointF at = (std::isfinite(x) && std::isfinite(y)) ? QPointF(x, y) : freeSpot();
-    QStringList created;
-    transact([&](gps::Graph& g, Edit& edit) {
-        const QPointF offset = at - topLeft(*tmpl);
-        const std::string id = gps::templates::insertTemplate(g, *tmpl, offset.x(), offset.y());
-        for (const std::string& m : gps::templates::members(g, id)) created << fromStd(m);
-        edit.action = "Added template " + templateName;
-        edit.touched = created.value(0);
-        return true;
-    });
+    const QStringList created = land(component, at, std::nullopt, [=] { place(component, x, y); });
     if (!created.isEmpty()) niceAlign();  // the new box finds its place among the others
     return created;
 }
 
-QStringList Controller::addTemplateAfter(const QString& srcElement, const QString& srcPad, const QString& templateName) {
-    const gps::Graph* tmpl = services_.library().plan(templateName);
+QStringList Controller::placeAfter(const QString& srcElement, const QString& srcPad, const ComponentRef& component) {
     const gps::Element* from = plan().find(toStd(srcElement));
-    if (!tmpl || !from || editingBlocked()) return {};
-    if (!infosReady(*tmpl, [=] { addTemplateAfter(srcElement, srcPad, templateName); })) return {};
+    if (!from) return {};
+    return land(component, QPointF(from->x + metrics::kColumn, from->y), srcRef(srcElement, srcPad),
+                [=] { placeAfter(srcElement, srcPad, component); });
+}
+
+// The one way a component lands on the canvas, in one undo step: its factories known (else asked for, and retry runs
+// once they are), its content's top left corner at `at`, and fed by `after` through the node's first free sink pad,
+// worked out on the draft it is placed in.
+QStringList Controller::land(const ComponentRef& component, const QPointF& at, const std::optional<gps::PadRef>& after,
+                             const std::function<void()>& retry) {
+    const ComponentProvider* provider = services_.provider(component.provider);
+    const gps::Graph content = provider ? provider->peek(component.id) : gps::Graph();
+    if (content.empty() || editingBlocked()) return {};
+    if (!infosReady(content, retry)) return {};
     QStringList created;
     transact([&](gps::Graph& g, Edit& edit) {
-        const QPointF offset = QPointF(from->x + metrics::kColumn, from->y) - topLeft(*tmpl);
-        const QString groupId = fromStd(gps::templates::insertTemplate(g, *tmpl, offset.x(), offset.y()));
-        for (const std::string& m : gps::templates::members(g, toStd(groupId))) created << fromStd(m);
-        // srcElement.srcPad feeds the new copy's first free sink pad, worked out on the draft it is in
-        if (const auto entry = gps::NodeShape(g, pipeline_).firstFree(gps::NodeRef::instance(toStd(groupId)), gps::Pad::Direction::Sink))
-            g.linkExisting(toStd(srcElement), toStd(srcPad), entry->element, entry->linkName());
-        edit.action = "Added template " + templateName + " after " + srcElement + "." + srcPad;
+        const std::optional<gps::NodeRef> node = provider->place(g, component.id, at.x(), at.y());
+        if (!node) return false;
+        const gps::NodeShape shape(g, pipeline_);
+        created = fromStd(shape.members(*node));
+        edit.action = "Added " + component.provider + " " + component.id;
+        if (after) {
+            if (const auto entry = shape.firstFree(*node, gps::Pad::Direction::Sink))
+                g.linkExisting(after->element, after->identity, entry->element, entry->linkName());
+            edit.action += " after " + fromStd(after->element) + "." + fromStd(after->identity);
+        }
         edit.touched = created.value(0);
         return true;
     });
@@ -414,12 +400,6 @@ QString Controller::elementNote(const QString& element, bool* isError) const {
     return QString();
 }
 
-QString Controller::displayName(const QString& element) const {
-    const auto names = plan().displayNames();
-    const auto it = names.find(toStd(element));
-    return it == names.end() ? element : fromStd(it->second);
-}
-
 ElementView Controller::view(const QString& name) const {
     ElementView v;
     v.name = name;
@@ -427,9 +407,10 @@ ElementView Controller::view(const QString& name) const {
     if (!element) return v;
 
     v.factory = fromStd(element->factory);
-    v.displayTitle = displayName(name);
+    v.displayTitle = fromStd(names().element(element->name));
     v.groupId = fromStd(element->group);
-    if (!v.groupId.isEmpty()) v.templateMembers = templateMembers(v.groupId);
+    v.groupTitle = fromStd(names().instance(element->group));
+    if (!v.groupId.isEmpty()) v.templateMembers = outline().membersOf(v.groupId);
     if (const FactoryEntry* e = catalog().entry(v.factory)) {
         v.nvidia = e->nvidia;
         v.longName = fromStd(e->longName);
@@ -466,13 +447,9 @@ PadView Controller::padView(const gps::Element& element, const gps::Pad& pad, bo
     const bool src = pad.direction == gps::Pad::Direction::Source;
     const ElementInfo* inf = catalog().info(fromStd(element.factory));
     const PadTemplateInfo* t = inf ? inf->padTemplate(pad.templateName, src ? "src" : "sink") : nullptr;
-    std::string templateName;
-    int k = 0;
-    gps::splitPadIdentity(pad.identity, &templateName, &k);
     PadView p;
     p.ref = {element.name, pad.identity, pad.direction};
-    p.label = !pad.nativeName.empty() ? fromStd(pad.nativeName)
-              : pad.identity == pad.templateName ? fromStd(pad.templateName) : fillTemplate(fromStd(pad.templateName), k);
+    p.label = fromStd(gps::Names::label(pad));
     if (src) {
         p.link = plan().linkFrom(element.name, pad.identity);
         const std::string& caps = pad.negotiatedCaps.empty() ? pad.allowedCaps : pad.negotiatedCaps;
@@ -509,13 +486,11 @@ QList<PadView> Controller::padViews(const std::vector<gps::Port>& ports) const {
 
 ElementView Controller::templateView(const QString& groupId) const {
     ElementView v;
-    QStringList members = templateMembers(groupId);
+    const QStringList members = outline().membersOf(groupId);
     if (members.isEmpty()) return v;
 
-    const gps::TemplateInstance* placed = plan().instance(toStd(groupId));
-    QString title = placed ? fromStd(placed->templateName) : groupId.section('#', 0, 0);
     v.name = members.first();
-    v.displayTitle = title.isEmpty() ? groupId : title;
+    v.displayTitle = fromStd(names().instance(toStd(groupId)));
     v.groupId = groupId;
     v.isTemplate = true;
     v.templateMembers = members;
@@ -559,21 +534,11 @@ FrameView Controller::frameView(const QString& instanceId) const {
     if (!t) return v;
     v.id = instanceId;
     v.title = fromStd(t->templateName);
-    v.members = templateMembers(instanceId);
+    v.members = outline().membersOf(instanceId);
     v.depth = static_cast<int>(gps::templates::chain(plan(), t->id).size());
     const gps::NodePorts ports = shape().ports(gps::NodeRef::instance(t->id));
     v.pads = padViews(ports.sinks) + padViews(ports.srcs);
     return v;
-}
-
-QStringList Controller::visibleFrames() const {
-    QStringList out;
-    for (const gps::TemplateInstance& t : plan().instances) {
-        bool shown = isTemplateExpanded(fromStd(t.id));
-        for (std::string up = t.parent; shown && !up.empty(); up = plan().instance(up)->parent) shown = isTemplateExpanded(fromStd(up));
-        if (shown) out << fromStd(t.id);
-    }
-    return out;
 }
 
 QList<LinkView> Controller::linkViews() const {
@@ -871,17 +836,19 @@ bool Controller::redo() {
 
 gps::Graph Controller::copySubplan(const QStringList& elementNames) const {
     std::vector<std::string> ids;
-    for (const auto& name : expandSelection(elementNames)) ids.push_back(toStd(name));
+    for (const auto& name : outline().expand(elementNames)) ids.push_back(toStd(name));
     return gps::GraphFragment(std::move(ids)).copy(plan());
 }
 
 QStringList Controller::pasteSubplan(const gps::Graph& clip, double targetX, double targetY) {
     if (editingBlocked() || clip.elements.empty()) return {};
     if (!infosReady(clip, [=] { pasteSubplan(clip, targetX, targetY); })) return {};
-    const QPointF at = std::isfinite(targetX) ? QPointF(targetX, targetY) : topLeft(clip) + QPointF(40, 40);
+    const auto [left, top] = clip.topLeft();
+    const QPointF corner(left, top);
+    const QPointF at = std::isfinite(targetX) ? QPointF(targetX, targetY) : corner + QPointF(40, 40);
     QStringList created;
     transact([&](gps::Graph& g, Edit& edit) {
-        const QPointF offset = at - topLeft(clip);
+        const QPointF offset = at - corner;
         for (const auto& [old, made] : gps::templates::insertCopy(g, clip, offset.x(), offset.y())) {
             if (g.find(made)) created << fromStd(made);
         }
@@ -906,11 +873,6 @@ bool Controller::infosReady(const gps::Graph& clip, std::function<void()> retry)
     return false;
 }
 
-QPointF Controller::topLeft(const gps::Graph& clip) {
-    QPointF corner(clip.elements.front().x, clip.elements.front().y);
-    for (const gps::Element& e : clip.elements) corner = QPointF(std::min(corner.x(), e.x), std::min(corner.y(), e.y));
-    return corner;
-}
 
 
 QStringList Controller::duplicateElements(const QStringList& names) {
@@ -943,7 +905,7 @@ bool Controller::addAfter(const QString& element, const QString& pad, const QStr
         applyEdit(name, edit);
         placeNewElement(name);
         e.action = "Added " + factory + " after " + element + "." + pad;
-        e.linking = padText(element, pad) + " -> " + padText(fromStd(name), sinkPad);
+        e.linking = padName(srcRef(element, pad)) + " -> " + padName(sinkRef(fromStd(name), sinkPad));
         e.touched = fromStd(name);
         return true;
     });
@@ -958,7 +920,7 @@ bool Controller::linkExisting(const QString& element, const QString& pad, const 
     return transact([&](gps::Graph& g, Edit& e) {
         if (!g.linkExisting(toStd(element), toStd(pad), toStd(sinkElement), toStd(sinkPad))) return false;
         e.action = "Linked " + element + "." + pad + " to an existing element";
-        e.linking = padText(element, pad) + " -> " + padText(sinkElement, sinkPad);
+        e.linking = padName(srcRef(element, pad)) + " -> " + padName(sinkRef(sinkElement, sinkPad));
         e.touched = sinkElement;
         return true;
     });
@@ -982,13 +944,13 @@ bool Controller::setCaps(const QString& element, const QString& pad, const QStri
     return transact([&](gps::Graph& g, Edit& e) {
         g.setCaps(toStd(element), toStd(pad), toStd(caps));
         g.setSinkPadProps(toStd(element), toStd(pad), sinkPadProps);
-        e = {"Changed the caps of " + element + "." + pad, padText(element, pad), element};
+        e = {"Changed the caps of " + element + "." + pad, padName(srcRef(element, pad)), element};
         return true;
     });
 }
 
 bool Controller::cut(const QString& element, const QString& pad) {
-    const QString linking = padText(element, pad);
+    const QString linking = padName(srcRef(element, pad));
     return transact([&](gps::Graph& g, Edit& e) {
         e = {"Cut the link at " + element + "." + pad, linking, element};
         return g.cut(toStd(element), toStd(pad), catalog().traits()).links > 0;
@@ -997,7 +959,7 @@ bool Controller::cut(const QString& element, const QString& pad) {
 
 bool Controller::disconnectLink(const QString& element, const QString& pad) {
     if (editingBlocked()) return false;
-    const QString linking = padText(element, pad);
+    const QString linking = padName(srcRef(element, pad));
     gps::DisconnectAction action(toStd(element), toStd(pad));
     if (!pipeline_.editor().execute(action)) return false;
     note("Disconnected the link at " + element + "." + pad, linking);
@@ -1009,7 +971,7 @@ bool Controller::disconnectLink(const QString& element, const QString& pad) {
 bool Controller::replace(const QString& element, const QString& pad, const QString& factory, const QString& sinkPad,
                          const ElementEdit& edit) {
     if (!catalog().info(factory)) return false;
-    const QString linking = padText(element, pad);
+    const QString linking = padName(srcRef(element, pad));
     return transact([&](gps::Graph& g, Edit& e) {
         gps::Addition added = g.replace(toStd(element), toStd(pad), toStd(factory), toStd(sinkPad), edit.props, catalog().traits());
         if (added.element.empty()) return false;
@@ -1030,7 +992,7 @@ bool Controller::deleteElement(const QString& element, bool autoHeal) {
 }
 
 bool Controller::deleteSelection(const QStringList& elementNames, const QList<gps::LinkRef>& links, bool autoHeal) {
-    QStringList expanded = expandSelection(elementNames);
+    const QStringList expanded = outline().expand(elementNames);
     if (expanded.isEmpty() && links.isEmpty()) return false;
     QStringList touched = expanded;
     for (const gps::LinkRef& link : links) touched << fromStd(link.src.element);
@@ -1055,7 +1017,7 @@ bool Controller::spliceElement(const QString& element, const QString& linkSrcEle
 
 bool Controller::spliceElements(const QStringList& elements, const QString& linkSrcElement, const QString& linkSrcPad) {
     if (editingBlocked() || elements.isEmpty()) return false;
-    QStringList expanded = expandSelection(elements);
+    const QStringList expanded = outline().expand(elements);
     if (expanded.isEmpty()) return false;
 
     std::vector<std::string> ids;
@@ -1092,7 +1054,7 @@ bool Controller::insertQueue(const QString& element, const QString& pad) {
         std::string name = g.insertQueue(toStd(element), toStd(pad));
         if (name.empty()) return false;
         makeRoomForQueue(toStd(element), name);
-        e = {"Inserted a queue after " + element + "." + pad, padText(element, pad), fromStd(name)};
+        e = {"Inserted a queue after " + element + "." + pad, padName(srcRef(element, pad)), fromStd(name)};
         return true;
     });
 }
@@ -1137,6 +1099,7 @@ void Controller::setPosition(const QString& element, double x, double y) {
 
 void Controller::setPositions(const QList<QPair<QString, QPointF>>& positions) {
     if (positions.isEmpty() || editingBlocked()) return;
+    const Outline outline = this->outline();
     QSet<QString> handledGroups;
     std::map<std::string, gps::Placement> updates;
     for (const auto& [element, pt] : positions) {
@@ -1144,11 +1107,11 @@ void Controller::setPositions(const QList<QPair<QString, QPointF>>& positions) {
         if (!e) continue;
         const double dx = pt.x() - e->x, dy = pt.y() - e->y;
         if (std::abs(dx) < 0.01 && std::abs(dy) < 0.01) continue;
-        const QString group = templateBox(element);
+        const QString group = outline.collapsedTemplate(element);
         if (!group.isEmpty()) {
             if (handledGroups.contains(group)) continue;
             handledGroups.insert(group);
-            for (const auto& member : templateMembers(group)) {
+            for (const auto& member : outline.membersOf(group)) {
                 const auto* other = plan().find(toStd(member));
                 updates[other->name] = {other->name, other->x + dx, other->y + dy};
             }
@@ -1204,7 +1167,7 @@ bool Controller::linkOrderedInternal(const QStringList& expanded, QString* lastT
 
 bool Controller::connectSelectedElements(const QStringList& names) {
     if (editingBlocked() || names.size() < 2) return false;
-    QStringList expanded = expandSelection(names);
+    const QStringList expanded = outline().expand(names);
     if (expanded.size() < 2) return false;
 
     return transact([&](gps::Graph&, Edit& e) {
@@ -1216,7 +1179,7 @@ bool Controller::connectSelectedElements(const QStringList& names) {
 
 bool Controller::disconnectBetweenElements(const QStringList& names) {
     if (names.size() < 2) return false;
-    QStringList expanded = expandSelection(names);
+    const QStringList expanded = outline().expand(names);
     std::set<std::string> chosen;
     for (const QString& n : expanded) chosen.insert(toStd(n));
     return transact([&](gps::Graph& g, Edit& e) {
@@ -1226,7 +1189,7 @@ bool Controller::disconnectBetweenElements(const QStringList& names) {
 }
 
 bool Controller::niceAlign(const QStringList& elements) {
-    const QStringList chosen = elements.isEmpty() ? QStringList() : expandSelection(elements);
+    const QStringList chosen = elements.isEmpty() ? QStringList() : outline().expand(elements);
     QStringList all;
     for (const gps::Element& e : plan().elements) all << fromStd(e.name);
     return layout_->align(chosen, layout_->pinOf(chosen.isEmpty() ? all : chosen));  // what is on screen stays there

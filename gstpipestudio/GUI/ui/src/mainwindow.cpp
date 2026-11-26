@@ -101,11 +101,11 @@ MainWindow::MainWindow(Controller* controller, QWidget* parent)
 
     buildPanels();
     addDocument(controller);
-    explorer_ = new Explorer(this);
+    explorer_ = new Explorer(services_.providers(), this);
     panels_->add(explorer_, "Explorer", 0, Qt::LeftDockWidgetArea);
     connect(explorer_, &Explorer::openRequested, this, &MainWindow::openFile);
-    connect(explorer_, &Explorer::templateRequested, this, &MainWindow::openTemplate);
-    connect(explorer_, &Explorer::templateMenuRequested, this, [this](const QString& name, const QPoint& at) { flows_->templateMenu(name, at); });
+    connect(explorer_, &Explorer::componentRequested, this, &MainWindow::openComponent);
+    connect(explorer_, &Explorer::componentMenuRequested, this, [this](const ComponentRef& c, const QPoint& at) { flows_->componentMenu(c, at); });
     resizeDocks({panels_->dock(log_)}, {240}, Qt::Vertical);
     resizeDocks({panels_->dock(explorer_)}, {260}, Qt::Horizontal);
     panels_->show(updates_);
@@ -173,7 +173,7 @@ void MainWindow::buildActions() {
     auto* addElement = make("actionAddElement", "Add &element…", {QKeySequence(Qt::CTRL | Qt::Key_E), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_E)},
                             [this] { flows_->chooseElement(); });
     addElement->setIconText("Add element");
-    auto* addTemplate = make("actionAddTemplate", "Add &template…", {QKeySequence(Qt::CTRL | Qt::Key_T)}, [this] { flows_->chooseTemplate(); });
+    auto* addTemplate = make("actionAddTemplate", "Add &template…", {QKeySequence(Qt::CTRL | Qt::Key_T)}, [this] { flows_->chooseComponent(); });
     addTemplate->setIconText("Add template");
     auto* undoAct = make("actionUndo", "&Undo", {QKeySequence::Undo}, [this] { controller_->undo(); });
     undoAct->setIconText("Undo");
@@ -365,7 +365,7 @@ void MainWindow::wire(Document* d) {
     connect(scene, &CanvasScene::canvasContextMenuRequested, this, [this](const QPoint& screenPos, const QPointF&) { showCanvasMenu(screenPos); }, Qt::QueuedConnection);
     connect(scene, &QGraphicsScene::selectionChanged, this, [this, front] { if (front()) refreshState(); });
     connect(d->view(), &CanvasView::deletePressed, this, &MainWindow::deleteSelected);
-    connect(d->flows(), &Flows::editTemplateRequested, this, &MainWindow::openTemplate);
+    connect(d->flows(), &Flows::editComponentRequested, this, &MainWindow::openComponent);
     connect(c, &Controller::templateChanged, this, [this, front](const QString& id) { if (front()) askTemplateChange(id); }, Qt::QueuedConnection);
     connect(c, &Controller::templatesOutdated, this, [this, d, front](const QStringList& ids) {
         if (front()) askTemplatesOutdated(ids);
@@ -542,9 +542,7 @@ void MainWindow::setReason(QAction* action, const QString& text, const QString& 
 void MainWindow::refreshState() {
     if (!built_) return;
     auto act = [this](const char* name) { return findChild<QAction*>(name); };
-    QStringList templates;
-    for (const TemplateInfo& t : services_.library().list()) templates << t.name;
-    explorer_->present(controller_->target().projectConf(), templates);
+    explorer_->present(controller_->target().projectConf());
     bool blocked = services_.environment().blocked();
     bool busy = controller_->busy();
     bool editBlocked = controller_->editingBlocked();
@@ -678,7 +676,7 @@ void MainWindow::showCanvasMenu(const QPoint& screenPos) {
     menu->setObjectName("canvasMenu");
     menu->setAttribute(Qt::WA_DeleteOnClose);
     menu->addAction("Add element…", this, [this] { flows_->chooseElement(); })->setObjectName("actionCanvasAddElement");
-    menu->addAction("Add template…", this, [this] { flows_->chooseTemplate(); })->setObjectName("actionCanvasAddTemplate");
+    menu->addAction("Add template…", this, [this] { flows_->chooseComponent(); })->setObjectName("actionCanvasAddTemplate");
     QStringList sel = scene_->selectedElementNames();
     if (!sel.isEmpty()) {
         menu->addSeparator();
@@ -712,8 +710,7 @@ void MainWindow::showCanvasMenu(const QPoint& screenPos) {
 void MainWindow::onElementMenuRequested(const QString& element, const QPoint& screenPos) {
     if (controller_->editingBlocked()) return;
     QStringList sel = scene_->selectedElementNames();
-    QString grp = controller_->templateBox(element);
-    if (sel.size() > 1 || !grp.isEmpty()) {
+    if (sel.size() > 1 || !controller_->outline().collapsedTemplate(element).isEmpty()) {
         showSelectionMenu(element, screenPos);
     } else {
         flows_->showElementMenu(element, screenPos);
@@ -755,18 +752,19 @@ void MainWindow::showSelectionMenu(const QString& clickedElement, const QPoint& 
     if (controller_->editingBlocked()) return;
     QStringList sel = scene_->selectedElementNames();
     if (!sel.contains(clickedElement)) sel << clickedElement;
-    sel = controller_->expandSelection(sel);
+    const Outline outline = controller_->outline();
+    sel = outline.expand(sel);
 
     auto* menu = new QMenu(this);
     menu->setObjectName("selectionMenu");
     menu->setAttribute(Qt::WA_DeleteOnClose);
 
-    QString grp = controller_->templateBox(clickedElement);
+    const QString grp = outline.collapsedTemplate(clickedElement);
     if (!grp.isEmpty()) {
-        QString title = grp.section('#', 0, 0);
+        const QString title = fromStd(controller_->names().instance(toStd(grp)));
         bool expanded = controller_->isTemplateExpanded(grp);
         addEditTemplate(menu, grp);
-        menu->addAction(expanded ? ("Collapse '" + title + "' to single element") : ("Expand '" + title + "' (" + QString::number(controller_->templateMembers(grp).size()) + " elements)"),
+        menu->addAction(expanded ? ("Collapse '" + title + "' to single element") : ("Expand '" + title + "' (" + QString::number(outline.membersOf(grp).size()) + " elements)"),
                         this, [this, grp, expanded] { controller_->setTemplateExpanded(grp, !expanded); })
             ->setObjectName("actionToggleGroupExpand");
         menu->addAction("Detach from template '" + title + "'", this, [this, grp] { controller_->detachTemplate(grp); })->setObjectName("actionUngroup");
@@ -817,7 +815,7 @@ void MainWindow::deleteSelected() {
     }
     if (selectedElements.size() == 1 && selectedLinks.isEmpty()) {
         const QString& only = selectedElements.first();
-        if (controller_->templateBox(only).isEmpty() && controller_->view(only).isSource) {
+        if (controller_->outline().collapsedTemplate(only).isEmpty() && controller_->view(only).isSource) {
             flows_->deleteSource(only);
             return;
         }
@@ -974,6 +972,10 @@ void MainWindow::closeEvent(QCloseEvent* event) {
     saveSession();
     Settings::setWindow(saveGeometry(), saveState());
     event->accept();
+}
+
+Document* MainWindow::openComponent(const ComponentRef& component) {
+    return component.provider == TemplateLibrary::kKind ? openTemplate(component.id) : nullptr;
 }
 
 Document* MainWindow::openTemplate(const QString& name) {

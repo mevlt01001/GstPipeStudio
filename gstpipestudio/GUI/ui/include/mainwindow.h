@@ -6,6 +6,8 @@
 #include <QMainWindow>
 #include <memory>
 
+#include "componentprovider.h"
+
 class AppServices;
 class CanvasScene;
 class CanvasView;
@@ -69,6 +71,7 @@ public:
     Document* open(std::unique_ptr<SaveTarget> target, const QString& backup = QString());
     // A library template on a canvas tab of its own: Save writes its next revision, the other tabs are offered it.
     Document* openTemplate(const QString& name);
+    Document* openComponent(const ComponentRef& component);  // a template: openTemplate; nothing else opens yet
     void openPropertiesTab(const QString& element);
     void resetPropertiesTab();
     void openCapsTab(const QString& srcElement, const QString& srcIdentity);

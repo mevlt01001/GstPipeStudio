@@ -101,6 +101,13 @@ std::string Graph::sinkIdentity(size_t index) const {
     return padIdentity(link.sinkPad, ordinal);
 }
 
+std::pair<double, double> Graph::topLeft() const {
+    if (elements.empty()) return {0, 0};
+    std::pair<double, double> corner{elements.front().x, elements.front().y};
+    for (const Element& e : elements) corner = {std::min(corner.first, e.x), std::min(corner.second, e.y)};
+    return corner;
+}
+
 PadRef Graph::srcOf(size_t link) const { return {links.at(link).srcElement, links.at(link).srcPad, Pad::Direction::Source}; }
 
 PadRef Graph::sinkOf(size_t link) const { return {links.at(link).sinkElement, sinkIdentity(link), Pad::Direction::Sink}; }
@@ -157,16 +164,6 @@ bool Graph::wouldCycle(const std::string& srcElement, const std::string& sinkEle
         }
     }
     return false;
-}
-
-std::map<std::string, std::string> Graph::displayNames() const {
-    std::map<std::string, std::string> out;
-    std::map<std::string, int> seen;
-    for (const Element& e : elements) {
-        const int n = ++seen[e.factory];
-        out[e.name] = n == 1 ? e.factory : e.factory + " " + std::to_string(n);
-    }
-    return out;
 }
 
 std::map<std::string, int> Graph::levels() const {
