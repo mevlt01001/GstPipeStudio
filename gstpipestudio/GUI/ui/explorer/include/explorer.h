@@ -8,6 +8,7 @@
 
 #include <QFileSystemWatcher>
 #include <QList>
+#include <QSet>
 #include <QTimer>
 #include <QWidget>
 
@@ -41,10 +42,11 @@ private:
         QTreeWidgetItem* header;
         ExplorerEntry head;              // its header as last built
         QList<ExplorerEntry> entries;    // its rows as last built
+        QSet<QString> expanded;          // the rows the user opened, kept while they are not shown (another project)
         bool built = false;
     };
     void reload(Section& section);  // asks the section; rebuilds its rows only when they changed
-    void fill(QTreeWidgetItem* parent, const Section& section, const QList<ExplorerEntry>& entries, const QStringList& expanded);
+    void fill(QTreeWidgetItem* parent, const Section& section, const QList<ExplorerEntry>& entries);
     void decorate(QTreeWidgetItem* item);  // its look, with the editor's state, and its children's
     void reveal(const QString& key);       // the row of a tab's session key selected and scrolled to
     void rewatch();

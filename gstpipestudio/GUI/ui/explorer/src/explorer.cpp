@@ -116,6 +116,8 @@ Explorer::Explorer(const QList<ExplorerSource*>& sections, FileOperations& opera
         if (offered.contains(ExplorerAction::Open) || offered.contains(ExplorerAction::Edit)) operations_.open(entryOf(item));
     });
     connect(tree_, &QWidget::customContextMenuRequested, this, &Explorer::showMenu);
+    connect(tree_, &QTreeWidget::itemExpanded, this, [this](QTreeWidgetItem* item) { sectionOf(item)->expanded.insert(sourceEntry(item).id()); });
+    connect(tree_, &QTreeWidget::itemCollapsed, this, [this](QTreeWidgetItem* item) { sectionOf(item)->expanded.remove(sourceEntry(item).id()); });
     refresh();
 }
 
@@ -169,15 +171,11 @@ void Explorer::reload(Section& s) {
         entries << hint;
     }
     if (s.built && head == s.head && entries == s.entries) return;
-    QStringList expanded;
-    forEach(s.header, [&](QTreeWidgetItem* item) {
-        if (item->isExpanded()) expanded << sourceEntry(item).id();
-    });
     const QString selected = tree_->currentItem() ? sourceEntry(tree_->currentItem()).id() : QString();
     const bool ownsSelection = tree_->currentItem() && sectionOf(tree_->currentItem()) == &s;
     s.header->setData(0, kEntry, QVariant::fromValue(head));
     qDeleteAll(s.header->takeChildren());
-    fill(s.header, s, entries, expanded);
+    fill(s.header, s, entries);
     s.head = head;
     s.entries = entries;
     s.built = true;
@@ -187,7 +185,7 @@ void Explorer::reload(Section& s) {
     }
 }
 
-void Explorer::fill(QTreeWidgetItem* parent, const Section& s, const QList<ExplorerEntry>& entries, const QStringList& expanded) {
+void Explorer::fill(QTreeWidgetItem* parent, const Section& s, const QList<ExplorerEntry>& entries) {
     for (const ExplorerEntry& e : entries) {
         auto* item = new QTreeWidgetItem(parent);
         ExplorerEntry row = e;
@@ -197,8 +195,8 @@ void Explorer::fill(QTreeWidgetItem* parent, const Section& s, const QList<Explo
         if (e.kind != Kind::Hint) flags |= Qt::ItemIsSelectable;
         if (s.source->actions(row).contains(ExplorerAction::Rename)) flags |= Qt::ItemIsEditable;
         item->setFlags(flags);
-        fill(item, s, e.children, expanded);
-        item->setExpanded(expanded.contains(row.id()));
+        fill(item, s, e.children);
+        item->setExpanded(s.expanded.contains(row.id()));
     }
 }
 
