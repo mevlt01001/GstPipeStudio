@@ -10,6 +10,12 @@ bool refused(QString* error) {
 
 QList<ComponentAction> ComponentProvider::actions(const QString&) const { return {}; }
 
+QString ComponentProvider::nameError(const QString&, const QString&) const {
+    QString error;
+    refused(&error);
+    return error;
+}
+
 bool ComponentProvider::rename(const QString&, const QString&, QString*, QString* error) { return refused(error); }
 
 bool ComponentProvider::remove(const QString&) { return false; }

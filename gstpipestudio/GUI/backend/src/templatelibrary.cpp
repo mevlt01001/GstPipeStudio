@@ -170,6 +170,12 @@ SaveResult TemplateLibrary::save(const QString& name, gps::Graph content) {
     return r;
 }
 
+QString TemplateLibrary::nameError(const QString& name, const QString& wanted) const {
+    QString clean, error;
+    acceptName(wanted, &clean, &error, name);
+    return error;
+}
+
 bool TemplateLibrary::rename(const QString& from, const QString& to, QString* clean, QString* error) {
     const gps::Graph* old = plan(from);
     if (!old) {
@@ -185,11 +191,12 @@ bool TemplateLibrary::rename(const QString& from, const QString& to, QString* cl
     }
     if (read != fileFor(*clean)) QFile::remove(read);  // "a b" and "a_b" share a file: it now holds the new name
     reload();
+    emit renamed(from, *clean);
     return true;
 }
 
 bool TemplateLibrary::remove(const QString& name) {
-    if (!plan(name) || !QFile::remove(file(name))) return false;
+    if (!plan(name) || !QFile::moveToTrash(file(name))) return false;
     reload();
     return true;
 }

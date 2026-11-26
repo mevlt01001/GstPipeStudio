@@ -47,12 +47,13 @@ public:
 
     // The writes. Each says changed() when it wrote something.
     SaveResult save(const QString& name, gps::Graph content);  // a new template or its next revision
+    QString nameError(const QString& name, const QString& wanted) const override;  // acceptName, as a component
     bool rename(const QString& from, const QString& to, QString* clean, QString* error) override;
-    bool remove(const QString& name) override;  // projects that use it keep their own copy in their templates folder
+    bool remove(const QString& name) override;  // to the trash; projects that use it keep their own copy in templates/
     QString removalNote(const QString& name) const override;
     bool exportTo(const QString& name, const QString& file, QString* error) const override;
     QString importFrom(const QString& file, QString* error) override;  // the name it got, "" when refused
-    void reload();  // reads the folder again
+    void reload() override;  // reads the folder again
 
 private:
     static QString fileFor(const QString& name);  // the file a template of this name is written to

@@ -47,6 +47,15 @@ QMap<QString, int> ProjectFile::templates() const {
     return all;
 }
 
+QMap<QString, int> ProjectFile::templatesOf(const QString& conf) const { return confs_.value(QFileInfo(conf).fileName()); }
+
+void ProjectFile::rename(const QString& conf, const QString& to) {
+    const QString from = QFileInfo(conf).fileName();
+    if (confs_.contains(from)) confs_[QFileInfo(to).fileName()] = confs_.take(from);
+}
+
+void ProjectFile::forget(const QString& conf) { confs_.remove(QFileInfo(conf).fileName()); }
+
 void ProjectFile::record(const QString& conf, const gps::Graph& content) {
     QMap<QString, int>& uses = confs_[QFileInfo(conf).fileName()];
     uses.clear();

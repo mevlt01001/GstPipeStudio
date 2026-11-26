@@ -18,8 +18,11 @@ public:
     QString path() const { return path_; }
     QStringList confs() const { return confs_.keys(); }  // file names in the folder
     QMap<QString, int> templates() const;                // every template any conf uses -> the lowest revision held
+    QMap<QString, int> templatesOf(const QString& conf) const;  // the templates one conf uses -> the revision held
     // The conf was saved with this content: it is part of the project, using these templates.
     void record(const QString& conf, const gps::Graph& content);
+    void rename(const QString& conf, const QString& to);  // the conf's file was renamed: its entry follows
+    void forget(const QString& conf);                     // the conf left the project (moved to the trash)
     bool save(QString* error = nullptr) const;
 
 private:

@@ -49,14 +49,17 @@ public:
     // Managing the components. A provider offers in actions() what it supports; the rest refuse.
     virtual QList<ComponentAction> actions(const QString& id) const;
     virtual bool canImport() const { return false; }
-    virtual bool rename(const QString& id, const QString& to, QString* newId, QString* error);
-    virtual bool remove(const QString& id);
+    virtual QString nameError(const QString& id, const QString& wanted) const;  // why it cannot be renamed so, "" when it can
+    virtual bool rename(const QString& id, const QString& to, QString* newId, QString* error);  // says renamed()
+    virtual bool remove(const QString& id);  // to the trash
     virtual QString removalNote(const QString& id) const;  // what deleting it means for the projects that use it
     virtual bool exportTo(const QString& id, const QString& file, QString* error) const;
     virtual QString importFrom(const QString& file, QString* error);  // the id it got, "" when refused
+    virtual void reload() {}  // reads its components again (Refresh)
 
 signals:
     void changed();
+    void renamed(const QString& from, const QString& to);  // the open tab of from, and every copy of it, follow
 };
 
 // The provider of this kind among these; nullptr when there is none.
