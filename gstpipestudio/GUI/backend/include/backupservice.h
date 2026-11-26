@@ -6,8 +6,10 @@
 #pragma once
 
 #include <QByteArray>
+#include <QLockFile>
 #include <QList>
 #include <QString>
+#include <memory>
 #include <optional>
 
 #include "settings.h"
@@ -17,10 +19,16 @@ struct Backup {
     QString key;    // its target's session key: "file:…", "template:…", "untitled:N"
     QString title;  // its tab's text when it was written
     QByteArray base;  // the file content the unsaved work was based on, as DocumentRegistry hashes it; empty: none
+    QString owner;    // the running application that writes it (BackupService's instance), "" for an older backup
 };
 
+// Two applications may run at once: each holds a lock in the folder while it runs, and leaves the backups another
+// running one writes alone (it does not reopen, count or drop them). One whose application is gone is anyone's.
 class BackupService {
 public:
+    BackupService();
+    ~BackupService();
+
     // A backup the session does not name is counted at every start that offers it, and its tab writing it again starts
     // the count anew: one that no tab took up in this many starts cannot be loaded, and it goes. One the session names
     // is never counted: its tab comes back even when it could not load it (GStreamer not ready, say).
@@ -42,4 +50,11 @@ public:
 
 private:
     void count(const Settings::Session& session) const;  // one more start for every backup it does not name; the stale ones go
+    QList<Backup> ours() const;  // list(), without the backups another running application writes
+    bool foreign(const Backup& backup) const;  // another running application writes it
+    void own() const;  // this application's lock in the backups folder now in use
+
+    QString instance_;                        // this application's name in its backups and its lock
+    mutable std::unique_ptr<QLockFile> lock_;
+    mutable QString lockedIn_;                // the folder lock_ is in (tests move the folders)
 };

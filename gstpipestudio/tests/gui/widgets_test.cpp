@@ -738,6 +738,28 @@ private slots:
         useUserDir({});
     }
 
+    // The backups another running application writes are not this one's: not reopened, counted or dropped. Once that
+    // application is gone, they are.
+    void anotherRunningApplicationsBackupsAreLeftAlone() {
+        QTemporaryDir root;
+        useUserDir(root.filePath("user"));
+        BackupService& mine = services().backups();
+        {
+            BackupService other;
+            QVERIFY(other.write({"theirs", "untitled:3", "Untitled-3"}, "x"));
+            Settings::Session session;
+            session.tabs << "untitled:3";
+            session.backups << "theirs";
+            for (int start = 0; start <= BackupService::kStartsKept; ++start) {
+                QVERIFY(mine.reopen({}).isEmpty());
+                QVERIFY(mine.reopen(session).value(0).id.isEmpty());
+            }
+            QVERIFY(mine.find("theirs"));
+        }
+        QCOMPARE(mine.reopen({}).size(), 1);
+        useUserDir({});
+    }
+
     // Another program changes a tab's file: a tab without unsaved changes reads it again; one with unsaved changes is
     // not reloaded, the user chooses, and Save over the file asks first.
     void aFileChangedOnDiskReloadsOnlyACleanTab() {
