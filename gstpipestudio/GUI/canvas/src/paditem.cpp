@@ -83,15 +83,11 @@ void PadItem::mouseReleaseEvent(QGraphicsSceneMouseEvent* event) {
                 }
             }
         }
-        // Dropped directly onto an element box: find its first free sink (or src) pad and link!
+        // Dropped onto a box: the link goes to the box's first free pad of the other side.
         for (QGraphicsItem* item : canvas->items(event->scenePos())) {
-            if (auto* elem = dynamic_cast<ElementItem*>(item)) {
-                for (PadItem* p : elem->pads()) {
-                    if (p->view().ref.isSrc() != view_.ref.isSrc() && p->view().state != PadView::Linked) {
-                        canvas->padDroppedOnPad(view_, p->view());
-                        return;
-                    }
-                }
+            if (auto* box = dynamic_cast<ElementItem*>(item)) {
+                canvas->padDroppedOnBox(view_, box->view());
+                return;
             }
         }
     }

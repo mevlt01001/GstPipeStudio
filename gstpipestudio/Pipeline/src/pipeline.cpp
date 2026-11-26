@@ -115,20 +115,39 @@ void Pipeline::registerFactory(std::string name, FactoryDefinition definition) {
     factories_[std::move(name)] = std::move(definition);
     refreshPads();
 }
-void Pipeline::refreshPads() {
-    for (auto& element : graph_.elements) element.pads = padsOf(element);
+const FactoryDefinition* Pipeline::definition(const std::string& factory) const {
+    auto found = factories_.find(factory);
+    return found == factories_.end() ? nullptr : &found->second;
 }
+void Pipeline::refreshPads() {
+    for (auto& element : graph_.elements) element.pads = padsOf(graph_, element, definition(element.factory), observations_);
+}
+namespace {
+void observe(Pad& pad, const PadReport& report) {
+    pad.nativeName = report.pad;
+    pad.negotiatedCaps = report.caps;
+    pad.allowedCaps = report.allowed;
+    pad.unknownData = report.unknownData;
+}
+// A src pad's report carries its identity; sink reports of one template come in link order, so the k-th is pad k.
+const PadReport* reportOf(const UpdateResult& observed, const std::string& element, const Pad& pad, int k) {
+    if (pad.direction == Pad::Direction::Source) return observed.pad(element, pad.identity, true);
+    for (const PadReport& r : observed.pads) {
+        if (r.element == element && !r.isSrc && r.templateName == pad.templateName && k-- == 0) return &r;
+    }
+    return nullptr;
+}
+}  // namespace
 // The one place pads exist (SPEC 4): every template gives its pads, the last run tells their native names and caps.
 //   sink, not Request   one pad named after the template
 //   sink, Request       "<template>#<k>" for every link into it, at least the requested count
 //   src, Always         one pad named after the template
 //   src, Request        "<template>#<k>" up to the requested count, or further when a link or the last run used k
 //   src, Sometimes      "<template>#<k>" for every k a link or the last run used
-std::vector<Pad> Pipeline::padsOf(const Element& element) const {
+std::vector<Pad> padsOf(const Graph& graph, const Element& element, const FactoryDefinition* factory, const UpdateResult& observed) {
     std::vector<Pad> pads;
-    auto factory = factories_.find(element.factory);
-    if (factory == factories_.end()) {  // no template is known (engine, tools): the last run's reports are all there is
-        for (const PadReport& r : observations_.pads) {
+    if (!factory) {  // no template is known (engine, tools): the last run's reports are all there is
+        for (const PadReport& r : observed.pads) {
             if (r.element != element.name) continue;
             Pad pad;
             pad.identity = r.identity;
@@ -144,14 +163,14 @@ std::vector<Pad> Pipeline::padsOf(const Element& element) const {
         auto found = counts.find(name);
         return found == counts.end() ? 0 : found->second;
     };
-    for (const Pad& t : factory->second.templates) {
+    for (const Pad& t : factory->templates) {
         const bool src = t.direction == Pad::Direction::Source;
         std::vector<int> ordinals;  // -1: the pad named after the template
         if (src ? t.presence == Pad::Presence::Always : t.presence != Pad::Presence::Request) {
             ordinals = {-1};
         } else if (!src) {
             int n = requested(element.requestSink, t.templateName);
-            n = std::max(n, static_cast<int>(std::count_if(graph_.links.begin(), graph_.links.end(), [&](const Connection& l) {
+            n = std::max(n, static_cast<int>(std::count_if(graph.links.begin(), graph.links.end(), [&](const Connection& l) {
                 return l.sinkElement == element.name && l.sinkPad == t.templateName;
             })));
             for (int k = 0; k < n; ++k) ordinals.push_back(k);
@@ -162,9 +181,9 @@ std::vector<Pad> Pipeline::padsOf(const Element& element) const {
                 int k = 0;
                 if (splitPadIdentity(identity, &templateName, &k) && templateName == t.templateName) used.insert(k);
             };
-            for (const PadReport& r : observations_.pads)
+            for (const PadReport& r : observed.pads)
                 if (r.element == element.name && r.isSrc) note(r.identity);
-            for (const Connection& l : graph_.links)
+            for (const Connection& l : graph.links)
                 if (l.srcElement == element.name) note(l.srcPad);
             if (t.presence == Pad::Presence::Request) {
                 int n = std::max(requested(element.requestSrc, t.templateName), used.empty() ? 0 : *used.rbegin() + 1);
@@ -176,25 +195,11 @@ std::vector<Pad> Pipeline::padsOf(const Element& element) const {
         for (int k : ordinals) {
             Pad pad = t;
             pad.identity = k < 0 ? t.templateName : padIdentity(t.templateName, k);
-            if (const PadReport* r = report(element.name, pad, std::max(k, 0))) observe(pad, *r);
+            if (const PadReport* r = reportOf(observed, element.name, pad, std::max(k, 0))) observe(pad, *r);
             pads.push_back(std::move(pad));
         }
     }
     return pads;
-}
-void Pipeline::observe(Pad& pad, const PadReport& report) {
-    pad.nativeName = report.pad;
-    pad.negotiatedCaps = report.caps;
-    pad.allowedCaps = report.allowed;
-    pad.unknownData = report.unknownData;
-}
-// A src pad's report carries its identity; sink reports of one template come in link order, so the k-th is pad k.
-const PadReport* Pipeline::report(const std::string& element, const Pad& pad, int k) const {
-    if (pad.direction == Pad::Direction::Source) return observations_.pad(element, pad.identity, true);
-    for (const PadReport& r : observations_.pads) {
-        if (r.element == element && !r.isSrc && r.templateName == pad.templateName && k-- == 0) return &r;
-    }
-    return nullptr;
 }
 std::optional<PadRef> Pipeline::peer(const PadRef& pad) const {
     const int i = pad.isSrc() ? graph_.linkFrom(pad.element, pad.identity) : graph_.linkInto(pad.element, pad.identity);

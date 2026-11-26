@@ -303,9 +303,20 @@ void CanvasScene::padDragEnded() {
 
 void CanvasScene::padDroppedOnPad(const PadView& from, const PadView& to) {
     padDragEnded();
+    if (!locked_) link(from.ref, to.ref);
+}
+
+void CanvasScene::padDroppedOnBox(const PadView& from, const ElementView& box) {
+    padDragEnded();
     if (locked_) return;
-    const gps::PadRef& src = from.ref.isSrc() ? from.ref : to.ref;
-    const gps::PadRef& sink = from.ref.isSrc() ? to.ref : from.ref;
+    const gps::NodeRef node = box.isTemplate ? gps::NodeRef::instance(toStd(box.groupId)) : gps::NodeRef::element(toStd(box.name));
+    const auto other = controller_->shape().firstFree(node, from.ref.isSrc() ? gps::Pad::Direction::Sink : gps::Pad::Direction::Source);
+    if (other) link(from.ref, *other);
+}
+
+void CanvasScene::link(const gps::PadRef& a, const gps::PadRef& b) {
+    const gps::PadRef& src = a.isSrc() ? a : b;
+    const gps::PadRef& sink = a.isSrc() ? b : a;
     if (!src.isSrc() || sink.isSrc()) return;
     controller_->linkExisting(fromStd(src.element), fromStd(src.identity), fromStd(sink.element), fromStd(sink.linkName()));
 }

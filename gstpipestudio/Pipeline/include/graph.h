@@ -59,8 +59,9 @@ struct LinkRef {
     std::string id() const;  // "<src element>|<src pad>"
 };
 struct FactoryDefinition {
-    bool isSource = false;
+    bool isSource = false;  // no sink template
     std::vector<Pad> templates;
+    bool isSink = false;    // no src template
 };
 
 struct Element {

@@ -6,6 +6,7 @@ add_library(gps_pipeline STATIC
     src/conf.cpp
     src/files.cpp
     src/templates.cpp
+    src/nodes.cpp
     src/capstext.cpp
     src/catalog.cpp
     src/json.cpp

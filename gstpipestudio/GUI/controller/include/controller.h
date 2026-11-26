@@ -26,6 +26,7 @@
 #include "helperclient.h"
 #include "canvaslayout.h"
 #include "executionbackend.h"
+#include "nodes.h"
 #include "pipeline.h"
 #include "savetarget.h"
 #include "slowwatch.h"
@@ -51,6 +52,7 @@ public:
     // ---- state
     const gps::Graph& plan() const { return pipeline_.editor().view(); }
     const gps::Pipeline& pipeline() const { return pipeline_; }
+    gps::NodeShape shape() const { return gps::NodeShape(plan(), pipeline_); }  // nodes and their pads on the plan as it is
     const UpdateResult& result() const { return pipeline_.observations(); }  // the last validation, owned by Pipeline
     bool updating() const { return updating_; }
     bool running() const { return running_; }
@@ -245,7 +247,8 @@ private:
     QPointF freeSpot() const;
     void placeNewElement(const std::string& id);
     QString elementNote(const QString& element, bool* isError) const;
-    void subgraphExternalPads(const QStringList& members, QList<PadView>* outSinks, QList<PadView>* outSrcs) const;
+    PadView padView(const gps::Element& element, const gps::Pad& pad, bool tracked) const;
+    QList<PadView> padViews(const std::vector<gps::Port>& ports) const;
     bool linkOrderedInternal(const QStringList& expanded, QString* lastTouched = nullptr);
 
     // What GStreamer offers (gps-inspect), shared by every document; each fetched factory is registered with the Pipeline.

@@ -386,13 +386,9 @@ QStringList Controller::addTemplateAfter(const QString& srcElement, const QStrin
         const QPointF offset = QPointF(from->x + metrics::kColumn, from->y) - topLeft(*tmpl);
         const QString groupId = fromStd(gps::templates::insertTemplate(g, *tmpl, offset.x(), offset.y()));
         for (const std::string& m : gps::templates::members(g, toStd(groupId))) created << fromStd(m);
-        // srcElement.srcPad feeds the first free sink pad of the new group
-        for (const PadView& p : templateView(groupId).sinks) {
-            if (p.state != PadView::Linked) {
-                g.linkExisting(toStd(srcElement), toStd(srcPad), p.ref.element, p.ref.linkName());
-                break;
-            }
-        }
+        // srcElement.srcPad feeds the new copy's first free sink pad, worked out on the draft it is in
+        if (const auto entry = gps::NodeShape(g, pipeline_).firstFree(gps::NodeRef::instance(toStd(groupId)), gps::Pad::Direction::Sink))
+            g.linkExisting(toStd(srcElement), toStd(srcPad), entry->element, entry->linkName());
         edit.action = "Added template " + templateName + " after " + srcElement + "." + srcPad;
         edit.touched = created.value(0);
         return true;
@@ -453,67 +449,62 @@ ElementView Controller::view(const QString& name) const {
 
     const ElementInfo* inf = catalog().info(v.factory);
     if (!inf) return v;
-    v.isSource = inf->entry.isSource;
-    v.isSink = inf->entry.isSink;
+    const gps::Role role = shape().role(gps::NodeRef::element(element->name));
+    v.isSource = role == gps::Role::Source;
+    v.isSink = role == gps::Role::Sink;
     v.isTracked = plan().isElementTracked(element->name, catalog().traits());
     if (!v.isTracked && v.note.isEmpty()) {
         v.isInfo = true;
         v.note = "ℹ Unlinked sink pad — not tracked until fed by a source.";
     }
-
     // Pads: the Pipeline owns which exist (Pipeline::padsOf); the view adds what the canvas shows of them.
-    for (const gps::Pad& pad : element->pads) {
-        const bool src = pad.direction == gps::Pad::Direction::Source;
-        const PadTemplateInfo* t = inf->padTemplate(pad.templateName, src ? "src" : "sink");
-        std::string templateName;
-        int k = 0;
-        gps::splitPadIdentity(pad.identity, &templateName, &k);
-        PadView p;
-        p.ref = {element->name, pad.identity, pad.direction};
-        p.label = !pad.nativeName.empty() ? fromStd(pad.nativeName)
-                  : pad.identity == pad.templateName ? fromStd(pad.templateName) : fillTemplate(fromStd(pad.templateName), k);
-        if (src) {
-            p.link = plan().linkFrom(element->name, pad.identity);
-            const std::string& caps = pad.negotiatedCaps.empty() ? pad.allowedCaps : pad.negotiatedCaps;
-            p.media = fromStd(gps::mediaOf(caps));
-            p.tip = fromStd(caps);
-            p.caps = fromStd(pad.negotiatedCaps);
-            p.state = p.link >= 0 ? PadView::Linked : (!v.isTracked || pad.unknownData) ? PadView::Unknown : PadView::Free;
-            v.srcs << p;
-        } else {
-            p.link = plan().linkInto(element->name, pad.identity);
-            p.media = t && !t->structures.empty() ? fromStd(gps::structureTitle(t->structures.front())) : QString();
-            p.tip = fromStd(pad.templateCaps);
-            if (!pad.negotiatedCaps.empty()) {
-                p.media = fromStd(gps::mediaOf(pad.negotiatedCaps));
-                p.tip = p.caps = fromStd(pad.negotiatedCaps);
-            }
-            p.state = p.link >= 0 ? PadView::Linked : PadView::Empty;
-            v.sinks << p;
-        }
-    }
+    for (const gps::Pad& pad : element->pads) (pad.direction == gps::Pad::Direction::Source ? v.srcs : v.sinks) << padView(*element, pad, v.isTracked);
     return v;
 }
 
-void Controller::subgraphExternalPads(const QStringList& members, QList<PadView>* outSinks, QList<PadView>* outSrcs) const {
-    QSet<QString> memberSet(members.begin(), members.end());
-    for (const QString& m : members) {
-        ElementView mv = view(m);
-        if (outSinks) {
-            for (const PadView& sp : mv.sinks) {
-                bool internal = sp.link >= 0 && sp.link < static_cast<int>(plan().links.size()) &&
-                                memberSet.contains(fromStd(plan().links[sp.link].srcElement));
-                if (!internal) *outSinks << sp;
-            }
+PadView Controller::padView(const gps::Element& element, const gps::Pad& pad, bool tracked) const {
+    const bool src = pad.direction == gps::Pad::Direction::Source;
+    const ElementInfo* inf = catalog().info(fromStd(element.factory));
+    const PadTemplateInfo* t = inf ? inf->padTemplate(pad.templateName, src ? "src" : "sink") : nullptr;
+    std::string templateName;
+    int k = 0;
+    gps::splitPadIdentity(pad.identity, &templateName, &k);
+    PadView p;
+    p.ref = {element.name, pad.identity, pad.direction};
+    p.label = !pad.nativeName.empty() ? fromStd(pad.nativeName)
+              : pad.identity == pad.templateName ? fromStd(pad.templateName) : fillTemplate(fromStd(pad.templateName), k);
+    if (src) {
+        p.link = plan().linkFrom(element.name, pad.identity);
+        const std::string& caps = pad.negotiatedCaps.empty() ? pad.allowedCaps : pad.negotiatedCaps;
+        p.media = fromStd(gps::mediaOf(caps));
+        p.tip = fromStd(caps);
+        p.caps = fromStd(pad.negotiatedCaps);
+        p.state = p.link >= 0 ? PadView::Linked : (!tracked || pad.unknownData) ? PadView::Unknown : PadView::Free;
+    } else {
+        p.link = plan().linkInto(element.name, pad.identity);
+        p.media = t && !t->structures.empty() ? fromStd(gps::structureTitle(t->structures.front())) : QString();
+        p.tip = fromStd(pad.templateCaps);
+        if (!pad.negotiatedCaps.empty()) {
+            p.media = fromStd(gps::mediaOf(pad.negotiatedCaps));
+            p.tip = p.caps = fromStd(pad.negotiatedCaps);
         }
-        if (outSrcs) {
-            for (const PadView& srp : mv.srcs) {
-                bool internal = srp.link >= 0 && srp.link < static_cast<int>(plan().links.size()) &&
-                                memberSet.contains(fromStd(plan().links[srp.link].sinkElement));
-                if (!internal) *outSrcs << srp;
-            }
+        p.state = p.link >= 0 ? PadView::Linked : PadView::Empty;
+    }
+    return p;
+}
+
+// What the canvas draws of the pads a group shows: each one as its element's box would draw it.
+QList<PadView> Controller::padViews(const std::vector<gps::Port>& ports) const {
+    QList<PadView> out;
+    for (const gps::Port& port : ports) {
+        const gps::Element* e = plan().find(port.pad.element);
+        if (!e) continue;
+        for (const gps::Pad& pad : e->pads) {
+            if (pad.identity == port.pad.identity && pad.direction == port.pad.direction)
+                out << padView(*e, pad, plan().isElementTracked(e->name, catalog().traits()));
         }
     }
+    return out;
 }
 
 ElementView Controller::templateView(const QString& groupId) const {
@@ -547,9 +538,12 @@ ElementView Controller::templateView(const QString& groupId) const {
             if (!pl.startsWith("…")) propSummary << (mv.displayTitle + "." + pl);
         }
     }
-    subgraphExternalPads(members, &v.sinks, &v.srcs);
-    v.isSource = v.sinks.isEmpty() && !v.srcs.isEmpty();
-    v.isSink = !v.sinks.isEmpty() && v.srcs.isEmpty();
+    const gps::NodePorts ports = shape().ports(gps::NodeRef::instance(toStd(groupId)));
+    v.sinks = padViews(ports.sinks);
+    v.srcs = padViews(ports.srcs);
+    const gps::Role role = shape().role(gps::NodeRef::instance(toStd(groupId)));
+    v.isSource = role == gps::Role::Source;
+    v.isSink = role == gps::Role::Sink;
     v.factory = QString("template (%1) · %2").arg(members.size()).arg(factories.join(" → "));
     v.propLines = limitedLines(propSummary);
     if (!v.isTracked && v.note.isEmpty() && !v.isSource) {
@@ -567,9 +561,8 @@ FrameView Controller::frameView(const QString& instanceId) const {
     v.title = fromStd(t->templateName);
     v.members = templateMembers(instanceId);
     v.depth = static_cast<int>(gps::templates::chain(plan(), t->id).size());
-    QList<PadView> sinks, srcs;
-    subgraphExternalPads(v.members, &sinks, &srcs);
-    v.pads = sinks + srcs;
+    const gps::NodePorts ports = shape().ports(gps::NodeRef::instance(t->id));
+    v.pads = padViews(ports.sinks) + padViews(ports.srcs);
     return v;
 }
 
@@ -1042,11 +1035,10 @@ bool Controller::deleteSelection(const QStringList& elementNames, const QList<gp
     QStringList touched = expanded;
     for (const gps::LinkRef& link : links) touched << fromStd(link.src.element);
 
-    QList<PadView> extSrcs;
-    subgraphExternalPads(expanded, nullptr, &extSrcs);
-    const int exitTotalSrcPads = extSrcs.isEmpty() ? 1 : extSrcs.size();
     std::vector<std::string> names;
     for (const QString& n : expanded) names.push_back(toStd(n));
+    const size_t exits = shape().ports(names).srcs.size();
+    const int exitTotalSrcPads = exits == 0 ? 1 : static_cast<int>(exits);
 
     return transact([&](gps::Graph& g, Edit& e) {
         bool changedAny = false;
@@ -1066,38 +1058,21 @@ bool Controller::spliceElements(const QStringList& elements, const QString& link
     QStringList expanded = expandSelection(elements);
     if (expanded.isEmpty()) return false;
 
-    std::vector<std::string> fragmentIds;
-    for (const auto& id : expanded) fragmentIds.push_back(toStd(id));
-    if (!gps::GraphFragment(std::move(fragmentIds)).connected(plan())) {
-        return false;
-    }
-
-    QList<PadView> extSinks, extSrcs;
-    subgraphExternalPads(expanded, &extSinks, &extSrcs);
-
-    std::vector<std::pair<std::string, std::string>> freeSinks, freeSrcs;
-    for (const PadView& p : extSinks) {
-        if (p.state != PadView::Linked) freeSinks.emplace_back(p.ref.element, p.ref.linkName());
-    }
-    if (expanded.size() == 1) {
-        const QString& only = expanded.first();
-        if (const ElementInfo* inf = catalog().info(view(only).factory)) {
-            for (const PadTemplateInfo& t : inf->sinkTemplates()) {
-                if (t.isRequest()) {
-                    std::pair<std::string, std::string> cand{toStd(only), t.name};
-                    if (std::find(freeSinks.begin(), freeSinks.end(), cand) == freeSinks.end()) {
-                        freeSinks.push_back(cand);
-                    }
-                }
-            }
-        }
-    }
-    for (const PadView& p : extSrcs) {
-        if (p.state != PadView::Linked) freeSrcs.emplace_back(p.ref.element, p.ref.identity);
-    }
-
     std::vector<std::string> ids;
     for (const auto& id : expanded) ids.push_back(toStd(id));
+    if (!gps::GraphFragment(ids).connected(plan())) return false;
+
+    // Its free pads are where the link goes in and comes out; a single element may also take a new Request pad.
+    const gps::NodePorts ports = shape().ports(ids);
+    std::vector<std::pair<std::string, std::string>> freeSinks, freeSrcs;
+    std::vector<gps::PadRef> entries = ports.free(gps::Pad::Direction::Sink);
+    if (ids.size() == 1) entries.insert(entries.end(), ports.requests.begin(), ports.requests.end());
+    for (const gps::PadRef& p : entries) {
+        const std::pair<std::string, std::string> entry{p.element, p.linkName()};
+        if (std::find(freeSinks.begin(), freeSinks.end(), entry) == freeSinks.end()) freeSinks.push_back(entry);
+    }
+    for (const gps::PadRef& p : ports.free(gps::Pad::Direction::Source)) freeSrcs.emplace_back(p.element, p.identity);
+
     gps::InsertFragmentAction action(gps::GraphFragment(std::move(ids)),
         {toStd(linkSrcElement), toStd(linkSrcPad)}, std::move(freeSinks), std::move(freeSrcs));
     std::string error;
@@ -1193,57 +1168,35 @@ bool Controller::move(const QList<QPair<QString, QPointF>>& placements) {
     return true;
 }
 
+// Left to right (then sources, filters, sinks, then top to bottom), each element feeds the next one: its first free src
+// pad into the next one's first free sink pad, or a new Request pad of it. Worked out on the draft as it grows.
 bool Controller::linkOrderedInternal(const QStringList& expanded, QString* lastTouched) {
     if (expanded.size() < 2) return false;
+    gps::Graph& g = editGraph();
+    const gps::NodeShape shape(g, pipeline_);
+    auto rank = [&](const QString& name) {
+        const gps::Role role = shape.role(gps::NodeRef::element(toStd(name)));
+        return role == gps::Role::Source ? 0 : role == gps::Role::Sink ? 2 : 1;
+    };
     std::vector<QString> sorted(expanded.begin(), expanded.end());
-    std::stable_sort(sorted.begin(), sorted.end(), [this](const QString& a, const QString& b) {
-        const gps::Element* ea = plan().find(toStd(a));
-        const gps::Element* eb = plan().find(toStd(b));
+    std::stable_sort(sorted.begin(), sorted.end(), [&](const QString& a, const QString& b) {
+        const gps::Element* ea = g.find(toStd(a));
+        const gps::Element* eb = g.find(toStd(b));
         if (!ea || !eb) return a < b;
         if (std::abs(ea->x - eb->x) > 1.0) return ea->x < eb->x;
-        ElementView va = view(a), vb = view(b);
-        int roleA = va.isSource ? 0 : (va.isSink ? 2 : 1);
-        int roleB = vb.isSource ? 0 : (vb.isSink ? 2 : 1);
-        if (roleA != roleB) return roleA < roleB;
+        if (rank(a) != rank(b)) return rank(a) < rank(b);
         return ea->y < eb->y;
     });
 
     bool linkedAny = false;
     for (size_t i = 0; i + 1 < sorted.size(); ++i) {
-        const QString& srcEl = sorted[i];
-        const QString& snkEl = sorted[i + 1];
-        if (plan().wouldCycle(toStd(srcEl), toStd(snkEl))) continue;
-        ElementView sv = view(srcEl);
-        ElementView dv = view(snkEl);
-        QString srcPad;
-        for (const PadView& p : sv.srcs) {
-            if (p.state != PadView::Linked) {
-                srcPad = fromStd(p.ref.identity);
-                break;
-            }
-        }
-        QString sinkPad;
-        for (const PadView& p : dv.sinks) {
-            if (p.state != PadView::Linked) {
-                sinkPad = fromStd(p.ref.linkName());
-                break;
-            }
-        }
-        if (sinkPad.isEmpty()) {
-            if (const ElementInfo* inf = catalog().info(dv.factory)) {
-                for (const PadTemplateInfo& t : inf->sinkTemplates()) {
-                    if (t.isRequest()) {
-                        sinkPad = fromStd(t.name);
-                        break;
-                    }
-                }
-            }
-        }
-        if (!srcPad.isEmpty() && !sinkPad.isEmpty()) {
-            if (editGraph().linkExisting(toStd(srcEl), toStd(srcPad), toStd(snkEl), toStd(sinkPad))) {
-                linkedAny = true;
-                if (lastTouched) *lastTouched = snkEl;
-            }
+        const std::string from = toStd(sorted[i]), to = toStd(sorted[i + 1]);
+        if (g.wouldCycle(from, to)) continue;
+        const auto src = shape.firstFree(gps::NodeRef::element(from), gps::Pad::Direction::Source);
+        const auto sink = shape.firstFree(gps::NodeRef::element(to), gps::Pad::Direction::Sink);
+        if (src && sink && g.linkExisting(src->element, src->identity, sink->element, sink->linkName())) {
+            linkedAny = true;
+            if (lastTouched) *lastTouched = sorted[i + 1];
         }
     }
     return linkedAny;

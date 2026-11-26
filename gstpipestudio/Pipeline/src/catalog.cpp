@@ -44,6 +44,7 @@ std::vector<PadTemplateInfo> ElementInfo::sinkTemplatesFor(const std::vector<Str
 FactoryDefinition definitionOf(const ElementInfo& info) {
     FactoryDefinition definition;
     definition.isSource = info.entry.isSource;
+    definition.isSink = info.entry.isSink;
     for (const PadTemplateInfo& t : info.padTemplates) {
         Pad pad;
         pad.identity = pad.templateName = t.name;

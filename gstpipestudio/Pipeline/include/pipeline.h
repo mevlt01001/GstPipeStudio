@@ -44,6 +44,10 @@ public:
     virtual void cancel() = 0;
 };
 
+// Which pads an element has in a graph: its factory's templates, the links that use them and what the last run observed
+// (no definition: the observed pads only). Pipeline installs these; NodeShape asks the same of a draft.
+std::vector<Pad> padsOf(const Graph& graph, const Element& element, const FactoryDefinition* definition, const UpdateResult& observed);
+
 class Pipeline;
 class IAction {
 public:
@@ -111,6 +115,7 @@ public:
     GraphEditor& editor() { return editor_; }
     const GraphEditor& editor() const { return editor_; }
     void registerFactory(std::string name, FactoryDefinition definition);
+    const FactoryDefinition* definition(const std::string& factory) const;  // nullptr when it was not registered
     std::optional<PadRef> peer(const PadRef&) const;  // the pad at the other end of its link
     Change lastChange() const { return change_; }
     bool reset(Graph graph = {}, std::string* error = nullptr);
@@ -127,9 +132,6 @@ private:
     Graph executed(const Graph&) const;  // the part of a graph that runs
     void clearObservations();
     void refreshPads();
-    std::vector<Pad> padsOf(const Element&) const;
-    const PadReport* report(const std::string& element, const Pad&, int ordinal) const;
-    static void observe(Pad&, const PadReport&);
     std::map<std::string, FactoryDefinition> factories_;
     TraitsFn traits_;
     Graph graph_;

@@ -854,6 +854,27 @@ private slots:
         QCOMPARE(QDir(dir.path()).entryList(QDir::Files), QStringList{"p.gpsproj"});
     }
 
+    // Add after a free src pad, then a template: the copy lands linked, its first free sink pad fed by that pad.
+    void addAfterThenATemplateLinksItsFirstFreeSink() {
+        QTemporaryDir state;
+        useUserDir(state.path());
+        const Chain chain = makeChain();
+        QVERIFY(settle(*c));
+        QVERIFY(c->saveTemplate("Tail", {chain.convert, chain.sink}));
+        QVERIFY(settle(*c));
+        const QString src = addSource(*c, "videotestsrc");
+        QVERIFY(!src.isEmpty());
+        const QStringList placed = c->addTemplateAfter(src, "src", "Tail");
+        QCOMPARE(placed.size(), 2);
+        QVERIFY(settle(*c));
+        const int link = c->plan().linkFrom(toStd(src), "src");
+        QVERIFY(link >= 0);
+        const gps::Element* entry = c->plan().find(c->plan().links[static_cast<size_t>(link)].sinkElement);
+        QCOMPARE(entry->factory, std::string("videoconvert"));
+        QVERIFY(placed.contains(fromStd(entry->name)));
+        useUserDir({});
+    }
+
     void aChangedTemplateCopyAsksThenUpdatesTheLibraryAndTheOtherCopies() {
         QTemporaryDir state, dir;
         useUserDir(state.path());

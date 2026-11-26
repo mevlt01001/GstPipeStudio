@@ -23,6 +23,7 @@ class PadItem;
 class FrameGhost;
 class TemplateFrameItem;
 struct PadView;
+struct ElementView;
 
 class CanvasScene : public QGraphicsScene {
     Q_OBJECT
@@ -52,6 +53,7 @@ public:
     void padDragMoved(const PadView& from, const QPointF& scenePos);
     void padDragEnded();
     void padDroppedOnPad(const PadView& from, const PadView& to);
+    void padDroppedOnBox(const PadView& from, const ElementView& box);
     void elementContext(const QString& element, const QPoint& screenPos);
     void elementDoubleClicked(const QString& element);
     void elementDragged(const QString& element, const QPointF& pos);
@@ -116,4 +118,5 @@ private:
     QHash<QString, QPointF> animateFrom_;  // after a nice alignment: where the boxes were, to slide them from there
     QPointer<QVariantAnimation> slide_;
     void slide();
+    void link(const gps::PadRef& a, const gps::PadRef& b);  // whichever is the src pad feeds the other
 };
