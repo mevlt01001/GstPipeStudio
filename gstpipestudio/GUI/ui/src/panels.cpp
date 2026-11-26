@@ -17,13 +17,12 @@ void Panels::add(QWidget* panel, const QString& title, int room, Qt::DockWidgetA
         return;
     }
     auto* dock = new QDockWidget(title, window_);
-    QString name = title;
-    dock->setObjectName("panel" + name.remove(' '));  // what the remembered layout knows it by
+    dock->setObjectName(objectNameOf(title));  // what the remembered layout knows it by
     auto* pages = new QStackedWidget(dock);
     pages->addWidget(panel);
     dock->setWidget(pages);
     dock->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable | QDockWidget::DockWidgetClosable);
-    dock->toggleViewAction()->setObjectName("actionPanel" + name);
+    dock->toggleViewAction()->setObjectName("actionPanel" + QString(title).remove(' '));
     window_->addDockWidget(side, dock);
     if (QDockWidget* first = firstOn(side)) window_->tabifyDockWidget(first, dock);
     docks_ << dock;
@@ -38,12 +37,15 @@ QDockWidget* Panels::firstOn(Qt::DockWidgetArea side) const {
     return nullptr;
 }
 
+// By its name, not its title: a title can change (the Explorer counts unsaved tabs).
 QDockWidget* Panels::titled(const QString& title) const {
     for (QDockWidget* d : docks_) {
-        if (d->windowTitle() == title) return d;
+        if (d->objectName() == objectNameOf(title)) return d;
     }
     return nullptr;
 }
+
+QString Panels::objectNameOf(QString title) { return "panel" + title.remove(' '); }
 
 QDockWidget* Panels::dock(QWidget* panel) const {
     for (QDockWidget* d : docks_) {
@@ -52,8 +54,13 @@ QDockWidget* Panels::dock(QWidget* panel) const {
     return nullptr;
 }
 
+// View > Panels keeps the panel's own name: Qt gives its toggle the new title, so it gets the old text back.
 void Panels::retitle(QWidget* panel, const QString& title) {
-    if (QDockWidget* d = dock(panel); d && d->windowTitle() != title) d->setWindowTitle(title);
+    QDockWidget* d = dock(panel);
+    if (!d || d->windowTitle() == title) return;
+    const QString name = d->toggleViewAction()->text();
+    d->setWindowTitle(title);
+    d->toggleViewAction()->setText(name);
 }
 
 void Panels::bring(QWidget* panel) {

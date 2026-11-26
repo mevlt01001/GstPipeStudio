@@ -119,6 +119,18 @@ void doubleClick(QWidget* widget, const QPoint& at) {
     QTest::mouseDClick(widget, Qt::LeftButton, Qt::NoModifier, at);
 }
 
+// The words of the open menu's actions, and the menu closed.
+QStringList takeMenu(QWidget* window) {
+    QStringList offered;
+    QMenu* menu = shown<QMenu>(window);
+    if (!menu) return offered;
+    for (QAction* a : menu->actions()) {
+        if (!a->isSeparator()) offered << a->text();
+    }
+    menu->close();
+    return offered;
+}
+
 // Triggers an action of the open menu. A dialog opened by the action closes the popup, so look at the menu first.
 void choose(QWidget* window, const char* action) {
     QPointer<QMenu> menu = visibleChild<QMenu>(window);
@@ -837,6 +849,10 @@ private slots:
         QApplication::sendEvent(list->viewport(), &leave);
         QVERIFY(waitFor([&] { return TemplatePeek::current() == nullptr; }, 2000));
 
+        // Its right click is the library's menu, the Explorer's own (FileOperations).
+        emit list->customContextMenuRequested(row);
+        QCOMPARE(takeMenu(&w), QStringList({"Edit template", "Rename", "Export…", "Delete"}));
+
         // Choosing it inserts it collapsed, as one box, and nice alignment finds it a place.
         QSignalSpy aligned(&c->canvasLayout(), &CanvasLayout::aligned);
         list->setCurrentRow(1);
@@ -920,11 +936,7 @@ private slots:
         QTreeWidgetItem* tail = tree->topLevelItem(2)->child(0);
         tree->scrollToItem(tail);
         emit tree->customContextMenuRequested(tree->visualItemRect(tail).center());
-        QVERIFY(waitFor([&] { return visibleChild<QMenu>(&w) != nullptr; }));
-        QStringList offered;
-        for (QAction* a : visibleChild<QMenu>(&w)->actions()) if (!a->isSeparator()) offered << a->text();
-        QCOMPARE(offered, QStringList({"Edit template", "Rename", "Export…", "Delete"}));
-        visibleChild<QMenu>(&w)->close();
+        QCOMPARE(takeMenu(&w), QStringList({"Edit template", "Rename", "Export…", "Delete"}));
         QVERIFY(settle(*w.document()->controller()));
         Settings::setProjectsLocation({});
         useUserDir({});
@@ -952,6 +964,7 @@ private slots:
         QVERIFY(!addAfter(*c, fromStd(c->plan().elements.front().name), "src", "fakesink").isEmpty());
         QCOMPARE(row("project", door)->text(0), QString("door.conf ●"));
         QCOMPARE(w.panels()->dock(w.explorer())->windowTitle(), QString("Explorer · 1 unsaved"));
+        QCOMPARE(w.findChild<QAction*>("actionPanelExplorer")->text(), QString("Explorer"));  // View > Panels keeps its name
         QVERIFY(c->undo());
         QCOMPARE(row("project", door)->text(0), QString("door.conf"));
         QCOMPARE(w.panels()->dock(w.explorer())->windowTitle(), QString("Explorer"));

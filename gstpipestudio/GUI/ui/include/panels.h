@@ -38,4 +38,5 @@ private:
     QHash<QDockWidget*, Qt::DockWidgetArea> side_;
     QDockWidget* firstOn(Qt::DockWidgetArea side) const;
     QDockWidget* titled(const QString& title) const;
+    static QString objectNameOf(QString title);  // "panelLiveMetrics": what the remembered layout knows it by
 };
