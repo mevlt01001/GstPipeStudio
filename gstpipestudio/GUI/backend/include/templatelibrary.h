@@ -18,7 +18,7 @@ class TemplateLibrary : public ComponentProvider {
     Q_OBJECT
 public:
     // Reads the folder now; its components are described with what the catalog knows of their factories.
-    explicit TemplateLibrary(const FactoryCatalog& catalog, QObject* parent = nullptr);
+    explicit TemplateLibrary(FactoryCatalog& catalog, QObject* parent = nullptr);
 
     static QString directory();  // AppPaths::templates()
     static ComponentRef ref(const QString& name) { return {kKind, name}; }
@@ -58,8 +58,9 @@ private:
     static QString fileFor(const QString& name);  // the file a template of this name is written to
     QString holder(const QString& name, const QString& except) const;  // the other template with this name or file, "" if none
     SaveResult write(const QString& name, gps::Graph content);  // the file and its history, no signal
+    void describe();  // asks the catalog for the factories its templates use that it has not described yet
 
-    const FactoryCatalog& catalog_;
+    FactoryCatalog& catalog_;
     QStringList names_;
     std::map<QString, gps::Graph> plans_;
     std::map<QString, QString> files_;  // name -> the file it was read from; older versions named some differently

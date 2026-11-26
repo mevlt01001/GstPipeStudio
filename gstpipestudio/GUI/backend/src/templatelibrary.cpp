@@ -14,7 +14,7 @@
 #include "templates.h"
 #include "versionhistory.h"
 
-TemplateLibrary::TemplateLibrary(const FactoryCatalog& catalog, QObject* parent) : ComponentProvider(parent), catalog_(catalog) {
+TemplateLibrary::TemplateLibrary(FactoryCatalog& catalog, QObject* parent) : ComponentProvider(parent), catalog_(catalog) {
     connect(&catalog, &FactoryCatalog::ready, this, &TemplateLibrary::reload);
     reload();
 }
@@ -58,7 +58,22 @@ void TemplateLibrary::reload() {
         files_[name] = dir.filePath(f);
         names_ << name;
     }
+    describe();
     emit changed();
+}
+
+// A template's ports and role come from its factories' definitions, which the catalog has only for the factories some
+// tab asked about. Once the catalog has its list, the library asks for the rest; a factory not installed is left out.
+void TemplateLibrary::describe() {
+    if (!catalog_.loaded()) return;
+    QStringList missing;
+    for (const auto& [name, content] : plans_) {
+        for (const gps::Element& e : content.elements) {
+            const QString factory = fromStd(e.factory);
+            if (!catalog_.definition(factory) && catalog_.entry(factory) && !missing.contains(factory)) missing << factory;
+        }
+    }
+    catalog_.fetchInfos(missing, this, [](bool) {});
 }
 
 // A template is described as one node: its pads are those its members leave free. A factory the catalog has not
