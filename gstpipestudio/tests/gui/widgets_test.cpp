@@ -1929,11 +1929,11 @@ private slots:
         QVERIFY(label().contains("Empty canvas"));
         QVERIFY(act("actionRun")->toolTip().contains("The canvas is empty"));  // a disabled action says why
 
-        // updating: document replacement waits; canvas edits stay available
+        // updating: canvas edits stay available, and New and Open open another tab
         need(*c, "videotestsrc");
         QVERIFY(c->addElement("videotestsrc", {}));
         refreshed();
-        QVERIFY(!act("actionNew")->isEnabled() && !act("actionOpen")->isEnabled() && act("actionAddElement")->isEnabled());
+        QVERIFY(act("actionNew")->isEnabled() && act("actionOpen")->isEnabled() && act("actionAddElement")->isEnabled());
         QVERIFY(act("actionSave")->isEnabled() && !act("actionRun")->isEnabled());
         QVERIFY(label().contains("keep editing"));
         QVERIFY(act("actionRun")->toolTip().contains("Validation is running"));

@@ -152,7 +152,7 @@ QString MainWindow::copyTitle() const { return fromStd(controller()->names().ins
 // The one table of commands: what each does, and why it is off.
 void MainWindow::buildCommands() {
     using C = Command;
-    auto busy = [this] { return busyReason(); };
+    auto environment = [this] { return environmentReason(); };  // a new tab never waits for the front one (DocumentTabs::target)
     auto edit = [this] { return editReason(); };
     auto add = [this] { return addReason(); };
     auto selected = [this] { return selectionReason(); };
@@ -160,11 +160,11 @@ void MainWindow::buildCommands() {
     auto withPlan = [this] { return firstOf(editReason(), controller()->plan().empty() ? "The canvas is empty" : QString()); };
     auto target = [this] { return commands_->target(); };
     commands_->add({
-        {C::New, "actionNew", "&New", {QKeySequence::New}, [this] { if (!front()->pristine()) newDocument(); }, busy},
+        {C::New, "actionNew", "&New", {QKeySequence::New}, [this] { if (!front()->pristine()) newDocument(); }, environment},
         {C::NewProject, "actionNewProject", "New &project…", {QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_N)}, [this] { files_->newProject(); }},
         {C::Open, "actionOpen", "&Open…", {QKeySequence::Open}, [this] {
              if (const QString path = PipelineFileDialog::choose(this, false, Settings::lastDir()); !path.isEmpty()) openFile(path);
-         }, busy},
+         }, environment},
         {C::Save, "actionSave", "&Save", {QKeySequence::Save}, [this] { saveFlow_->save(front()); }, edit},
         {C::SaveAs, "actionSaveAs", "Save &as…", {QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_S)}, [this] { saveFlow_->saveAs(front()); }, edit},
         {C::SaveAll, "actionSaveAll", "Save a&ll", {QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_S)}, [this] { saveFlow_->saveAll(documents()); }, [this] {
@@ -173,7 +173,7 @@ void MainWindow::buildCommands() {
          }},
         {C::Revert, "actionRevert", "Re&vert file", {}, [this] { controller()->revert(); }, [this] { return controller()->canRevert() ? QString() : "Nothing to revert"; }},
         {C::CloseTab, "actionCloseTab", "&Close tab", {QKeySequence(Qt::CTRL | Qt::Key_W), QKeySequence(Qt::CTRL | Qt::Key_F4)}, [this] { closeDocument(front()); }},
-        {C::ImportLaunch, "actionImportLaunch", "Import gst-launch pipeline…", {}, [this] { importLaunch(); }, busy},
+        {C::ImportLaunch, "actionImportLaunch", "Import gst-launch pipeline…", {}, [this] { importLaunch(); }, environment},
         {C::VersionHistory, "actionVersionHistory", "Version &history…", {}, [this] { showVersionHistory(); }, [this] {
              return firstOf(busyReason(), VersionHistory::versions(front()->path()).isEmpty() ? "No earlier versions" : QString());
          }},
@@ -222,10 +222,10 @@ void MainWindow::buildCommands() {
         {C::DisconnectSelected, "actionDisconnectSelected", "Disconnect selected", {}, [this] { controller()->disconnectBetweenElements(front()->selection()); }, pair},
         {C::AlignSelection, "actionAlignSelection", "Auto align", {}, [this] { front()->alignSelection(); }, selected},
         {C::Validate, "actionUpdate", "&Validate", {QKeySequence(Qt::CTRL | Qt::Key_R), QKeySequence(Qt::Key_F5)}, [this] { controller()->refresh(); }, [this] {
-             return controller()->plan().empty() ? "The canvas is empty" : controller()->busyReason();
+             return firstOf(busyReason(), controller()->plan().empty() ? "The canvas is empty" : QString());
          }},
         {C::Run, "actionRun", "&Run", {QKeySequence(Qt::CTRL | Qt::Key_Return)}, [this] { controller()->running() ? controller()->stopRun() : (void)controller()->run(); },
-         [this] { return controller()->running() ? QString() : controller()->runBlockedReason(); }},
+         [this] { return controller()->running() ? QString() : firstOf(environmentReason(), controller()->runBlockedReason()); }},
 
         {C::GstInfo, "actionGstInfo", "&GStreamer information", {}, [this] {
              const StartupResult& env = services_.environment().result();
