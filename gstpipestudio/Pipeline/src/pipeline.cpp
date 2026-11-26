@@ -12,9 +12,8 @@ std::string executionKey(Graph graph) {
     graph.instances.clear();  // template instances are presentation: the engine never reads them
     return graph.toConf();
 }
-// Nothing changed: the saved text, and the canvas positions it leaves out.
-bool same(const Graph& a, const Graph& b) {
-    if (a.toConf() != b.toConf()) return false;
+// Used after comparing the elements in the saved form.
+bool samePositions(const Graph& a, const Graph& b) {
     for (size_t i = 0; i < a.elements.size(); ++i)
         if (a.elements[i].x != b.elements[i].x || a.elements[i].y != b.elements[i].y) return false;
     return true;
@@ -180,10 +179,11 @@ void GraphEditor::rollback() { draft_.reset(); }
 bool GraphEditor::commit(std::string* error) {
     if (!draft_) return false;
     if (!Pipeline::validate(*draft_, error)) { rollback(); return false; }
-    if (same(*draft_, document_.graph_)) { rollback(); return false; }
+    const bool contentChanged = draft_->toConf() != document_.graph_.toConf();
+    if (!contentChanged && samePositions(*draft_, document_.graph_)) { rollback(); return false; }
     Graph next = std::move(*draft_); rollback();
     const std::uint64_t before = state_;
-    if (next.toConf() != document_.graph_.toConf()) renumber();
+    if (contentChanged) renumber();
     undo_.push_back({document_.graph_, next, before, state_});
     if (undo_.size() > 64) undo_.erase(undo_.begin());
     redo_.clear();

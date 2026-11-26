@@ -384,9 +384,9 @@ void MainWindow::wire(Document* d) {
     Controller* c = d->controller();
     CanvasScene* scene = d->scene();
     auto isFront = [this, d] { return d == front(); };
-    connect(scene, &CanvasScene::elementMenuRequested, this, [this, d](const QString& e, const QPoint& at) { menus_->element(*d, e, at); }, Qt::QueuedConnection);
-    connect(scene, &CanvasScene::templateMenuRequested, this, [this, d](const QString& id, const QPoint& at) { menus_->templateFrame(*d, id, at); }, Qt::QueuedConnection);
-    connect(scene, &CanvasScene::canvasContextMenuRequested, this, [this, d](const QPoint& at, const QPointF&) { menus_->canvas(*d, at); }, Qt::QueuedConnection);
+    connect(scene, &CanvasScene::elementMenuRequested, d, [this, d](const QString& e, const QPoint& at) { menus_->element(*d, e, at); }, Qt::QueuedConnection);
+    connect(scene, &CanvasScene::templateMenuRequested, d, [this, d](const QString& id, const QPoint& at) { menus_->templateFrame(*d, id, at); }, Qt::QueuedConnection);
+    connect(scene, &CanvasScene::canvasContextMenuRequested, d, [this, d](const QPoint& at, const QPointF&) { menus_->canvas(*d, at); }, Qt::QueuedConnection);
     connect(scene, &CanvasScene::linkMenuRequested, menus_, &ContextMenus::link, Qt::QueuedConnection);
     connect(scene, &QGraphicsScene::selectionChanged, this, [this, isFront] { if (isFront()) scheduleRefresh(); });
     connect(d->view(), &CanvasView::deletePressed, d, &Document::deleteSelection);
@@ -414,8 +414,8 @@ void MainWindow::activated(Document* d) {
     if (!built_) return;
     onEnvironment();
     const QStringList outdated = d->takeOutdated();
-    if (!outdated.isEmpty()) QTimer::singleShot(0, this, [this, d, outdated] { if (d == front()) askTemplatesOutdated(outdated); });
-    if (const auto why = d->takeChangedOnDisk()) QTimer::singleShot(0, this, [this, d, why] { if (d == front()) onChangedOnDisk(d, *why); });
+    if (!outdated.isEmpty()) QTimer::singleShot(0, d, [this, d, outdated] { if (d == front()) askTemplatesOutdated(outdated); });
+    if (const auto why = d->takeChangedOnDisk()) QTimer::singleShot(0, d, [this, d, why] { if (d == front()) onChangedOnDisk(d, *why); });
 }
 
 Document* MainWindow::newDocument() { return tabs_->add(); }

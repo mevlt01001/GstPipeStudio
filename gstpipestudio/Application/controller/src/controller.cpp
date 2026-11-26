@@ -534,7 +534,6 @@ bool Controller::linkInOrder(gps::Graph& g, const QStringList& expanded, QString
     bool linkedAny = false;
     for (size_t i = 0; i + 1 < sorted.size(); ++i) {
         const std::string from = toStd(sorted[i]), to = toStd(sorted[i + 1]);
-        if (g.wouldCycle(from, to)) continue;
         const auto src = shape.firstFree(gps::NodeRef::element(from), gps::Pad::Direction::Source);
         const auto sink = shape.firstFree(gps::NodeRef::element(to), gps::Pad::Direction::Sink);
         if (src && sink && g.linkExisting(src->element, src->identity, sink->element, sink->linkName())) {
