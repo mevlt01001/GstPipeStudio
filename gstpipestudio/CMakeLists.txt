@@ -27,10 +27,10 @@ enable_testing()
 include(GNUInstallDirs)
 set(GPS_PRIVATE_DIR lib/gstpipestudio)
 
-# The three product units are Pipeline, GstEngine and GUI. Other targets are entrypoints/tests.
+# The product units are Pipeline, GstEngine, Application and GUI.
 # GPS_DIRS lets one developer build only what they work on while others are mid-edit:
-#   -DGPS_DIRS="Pipeline;GUI;tests" -DGPS_TEST_DIRS="unit;gui"
-set(GPS_DIRS "Pipeline;GstEngine;tools;plugin;GUI;packaging;tests" CACHE STRING "Directories to build")
+#   -DGPS_DIRS="Pipeline;Application;GUI;tests" -DGPS_TEST_DIRS="unit;gui"
+set(GPS_DIRS "Pipeline;GstEngine;tools;plugin;Application;GUI;packaging;tests" CACHE STRING "Directories to build")
 set(GPS_TEST_DIRS "unit;engine;cli;plugin;gui;sweep;deepstream" CACHE STRING "Test groups to build")
 foreach(dir ${GPS_DIRS})
     if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${dir}/CMakeLists.txt)

@@ -5,7 +5,7 @@ The desktop entry point constructs `GstPipeStudio`, which owns the shared servic
 | Unit | Target | Responsibility |
 |---|---|---|
 | `gstpipestudio/Pipeline` | `GstPipeStudio::Pipeline` / `gps_pipeline` | Authored graph, pad descriptors, transactions, history, discovery and execution contracts. No Qt or GStreamer. |
-| Application | `gps_application` | Document use cases, persistence, components, layout and process transport. Depends on Pipeline and Qt Gui. |
+| `gstpipestudio/Application` | `GstPipeStudio::Application` / `gps_application` | Document use cases, persistence, components, layout and process transport. Depends on Pipeline and Qt Gui. |
 | `gstpipestudio/GUI` | `GstPipeStudio::GUI` / `gps_gui` | Canvas, interaction, catalog/property panels and dialogs. Depends on the application layer and Qt Widgets. |
 | `gstpipestudio/GstEngine` | `GstPipeStudio::GstEngine` / `gps_gstengine` | Native factory inspection, graph construction, pad binding, preview and execution. Depends on Pipeline and GStreamer. |
 | `gstpipestudio/third_party` | `gps_quickjs`, a resource | QuickJS (MIT) and elkjs (EPL-2.0), vendored unchanged, for the layout engine. |
