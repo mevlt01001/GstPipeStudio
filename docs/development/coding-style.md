@@ -22,6 +22,14 @@
 - Keep templates first-class. Preserve revision, nested instance, parameter and boundary-pad semantics. Custom element providers use the same component discovery and placement path. A provider owns its specialized behavior and reports its supported operations.
 - Treat a protocol or file format as a compatibility boundary. Verify previously saved files and normal entry points before changing it. A single in-memory rule may have different diagnostics at different boundaries.
 
+## Branching and configuration
+
+- Keep control flow small and local. A feature variant registers behavior once at its owner. Prefer an interface when variants own state or resources. Use a typed function table when variants differ by operations on values. One registration includes the variant's behavior and metadata, such as selection, defaults and comparison.
+- Review branches introduced by a change regardless of syntax. Repeated checks for a concrete type, mode, capability or configuration value usually identify a decision that belongs with the selected behavior. Replace the repeated decision at its owner and route existing callers through it.
+- Keep conditions where they express an invariant, an input guard, an error or an explicit transition in a closed state machine. Track branch counts as a review signal. A count alone cannot establish whether a condition is necessary.
+- Locate settings at the owner of the behavior they influence. Expose meaningful choices through typed constructor options. Read environment variables, persisted preferences or command arguments in the relevant adapter. Validate values at that boundary and inject the result. Use private state for invariants, lifecycle and resource ownership.
+- Use one persisted representation and one in-memory owner per concept. Delete a compatibility path when support for that version is retired. Identify affected formats and check file ownership before removal. A shared code path for current behavior should have tests for its normal and failure cases.
+
 ## Ownership and work across threads
 
 - Use scoped values and RAII for files, processes and native references. Use a Qt parent for parent-owned objects or `std::unique_ptr` for exclusive C++ ownership. Use shared ownership only when multiple owners must independently keep the object alive. Raw pointers and references are borrowed.
@@ -33,6 +41,10 @@
 - Follow the root `.clang-format` and `.editorconfig`. Use four-space indentation, a 140-column C++ limit, left-aligned pointer markers, `PascalCase` types, `camelCase` functions and variables, and a trailing underscore on private data members. Keep existing public naming contracts and GStreamer C entry points.
 - Keep functions at one level of responsibility and name the states they handle. Prefer a scoped enum for a closed state set. Write comments for constraints such as pad identity or ownership and remove comments made stale by the change.
 - Cover regressions at the smallest relevant boundary. Exercise a shared graph rule through each entry point that changed, and test async cancellation, stale results, or partial writes when the change touches those paths. Run the prescribed Docker build and test commands in [AGENTS.md](../../AGENTS.md).
+
+## Changes to these rules
+
+Propose a change to this style or the root repository instructions in a dedicated change. Explain the original constraint, the concrete design problem, the proposed rule, affected entry points and the evidence required to verify it. Obtain maintainer approval before applying the new rule to feature implementation.
 
 ## References
 

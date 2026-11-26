@@ -1,4 +1,4 @@
-# Keep older GPS_DIRS selections that list GUI without Application working.
+# Resolve the application dependency for selective GUI builds.
 if(NOT TARGET gps_application)
     add_subdirectory(${GPS_ROOT}/Application ${CMAKE_BINARY_DIR}/Application)
 endif()
