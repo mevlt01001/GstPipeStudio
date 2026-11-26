@@ -85,7 +85,10 @@ ExplorerEntry ExplorerSource::header(const EditorState& editor) const {
 QList<ExplorerAction> ExplorerSource::actions(const ExplorerEntry& e) const {
     if (e.kind == Kind::Section) return sectionActions();
     if (e.kind == Kind::Hint) return {};
-    if (e.state == State::Missing) return {ExplorerAction::CopyPath};
+    // A conf not on disk: its tab, when one has it open (a new project before its first save, a file deleted under it),
+    // can still come to the front.
+    if (e.kind == Kind::Conf && !QFileInfo::exists(e.path))
+        return e.state == State::Missing ? QList<ExplorerAction>{ExplorerAction::CopyPath} : QList<ExplorerAction>{ExplorerAction::Open, ExplorerAction::CopyPath};
     return rowActions(e);
 }
 

@@ -138,7 +138,8 @@ QString Explorer::title() const { return editor_.unsaved ? QString("Explorer · 
 
 ExplorerEntry Explorer::sourceEntry(const QTreeWidgetItem* item) const { return item->data(0, kEntry).value<ExplorerEntry>(); }
 
-QList<ExplorerAction> Explorer::actionsOf(const QTreeWidgetItem* item) { return sectionOf(item)->source->actions(sourceEntry(item)); }
+// Decided on the row as it is drawn: an open tab's state over the disk's.
+QList<ExplorerAction> Explorer::actionsOf(const QTreeWidgetItem* item) { return sectionOf(item)->source->actions(entryOf(item)); }
 
 // The editor's state of the tab the row opens in wins over what the disk says.
 ExplorerEntry Explorer::entryOf(const QTreeWidgetItem* item) const {

@@ -42,6 +42,7 @@
 #include "backupservice.h"
 #include "explorer.h"
 #include "explorerentry.h"
+#include "explorersource.h"
 #include "fileoperations.h"
 #include "projectfile.h"
 #include "tabclosebutton.h"
@@ -1149,6 +1150,22 @@ private slots:
         QVERIFY(!tab->fileDeleted());  // its old file went with the rename: no deleted mark
         QVERIFY(!w.findChild<QMessageBox*>("changedOnDisk"));
         useUserDir({});
+    }
+
+    // A conf not on disk that a tab has open (a new project before its first save, a file deleted under it) opens its
+    // tab from the Explorer; one no tab has offers only its path.
+    void aConfNotOnDiskOpensItsTabFromTheExplorer() {
+        QTemporaryDir root;
+        ProjectSection section(c->services().library(), nullptr);
+        ExplorerEntry e;
+        e.kind = ExplorerEntry::Kind::Conf;
+        e.path = root.filePath("fresh/fresh.conf");
+        for (auto state : {ExplorerEntry::State::Open, ExplorerEntry::State::Unsaved, ExplorerEntry::State::Deleted}) {
+            e.state = state;
+            QCOMPARE(section.actions(e), (QList<ExplorerAction>{ExplorerAction::Open, ExplorerAction::CopyPath}));
+        }
+        e.state = ExplorerEntry::State::Missing;
+        QCOMPARE(section.actions(e), QList<ExplorerAction>{ExplorerAction::CopyPath});
     }
 
     // Del moves to the trash after a confirm, which warns when the file is open with unsaved changes.
