@@ -1,6 +1,7 @@
 // files.h – the one way the application writes a file, and the one way it turns a name into a file name.
-// A write goes to a temporary file in the same folder first and replaces the file only when it is complete, so a
-// crash or a full disk never leaves half a file behind. Every conf, manifest, registry, library and history copy
+// A write goes to a temporary file in the same folder first, reaches the disk (fsync) and replaces the file only when
+// it is complete, so a crash, a power loss or a full disk never leaves half a file behind. The file keeps its mode, and
+// a link to it stays a link. Every conf, manifest, registry, library and history copy
 // is written through it.
 #pragma once
 

@@ -336,7 +336,8 @@ static void confRoundTrip() {
     CHECK_EQ(u.elements.size(), p.elements.size());
 }
 
-// One writer: the folder is made, the file replaced whole, nothing left beside it; one sanitizer for file names.
+// One writer: the folder is made, the file replaced whole (its mode and links kept), nothing left beside it; one
+// sanitizer for file names.
 static void fileWrites() {
     const std::filesystem::path folder = std::filesystem::temp_directory_path() / ("gps_files_" + std::to_string(::getpid()));
     const std::string path = (folder / "new" / "a.conf").string();
@@ -347,6 +348,17 @@ static void fileWrites() {
     std::string back((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     CHECK_EQ(back, std::string("two"));
     CHECK_EQ(std::distance(std::filesystem::directory_iterator(folder / "new"), std::filesystem::directory_iterator()), 1L);
+    // The file keeps its mode, and a link to it stays a link while the file it points at is replaced.
+    namespace fs = std::filesystem;
+    fs::permissions(path, fs::perms::owner_read | fs::perms::owner_write | fs::perms::group_write);
+    const fs::path link = folder / "link.conf";
+    fs::create_symlink(path, link);
+    CHECK(files::writeAtomic(link.string(), "three", &error));
+    CHECK(fs::is_symlink(link));
+    CHECK((fs::status(path).permissions() & fs::perms::group_write) != fs::perms::none);
+    std::ifstream again(path);
+    std::string through((std::istreambuf_iterator<char>(again)), std::istreambuf_iterator<char>());
+    CHECK_EQ(through, std::string("three"));
     CHECK(!files::writeAtomic("/proc/no/such.conf", "x", &error));
     CHECK(error.find("cannot write") == 0);
     CHECK_EQ(files::safeName("My cam: 2/ü"), std::string("My_cam__2___"));
