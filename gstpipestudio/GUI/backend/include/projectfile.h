@@ -21,8 +21,8 @@ public:
     QMap<QString, int> templatesOf(const QString& conf) const;  // the templates one conf uses -> the revision held
     // The conf was saved with this content: it is part of the project, using these templates.
     void record(const QString& conf, const gps::Graph& content);
-    void rename(const QString& conf, const QString& to);  // the conf's file was renamed: its entry follows
-    void forget(const QString& conf);                     // the conf left the project (moved to the trash)
+    bool rename(const QString& conf, const QString& to);  // the conf's file was renamed: its entry follows; false when unlisted
+    bool forget(const QString& conf);                     // the conf left the project (moved to the trash); false when unlisted
     bool save(QString* error = nullptr) const;
 
 private:

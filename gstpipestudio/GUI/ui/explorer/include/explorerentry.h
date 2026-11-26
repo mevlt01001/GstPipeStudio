@@ -33,7 +33,8 @@ struct ExplorerEntry {
     QString id() const { return origin + "|" + path; }  // which row it is, across rebuilds
     QString key() const;       // the session key of the tab it opens in (SaveTarget), "" when it opens in none
     QString location() const;  // the file or folder on disk: a project's folder; "" for a component
-    bool onDisk() const { return kind == Kind::Folder || kind == Kind::File || kind == Kind::Conf || kind == Kind::Project; }
+    bool isFolder() const { return kind == Kind::Folder || kind == Kind::Project; }
+    bool onDisk() const { return isFolder() || kind == Kind::File || kind == Kind::Conf; }
     bool operator==(const ExplorerEntry& other) const;
 };
 Q_DECLARE_METATYPE(ExplorerEntry)

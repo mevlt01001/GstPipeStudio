@@ -12,8 +12,8 @@
 #include <QWidget>
 
 #include "explorerentry.h"
+#include "explorersource.h"
 
-class ExplorerSource;
 class FileOperations;
 class QTreeWidget;
 class QTreeWidgetItem;
@@ -52,6 +52,7 @@ private:
     void startRename(const QString& entryId);
     Section* sectionOf(const QTreeWidgetItem* item);
     ExplorerEntry sourceEntry(const QTreeWidgetItem* item) const;  // as its section made it
+    QList<ExplorerAction> actionsOf(const QTreeWidgetItem* item);  // what its section offers for it
 
     QList<Section> sections_;
     FileOperations& operations_;

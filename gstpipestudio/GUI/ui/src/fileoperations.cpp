@@ -27,13 +27,10 @@ using Kind = ExplorerEntry::Kind;
 
 namespace {
 
-ExplorerEntry componentOf(const QString& kind, const QString& id) {
-    ExplorerEntry e;
-    e.kind = Kind::Component;
-    e.origin = kind;
-    e.path = id;
-    e.name = id;
-    return e;
+// The manifest of a conf's project, changed by edit and written when edit changed it (the conf is listed).
+void editManifest(const QString& conf, const std::function<bool(ProjectFile&)>& edit) {
+    ProjectFile manifest = ProjectFile::load(ProjectFile::pathForConf(conf));
+    if (edit(manifest)) manifest.save();
 }
 
 }  // namespace
@@ -41,8 +38,9 @@ ExplorerEntry componentOf(const QString& kind, const QString& id) {
 FileOperations::FileOperations(AppServices& services, MainWindow* window) : QObject(window), services_(services), window_(window) {
     // Renamed anywhere (here, the picker, a test), a component's tab follows: it saves under the new name.
     for (ComponentProvider* provider : services.providers()) {
-        connect(provider, &ComponentProvider::renamed, this, [this, kind = provider->kind()](const QString& from, const QString& to) {
-            rebind(componentOf(kind, from).key(), SaveTarget::fromKey(componentOf(kind, to).key(), services_.library()));
+        connect(provider, &ComponentProvider::renamed, this, [this, provider](const QString& from, const QString& to) {
+            const QString key = ComponentSection::entryOf(*provider, to).key();
+            rebind(ComponentSection::entryOf(*provider, from).key(), SaveTarget::fromKey(key, services_.library()));
         });
     }
 }
@@ -127,11 +125,7 @@ bool FileOperations::renameFile(const ExplorerEntry& entry, const QString& name)
     }
     QDir().rename(VersionHistory::folderFor(entry.path), VersionHistory::folderFor(to));
     if (entry.kind != Kind::Conf) return true;
-    ProjectFile manifest = ProjectFile::load(ProjectFile::pathForConf(entry.path));
-    if (manifest.confs().contains(entry.name)) {
-        manifest.rename(entry.path, to);
-        manifest.save();
-    }
+    editManifest(entry.path, [&](ProjectFile& manifest) { return manifest.rename(entry.path, to); });
     rebind(entry.key(), std::make_unique<ProjectConfTarget>(to));
     return true;
 }
@@ -146,10 +140,9 @@ bool FileOperations::remove(const ExplorerEntry& entry) {
     if (provider) notes << provider->removalNote(entry.path);
     if (!unsaved.isEmpty()) notes << "Open with unsaved changes: " + unsaved.join(", ") + ". The tab keeps them, marked deleted.";
     notes.removeAll(QString());
-    const bool folder = entry.kind == Kind::Folder || entry.kind == Kind::Project;
     QMessageBox box(unsaved.isEmpty() ? QMessageBox::Question : QMessageBox::Warning, "Delete",
                     provider ? "Delete the " + entry.origin + " " + entry.name + " from the library? It goes to the trash."
-                    : folder ? "Move " + entry.name + " and everything in it to the trash?"
+                    : entry.isFolder() ? "Move " + entry.name + " and everything in it to the trash?"
                              : "Move " + entry.name + " to the trash?",
                     QMessageBox::NoButton, window_);
     box.setObjectName("confirmDelete");
@@ -165,21 +158,15 @@ bool FileOperations::remove(const ExplorerEntry& entry) {
         fail("Delete", "Unable to move " + entry.name + " to the trash.");
         return false;
     }
-    if (entry.kind == Kind::Conf) {  // it leaves its project
-        ProjectFile manifest = ProjectFile::load(ProjectFile::pathForConf(entry.path));
-        if (manifest.confs().contains(entry.name)) {
-            manifest.forget(entry.path);
-            manifest.save();
-        }
-    }
+    if (entry.kind == Kind::Conf)  // it leaves its project
+        editManifest(entry.path, [&](ProjectFile& manifest) { return manifest.forget(entry.path); });
     emit wrote();
     return true;
 }
 
 // A file shows its folder: the file managers do not agree on how to point at one file.
 void FileOperations::reveal(const ExplorerEntry& entry) {
-    const bool folder = entry.kind == Kind::Folder || entry.kind == Kind::Project;
-    opener_->open(QUrl::fromLocalFile(folder ? entry.location() : QFileInfo(entry.location()).absolutePath()));
+    opener_->open(QUrl::fromLocalFile(entry.isFolder() ? entry.location() : QFileInfo(entry.location()).absolutePath()));
 }
 
 void FileOperations::copyPath(const ExplorerEntry& entry) {

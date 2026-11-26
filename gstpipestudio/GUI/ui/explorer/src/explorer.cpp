@@ -112,7 +112,7 @@ Explorer::Explorer(const QList<ExplorerSource*>& sections, FileOperations& opera
     connect(&watcher_, &QFileSystemWatcher::directoryChanged, &settle_, qOverload<>(&QTimer::start));
     connect(&operations, &FileOperations::wrote, &settle_, qOverload<>(&QTimer::start));
     connect(tree_, &QTreeWidget::itemActivated, this, [this](QTreeWidgetItem* item) {
-        const QList<ExplorerAction> offered = sectionOf(item)->source->actions(sourceEntry(item));
+        const QList<ExplorerAction> offered = actionsOf(item);
         if (offered.contains(ExplorerAction::Open) || offered.contains(ExplorerAction::Edit)) operations_.open(entryOf(item));
     });
     connect(tree_, &QWidget::customContextMenuRequested, this, &Explorer::showMenu);
@@ -137,6 +137,8 @@ void Explorer::refresh() {
 QString Explorer::title() const { return editor_.unsaved ? QString("Explorer · %1 unsaved").arg(editor_.unsaved) : QString("Explorer"); }
 
 ExplorerEntry Explorer::sourceEntry(const QTreeWidgetItem* item) const { return item->data(0, kEntry).value<ExplorerEntry>(); }
+
+QList<ExplorerAction> Explorer::actionsOf(const QTreeWidgetItem* item) { return sectionOf(item)->source->actions(sourceEntry(item)); }
 
 // The editor's state of the tab the row opens in wins over what the disk says.
 ExplorerEntry Explorer::entryOf(const QTreeWidgetItem* item) const {
@@ -241,10 +243,9 @@ void Explorer::rewatch() {
 void Explorer::showMenu(const QPoint& at) {
     QTreeWidgetItem* item = tree_->itemAt(at);
     if (!item) return;
-    Section* section = sectionOf(item);
     const QString id = sourceEntry(item).id();
-    ExplorerSource* source = section->source;
-    operations_.popup(source->actions(sourceEntry(item)), entryOf(item), tree_->viewport()->mapToGlobal(at), [this, id, source](ExplorerAction a) {
+    ExplorerSource* source = sectionOf(item)->source;
+    operations_.popup(actionsOf(item), entryOf(item), tree_->viewport()->mapToGlobal(at), [this, id, source](ExplorerAction a) {
         if (a == ExplorerAction::Rename) startRename(id);
         if (a == ExplorerAction::Refresh) {
             source->refresh();
@@ -276,7 +277,7 @@ bool Explorer::eventFilter(QObject* watched, QEvent* event) {
     if (watched != tree_ || !del) return QWidget::eventFilter(watched, event);
     event->accept();
     QTreeWidgetItem* item = tree_->currentItem();
-    if (event->type() == QEvent::KeyPress && item && sectionOf(item)->source->actions(sourceEntry(item)).contains(ExplorerAction::Delete))
+    if (event->type() == QEvent::KeyPress && item && actionsOf(item).contains(ExplorerAction::Delete))
         operations_.remove(entryOf(item));
     return true;
 }
