@@ -668,6 +668,21 @@ private slots:
         useUserDir({});
     }
 
+    // A backup no tab takes up again (its content cannot be loaded) is offered a few starts, then it goes; written
+    // again by its tab, it starts counting anew.
+    void aBackupNoTabTakesUpGoesAfterAFewStarts() {
+        QTemporaryDir root;
+        useUserDir(root.filePath("user"));
+        BackupService& backups = c->services().backups();
+        QVERIFY(backups.write({"stale", "untitled:7", "Untitled-7"}, "not a pipeline"));
+        QCOMPARE(backups.reopen({}).size(), 1);
+        QVERIFY(backups.write({"stale", "untitled:7", "Untitled-7"}, "not a pipeline"));  // its tab wrote it: alive
+        for (int start = 1; start <= BackupService::kStartsKept; ++start) QCOMPARE(backups.reopen({}).size(), 1);
+        QVERIFY(backups.reopen({}).isEmpty());
+        QVERIFY(backups.list().isEmpty());
+        useUserDir({});
+    }
+
     // Another program changes a tab's file: a tab without unsaved changes reads it again; one with unsaved changes is
     // not reloaded, the user chooses, and Save over the file asks first.
     void aFileChangedOnDiskReloadsOnlyACleanTab() {
