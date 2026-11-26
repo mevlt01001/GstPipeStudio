@@ -1095,6 +1095,8 @@ private slots:
         const QString id = c->outline().collapsedTemplate(convert);
         Document* tab = w.openTemplate("Tail");
         QVERIFY(waitFor([&] { return settle(*tab->controller()) && tab->controller()->plan().elements.size() == 2; }, 30000));
+        support::refreshed();
+        QVERIFY(!w.findChild<QAction*>("actionSaveAs")->isEnabled());  // a template is saved to the library, not as a conf
         ExplorerEntry tail;
         tail.kind = ExplorerEntry::Kind::Component;
         tail.origin = TemplateLibrary::kKind;

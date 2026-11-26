@@ -166,7 +166,9 @@ void MainWindow::buildCommands() {
              if (const QString path = PipelineFileDialog::choose(this, false, Settings::lastDir()); !path.isEmpty()) openFile(path);
          }, environment},
         {C::Save, "actionSave", "&Save", {QKeySequence::Save}, [this] { saveFlow_->save(front()); }, edit},
-        {C::SaveAs, "actionSaveAs", "Save &as…", {QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_S)}, [this] { saveFlow_->saveAs(front()); }, edit},
+        {C::SaveAs, "actionSaveAs", "Save &as…", {QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_S)}, [this] { saveFlow_->saveAs(front()); }, [this] {
+             return firstOf(editReason(), controller()->target().saveAsBlockedReason());
+         }},
         {C::SaveAll, "actionSaveAll", "Save a&ll", {QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_S)}, [this] { saveFlow_->saveAll(documents()); }, [this] {
              const QList<Document*> all = documents();
              return std::any_of(all.cbegin(), all.cend(), [](const Document* d) { return d->controller()->hasUnsavedWork(); }) ? QString() : "Nothing is unsaved";

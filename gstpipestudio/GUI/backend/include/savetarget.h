@@ -24,6 +24,7 @@ public:
     virtual QString projectConf() const { return QString(); }      // the project conf it is, "" for anything else
     virtual QString libraryTemplate() const { return QString(); }  // the library template it is, "" for anything else
     virtual QString runBlockedReason() const { return QString(); } // why it cannot run on its own, "" when it can
+    virtual QString saveAsBlockedReason() const { return QString(); }  // why Save as (a conf elsewhere) is off, "" when on
     virtual QStringList templateFolders() const;             // where its template references are read from
     virtual SaveResult write(const gps::Graph& plan) = 0;    // the plan as the document holds it
 
@@ -82,6 +83,7 @@ public:
     QString sessionKey() const override { return keyFor(name_); }
     QString libraryTemplate() const override { return name_; }
     QString runBlockedReason() const override { return "A template runs inside a pipeline: add it to one with Add template"; }
+    QString saveAsBlockedReason() const override { return "A template is saved to the library: use Save as template"; }
     SaveResult write(const gps::Graph& plan) override;
 
 private:
