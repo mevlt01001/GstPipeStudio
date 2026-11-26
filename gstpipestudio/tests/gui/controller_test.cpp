@@ -568,7 +568,7 @@ private slots:
         QVERIFY(c->launchCommand().contains("GPS_PIPELINE_PATH=" + dir.path()));
 
         auto other = makeController();
-        other->open(path);
+        other->open(std::make_unique<ProjectConfTarget>(path));
         QVERIFY(waitFor([&] { return other->result().valid() && !other->busy(); }));
         QCOMPARE(text(other->plan().toConf()), text(persisted.toConf()));
         QVERIFY(other->result().complete());
@@ -596,14 +596,14 @@ private slots:
         QVERIFY(broken.open(QIODevice::WriteOnly));
         broken.write("this is not a plan");
         broken.close();
-        c->open(broken.fileName());
+        c->open(std::make_unique<ProjectConfTarget>(broken.fileName()));
         QCOMPARE(notices.count(), 1);
 
         QFile unknown(dir.filePath("unknown.conf"));
         QVERIFY(unknown.open(QIODevice::WriteOnly));
         unknown.write("[gstpipestudio]\nversion=1\nname=x\ncomplete=0\n\n[element:nosuchthing_0]\nfactory=nosuchthing\n");
         unknown.close();
-        c->open(unknown.fileName());
+        c->open(std::make_unique<ProjectConfTarget>(unknown.fileName()));
         QVERIFY(waitFor([&] { return notices.count() == 3; }));  // info failure + the open message
         QCOMPARE(text(c->plan().toConf()), before);
         QVERIFY(!c->busy());
@@ -621,7 +621,7 @@ private slots:
             "[link:0]\nsrc=filesrc_0\nsrcpad=src\nsink=avidemux_1\nsinkpad=sink\n\n"
             "[link:1]\nsrc=avidemux_1\nsrcpad=video_%u#3\nsink=fakesink_2\nsinkpad=sink\n");
         file.close();
-        c->open(file.fileName());
+        c->open(std::make_unique<ProjectConfTarget>(file.fileName()));
         QVERIFY(waitFor([&] { return c->result().valid() && !c->busy(); }));
         QCOMPARE(fromStd(c->result().status), QString("pad-missing"));
         QCOMPARE(c->result().missing.size(), 1);
@@ -718,7 +718,7 @@ private slots:
         const Chain chain = makeChain();
         QVERIFY(settle(*c));
         QVERIFY(c->saveTemplate("Tail", {chain.convert, chain.sink}));
-        c->editLibraryTemplate("Tail");
+        c->open(std::make_unique<LibraryTemplateTarget>("Tail", c->services().library()));
         QVERIFY(waitFor([&] { return c->target().libraryTemplate() == "Tail" && !c->busy(); }));
         const QString convert = fromStd(c->plan().elements.front().name);
         QVERIFY(c->editElement(convert, withProps({{"qos", "false"}})));
@@ -756,7 +756,7 @@ private slots:
         const QString saved = QString::fromUtf8(conf.readAll());
         QVERIFY(saved.contains("template=Tail") && !saved.contains("factory=fakesink"));
         QVERIFY(QFile::exists(dir.filePath("templates/Tail.conf")));
-        c->open(dir.filePath("uses.conf"));
+        c->open(std::make_unique<ProjectConfTarget>(dir.filePath("uses.conf")));
         QVERIFY(settle(*c));
         QCOMPARE(c->plan().instances.size(), size_t(1));
         QCOMPARE(c->templateMembers(fromStd(c->plan().instances.front().id)).size(), 2);
@@ -772,7 +772,7 @@ private slots:
         QVERIFY(c->saveTemplate("Tail", {chain.convert, chain.sink}));
         QVERIFY(settle(*c));
 
-        c->editLibraryTemplate("Tail");
+        c->open(std::make_unique<LibraryTemplateTarget>("Tail", c->services().library()));
         QVERIFY(waitFor([&] { return c->target().libraryTemplate() == "Tail"; }));
         QVERIFY(settle(*c));
         QCOMPARE(c->plan().elements.size(), size_t(2));
@@ -892,7 +892,7 @@ private slots:
 
         // A file saved before the change: opening it offers the newer version.
         QSignalSpy outdated(c.get(), &Controller::templatesOutdated);
-        c->open(dir.filePath("old.conf"));
+        c->open(std::make_unique<ProjectConfTarget>(dir.filePath("old.conf")));
         QVERIFY(outdated.wait(10000));
         QCOMPARE(outdated[0][0].toStringList().size(), 2);
         QVERIFY(settle(*c));

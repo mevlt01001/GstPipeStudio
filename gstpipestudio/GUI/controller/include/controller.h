@@ -107,9 +107,7 @@ public:
 
     // ---- the template library, like a folder of modules: what a project imports
     bool renameTemplate(const QString& from, const QString& to, QString* error);  // the library renames it; copies here follow
-    // A library template on the canvas as the document: Save writes its next revision to the library, and its
-    // parameters (the plan's exposed list) are set with setTemplateParameters.
-    void editLibraryTemplate(const QString& name);
+    // A library template's parameters (the plan's exposed list) while it is the document (a LibraryTemplateTarget).
     void setTemplateParameters(const std::vector<gps::ExposedParam>& params);
     QStringList addTemplate(const QString& templateName, double x = std::numeric_limits<double>::quiet_NaN(), double y = std::numeric_limits<double>::quiet_NaN());
     QStringList addTemplateAfter(const QString& srcElement, const QString& srcPad, const QString& templateName);
@@ -176,7 +174,6 @@ public:
     void newPlan(std::unique_ptr<SaveTarget> target);  // an empty canvas bound to target: untitled, or a new project
     // The document bound to target, read from the target's file; or from backup (a hot-exit backup), modified.
     void open(std::unique_ptr<SaveTarget> target, const QString& backup = QString());
-    void open(const QString& path, bool imported = false);  // a project conf; imported: an unsaved change of this document
     void restoreVersion(const QString& version);  // an earlier version of the document, as one undoable change to it
     void reload();                                // the target's file again, as it is on disk now, unmodified
     void revert();                                // reload, when there are changes to drop

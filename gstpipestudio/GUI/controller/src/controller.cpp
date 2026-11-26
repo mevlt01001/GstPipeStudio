@@ -283,10 +283,6 @@ bool Controller::renameTemplate(const QString& from, const QString& to, QString*
     return true;
 }
 
-void Controller::editLibraryTemplate(const QString& name) {
-    if (services_.library().plan(name)) open(std::make_unique<LibraryTemplateTarget>(name, services_.library()));
-}
-
 void Controller::setTemplateParameters(const std::vector<gps::ExposedParam>& params) {
     transact([&](gps::Graph& g, Edit& edit) {
         g.exposed.clear();
@@ -1418,11 +1414,6 @@ void Controller::open(std::unique_ptr<SaveTarget> target, const QString& backup)
     if (QFile::exists(manifest)) ProjectRegistry::remember(manifest);
 }
 
-void Controller::open(const QString& path, bool imported) {
-    if (imported) return load(path, nullptr, Load::Replace, "Imported a gst-launch pipeline");
-    open(std::make_unique<ProjectConfTarget>(path));
-}
-
 void Controller::restoreVersion(const QString& version) { load(version, nullptr, Load::Replace, "Restored an earlier version"); }
 
 void Controller::reload() {
@@ -1505,7 +1496,7 @@ bool Controller::importLaunch(const QString& description) {
         log(QString("Imported native pipeline %1: %2 elements, %3 links").arg(fromStd(reply.nativeName)).arg(reply.elements).arg(reply.links));
         for (const std::string& warning : reply.warnings) log("[gps-import] " + fromStd(warning));
         if (!reply.warnings.empty()) emit notice("Imported with warnings. Review the Log and validate before running.");
-        open(path, true);
+        load(path, nullptr, Load::Replace, "Imported a gst-launch pipeline");
     });
     return true;
 }
