@@ -32,11 +32,22 @@ signals:
     void edited();
 
 private:
-    QWidget* build(const QString& initial);
+    struct Style;
+    static const Style* supportedStyle(const std::string& kind);
+    static const Style& styleFor(const std::string& kind);
+
+    QWidget* buildBoolean(const QString& initial);
+    QWidget* buildInt(const QString& initial);
+    QWidget* buildNumber(const QString& initial, double minimum, double maximum, int decimals, double step);
+    QWidget* buildEnum(const QString& initial);
+    QWidget* buildFlags(const QString& initial);
+    QWidget* buildText(const QString& initial, const QString& pattern = {}, const QString& hint = {});
+    QString rangeHint() const;
     void touch();
     void refresh();  // the ↺ shows while the value is not the default
 
     PropertyInfo info_;
+    const Style& style_;
     bool touched_ = false;
     std::function<QString()> read_;
     QToolButton* reset_ = nullptr;
