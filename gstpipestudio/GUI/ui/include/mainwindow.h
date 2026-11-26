@@ -18,6 +18,7 @@ class ContextMenus;
 class Controller;
 class Document;
 class DocumentTabs;
+class DocumentSessions;
 class Drawer;
 class Explorer;
 class FileOperations;
@@ -34,7 +35,8 @@ class ValidationIndicator;
 class MainWindow : public QMainWindow {
     Q_OBJECT
 public:
-    // The first tab shows the caller's controller; tabs opened later make their own, with its services.
+    explicit MainWindow(DocumentSessions& sessions, QWidget* parent = nullptr);
+    // A caller can lend the first controller to inspect a window over an existing document.
     explicit MainWindow(Controller* controller, QWidget* parent = nullptr);
     ~MainWindow() override;
 
@@ -80,6 +82,7 @@ protected:
     void closeEvent(QCloseEvent* event) override;  // hot exit: asks nothing, every tab comes back on the next start
 
 private:
+    MainWindow(AppServices& services, DocumentSessions* sessions, Controller* first, QWidget* parent);
     Controller* controller() const;  // the front document's
     void buildCommands();
     void buildMenus();
@@ -115,6 +118,7 @@ private:
     QString copyTitle() const;  // the template copy a context menu is about, as the user reads it
 
     AppServices& services_;
+    std::unique_ptr<DocumentSessions> ownedSessions_;
     SaveFlow* saveFlow_;      // every save the user asks for, and every question about unsaved changes
     DocumentRegistry* registry_;
     FileOperations* files_;

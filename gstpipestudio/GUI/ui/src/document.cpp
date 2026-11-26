@@ -12,6 +12,7 @@
 #include "canvasview.h"
 #include "controller.h"
 #include "documentbackup.h"
+#include "documentsession.h"
 #include "drawer.h"
 #include "flows.h"
 #include "linkitem.h"
@@ -31,8 +32,8 @@ QWidget* holder(const char* name, QWidget* parent) {
 }
 }  // namespace
 
-Document::Document(AppServices& services, Controller* controller, QWidget* window)
-    : QObject(window), controller_(controller ? controller : new Controller(services, this)) {
+Document::Document(DocumentSession& session, QWidget* window)
+    : QObject(window), session_(session), controller_(&session.controller()), backup_(&session.backup()) {
     drawer_ = new Drawer(window);
     flows_ = new Flows(controller_, drawer_, window);
     scene_ = new CanvasScene(controller_, this);
@@ -57,7 +58,6 @@ Document::Document(AppServices& services, Controller* controller, QWidget* windo
     propsTab_ = holder("propsTab", window);
     capsTab_ = holder("capsTab", window);
     indicator_ = new ValidationIndicator(controller_, window);
-    backup_ = new DocumentBackup(services.backups(), controller_, this);
 
     // What happens inside the document; the window wires only what concerns it.
     Flows* flows = flows_;
@@ -67,14 +67,14 @@ Document::Document(AppServices& services, Controller* controller, QWidget* windo
     connect(scene, &CanvasScene::linkClickedSignal, flows, &Flows::editCaps, Qt::QueuedConnection);
     connect(scene, &CanvasScene::templateActivated, flows, &Flows::editTemplateParams);
     connect(scene, &CanvasScene::elementActivated, flows, &Flows::editProperties, Qt::QueuedConnection);
-    connect(scene, &CanvasScene::elementsMoved, c, &Controller::setPositions, Qt::QueuedConnection);
-    connect(scene, &CanvasScene::elementSpliced, c, [scene, c](const QString& element, const QString& linkSrc, const QString& linkPad) {
+    connect(scene, &CanvasScene::elementsMoved, this, [c](const auto& positions) { c->setPositions(positions); }, Qt::QueuedConnection);
+    connect(scene, &CanvasScene::elementSpliced, this, [scene, c](const QString& element, const QString& linkSrc, const QString& linkPad) {
         const QStringList sel = scene->selectedElementNames();
         if (sel.contains(element) && sel.size() > 1) c->spliceElements(sel, linkSrc, linkPad);
         else c->spliceElement(element, linkSrc, linkPad);
     }, Qt::QueuedConnection);
     connect(scene, &CanvasScene::rebuilt, this, &Document::rebuilt);
-    connect(setup_, &SetupPage::retry, &services.environment(), &EnvironmentService::check);
+    connect(setup_, &SetupPage::retry, &c->services().environment(), &EnvironmentService::check);
     connect(c, &Controller::changed, scene, &CanvasScene::scheduleRebuild);
     connect(c, &Controller::changed, this, &Document::showState);
     connect(c, &Controller::logLine, log_, &LogPanel::append);
@@ -82,10 +82,10 @@ Document::Document(AppServices& services, Controller* controller, QWidget* windo
 }
 
 // The widgets live in the window's stacks and docks; they go with the document (the window deletes its documents
-// before its own widgets). The caller's controller stays.
+// before its own widgets). The session outlives the view.
 Document::~Document() {
     disconnect(scene_, nullptr, nullptr, nullptr);  // while it goes, it reports its items leaving the selection
-    for (QObject* part : std::initializer_list<QObject*>{backup_, flows_, centre_, log_, updates_, telemetry_, propsTab_, capsTab_, indicator_, scene_})
+    for (QObject* part : std::initializer_list<QObject*>{flows_, centre_, log_, updates_, telemetry_, propsTab_, capsTab_, indicator_, scene_})
         delete part;
 }
 

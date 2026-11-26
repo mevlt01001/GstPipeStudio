@@ -1,9 +1,12 @@
-# The GUI links gps_pipeline and Qt only. It never sees GStreamer: the helpers (gps-inspect, gps-update, gps-run) do.
+# Application use cases depend on Qt Gui and Pipeline. Widget code depends on the application layer.
 find_package(Qt6 REQUIRED COMPONENTS Widgets)
 set(CMAKE_AUTOMOC ON)
 add_subdirectory(${GPS_ROOT}/third_party/quickjs ${CMAKE_BINARY_DIR}/third_party/quickjs)
 
-add_library(gps_gui STATIC
+add_library(gps_application STATIC
+    application/include/documentsession.h application/src/documentsession.cpp
+    model/include/buildinfo.h
+    model/include/canvasmetrics.h
     backend/include/apppaths.h backend/src/apppaths.cpp
     backend/include/saveresult.h
     backend/include/savetarget.h backend/src/savetarget.cpp
@@ -33,15 +36,23 @@ add_library(gps_gui STATIC
     controller/include/runsession.h controller/src/runsession.cpp
     controller/include/templateinstances.h controller/src/templateinstances.cpp
     controller/include/documentviews.h controller/src/documentviews.cpp
-    controller/include/flows.h controller/src/flows.cpp
-    controller/include/panelslot.h controller/src/panelslot.cpp
     controller/include/canvaslayout.h controller/src/canvaslayout.cpp
     controller/include/outline.h controller/src/outline.cpp
     controller/include/documentbackup.h controller/src/documentbackup.cpp
     layout/include/layoutgraph.h
     layout/include/elkengine.h layout/src/elkengine.cpp
-    layout/include/layoutrunner.h layout/src/layoutrunner.cpp
-    canvas/include/canvasmetrics.h
+    layout/include/layoutrunner.h layout/src/layoutrunner.cpp)
+target_include_directories(gps_application PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/application/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/backend/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/model/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/controller/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/layout/include)
+target_link_libraries(gps_application PUBLIC Qt6::Gui gps_pipeline PRIVATE gps_quickjs)
+
+add_library(gps_gui STATIC
+    ui/include/flows.h ui/src/flows.cpp
+    ui/include/panelslot.h ui/src/panelslot.cpp
     canvas/include/canvasscene.h canvas/src/canvasscene.cpp
     canvas/include/canvasview.h canvas/src/canvasview.cpp
     canvas/include/elementitem.h canvas/src/elementitem.cpp
@@ -85,18 +96,14 @@ add_library(gps_gui STATIC
     ui/widgets/include/validationindicator.h ui/widgets/src/validationindicator.cpp)
 target_include_directories(gps_gui PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/backend/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/model/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/controller/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/layout/include
     ${CMAKE_CURRENT_SOURCE_DIR}/canvas/include
     ${CMAKE_CURRENT_SOURCE_DIR}/ui/include
     ${CMAKE_CURRENT_SOURCE_DIR}/ui/explorer/include
     ${CMAKE_CURRENT_SOURCE_DIR}/ui/pages/include
     ${CMAKE_CURRENT_SOURCE_DIR}/ui/widgets/include)
-target_link_libraries(gps_gui PUBLIC Qt6::Widgets gps_pipeline PRIVATE gps_quickjs)
+target_link_libraries(gps_gui PUBLIC Qt6::Widgets gps_application)
 
-add_executable(gstpipestudio ${GPS_ROOT}/main.cpp)
+add_executable(gstpipestudio ${GPS_ROOT}/main.cpp ${GPS_ROOT}/gstpipestudio.cpp)
 target_link_libraries(gstpipestudio PRIVATE gps_gui)
 install(TARGETS gstpipestudio RUNTIME DESTINATION ${GPS_PRIVATE_DIR}/bin)
 
@@ -132,14 +139,14 @@ endif()
 if(NOT GPS_REVISION)
     set(GPS_REVISION "unknown")
 endif()
-target_compile_definitions(gps_gui PUBLIC GPS_APP_VERSION="${PROJECT_VERSION}" GPS_APP_REVISION="${GPS_REVISION}" GPS_APP_CHANNEL="${GPS_BUILD_CHANNEL}")
+target_compile_definitions(gps_application PUBLIC GPS_APP_VERSION="${PROJECT_VERSION}" GPS_APP_REVISION="${GPS_REVISION}" GPS_APP_CHANNEL="${GPS_BUILD_CHANNEL}")
 qt_add_resources(gps_gui branding PREFIX "/brand" BASE "${GPS_ROOT}/assets/logo"
     FILES "${GPS_ROOT}/assets/logo/gstpipestudio.svg" "${GPS_ROOT}/assets/logo/animation.gif")
 target_sources(gps_gui PRIVATE ui/widgets/src/windowchrome.cpp ui/widgets/src/aboutdialog.cpp)
 
 target_sources(gps_gui PRIVATE canvas/src/connectionpreview.cpp)
 # elkjs 0.10.0 (EPL-2.0), unchanged: the ELK layout the layout::ElkEngine runs in QuickJS.
-qt_add_resources(gps_gui elk PREFIX "/layout" BASE "${GPS_ROOT}/third_party/elkjs" FILES "${GPS_ROOT}/third_party/elkjs/elk.bundled.js")
+qt_add_resources(gps_application elk PREFIX "/layout" BASE "${GPS_ROOT}/third_party/elkjs" FILES "${GPS_ROOT}/third_party/elkjs/elk.bundled.js")
 
 qt_add_resources(gps_gui appicon PREFIX "/brand" BASE "${GPS_ROOT}/packaging/icons/hicolor/64x64/apps"
     FILES "${GPS_ROOT}/packaging/icons/hicolor/64x64/apps/gstpipestudio.png")

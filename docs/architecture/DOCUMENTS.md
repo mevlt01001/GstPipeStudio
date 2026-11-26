@@ -16,7 +16,7 @@ The target architecture of the application layer. It follows the editors the use
 
 ## Application services (one per process)
 
-`AppServices` is built once in `main.cpp`. Every `Controller` (one per tab) and the window receive it.
+`GstPipeStudio` owns one `AppServices` and one `DocumentSessions`. Each session contains the document controller and its hot-exit backup. The main window presents sessions as tabs.
 
 | Service | Owns | Replaces |
 |---|---|---|

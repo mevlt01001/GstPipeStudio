@@ -10,13 +10,15 @@
 #include "backupservice.h"
 #include "controller.h"
 #include "document.h"
+#include "documentsession.h"
 #include "documentbackup.h"
 #include "savetarget.h"
 #include "settings.h"
 #include "tabclosebutton.h"
 
-DocumentTabs::DocumentTabs(AppServices& services, QWidget* window)
-    : QObject(window), services_(services), window_(window), bar_(new QTabBar(window)), pages_(new QStackedWidget(window)) {
+DocumentTabs::DocumentTabs(DocumentSessions& sessions, QWidget* window)
+    : QObject(window), sessions_(sessions), services_(sessions.services()), window_(window), bar_(new QTabBar(window)),
+      pages_(new QStackedWidget(window)) {
     bar_->setObjectName("documentTabs");
     bar_->setDocumentMode(true);
     bar_->setMovable(true);
@@ -40,7 +42,7 @@ DocumentTabs::DocumentTabs(AppServices& services, QWidget* window)
 DocumentTabs::~DocumentTabs() {
     const QList<Document*> documents = std::exchange(docs_, {});
     front_ = nullptr;
-    qDeleteAll(documents);
+    for (Document* document : documents) removeView(document);
 }
 
 QList<Document*> DocumentTabs::all() const {
@@ -50,7 +52,7 @@ QList<Document*> DocumentTabs::all() const {
 }
 
 Document* DocumentTabs::add(Controller* controller) {
-    auto* d = new Document(services_, controller, window_);
+    auto* d = new Document(sessions_.open(controller), window_);
     if (d->controller()->target().needsDestination()) {
         QList<const SaveTarget*> open;
         for (const Document* other : std::as_const(docs_)) open << &other->controller()->target();
@@ -120,7 +122,13 @@ void DocumentTabs::close(Document* d) {
     if (d == front_) activate(at(indexOf(d) + 1) ? at(indexOf(d) + 1) : at(indexOf(d) - 1));
     bar_->removeTab(indexOf(d));
     pages_->removeWidget(d->centre());
-    delete d;
+    removeView(d);
+}
+
+void DocumentTabs::removeView(Document* document) {
+    DocumentSession& session = document->session();
+    delete document;
+    sessions_.close(session);
 }
 
 void DocumentTabs::step(int by) {

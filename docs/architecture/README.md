@@ -1,11 +1,12 @@
 # GstPipeStudio architecture (dev-zero)
 
-The application has three product units. `gstpipestudio/main.cpp` constructs the GUI controller and main window. The controller composes one `gps::Pipeline`, the process backend and an execution coordinator.
+The desktop entry point constructs `GstPipeStudio`, which owns the shared services, document sessions and main window. Each document session owns a controller and its backup. The window owns the views and releases them before closing their sessions.
 
 | Unit | Target | Responsibility |
 |---|---|---|
 | `gstpipestudio/Pipeline` | `GstPipeStudio::Pipeline` / `gps_pipeline` | Authored graph, pad descriptors, transactions, history, discovery and execution contracts. No Qt or GStreamer. |
-| `gstpipestudio/GUI` | `GstPipeStudio::GUI` / `gps_gui` | Canvas, interaction, catalog/property panels and process transport. Depends on Pipeline and Qt. |
+| Application | `gps_application` | Document use cases, persistence, components, layout and process transport. Depends on Pipeline and Qt Gui. |
+| `gstpipestudio/GUI` | `GstPipeStudio::GUI` / `gps_gui` | Canvas, interaction, catalog/property panels and dialogs. Depends on the application layer and Qt Widgets. |
 | `gstpipestudio/GstEngine` | `GstPipeStudio::GstEngine` / `gps_gstengine` | Native factory inspection, graph construction, pad binding, preview and execution. Depends on Pipeline and GStreamer. |
 | `gstpipestudio/third_party` | `gps_quickjs`, a resource | QuickJS (MIT) and elkjs (EPL-2.0), vendored unchanged, for the layout engine. |
 

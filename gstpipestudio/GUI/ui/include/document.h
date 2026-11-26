@@ -9,11 +9,11 @@
 
 #include "documentregistry.h"
 
-class AppServices;
 class CanvasScene;
 class CanvasView;
 class Controller;
 class DocumentBackup;
+class DocumentSession;
 class Drawer;
 class Flows;
 class LogPanel;
@@ -27,11 +27,10 @@ class ValidationIndicator;
 class Document : public QObject {
     Q_OBJECT
 public:
-    // A document over the caller's controller (it stays the caller's), or over one of its own, with the same services,
-    // when controller is null.
-    Document(AppServices& services, Controller* controller, QWidget* window);
+    Document(DocumentSession& session, QWidget* window);
     ~Document() override;
 
+    DocumentSession& session() const { return session_; }
     Controller* controller() const { return controller_; }
     CanvasScene* scene() const { return scene_; }
     CanvasView* view() const { return view_; }
@@ -86,7 +85,8 @@ private:
     void showState();  // its canvas and pages follow whether it can be edited now
     void rebuilt();
 
-    Controller* controller_ = nullptr;
+    DocumentSession& session_;
+    Controller* controller_;
     CanvasScene* scene_ = nullptr;
     CanvasView* view_ = nullptr;
     Drawer* drawer_ = nullptr;
@@ -99,7 +99,7 @@ private:
     QWidget* propsTab_ = nullptr;
     QWidget* capsTab_ = nullptr;
     ValidationIndicator* indicator_ = nullptr;
-    DocumentBackup* backup_ = nullptr;
+    DocumentBackup* backup_;
     QStringList lastNames_;  // element names at the last rebuild: the view refits when they change
     bool fitNext_ = false;
     QString opening_;

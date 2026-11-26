@@ -2,11 +2,9 @@
 #include <QApplication>
 #include <QCommandLineParser>
 
-#include "appservices.h"
-#include "controller.h"
-#include "mainwindow.h"
-#include "theme.h"
 #include "buildinfo.h"
+#include "gstpipestudio.h"
+#include "theme.h"
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
@@ -20,11 +18,6 @@ int main(int argc, char** argv) {
     parser.process(app);
     Theme::apply(app);
 
-    AppServices services;  // shared by every tab: the GStreamer check, the catalog, the template library
-    Controller controller(services);
-    MainWindow window(&controller);  // checks GStreamer first; the catalog loads when it is fine
-    window.show();
-    window.restoreSession();  // the tabs open when it last closed, then the file asked for
-    if (!parser.positionalArguments().isEmpty()) window.openFile(parser.positionalArguments().first());
-    return app.exec();
+    GstPipeStudio studio;
+    return studio.run(app, parser.positionalArguments().value(0));
 }

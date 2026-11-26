@@ -32,6 +32,7 @@
 #include "document.h"
 #include "documentbackup.h"
 #include "documenttabs.h"
+#include "documentsession.h"
 #include "drawer.h"
 #include "explorer.h"
 #include "explorersource.h"
@@ -54,9 +55,16 @@
 #include "versionhistory.h"
 #include "windowchrome.h"
 
+MainWindow::MainWindow(DocumentSessions& sessions, QWidget* parent)
+    : MainWindow(sessions.services(), &sessions, nullptr, parent) {}
+
 MainWindow::MainWindow(Controller* controller, QWidget* parent)
-    : QMainWindow(parent), services_(controller->services()), saveFlow_(new SaveFlow(this)), registry_(new DocumentRegistry(this)),
-      files_(new FileOperations(services_, this)), tabs_(new DocumentTabs(services_, this)), commands_(new CommandSet(this)),
+    : MainWindow(controller->services(), nullptr, controller, parent) {}
+
+MainWindow::MainWindow(AppServices& services, DocumentSessions* sessions, Controller* first, QWidget* parent)
+    : QMainWindow(parent), services_(services), ownedSessions_(sessions ? nullptr : std::make_unique<DocumentSessions>(services)),
+      saveFlow_(new SaveFlow(this)), registry_(new DocumentRegistry(this)), files_(new FileOperations(services_, this)),
+      tabs_(new DocumentTabs(sessions ? *sessions : *ownedSessions_, this)), commands_(new CommandSet(this)),
       menus_(new ContextMenus(*commands_, this)) {
     setObjectName("mainWindow");
     setWindowFlag(Qt::FramelessWindowHint);
@@ -85,7 +93,7 @@ MainWindow::MainWindow(Controller* controller, QWidget* parent)
 
     panels_ = new Panels(this);
     buildStatusBar();
-    tabs_->add(controller);
+    tabs_->add(first);
     explorer_ = new Explorer(ExplorerSource::standard(services_, this), *files_, this);
     panels_->add(explorer_, "Explorer", 0, Qt::LeftDockWidgetArea);
     resizeDocks({panels_->dock(logPanel())}, {240}, Qt::Vertical);

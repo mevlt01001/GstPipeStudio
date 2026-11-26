@@ -15,6 +15,7 @@
 class AppServices;
 class Controller;
 class Document;
+class DocumentSessions;
 class QPoint;
 class QStackedWidget;
 class QTabBar;
@@ -24,7 +25,7 @@ class SaveTarget;
 class DocumentTabs : public QObject {
     Q_OBJECT
 public:
-    DocumentTabs(AppServices& services, QWidget* window);
+    DocumentTabs(DocumentSessions& sessions, QWidget* window);
     ~DocumentTabs() override;  // the documents go first, while the docks and stacks that show their pages still stand
 
     QTabBar* bar() const { return bar_; }
@@ -65,6 +66,9 @@ private:
     Document* reopen(const Backup& tab);  // a tab of restoreSession; null when there is nothing to reopen
     static std::optional<Backup> sessionTab(const Document* document);
 
+    void removeView(Document* document);
+
+    DocumentSessions& sessions_;
     AppServices& services_;
     QWidget* window_;
     QTabBar* bar_;
