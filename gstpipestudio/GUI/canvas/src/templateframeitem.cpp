@@ -106,8 +106,7 @@ void TemplateFrameItem::updateGeometry() {
         around = around.isNull() ? r : around.united(r);
     }
     for (TemplateFrameItem* inner : canvas_->frames()) {
-        if (inner->view().depth > view_.depth && view_.members.contains(inner->view().members.value(0)))
-            around = around.united(inner->frameRect());
+        if (view_.inner.contains(inner->view().id)) around = around.united(inner->frameRect());
     }
     prepareGeometryChange();
     rect_ = around.adjusted(-kPadding, -kTitle, kPadding, kPadding);

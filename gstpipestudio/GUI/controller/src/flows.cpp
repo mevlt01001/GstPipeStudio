@@ -227,7 +227,7 @@ void Flows::fromFreePad(const QString& element, const QString& identity) {
                 newElement(Mode::Add, element, identity, choice.factory);
             }
         });
-        drawer_->present(page, "Add after " + title(element) + " · " + identity, allowed.isEmpty() ? QString() : fromStd(gps::mediaOf(toStd(allowed))), Drawer::Replace);
+        drawer_->present(page, "Add after " + path(element, identity), allowed.isEmpty() ? QString() : fromStd(gps::mediaOf(toStd(allowed))), Drawer::Replace);
     });
 }
 

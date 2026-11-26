@@ -211,9 +211,13 @@ FrameView DocumentViews::frameView(const QString& instanceId) const {
     const gps::TemplateInstance* t = plan().instance(toStd(instanceId));
     if (!t) return v;
     v.id = instanceId;
-    v.title = fromStd(t->templateName);
+    v.title = fromStd(names().instance(t->id));
     v.members = outline().membersOf(instanceId);
     v.depth = static_cast<int>(gps::templates::chain(plan(), t->id).size());
+    const Outline o = outline();
+    for (const QString& frame : o.visibleFrames()) {
+        if (frame != instanceId && o.framesAround(o.membersOf(frame).value(0)).contains(instanceId)) v.inner << frame;
+    }
     const gps::NodePorts ports = shape().ports(gps::NodeRef::instance(t->id));
     v.pads = padViews(ports.sinks) + padViews(ports.srcs);
     return v;

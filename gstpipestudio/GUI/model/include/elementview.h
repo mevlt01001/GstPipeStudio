@@ -49,6 +49,7 @@ struct ElementView {
 struct FrameView {
     QString id, title;
     QStringList members;  // every element inside, nested ones too
+    QStringList inner;    // the visible frames inside it, at any depth (Outline): its border goes around them too
     QList<PadView> pads;
     int depth = 0;        // templates around it
 };

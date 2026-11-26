@@ -2124,7 +2124,7 @@ private slots:
         clickFreePad(src);
         auto* picker = pageOf<PickerPage>(w);
         QVERIFY(picker);
-        QCOMPARE(w.drawer()->title(), "Add after " + fromStd(c->names().element(toStd(src))) + " · src");
+        QCOMPARE(w.drawer()->title(), "Add after " + c->padName({toStd(src), "src", gps::Pad::Direction::Source}));
         QCOMPARE(w.drawer()->subtitle(), QString("video/x-raw"));
         QCOMPARE(picker->findChild<QListWidget*>("pickerList")->item(0)->text(), QString("New element"));  // nothing existing yet
         press(picker, "cancelButton");
