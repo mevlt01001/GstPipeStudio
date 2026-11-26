@@ -10,6 +10,7 @@ class AppServices;
 class CanvasScene;
 class CanvasView;
 class Controller;
+class DocumentBackup;
 class Drawer;
 class Flows;
 class LogPanel;
@@ -41,13 +42,13 @@ public:
     QWidget* propsTab() const { return propsTab_; }
     QWidget* capsTab() const { return capsTab_; }
     ValidationIndicator* indicator() const { return indicator_; }
+    DocumentBackup* backup() const { return backup_; }  // its hot-exit backup
     QList<QWidget*> panelPages() const;  // what it shows in the panels, in their order
 
     QString title() const;  // its target's: the file's name, "Template: <name>", or "Untitled-N"
     QString path() const;   // the file it is, "" when it has none yet
     bool pristine() const;  // untitled, empty and unchanged: opening a file may use it instead of a new tab
-    bool showsFile(const QString& file) const;
-    bool showsTemplate(const QString& name) const;
+    bool shows(const QString& sessionKey) const;  // it is bound to the target of that session key
 
     // A file is opening in it: its tab already reads the file's name, and the view fits it once it is on the canvas.
     void opening(const QString& title) {
@@ -74,6 +75,7 @@ private:
     QWidget* propsTab_ = nullptr;
     QWidget* capsTab_ = nullptr;
     ValidationIndicator* indicator_ = nullptr;
+    DocumentBackup* backup_ = nullptr;
     QStringList lastNames_;  // element names at the last rebuild: the view refits when they change
     bool fitNext_ = false;
     QString opening_;

@@ -13,6 +13,7 @@ add_library(gps_gui STATIC
     backend/include/settings.h backend/src/settings.cpp
     backend/include/viewpreferences.h backend/src/viewpreferences.cpp
     backend/include/environmentservice.h backend/src/environmentservice.cpp
+    backend/include/backupservice.h backend/src/backupservice.cpp
     backend/include/appservices.h
     backend/include/executionbackend.h backend/src/executionbackend.cpp
     backend/include/factorycatalog.h backend/src/factorycatalog.cpp
@@ -27,6 +28,7 @@ add_library(gps_gui STATIC
     controller/include/controller.h controller/src/controller.cpp
     controller/include/flows.h controller/src/flows.cpp
     controller/include/canvaslayout.h controller/src/canvaslayout.cpp
+    controller/include/documentbackup.h controller/src/documentbackup.cpp
     layout/include/layoutgraph.h
     layout/include/elkengine.h layout/src/elkengine.cpp
     layout/include/layoutrunner.h layout/src/layoutrunner.cpp

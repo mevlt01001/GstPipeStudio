@@ -36,6 +36,8 @@
 #include "drawer.h"
 #include "elementitem.h"
 #include "document.h"
+#include "documentbackup.h"
+#include "backupservice.h"
 #include "explorer.h"
 #include "tabclosebutton.h"
 #include <QTabBar>
@@ -433,9 +435,10 @@ private slots:
     }
 
     // Untitled tabs take the lowest free number; Save of one asks for a project, Save all writes every unsaved tab,
-    // and closing the window asks once about all of them.
+    // and closing the window asks nothing: the changes stay, backed up for the next start (hot exit).
     void untitledTabsSaveAllAndCloseTogether() {
         QTemporaryDir root;
+        useUserDir(root.filePath("user"));
         Settings::setProjectsLocation(root.path());
         auto w = std::make_unique<MainWindow>(c.get());
         w->show();
@@ -464,17 +467,20 @@ private slots:
         for (Document* d : w->documents()) QVERIFY(!d->controller()->modified());
         QVERIFY(!w->findChild<QAction*>("actionSaveAll")->isEnabled());
 
-        // Closing the window asks once, about every unsaved tab in one list: Cancel keeps it open, Save all closes it.
+        // Several unsaved tabs closed together are asked about once, in one list.
         for (Document* d : w->documents()) QVERIFY(!addSource(*d->controller(), "videotestsrc").isEmpty());
         QString asked;
         answer(w.get(), "cancel", &asked);
-        QVERIFY(!w->close());
+        QVERIFY(!w->saveFlow()->confirmClose(w->documents()));
         QVERIFY(asked.contains("the following 2 files") && asked.contains("yard.conf") && asked.contains("door.conf"));
-        answer(w.get(), "saveChangesSave");
+        // Closing the window asks nothing.
         QVERIFY(w->close());
-        for (Document* d : w->documents()) QVERIFY(!d->controller()->modified());
+        for (Document* d : w->documents()) QVERIFY(d->controller()->modified());
+        QCOMPARE(Settings::session().tabs.size(), 2);
         Settings::setSession({});
+        Settings::setWindow({}, {});  // the next windows start at their own size
         Settings::setProjectsLocation({});
+        useUserDir({});
     }
 
     // A new tab is ready at once: it shares the process's catalog and GStreamer check, and asks for neither again.
@@ -546,6 +552,85 @@ private slots:
         for (Document* d : again.documents()) QVERIFY(settle(*d->controller()));
         Settings::setSession({});
         Settings::setWindow({}, {});  // the next windows start at their own size
+        useUserDir({});
+    }
+
+    // About a second after a change, an unsaved tab is backed up, with what it is the backup of; once it is saved,
+    // the backup goes.
+    void aChangedTabIsBackedUpUntilItIsSaved() {
+        QTemporaryDir root;
+        useUserDir(root.filePath("user"));
+        MainWindow w(c.get());
+        w.show();
+        QVERIFY(!addSource(*c, "videotestsrc").isEmpty());
+        BackupService& backups = c->services().backups();
+        QVERIFY(waitFor([&] { return backups.list().size() == 1; }, 3000));
+        const Backup backup = backups.list().front();
+        QCOMPARE(backup.id, w.document()->backup()->id());
+        QCOMPARE(backup.key, QString("untitled:1"));
+        QCOMPARE(backup.title, QString("Untitled-1"));
+        gps::Graph content;
+        std::string error;
+        QVERIFY(gps::Graph::load(BackupService::contentOf(backup.id).toStdString(), &content, &error));
+        QCOMPARE(content.elements.size(), size_t(1));
+        // Undone back to where it was clean, it has nothing to back up; redone, it has again.
+        QVERIFY(c->undo());
+        QVERIFY(backups.list().isEmpty());
+        QVERIFY(c->redo());
+        QVERIFY(waitFor([&] { return backups.list().size() == 1; }, 3000));
+        QVERIFY(w.saveFlow()->saveAs(w.document(), root.filePath("one.conf")));
+        QVERIFY(backups.list().isEmpty());
+        useUserDir({});
+    }
+
+    // Quitting asks nothing; the next start brings back every tab with its unsaved changes: an untitled tab, and a
+    // file changed since it was saved. A crash before the window could save its session leaves the same backups.
+    void quittingKeepsUnsavedTabsForTheNextStart() {
+        QTemporaryDir root;
+        useUserDir(root.filePath("user"));
+        const QString a = root.filePath("a.conf");
+        {
+            MainWindow w(c.get());
+            w.show();
+            const QString src = addSource(*c, "videotestsrc");
+            QVERIFY(w.saveFlow()->saveAs(w.document(), a));
+            QVERIFY(!addAfter(*c, src, "src", "fakesink").isEmpty());
+            w.findChild<QAction*>("actionNew")->trigger();
+            QVERIFY(!addSource(*w.document()->controller(), "videotestsrc").isEmpty());
+            QVERIFY(w.close());  // a question would block here
+        }
+        // The tabs a crash leaves come back in the order their backups were written.
+        auto reopened = [&](MainWindow& again) {
+            again.show();
+            again.restoreSession();
+            auto tab = [&](const QString& title) -> Controller* {
+                for (Document* d : again.documents())
+                    if (d->title() == title) return d->controller();
+                return nullptr;
+            };
+            QVERIFY(waitFor([&] { return again.tabs()->count() == 2 && tab("a.conf") && tab("Untitled-1"); }, 30000));
+            Controller* file = tab("a.conf");
+            Controller* untitled = tab("Untitled-1");
+            QVERIFY(settle(*file) && settle(*untitled));
+            QCOMPARE(file->plan().elements.size(), size_t(2));
+            QCOMPARE(untitled->plan().elements.size(), size_t(1));
+            QVERIFY(file->hasUnsavedWork() && untitled->hasUnsavedWork());
+            QCOMPARE(file->target().path(), a);
+        };
+        {
+            auto fresh = makeController();
+            MainWindow again(fresh.get());
+            reopened(again);
+            QCOMPARE(again.tabs()->tabText(0), QString("a.conf"));  // the session's order
+            QVERIFY(waitFor([&] { return c->services().backups().list().size() == 2; }, 3000));  // the same two, written on
+        }  // a crash: the window goes without saving its session
+        Settings::setSession({});
+        auto fresh = makeController();
+        MainWindow afterCrash(fresh.get());
+        reopened(afterCrash);
+        QCOMPARE(c->services().backups().list().size(), 2);
+        Settings::setSession({});
+        Settings::setWindow({}, {});
         useUserDir({});
     }
 

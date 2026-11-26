@@ -4,6 +4,7 @@
 #pragma once
 
 #include <QMainWindow>
+#include <memory>
 
 class AppServices;
 class CanvasScene;
@@ -21,6 +22,8 @@ class QStackedWidget;
 class QTabBar;
 class Panels;
 class SaveFlow;
+class SaveTarget;
+struct Backup;
 class SetupPage;
 class UpdatePanel;
 class TelemetryPanel;
@@ -55,10 +58,13 @@ public:
     Document* newDocument();                    // an untitled tab, in front
     bool closeDocument(Document* document);     // asks to save unsaved changes (SaveFlow); false when the user cancels
     void activate(Document* document);          // brings its tab to the front
-    void restoreSession();                      // the tabs open when the window last closed
+    // The tabs open when the window last closed, and the ones a crash left: each with its unsaved changes (hot exit).
+    void restoreSession();
 
     // A file opens in a tab of its own; a file already open comes to the front.
     void openFile(const QString& path);
+    // The tab of a target, opened as above; with a backup (its id), the backup's content on it, modified.
+    Document* open(std::unique_ptr<SaveTarget> target, const QString& backup = QString());
     // A library template on a canvas tab of its own: Save writes its next revision, the other tabs are offered it.
     Document* openTemplate(const QString& name);
     void openPropertiesTab(const QString& element);
@@ -67,8 +73,8 @@ public:
     void resetCapsTab();
 
 protected:
-    void closeEvent(QCloseEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;  // a middle click closes a tab
+    void closeEvent(QCloseEvent* event) override;  // hot exit: asks nothing, every tab comes back on the next start
 
 private:
     Document* addDocument(Controller* controller);
@@ -77,8 +83,9 @@ private:
     void showSaveAll();
     Document* docAt(int index) const;
     int indexOf(Document* document) const;
-    Document* target();                 // where a file opens: the front tab when it is pristine, else a new one
+    Document* blankTab();               // where a file opens: the front tab when it is pristine, else a new one
     void saveSession();
+    Document* reopen(const Backup& tab);  // a tab of restoreSession; null when there is nothing to reopen
 
     void showVersionHistory();
     void askTemplateChange(const QString& id);

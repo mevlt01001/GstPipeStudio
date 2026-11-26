@@ -7,6 +7,7 @@
 #include <QList>
 #include <QString>
 #include <QStringList>
+#include <memory>
 
 #include "graph.h"
 #include "saveresult.h"
@@ -30,6 +31,8 @@ public:
     static QString key(const char* kind, const QString& value) { return QString(kind) + ":" + value; }
     static QString kindOf(const QString& entry) { return entry.section(':', 0, 0); }
     static QString valueOf(const QString& entry) { return entry.section(':', 1); }
+    // The target a session key names; null when the key is of no known kind.
+    static std::unique_ptr<SaveTarget> fromKey(const QString& entry, TemplateLibrary& library);
 };
 
 // A canvas never saved: "Untitled-N". Its first Save asks for a project.

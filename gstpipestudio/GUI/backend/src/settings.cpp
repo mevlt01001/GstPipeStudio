@@ -36,12 +36,14 @@ void addRecent(const QString& path) {
 
 Session session() {
     QSettings settings;
-    return {settings.value("session/tabs").toStringList(), settings.value("session/front").toInt()};
+    return {settings.value("session/tabs").toStringList(), settings.value("session/backups").toStringList(),
+            settings.value("session/front").toInt()};
 }
 
 void setSession(const Session& session) {
     QSettings settings;
     settings.setValue("session/tabs", session.tabs);
+    settings.setValue("session/backups", session.backups);
     settings.setValue("session/front", session.front);
 }
 

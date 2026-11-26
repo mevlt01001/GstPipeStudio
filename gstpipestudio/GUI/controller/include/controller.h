@@ -173,7 +173,9 @@ public:
 
     // ---- files and runs. Opening is asynchronous: the plan is replaced when all its factories are known.
     void newPlan(std::unique_ptr<SaveTarget> target);  // an empty canvas bound to target: untitled, or a new project
-    void open(const QString& path, bool imported = false);  // imported: an unsaved change of this document
+    // The document bound to target, read from the target's file; or from backup (a hot-exit backup), modified.
+    void open(std::unique_ptr<SaveTarget> target, const QString& backup = QString());
+    void open(const QString& path, bool imported = false);  // a project conf; imported: an unsaved change of this document
     void restoreVersion(const QString& version);  // an earlier version of the document, as one undoable change to it
     void revert();                                // the target's file again, unmodified
     bool canRevert() const;                       // modified, not busy, and the target's file is on disk
@@ -212,8 +214,9 @@ private:
     // otherwise one undo step, noted, and validated when it changed what runs (the Pipeline tells).
     bool transact(const std::function<bool(gps::Graph&, Edit&)>& change);
     // How a plan read from a file becomes the document: it is the document's file (Open: unmodified, the undo history
-    // starts again), or one undoable change of the document (Replace).
-    enum class Load { Open, Replace };
+    // starts again), its unsaved content from a backup (Recover: the same, but modified), or one undoable change of the
+    // document (Replace).
+    enum class Load { Open, Recover, Replace };
     // target: what the document is bound to once it is open; null keeps the one it has.
     void load(const QString& source, std::shared_ptr<SaveTarget> target, Load how, const QString& action);
     SaveResult write(std::shared_ptr<SaveTarget> target);  // the one save path of save and saveAs
@@ -254,6 +257,7 @@ private:
     gps::ExecutionCoordinator execution_{pipeline_, backend_};
     std::shared_ptr<SaveTarget> target_ = std::make_shared<UntitledTarget>(1);
     std::uint64_t savedState_ = 0;  // the editor's state at the last save or load
+    static constexpr std::uint64_t kNeverSaved = std::numeric_limits<std::uint64_t>::max();  // no state matches it
     bool updating_ = false;
     bool running_ = false;
     bool monitoring_ = false;

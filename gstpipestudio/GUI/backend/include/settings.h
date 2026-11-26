@@ -19,9 +19,11 @@ QStringList recentFiles();
 QString lastDir();
 void addRecent(const QString& path);
 
-// The tabs open when the window last closed ("file:<path>" or "template:<name>") and the one in front.
+// The tabs open when the window last closed, by their targets' session keys, the backup of each (its id, "" when it
+// had no unsaved changes) and the one in front.
 struct Session {
     QStringList tabs;
+    QStringList backups;
     int front = 0;
 };
 Session session();

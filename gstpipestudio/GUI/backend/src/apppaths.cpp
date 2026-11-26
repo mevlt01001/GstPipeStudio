@@ -27,5 +27,6 @@ QString config() { return folder(QStandardPaths::AppConfigLocation, "config"); }
 QString data() { return folder(QStandardPaths::AppDataLocation, "data"); }
 QString state() { return folder(QStandardPaths::StateLocation, "state"); }
 QString templates() { return below(data(), "templates"); }
+QString backups() { return below(state(), "backups"); }
 
 }  // namespace AppPaths

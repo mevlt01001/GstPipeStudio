@@ -12,6 +12,14 @@
 
 QStringList SaveTarget::templateFolders() const { return {TemplateLibrary::directory()}; }
 
+std::unique_ptr<SaveTarget> SaveTarget::fromKey(const QString& entry, TemplateLibrary& library) {
+    const QString kind = kindOf(entry), value = valueOf(entry);
+    if (kind == UntitledTarget::kKind && value.toInt() > 0) return std::make_unique<UntitledTarget>(value.toInt());
+    if (kind == ProjectConfTarget::kKind && !value.isEmpty()) return std::make_unique<ProjectConfTarget>(value);
+    if (kind == LibraryTemplateTarget::kKind && !value.isEmpty()) return std::make_unique<LibraryTemplateTarget>(value, library);
+    return nullptr;
+}
+
 int UntitledTarget::lowestFree(const QList<const SaveTarget*>& open) {
     QList<int> taken;
     for (const SaveTarget* t : open) {

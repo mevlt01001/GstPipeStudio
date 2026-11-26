@@ -9,8 +9,9 @@ namespace AppPaths {
 
 QString config();     // settings
 QString data();       // what the user makes and keeps: the template library
-QString state();      // what the app remembers: the list of projects
+QString state();      // what the app remembers: the list of projects, the hot-exit backups
 
 QString templates();  // data()/templates: one .conf per template
+QString backups();    // state()/backups: the unsaved content of the open tabs (BackupService)
 
 }  // namespace AppPaths

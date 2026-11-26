@@ -284,9 +284,7 @@ bool Controller::renameTemplate(const QString& from, const QString& to, QString*
 }
 
 void Controller::editLibraryTemplate(const QString& name) {
-    if (!services_.library().plan(name)) return;
-    load(services_.library().file(name), std::make_shared<LibraryTemplateTarget>(name, services_.library()), Load::Open,
-         "Opened template " + name);
+    if (services_.library().plan(name)) open(std::make_unique<LibraryTemplateTarget>(name, services_.library()));
 }
 
 void Controller::setTemplateParameters(const std::vector<gps::ExposedParam>& params) {
@@ -1412,10 +1410,17 @@ void Controller::setTarget(std::unique_ptr<SaveTarget> target) {
     emit changed();
 }
 
+void Controller::open(std::unique_ptr<SaveTarget> target, const QString& backup) {
+    const QString manifest = target->projectConf().isEmpty() ? QString() : ProjectFile::pathForConf(target->projectConf());
+    std::shared_ptr<SaveTarget> bound = std::move(target);
+    if (backup.isEmpty()) load(bound->path(), bound, Load::Open, "Opened " + bound->title());
+    else load(backup, bound, Load::Recover, "Recovered the unsaved changes of " + bound->title());
+    if (QFile::exists(manifest)) ProjectRegistry::remember(manifest);
+}
+
 void Controller::open(const QString& path, bool imported) {
     if (imported) return load(path, nullptr, Load::Replace, "Imported a gst-launch pipeline");
-    load(path, std::make_shared<ProjectConfTarget>(path), Load::Open, "Opened a plan file");
-    if (QFile::exists(ProjectFile::pathForConf(path))) ProjectRegistry::remember(ProjectFile::pathForConf(path));
+    open(std::make_unique<ProjectConfTarget>(path));
 }
 
 void Controller::restoreVersion(const QString& version) { load(version, nullptr, Load::Replace, "Restored an earlier version"); }
@@ -1450,10 +1455,11 @@ void Controller::load(const QString& source, std::shared_ptr<SaveTarget> target,
             return;
         }
         std::string failure;
-        if (how == Load::Open) {
+        if (how != Load::Replace) {
             if (!pipeline_.reset(*loaded, &failure)) { emit notice(fromStd(failure)); return; }
             if (target) target_ = target;
-            markSaved();
+            if (how == Load::Open) markSaved();
+            else savedState_ = kNeverSaved;
         } else {
             pipeline_.editor().begin() = *loaded;
             if (!commitTransaction()) { emit changed(); return; }

@@ -9,6 +9,7 @@
 #include "canvasscene.h"
 #include "canvasview.h"
 #include "controller.h"
+#include "documentbackup.h"
 #include "drawer.h"
 #include "flows.h"
 #include "logpanel.h"
@@ -53,6 +54,7 @@ Document::Document(AppServices& services, Controller* controller, QWidget* windo
     propsTab_ = holder("propsTab", window);
     capsTab_ = holder("capsTab", window);
     indicator_ = new ValidationIndicator(controller_, window);
+    backup_ = new DocumentBackup(services.backups(), controller_, this);
 
     // What happens inside the document; the window wires only what concerns it.
     Flows* flows = flows_;
@@ -80,7 +82,7 @@ Document::Document(AppServices& services, Controller* controller, QWidget* windo
 // before its own widgets). The caller's controller stays.
 Document::~Document() {
     disconnect(scene_, nullptr, nullptr, nullptr);  // while it goes, it reports its items leaving the selection
-    for (QObject* part : std::initializer_list<QObject*>{flows_, centre_, log_, updates_, telemetry_, propsTab_, capsTab_, indicator_, scene_})
+    for (QObject* part : std::initializer_list<QObject*>{backup_, flows_, centre_, log_, updates_, telemetry_, propsTab_, capsTab_, indicator_, scene_})
         delete part;
 }
 
@@ -98,11 +100,7 @@ bool Document::pristine() const {
     return controller_->target().needsDestination() && controller_->plan().empty() && !controller_->modified() && !controller_->busy();
 }
 
-bool Document::showsFile(const QString& file) const { return controller_->target().sessionKey() == ProjectConfTarget::keyFor(file); }
-
-bool Document::showsTemplate(const QString& name) const {
-    return controller_->target().sessionKey() == LibraryTemplateTarget::keyFor(name);
-}
+bool Document::shows(const QString& sessionKey) const { return controller_->target().sessionKey() == sessionKey; }
 
 // The view fits the pipeline when its elements change, and once when a file has opened.
 void Document::rebuilt() {

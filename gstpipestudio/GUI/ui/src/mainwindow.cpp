@@ -36,6 +36,7 @@
 #include "controller.h"
 #include "drawer.h"
 #include "document.h"
+#include "documentbackup.h"
 #include "elementitem.h"
 #include "explorer.h"
 #include "flows.h"
@@ -141,13 +142,13 @@ void MainWindow::buildActions() {
             "Paste a gst-launch-1.0 command or its pipeline description.\n"
             "The pipeline runs briefly in the background to discover dynamic pads.", QString(), &accepted);
         if (!accepted || description.trimmed().isEmpty()) return;
-        Document* d = target();
+        Document* d = blankTab();
         d->opening("imported");
         d->controller()->importLaunch(description);
     });
     auto* newProject = make("actionNewProject", "New &project…", {QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_N)}, [this] {
         const QString conf = NewProjectDialog::ask(this);
-        if (!conf.isEmpty()) target()->controller()->newPlan(std::make_unique<ProjectConfTarget>(conf));
+        if (!conf.isEmpty()) blankTab()->controller()->newPlan(std::make_unique<ProjectConfTarget>(conf));
     });
     // A canvas never saved becomes a project: its name is asked, and its first save makes the folder.
     auto* save = make("actionSave", "&Save", {QKeySequence::Save}, [this] { saveFlow_->save(doc_); });
@@ -434,10 +435,11 @@ QList<Document*> MainWindow::documents() const {
 
 Document* MainWindow::newDocument() { return addDocument(nullptr); }
 
-Document* MainWindow::target() { return doc_ && doc_->pristine() ? doc_ : newDocument(); }
+Document* MainWindow::blankTab() { return doc_ && doc_->pristine() ? doc_ : newDocument(); }
 
 bool MainWindow::closeDocument(Document* d) {
     if (!d || !docs_.contains(d) || !saveFlow_->confirmClose({d})) return false;
+    d->backup()->discard();
     if (d->controller()->running()) d->controller()->stopRun();
     docs_.removeAll(d);  // first: its Untitled-N is free for the tab that may replace it
     if (docs_.isEmpty()) newDocument();  // the window always has a canvas
@@ -449,13 +451,16 @@ bool MainWindow::closeDocument(Document* d) {
     return true;
 }
 
-// The tabs that were open, by their targets' session keys, and the one in front. Untitled tabs are not kept.
+// The tabs that are open, by their targets' session keys, with their backups, and the one in front. An untitled tab
+// without unsaved work is not kept.
 void MainWindow::saveSession() {
     Settings::Session session;
     for (const Document* d : documents()) {
-        if (d->controller()->target().needsDestination()) continue;
+        const bool backedUp = d->backup()->active();
+        if (d->controller()->target().needsDestination() && !backedUp) continue;
         if (d == doc_) session.front = session.tabs.size();
         session.tabs << d->controller()->target().sessionKey();
+        session.backups << (backedUp ? d->backup()->id() : QString());
     }
     Settings::setSession(session);
 }
@@ -463,18 +468,15 @@ void MainWindow::saveSession() {
 void MainWindow::restoreSession() {
     const Settings::Session session = Settings::session();
     QList<Document*> opened;
-    for (const QString& entry : session.tabs) {
-        const QString kind = SaveTarget::kindOf(entry), value = SaveTarget::valueOf(entry);
-        if (kind == LibraryTemplateTarget::kKind) {
-            opened << openTemplate(value);
-        } else if (kind == ProjectConfTarget::kKind && QFileInfo::exists(value)) {
-            openFile(value);
-            opened << doc_;
-        } else {
-            opened << nullptr;
-        }
-    }
+    for (const Backup& tab : services_.backups().reopen(session)) opened << reopen(tab);
     if (session.front >= 0 && session.front < opened.size() && opened[session.front]) activate(opened[session.front]);
+}
+
+// Without a backup there must be a file to read: an untitled tab without changes, or a file gone, is not reopened.
+Document* MainWindow::reopen(const Backup& tab) {
+    std::unique_ptr<SaveTarget> target = SaveTarget::fromKey(tab.key, services_.library());
+    if (!target || (tab.id.isEmpty() && !QFileInfo::exists(target->path()))) return nullptr;
+    return open(std::move(target), tab.id);
 }
 
 bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
@@ -578,14 +580,24 @@ void MainWindow::onEnvironment() {
 }
 
 void MainWindow::openFile(const QString& path) {
-    for (Document* d : std::as_const(docs_)) {
-        if (d->showsFile(path)) return activate(d);
-    }
-    Document* d = target();
-    d->opening(QFileInfo(path).fileName());
     Settings::addRecent(path);
-    d->controller()->open(path);
+    open(std::make_unique<ProjectConfTarget>(path));
+}
+
+// A pristine tab is a blank to fill, even when it reads the same Untitled-N as a backup to reopen.
+Document* MainWindow::open(std::unique_ptr<SaveTarget> target, const QString& backup) {
+    for (Document* d : std::as_const(docs_)) {
+        if (d->shows(target->sessionKey()) && !d->pristine()) {
+            activate(d);
+            return d;
+        }
+    }
+    Document* d = blankTab();
+    d->opening(target->title());
+    if (!backup.isEmpty()) d->backup()->continueFrom(backup);
+    d->controller()->open(std::move(target), BackupService::contentOf(backup));
     refreshTab(d);
+    return d;
 }
 
 void MainWindow::toggleRun() {
@@ -913,12 +925,10 @@ void MainWindow::showVersionHistory() {
 }
 
 void MainWindow::closeEvent(QCloseEvent* event) {
-    if (!saveFlow_->confirmClose(documents())) {
-        event->ignore();
-        return;
-    }
-    for (Document* d : std::as_const(docs_))
+    for (Document* d : std::as_const(docs_)) {
         if (d->controller()->running()) d->controller()->stopRun();
+        d->backup()->flush();
+    }
     saveSession();
     Settings::setWindow(saveGeometry(), saveState());
     event->accept();
@@ -929,15 +939,5 @@ Document* MainWindow::openTemplate(const QString& name) {
         statusBar()->showMessage("Template " + name + " is not in the library", 10000);
         return nullptr;
     }
-    for (Document* d : std::as_const(docs_)) {
-        if (d->showsTemplate(name)) {
-            activate(d);
-            return d;
-        }
-    }
-    Document* d = target();
-    d->opening("Template: " + name);
-    d->controller()->editLibraryTemplate(name);
-    refreshTab(d);
-    return d;
+    return open(std::make_unique<LibraryTemplateTarget>(name, services_.library()));
 }
