@@ -696,6 +696,13 @@ private slots:
         for (int start = 1; start <= BackupService::kStartsKept; ++start) QCOMPARE(backups.reopen({}).size(), 1);
         QVERIFY(backups.reopen({}).isEmpty());
         QVERIFY(backups.list().isEmpty());
+        // One the session names comes back however many starts its tab fails to load it.
+        QVERIFY(backups.write({"named", "untitled:8", "Untitled-8"}, "not a pipeline"));
+        Settings::Session session;
+        session.tabs << "untitled:8";
+        session.backups << "named";
+        for (int start = 0; start <= BackupService::kStartsKept; ++start) QCOMPARE(backups.reopen(session).size(), 1);
+        QCOMPARE(backups.list().size(), 1);
         useUserDir({});
     }
 

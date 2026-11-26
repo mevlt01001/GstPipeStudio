@@ -8,6 +8,9 @@
 #include <QList>
 #include <QObject>
 #include <memory>
+#include <optional>
+
+#include "backupservice.h"
 
 class AppServices;
 class Controller;
@@ -17,7 +20,6 @@ class QStackedWidget;
 class QTabBar;
 class QWidget;
 class SaveTarget;
-struct Backup;
 
 class DocumentTabs : public QObject {
     Q_OBJECT
@@ -60,6 +62,7 @@ private:
     Document* at(int index) const;
     int indexOf(Document* document) const;
     Document* reopen(const Backup& tab);  // a tab of restoreSession; null when there is nothing to reopen
+    static std::optional<Backup> sessionTab(const Document* document);
 
     AppServices& services_;
     QWidget* window_;

@@ -150,8 +150,10 @@ QString Document::title() const {
 
 QString Document::path() const { return controller_->target().path(); }
 
+// A tab holding a backup it could not load is not a blank: that backup is still its.
 bool Document::pristine() const {
-    return controller_->target().needsDestination() && controller_->plan().empty() && !controller_->modified() && !controller_->busy();
+    return controller_->target().needsDestination() && controller_->plan().empty() && !controller_->modified() && !controller_->busy() &&
+           !backup_->held();
 }
 
 void Document::setFileDeleted(bool deleted) {

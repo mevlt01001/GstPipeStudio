@@ -20,8 +20,9 @@ struct Backup {
 
 class BackupService {
 public:
-    // A backup is counted at every start that offers it, and its tab writing it again starts the count anew: one that no
-    // tab took up in this many starts cannot be loaded, and it goes.
+    // A backup the session does not name is counted at every start that offers it, and its tab writing it again starts
+    // the count anew: one that no tab took up in this many starts cannot be loaded, and it goes. One the session names
+    // is never counted: its tab comes back even when it could not load it (GStreamer not ready, say).
     static constexpr int kStartsKept = 3;
 
     static QString newId();
@@ -34,9 +35,10 @@ public:
 
     // The tabs to reopen: the session's, in order, each with its backup; a backup the session does not name (a crash
     // came before the window could save it) joins the session's tab of the same target, or comes after them. Every
-    // backup is counted first, and one offered kStartsKept times without being written again is dropped.
+    // backup the session does not name is counted first, and one offered kStartsKept times without being written again
+    // is dropped.
     QList<Backup> reopen(const Settings::Session& session) const;
 
 private:
-    void count() const;  // one more start for every backup; the stale ones go
+    void count(const Settings::Session& session) const;  // one more start for every backup it does not name; the stale ones go
 };

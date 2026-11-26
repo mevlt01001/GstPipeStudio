@@ -57,8 +57,9 @@ QList<Backup> BackupService::list() const {
     return all;
 }
 
-void BackupService::count() const {
+void BackupService::count(const Settings::Session& session) const {
     for (const Backup& b : list()) {
+        if (session.backups.contains(b.id)) continue;  // its tab comes back, loaded or not
         QJsonObject about = aboutOf(b.id);
         const int starts = about.value("starts").toInt() + 1;
         if (starts > kStartsKept) {
@@ -71,7 +72,7 @@ void BackupService::count() const {
 }
 
 QList<Backup> BackupService::reopen(const Settings::Session& session) const {
-    count();
+    count(session);
     QList<Backup> tabs;
     for (int i = 0; i < session.tabs.size(); ++i) {
         const std::optional<Backup> b = find(session.backups.value(i));

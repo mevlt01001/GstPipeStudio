@@ -1,7 +1,6 @@
 // documentbackup.cpp – see documentbackup.h.
 #include "documentbackup.h"
 
-#include "backupservice.h"
 #include "controller.h"
 
 DocumentBackup::DocumentBackup(BackupService& backups, Controller* controller, QObject* parent)
@@ -16,7 +15,10 @@ DocumentBackup::DocumentBackup(BackupService& backups, Controller* controller, Q
 void DocumentBackup::continueFrom(const QString& id) {
     id_ = id;
     active_ = false;
+    reopened_ = true;
 }
+
+std::optional<Backup> DocumentBackup::held() const { return reopened_ && !active_ ? backups_.find(id_) : std::nullopt; }
 
 void DocumentBackup::flush() {
     if (!due_.isActive()) return;
@@ -26,7 +28,7 @@ void DocumentBackup::flush() {
 
 void DocumentBackup::discard() {
     due_.stop();
-    backups_.remove(id_);
+    if (active_) backups_.remove(id_);
     active_ = false;
 }
 

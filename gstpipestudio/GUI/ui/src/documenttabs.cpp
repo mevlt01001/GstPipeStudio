@@ -131,13 +131,23 @@ void DocumentTabs::refresh(Document* d) {
 void DocumentTabs::saveSession() const {
     Settings::Session session;
     for (const Document* d : all()) {
-        const bool backedUp = d->backup()->active();
-        if (d->controller()->target().needsDestination() && !backedUp) continue;
+        const std::optional<Backup> tab = sessionTab(d);
+        if (!tab) continue;
         if (d == front_) session.front = session.tabs.size();
-        session.tabs << d->controller()->target().sessionKey();
-        session.backups << (backedUp ? d->backup()->id() : QString());
+        session.tabs << tab->key;
+        session.backups << tab->id;
     }
     Settings::setSession(session);
+}
+
+// What the session remembers of a tab: its target with the backup it writes, or the backup it holds and could not
+// load; nothing for an untitled tab without changes.
+std::optional<Backup> DocumentTabs::sessionTab(const Document* d) {
+    const SaveTarget& target = d->controller()->target();
+    if (d->backup()->active()) return Backup{d->backup()->id(), target.sessionKey(), target.title()};
+    if (std::optional<Backup> held = d->backup()->held()) return held;
+    if (target.needsDestination()) return std::nullopt;
+    return Backup{QString(), target.sessionKey(), target.title()};
 }
 
 void DocumentTabs::restoreSession() {

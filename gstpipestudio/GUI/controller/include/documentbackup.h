@@ -7,8 +7,10 @@
 #include <QObject>
 #include <QString>
 #include <QTimer>
+#include <optional>
 
-class BackupService;
+#include "backupservice.h"
+
 class Controller;
 
 class DocumentBackup : public QObject {
@@ -21,8 +23,11 @@ public:
     QString id() const { return id_; }
     bool active() const { return active_; }   // it backs up unsaved work: once flushed, its backup is on disk
     void continueFrom(const QString& id);     // a document reopened from a backup goes on writing that one
+    // The backup it was reopened from and has not taken up (its load failed): the session keeps naming it, so it is
+    // offered again at the next start and never dropped.
+    std::optional<Backup> held() const;
     void flush();                             // what is waiting is written now (the window quits)
-    void discard();                           // the tab closed, its changes saved or dropped: the backup goes
+    void discard();                           // its changes saved or dropped: its backup goes, a held one stays
 
 private:
     void follow();  // the document changed
@@ -32,5 +37,6 @@ private:
     Controller* controller_;
     QString id_;
     QTimer due_;
-    bool active_ = false;  // the backup of id_ is this document's to write and to drop
+    bool active_ = false;    // the backup of id_ is this document's to write and to drop
+    bool reopened_ = false;  // id_ is a backup it was reopened from
 };
