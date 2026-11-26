@@ -78,7 +78,6 @@ public:
 
     // ---- support
     void setUrlOpener(UrlOpener* opener) { opener_ = opener; }
-    SupportInfo supportInfo(const QString& title) const;
     void requestSupport(const QString& title);  // opens the prefilled issue in the browser
     QString lastAction() const { return edits_.lastAction(); }  // what the last edit did, in words
 
@@ -190,6 +189,7 @@ signals:
 
 private:
     using Edit = EditSession::Edit;
+    SupportInfo supportInfo(const QString& title) const;  // what the support report tells
     void log(const QString& line);
     std::function<void(const QString&)> logger();  // log() as a callback
     QString blockedReason() const;  // the edit-blocked guard's answer

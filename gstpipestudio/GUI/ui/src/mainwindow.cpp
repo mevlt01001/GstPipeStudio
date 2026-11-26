@@ -129,6 +129,11 @@ bool MainWindow::showingSetup() const { return front()->centre()->currentWidget(
 
 // ---- commands
 
+namespace {
+// The first reason a command is off: a general one (busy, not editable) before the command's own.
+QString firstOf(const QString& general, const QString& own) { return general.isEmpty() ? own : general; }
+}  // namespace
+
 QString MainWindow::busyReason() const {
     if (services_.environment().blocked()) return "GStreamer is not ready";
     if (controller()->running()) return "The pipeline is running";
@@ -138,12 +143,11 @@ QString MainWindow::busyReason() const {
 
 QString MainWindow::editReason() const { return controller()->saveBlockedReason(); }
 
-QString MainWindow::addReason() const { return services_.environment().blocked() ? "GStreamer is not ready" : editReason(); }
+QString MainWindow::addReason() const { return firstOf(services_.environment().blocked() ? "GStreamer is not ready" : QString(), editReason()); }
 
 QString MainWindow::selectionReason(int least) const {
-    if (const QString why = editReason(); !why.isEmpty()) return why;
-    if (front()->selection().size() >= least) return QString();
-    return least == 1 ? "Nothing is selected" : "Select two elements or more";
+    const QString own = front()->selection().size() >= least ? QString() : least == 1 ? "Nothing is selected" : "Select two elements or more";
+    return firstOf(editReason(), own);
 }
 
 QString MainWindow::copyTitle() const { return fromStd(controller()->names().instance(toStd(commands_->target().instance))); }
@@ -156,7 +160,7 @@ void MainWindow::buildCommands() {
     auto add = [this] { return addReason(); };
     auto selected = [this] { return selectionReason(); };
     auto pair = [this] { return selectionReason(2); };
-    auto withPlan = [this] { return !editReason().isEmpty() ? editReason() : controller()->plan().empty() ? "The canvas is empty" : QString(); };
+    auto withPlan = [this] { return firstOf(editReason(), controller()->plan().empty() ? "The canvas is empty" : QString()); };
     auto target = [this] { return commands_->target(); };
     commands_->add({
         {C::New, "actionNew", "&New", {QKeySequence::New}, [this] { if (!front()->pristine()) newDocument(); }, busy},
@@ -174,7 +178,7 @@ void MainWindow::buildCommands() {
         {C::CloseTab, "actionCloseTab", "&Close tab", {QKeySequence(Qt::CTRL | Qt::Key_W), QKeySequence(Qt::CTRL | Qt::Key_F4)}, [this] { closeDocument(front()); }},
         {C::ImportLaunch, "actionImportLaunch", "Import gst-launch pipeline…", {}, [this] { importLaunch(); }, busy},
         {C::VersionHistory, "actionVersionHistory", "Version &history…", {}, [this] { showVersionHistory(); }, [this] {
-             return !busyReason().isEmpty() ? busyReason() : VersionHistory::versions(front()->path()).isEmpty() ? "No earlier versions" : QString();
+             return firstOf(busyReason(), VersionHistory::versions(front()->path()).isEmpty() ? "No earlier versions" : QString());
          }},
         {C::Quit, "actionQuit", "&Quit", {QKeySequence::Quit}, [this] { close(); }},
 
@@ -185,11 +189,11 @@ void MainWindow::buildCommands() {
         {C::Copy, "actionCopy", "&Copy", {QKeySequence::Copy}, [this] { front()->copySelection(); }, [this] { return front()->selection().isEmpty() ? "Nothing is selected" : QString(); }},
         {C::Paste, "actionPaste", "&Paste", {QKeySequence::Paste}, [this] { front()->paste(); }, [this] {
              const QClipboard* clipboard = QGuiApplication::clipboard();
-             return !editReason().isEmpty() ? editReason() : !clipboard || clipboard->text().isEmpty() ? "The clipboard is empty" : QString();
+             return firstOf(editReason(), !clipboard || clipboard->text().isEmpty() ? "The clipboard is empty" : QString());
          }},
         {C::Duplicate, "actionDuplicate", "&Duplicate", {QKeySequence(Qt::CTRL | Qt::Key_D)}, [this] { front()->duplicateSelection(); }, selected},
         {C::Delete, "actionDelete", "De&lete", {QKeySequence::Delete, QKeySequence(Qt::Key_Backspace)}, [this] { front()->deleteSelection(); }, [this] {
-             return !editReason().isEmpty() ? editReason() : front()->hasSelectedItems() ? QString() : "Nothing is selected";
+             return firstOf(editReason(), front()->hasSelectedItems() ? QString() : "Nothing is selected");
          }},
         {C::SelectAll, "actionSelectAll", "Select &All", {QKeySequence::SelectAll}, [this] { front()->selectAll(); }},
         {C::Find, "actionFind", "&Find element", {QKeySequence::Find}, [this] { focusSearch(); }},
@@ -215,7 +219,7 @@ void MainWindow::buildCommands() {
         {C::AddTemplate, "actionAddTemplate", "Add &template…", {QKeySequence(Qt::CTRL | Qt::Key_T)}, [this] { flows()->chooseComponent(); }, add},
         {C::SaveAsTemplate, "actionSaveTemplateElement", "Save as &template…", {QKeySequence(Qt::CTRL | Qt::Key_G)}, [this] { flows()->saveAsTemplate(front()->selection()); }, selected},
         {C::TemplateParameters, "actionTemplateParameters", "Template &parameters…", {}, [this] { flows()->editTemplateParameters(); }, [this] {
-             return !editReason().isEmpty() ? editReason() : controller()->target().libraryTemplate().isEmpty() ? "Only a library template has parameters" : QString();
+             return firstOf(editReason(), controller()->target().libraryTemplate().isEmpty() ? "Only a library template has parameters" : QString());
          }},
         {C::ConnectSelected, "actionConnectSelected", "Connect &selected", {QKeySequence(Qt::CTRL | Qt::Key_L)}, [this] { controller()->connectSelectedElements(front()->selection()); }, pair},
         {C::DisconnectSelected, "actionDisconnectSelected", "Disconnect selected", {}, [this] { controller()->disconnectBetweenElements(front()->selection()); }, pair},
