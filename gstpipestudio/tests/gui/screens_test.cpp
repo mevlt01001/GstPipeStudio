@@ -10,7 +10,6 @@
 #include "canvasscene.h"
 #include "canvasview.h"
 #include "capspage.h"
-#include "confirmdialog.h"
 #include "drawer.h"
 #include "elementitem.h"
 #include "flows.h"
@@ -209,12 +208,6 @@ private slots:
         w.drawer()->dismiss();
         w.flows()->closeCaps();
         QTest::qWait(300);
-
-        ConfirmDialog confirm("Remove elements", "These 3 elements will be removed, with 3 links",
-                              {"nvvideoconvert_5   (nvvideoconvert)", "textoverlay_6   (textoverlay)", "fakesink_7   (fakesink)"}, "Remove 3 elements");
-        confirm.show();
-        QTest::qWait(100);
-        save(&confirm, "ux_14_confirm");
     }
 
     void menus() {

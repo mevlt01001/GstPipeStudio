@@ -33,7 +33,6 @@
 #include "canvasscene.h"
 #include "canvasview.h"
 #include "capspage.h"
-#include "confirmdialog.h"
 #include "drawer.h"
 #include "elementitem.h"
 #include "document.h"
@@ -1612,7 +1611,7 @@ private slots:
         QCOMPARE(applied.count(), 1);
     }
 
-    // ---- PickerPage and ConfirmDialog
+    // ---- PickerPage
 
     void pickerRanksAndSearches() {
         PickerData data;
@@ -1697,19 +1696,6 @@ private slots:
         doubleClick(list->viewport(), list->visualItemRect(item).center());
         QCOMPARE(picked.count(), 1);
         QCOMPARE(second.choice().factory, QString("queue"));
-    }
-
-    void confirmDialogDefaultsToTheSafeAnswer() {
-        ConfirmDialog d("Remove elements", "These 2 elements will be removed, with 1 link", {"a (x)", "b (y)"}, "Delete 2 elements");
-        d.show();
-        QCOMPARE(d.findChild<QListWidget*>("removalList")->count(), 2);
-        QVERIFY(d.findChild<QPushButton*>("cancelButton")->isDefault());
-        QTest::keyClick(&d, Qt::Key_Return);
-        QCOMPARE(d.result(), int(QDialog::Rejected));
-        ConfirmDialog e("Remove elements", "x", {"a"}, "Delete 1 element");
-        e.show();
-        press(&e, "saveButton");
-        QCOMPARE(e.result(), int(QDialog::Accepted));
     }
 
     // ---- canvas

@@ -25,7 +25,6 @@
 #include "canvasscene.h"
 #include "canvasview.h"
 #include "capspage.h"
-#include "confirmdialog.h"
 #include "drawer.h"
 #include "elementitem.h"
 #include "flows.h"
@@ -224,8 +223,6 @@ private slots:
         w.flows()->closeProperties();
         w.flows()->closeCaps();
         w.drawer()->dismiss();
-        ConfirmDialog confirm("Remove elements", "These 2 elements will be removed, with 1 link", {"a (x)"}, "Delete 2 elements");
-        verify(&confirm, "confirmation");
 
         // the slow, cancelling and stopped states of the indicator
         qint64 now = 0;

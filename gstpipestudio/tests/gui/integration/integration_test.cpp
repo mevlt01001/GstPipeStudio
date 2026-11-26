@@ -28,7 +28,6 @@
 #include "canvasscene.h"
 #include "canvasview.h"
 #include "capspage.h"
-#include "confirmdialog.h"
 #include "drawer.h"
 #include "elementitem.h"
 #include "factorydelegate.h"
