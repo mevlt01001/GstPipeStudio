@@ -649,7 +649,7 @@ void MainWindow::showVersionHistory() {
     connect(list, &QListWidget::itemDoubleClicked, &dialog, &QDialog::accept);
     layout->addWidget(buttons);
     dialog.resize(460, 380);
-    if (dialog.exec() != QDialog::Accepted || !list->currentItem() || !saveFlow_->confirmClose({front()})) return;
+    if (dialog.exec() != QDialog::Accepted || !list->currentItem()) return;  // one undoable change: nothing to ask
     controller()->restoreVersion(list->currentItem()->data(Qt::UserRole).toString());
 }
 
