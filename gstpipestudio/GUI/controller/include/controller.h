@@ -176,6 +176,10 @@ public:
     void stopRun() { runs_.stop(); }
     bool startMonitoring() { return canRun() && runs_.startMonitoring(plan()); }
     void stopMonitoring() { runs_.stopMonitoring(); }
+    void stopAll() {  // the run and the monitor, whichever goes on: its tab closes
+        stopRun();
+        stopMonitoring();
+    }
 
 signals:
     void changed();                         // anything the views show has changed

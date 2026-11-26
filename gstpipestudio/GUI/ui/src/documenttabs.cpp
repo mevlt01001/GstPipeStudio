@@ -106,7 +106,7 @@ void DocumentTabs::activate(Document* d) {
 void DocumentTabs::close(Document* d) {
     if (!docs_.contains(d)) return;
     d->backup()->discard();
-    if (d->controller()->running()) d->controller()->stopRun();
+    d->controller()->stopAll();
     docs_.removeAll(d);  // first: its Untitled-N is free for the tab that may replace it
     if (docs_.isEmpty()) add();  // the window always has a canvas
     if (d == front_) activate(at(indexOf(d) + 1) ? at(indexOf(d) + 1) : at(indexOf(d) - 1));

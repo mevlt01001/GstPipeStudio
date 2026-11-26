@@ -679,7 +679,7 @@ void MainWindow::showAbout() {
 
 void MainWindow::closeEvent(QCloseEvent* event) {
     for (Document* d : documents()) {
-        if (d->controller()->running()) d->controller()->stopRun();
+        d->controller()->stopAll();
         d->backup()->flush();
     }
     tabs_->saveSession();

@@ -38,7 +38,7 @@ public:
     // The tab of a target, opened as above; with a backup (its id), the backup's content on it, modified.
     Document* open(std::unique_ptr<SaveTarget> wanted, const QString& backup = QString());
     void activate(Document* document);  // brings its tab to the front
-    void close(Document* document);     // its tab goes, with its backup and its run; the window always keeps one tab
+    void close(Document* document);     // its tab goes, with its backup, run and monitor; the window always keeps one tab
     void step(int by);                  // the next (1) or previous (-1) tab, round the ends
     void refresh(Document* document);   // its tab's text, tooltip and unsaved dot
 
