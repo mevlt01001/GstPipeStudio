@@ -31,7 +31,7 @@ public:
     bool catchUp(Document* document);
 
 signals:
-    void changedOnDisk(Document* document);  // not while it is busy: it is told once it has finished
+    void changedOnDisk(Document* document);  // once per new content; a busy tab is asked later, by the window
     void deletedOnDisk(Document* document);
 
 private:

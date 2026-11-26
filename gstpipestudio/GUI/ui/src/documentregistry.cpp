@@ -71,10 +71,6 @@ void DocumentRegistry::check() {
             e.seen.clear();
             emit deletedOnDisk(d);
         } else if (now != e.seen || d->fileDeleted()) {
-            if (d->controller()->busy()) {
-                settle_.start();
-                continue;
-            }
             const bool changed = now != e.read || d->fileDeleted();  // a file back after a delete counts as changed
             d->setFileDeleted(false);
             e.seen = now;
