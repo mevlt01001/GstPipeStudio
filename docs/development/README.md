@@ -29,7 +29,7 @@ Document timing is read when the application starts. Set a positive integer in m
 | Variable | Default | Effect |
 | --- | ---: | --- |
 | `GPS_VALIDATION_DEBOUNCE_MS` | 35 | Time to collect successive edits before validating. |
-| `GPS_UPDATE_TIMEOUT_MS` | 600000 | Time limit passed to the validation helper. |
+| `GPS_UPDATE_TIMEOUT_MS` | 600000 | Time limit passed to the validation helper, up to 86,400,000 ms. |
 | `GPS_BACKUP_DELAY_MS` | 1000 | Delay before first saving a modified document's recovery copy. |
 
 `GPS_DIRS` can select `Pipeline;GstEngine;tools;plugin;Application;GUI;packaging;tests`; invalid directory names fail configuration. `GPS_TEST_DIRS` selects test groups. `GPS_SWEEP_ALL=ON` opts into the long all-factory survey. Test screenshots/logs go under the build directory, so a read-only source checkout is supported.

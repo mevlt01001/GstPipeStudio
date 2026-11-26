@@ -11,6 +11,7 @@
 
 #include <gst/gst.h>
 
+#include "runtime.h"
 #include "wire.h"
 
 namespace gps {
@@ -86,8 +87,8 @@ inline bool takeTimeout(std::vector<std::string>* args, int* timeoutMs, std::str
         }
         char* end = nullptr;
         long value = std::strtol((*args)[i + 1].c_str(), &end, 10);
-        if (*end != '\0' || value <= 0 || value > 86400000L) {
-            *error = "--timeout-ms: '" + (*args)[i + 1] + "' is not valid, use a whole number from 1 to 86400000";
+        if (*end != '\0' || value <= 0 || value > kMaxTimeoutMs) {
+            *error = "--timeout-ms: '" + (*args)[i + 1] + "' is not valid, use a whole number from 1 to " + std::to_string(kMaxTimeoutMs);
             return false;
         }
         *timeoutMs = static_cast<int>(value);

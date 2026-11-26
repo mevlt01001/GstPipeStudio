@@ -4,6 +4,8 @@
 #include <vector>
 
 namespace gps {
+inline constexpr int kMaxTimeoutMs = 24 * 60 * 60 * 1000;
+
 struct CapsFieldInfo {
     std::string name, type;  // type: GType name of the value, or of the list/range items
     std::string kind;        // fixed | list | range
