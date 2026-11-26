@@ -1,6 +1,6 @@
 # Contributing
 
-Start with the [architecture](docs/architecture/README.md) and [build/test guide](docs/development/README.md).
+Start with the [architecture](docs/architecture/README.md) [coding style](docs/development/coding-style.md), and [build/test guide](docs/development/README.md).
 
 Pick one observable problem and describe the expected behavior. Keep each change small enough to review. Use the same process whether writing code manually or with assistance; the contributor is responsible for understanding and verifying the change.
 
@@ -23,7 +23,7 @@ A PR should explain the user-visible problem, resulting behavior, affected contr
 | Window, dialog, shared input behavior | `GUI/ui` | GUI tests |
 | Pads, elements, connection visuals | `GUI/canvas` | GUI tests and visual review |
 
-Keep animation state in the visual object that owns it; document edits go through Controller and Pipeline transactions. A new input rule belongs in a shared component, not copied event handlers. Use `.clang-format` and `.editorconfig`; avoid reformatting unrelated files. This applies equally to human and AI-authored changes.
+Keep animation state in the visual object that owns it; document edits go through Controller and Pipeline transactions. A new input rule belongs in a shared component, not copied event handlers. Use `.clang-format` and `.editorconfig`; avoid reformatting unrelated files.
 
 Follow [C++ Core Guidelines](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines) for ownership and RAII, and [Qt object ownership](https://doc.qt.io/qt-6/objecttrees.html) for widgets and animations. Prefer composition; introduce polymorphism when there are interchangeable implementations. Keep factory-specific behavior out of generic widgets.
 
