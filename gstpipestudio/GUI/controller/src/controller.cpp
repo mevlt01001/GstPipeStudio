@@ -516,7 +516,7 @@ ElementView Controller::templateView(const QString& groupId) const {
     const gps::NodePorts ports = shape().ports(gps::NodeRef::instance(toStd(groupId)));
     v.sinks = padViews(ports.sinks);
     v.srcs = padViews(ports.srcs);
-    const gps::Role role = shape().role(gps::NodeRef::instance(toStd(groupId)));
+    const gps::Role role = gps::NodeShape::role(ports);
     v.isSource = role == gps::Role::Source;
     v.isSink = role == gps::Role::Sink;
     v.factory = QString("template (%1) · %2").arg(members.size()).arg(factories.join(" → "));
@@ -526,6 +526,10 @@ ElementView Controller::templateView(const QString& groupId) const {
         v.note = "ℹ Unlinked template — not tracked until fed by a source.";
     }
     return v;
+}
+
+ElementView Controller::boxView(const QString& box) const {
+    return plan().find(toStd(box)) ? view(box) : templateView(box);
 }
 
 FrameView Controller::frameView(const QString& instanceId) const {

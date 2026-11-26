@@ -85,7 +85,7 @@ PickerPage::PickerPage(const PickerData& data, QWidget* parent) : DrawerPage(par
     peek_->setSingleShot(true);
     peek_->setInterval(TemplatePeek::kHoverMs);
     connect(peek_, &QTimer::timeout, this, [this] {
-        if (const ComponentProvider* provider = providerOf(peeked_)) TemplatePeek::show(provider->peek(peeked_.id), QCursor::pos(), this);
+        if (const ComponentProvider* provider = providerOf(data_.providers, peeked_.provider)) TemplatePeek::show(provider->peek(peeked_.id), QCursor::pos(), this);
     });
 
     auto addHeader = [&](const QString& text) {
@@ -256,12 +256,6 @@ ComponentRef PickerPage::componentAt(const QListWidgetItem* item) const {
     return {item->data(kProviderRole).toString(), item->data(kComponentRole).toString()};
 }
 
-const ComponentProvider* PickerPage::providerOf(const ComponentRef& component) const {
-    for (const ComponentProvider* provider : data_.providers) {
-        if (provider->kind() == component.provider) return provider;
-    }
-    return nullptr;
-}
 
 PickerChoice PickerPage::choice() const {
     PickerChoice c;

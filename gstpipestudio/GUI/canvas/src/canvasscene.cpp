@@ -148,8 +148,7 @@ void CanvasScene::rebuild() {
         const QString box = outline.boxOf(QString::fromStdString(e.name));
         if (built.contains(box)) continue;
         built.insert(box);
-        const QString group = outline.collapsedTemplate(QString::fromStdString(e.name));
-        auto* item = new ElementItem(group.isEmpty() ? controller_->view(box) : controller_->templateView(group));
+        auto* item = new ElementItem(controller_->boxView(box));
         item->setPos(e.x, e.y);
         item->setFlag(QGraphicsItem::ItemIsMovable, !locked_);
         item->setOpacity(stale_ ? 0.5 : 1.0);

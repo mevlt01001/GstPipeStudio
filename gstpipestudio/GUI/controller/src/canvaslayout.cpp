@@ -38,8 +38,7 @@ const ViewPreferences& CanvasLayout::preferences() const { return controller_.se
 QRectF CanvasLayout::boxRect(const QString& box) const {
     const gps::Element* at = controller_.plan().find(toStd(controller_.outline().anchorOf(box)));
     if (!at) return QRectF();
-    const ElementView v = at->name == toStd(box) ? controller_.view(box) : controller_.templateView(box);
-    return QRectF(at->x, at->y, metrics::kBoxWidth, v.height());
+    return QRectF(at->x, at->y, metrics::kBoxWidth, controller_.boxView(box).height());
 }
 
 CanvasLayout::Pin CanvasLayout::pinOf(const QStringList& elements, bool gather) const {

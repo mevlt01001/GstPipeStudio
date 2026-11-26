@@ -80,7 +80,6 @@ private:
     // The catalog's sources (true) or everything that is not a source (false), for a picker.
     std::vector<FactoryEntry> factories(bool sources) const;
     FactoryCatalog& catalog() const { return controller_->services().catalog(); }
-    TemplateLibrary& library() const { return controller_->services().library(); }
     QList<const ComponentProvider*> providers() const;
     void importInto(ComponentProvider& provider);
 

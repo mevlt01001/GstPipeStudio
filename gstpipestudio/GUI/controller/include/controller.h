@@ -125,8 +125,10 @@ public:
 
     // ---- what the canvas and the drawer show
     gps::Names names() const;  // every name the user reads, of the plan as it is; kept per revision
+    QString padName(const gps::PadRef& pad) const;  // names().pad() of the plan as text: "<element>.<pad>"
     ElementView view(const QString& element) const;
     ElementView templateView(const QString& groupId) const;
+    ElementView boxView(const QString& box) const;  // what is drawn for a box (Outline): an element's view or a copy's
     FrameView frameView(const QString& instanceId) const;
     QList<LinkView> linkViews() const;
     std::vector<StructureInfo> padStructures(const QString& element, const QString& identity) const;  // allowed by a src pad
@@ -204,7 +206,6 @@ signals:
 private:
     void log(const QString& line);
     void note(const QString& action, const QString& linking = QString());  // what the support report says we did
-    QString padName(const gps::PadRef& pad) const;  // names().pad() as text, for the support report
     std::function<void(const QString&)> logger();  // log() as a callback
     bool move(const QList<QPair<QString, QPointF>>& placements);  // one undoable presentation change
     // What one user edit says about itself; its change fills it in.

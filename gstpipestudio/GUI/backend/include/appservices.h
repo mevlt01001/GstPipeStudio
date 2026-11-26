@@ -24,12 +24,7 @@ public:
     TemplateLibrary& library() { return library_; }
     // Everything that can be placed besides a single element, one section each in the picker and the Explorer.
     QList<ComponentProvider*> providers() { return {&library_, &plugins_}; }
-    ComponentProvider* provider(const QString& kind) {
-        for (ComponentProvider* p : providers()) {
-            if (p->kind() == kind) return p;
-        }
-        return nullptr;
-    }
+    ComponentProvider* provider(const QString& kind) { return providerOf(providers(), kind); }
     ViewPreferences& view() { return view_; }
     BackupService& backups() { return backups_; }
 

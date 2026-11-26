@@ -94,7 +94,7 @@ QString Flows::path(const QString& element, const QString& identity) const {
     return path(gps::PadRef{toStd(element), toStd(identity), gps::Pad::Direction::Source});
 }
 
-QString Flows::path(const gps::PadRef& pad) const { return fromStd(controller_->names().pad(controller_->plan(), pad)); }
+QString Flows::path(const gps::PadRef& pad) const { return controller_->padName(pad); }
 
 QString Flows::title(const QString& element) const { return fromStd(controller_->names().element(toStd(element))); }
 
@@ -258,7 +258,11 @@ void Flows::chooseComponent() {
     PickerData data;
     data.providers = providers();
     data.componentMenu = [this](const ComponentRef& component, const QPoint& at) { componentMenu(component, at); };
-    data.importComponent = [this] { importInto(library()); };
+    for (ComponentProvider* provider : controller_->services().providers()) {
+        if (!provider->canImport()) continue;
+        data.importComponent = [this, provider] { importInto(*provider); };
+        break;
+    }
     auto* page = new PickerPage(data);
     connect(page, &PickerPage::picked, this, [this](const PickerChoice& choice) {
         if (choice.kind != PickerChoice::Component) return;

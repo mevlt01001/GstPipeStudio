@@ -68,7 +68,6 @@ private:
     QLineEdit* search_;
     QListWidget* list_;
     ComponentRef componentAt(const QListWidgetItem* item) const;  // the component of a row; an empty ref for others
-    const ComponentProvider* providerOf(const ComponentRef& component) const;
 
     QTimer* peek_;
     ComponentRef peeked_;  // the component under the pointer

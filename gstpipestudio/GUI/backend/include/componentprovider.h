@@ -58,3 +58,12 @@ public:
 signals:
     void changed();
 };
+
+// The provider of this kind among these; nullptr when there is none.
+template <typename Provider>
+Provider* providerOf(const QList<Provider*>& providers, const QString& kind) {
+    for (Provider* p : providers) {
+        if (p->kind() == kind) return p;
+    }
+    return nullptr;
+}
