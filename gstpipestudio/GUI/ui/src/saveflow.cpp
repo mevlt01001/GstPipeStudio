@@ -1,8 +1,6 @@
 // saveflow.cpp – see saveflow.h.
 #include "saveflow.h"
 
-#include <QMessageBox>
-#include <QPushButton>
 #include <QStatusBar>
 
 #include "controller.h"
@@ -12,6 +10,7 @@
 #include "mainwindow.h"
 #include "newprojectdialog.h"
 #include "pipelinefiledialog.h"
+#include "prompt.h"
 #include "savetarget.h"
 #include "settings.h"
 
@@ -60,39 +59,21 @@ SaveFlow::Answer SaveFlow::ask(const QList<Document*>& unsaved) const {
     const bool one = unsaved.size() == 1;
     QStringList titles;
     for (const Document* d : unsaved) titles << d->title();
-    QMessageBox box(window_);
-    box.setObjectName("saveChanges");
-    box.setIcon(QMessageBox::Warning);
-    box.setWindowTitle("Unsaved changes");
-    box.setText(one ? "Do you want to save the changes you made to " + titles.first() + "?"
-                    : QString("Do you want to save the changes to the following %1 files?").arg(unsaved.size()));
-    box.setInformativeText((one ? QString() : titles.join("\n") + "\n\n") + "Your changes will be lost if you don't save them.");
-    QPushButton* saveButton = box.addButton(one ? "Save" : "Save all", QMessageBox::AcceptRole);
-    QPushButton* dropButton = box.addButton("Don't save", QMessageBox::DestructiveRole);
-    QPushButton* cancel = box.addButton(QMessageBox::Cancel);
-    saveButton->setObjectName("saveChangesSave");
-    dropButton->setObjectName("saveChangesDiscard");
-    box.setDefaultButton(saveButton);
-    box.setEscapeButton(cancel);
-    box.exec();
-    if (box.clickedButton() == saveButton) return Answer::Save;
-    return box.clickedButton() == dropButton ? Answer::Discard : Answer::Cancel;
+    const int answer = Prompt::ask(window_, {"saveChanges", "Unsaved changes",
+        one ? "Do you want to save the changes you made to " + titles.first() + "?"
+            : QString("Do you want to save the changes to the following %1 files?").arg(unsaved.size()),
+        (one ? QString() : titles.join("\n") + "\n\n") + "Your changes will be lost if you don't save them.",
+        {{one ? "Save" : "Save all", "saveChangesSave"}, {"Don't save", "saveChangesDiscard", QMessageBox::DestructiveRole}, Prompt::cancel()},
+        0, QMessageBox::Warning});
+    return answer == 0 ? Answer::Save : answer == 1 ? Answer::Discard : Answer::Cancel;
 }
 
 bool SaveFlow::overwrite(Document* d) const {
     if (!window_->registry()->changedSinceRead(d)) return true;
     window_->activate(d);
-    QMessageBox box(window_);
-    box.setObjectName("changedOnDiskSave");
-    box.setIcon(QMessageBox::Warning);
-    box.setWindowTitle("File changed on disk");
-    box.setText(d->title() + " was changed on disk by another program.");
-    box.setInformativeText("Overwrite it with your version?");
-    QPushButton* overwriteButton = box.addButton("Overwrite", QMessageBox::AcceptRole);
-    overwriteButton->setObjectName("overwriteOnDisk");
-    box.setEscapeButton(box.addButton(QMessageBox::Cancel));
-    box.exec();
-    return box.clickedButton() == overwriteButton;
+    return Prompt::ask(window_, {"changedOnDiskSave", "File changed on disk", d->title() + " was changed on disk by another program.",
+                                 "Overwrite it with your version?", {{"Overwrite", "overwriteOnDisk"}, Prompt::cancel()}, 0,
+                                 QMessageBox::Warning}) == 0;
 }
 
 bool SaveFlow::report(Document* d, const SaveResult& r) const {

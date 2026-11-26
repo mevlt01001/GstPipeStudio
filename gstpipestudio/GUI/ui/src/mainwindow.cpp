@@ -13,7 +13,6 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMenuBar>
-#include <QMessageBox>
 #include <QStackedWidget>
 #include <QStatusBar>
 #include <QMouseEvent>
@@ -47,6 +46,7 @@
 #include "linkitem.h"
 #include "logpanel.h"
 #include "propertypage.h"
+#include "prompt.h"
 #include "setuppage.h"
 #include "settings.h"
 #include "templates.h"
@@ -62,7 +62,6 @@
 
 #include <QClipboard>
 #include <QGuiApplication>
-#include <QInputDialog>
 #include <QVBoxLayout>
 #include <set>
 
@@ -144,14 +143,13 @@ void MainWindow::buildActions() {
     });
     auto* history = make("actionVersionHistory", "Version &history…", {}, [this] { showVersionHistory(); });
     auto* import = make("actionImportLaunch", "Import gst-launch pipeline…", {}, [this] {
-        bool accepted = false;
-        QString description = QInputDialog::getMultiLineText(this, "Import gst-launch pipeline",
+        const auto description = Prompt::lines(this, "Import gst-launch pipeline",
             "Paste a gst-launch-1.0 command or its pipeline description.\n"
-            "The pipeline runs briefly in the background to discover dynamic pads.", QString(), &accepted);
-        if (!accepted || description.trimmed().isEmpty()) return;
+            "The pipeline runs briefly in the background to discover dynamic pads.");
+        if (!description || description->trimmed().isEmpty()) return;
         Document* d = blankTab();
         d->opening("imported");
-        d->controller()->importLaunch(description);
+        d->controller()->importLaunch(*description);
     });
     auto* newProject = make("actionNewProject", "New &project…", {QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_N)}, [this] { files_->newProject(); });
     // A canvas never saved becomes a project: its name is asked, and its first save makes the folder.
@@ -201,7 +199,7 @@ void MainWindow::buildActions() {
     auto* about = make("actionAbout", "&About GstPipeStudio", {}, [this] { showAbout(); });
     auto* gstInfo = make("actionGstInfo", "&GStreamer information", {}, [this] {
         const StartupResult& env = services_.environment().result();
-        QMessageBox::information(this, "GStreamer information", env.version.isEmpty() ? "GStreamer was not checked or not found." : env.statusText());
+        Prompt::inform(this, "GStreamer information", env.version.isEmpty() ? "GStreamer was not checked or not found." : env.statusText());
     });
 
     // The menus as desktop applications have them: File, Edit, View, then the application's own, then Help.
@@ -545,22 +543,15 @@ void MainWindow::onLibraryChanged() {
 // Opened, not run: the event loop goes on (saves, runs, the watcher) while it waits.
 void MainWindow::askReload(Document* d, DiskChange why) {
     const ChangeWords words = wordsFor(d, why);
-    auto* box = new QMessageBox(QMessageBox::Warning, words.title, words.headline, QMessageBox::NoButton, this);
-    box->setObjectName("changedOnDisk");
-    box->setAttribute(Qt::WA_DeleteOnClose);
-    box->setInformativeText("Reload it and lose your changes, or keep your version?");
-    QPushButton* reload = box->addButton("Reload", QMessageBox::DestructiveRole);
-    QPushButton* keep = box->addButton("Keep mine", QMessageBox::RejectRole);
-    reload->setObjectName("reloadFromDisk");
-    keep->setObjectName("keepMine");
-    box->setDefaultButton(keep);
     QPointer<Document> asked(d);
-    connect(box, &QMessageBox::finished, this, [this, box, reload, asked] {
+    Prompt::askLater(this, {"changedOnDisk", words.title, words.headline, "Reload it and lose your changes, or keep your version?",
+                            {{"Reload", "reloadFromDisk", QMessageBox::DestructiveRole}, {"Keep mine", "keepMine", QMessageBox::RejectRole}},
+                            1, QMessageBox::Warning},
+                     [this, asked](int answer) {
         if (!asked) return;
-        if (box->clickedButton() == reload) asked->controller()->reload();
+        if (answer == 0) asked->controller()->reload();
         else registry_->accept(asked);
     });
-    box->open();
 }
 
 bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
@@ -917,37 +908,24 @@ void MainWindow::askTemplateChange(const QString& id) {
     const QString name = QString::fromStdString(t->templateName);
     QStringList used;
     for (const QString& project : services_.library().projectsUsing(name)) used << QFileInfo(project).absolutePath();
-    QMessageBox box(this);
-    box.setObjectName("templateChange");
-    box.setWindowTitle("Template changes");
-    box.setIcon(QMessageBox::Question);
-    box.setText(QString("<b>'%1' template changes</b>").arg(name.toHtmlEscaped()));
-    box.setInformativeText("Change: " + controller_->lastAction() + "\n\n" +
-                           (used.isEmpty() ? QString("No saved project uses this template yet.")
-                                           : "Used in:\n  " + used.join("\n  ") + "\n\nUpdating it changes these projects too."));
-    QPushButton* update = box.addButton("Update template", QMessageBox::AcceptRole);
-    QPushButton* asNew = box.addButton("Save as new template…", QMessageBox::ActionRole);
-    QPushButton* detach = box.addButton("Detach", QMessageBox::ActionRole);
-    QPushButton* undo = box.addButton("Undo", QMessageBox::RejectRole);
-    update->setObjectName("updateTemplate");
-    asNew->setObjectName("saveAsNewTemplate");
-    detach->setObjectName("detachTemplate");
-    undo->setObjectName("undoTemplateChange");
-    box.setDefaultButton(update);
-    box.setEscapeButton(undo);
-    box.exec();
-    if (box.clickedButton() == update) {
+    const QString details = "Change: " + controller_->lastAction() + "\n\n" +
+                            (used.isEmpty() ? QString("No saved project uses this template yet.")
+                                            : "Used in:\n  " + used.join("\n  ") + "\n\nUpdating it changes these projects too.");
+    enum { Update, AsNew, Detach };
+    const int answer = Prompt::ask(this, {"templateChange", "Template changes", QString("<b>'%1' template changes</b>").arg(name.toHtmlEscaped()), details,
+                                          {{"Update template", "updateTemplate"}, {"Save as new template…", "saveAsNewTemplate", QMessageBox::ActionRole},
+                                           {"Detach", "detachTemplate", QMessageBox::ActionRole}, {"Undo", "undoTemplateChange", QMessageBox::RejectRole}}});
+    if (answer == Update) {
         controller_->keepEditingTemplate(id);
         statusBar()->showMessage("Editing template " + name + ": the change goes to the library when it collapses or the file is saved.", 8000);
-    } else if (box.clickedButton() == asNew) {
-        bool ok = false;
-        const QString newName = QInputDialog::getText(this, "Save as new template", "Name of the new template:", QLineEdit::Normal, name + " 2", &ok);
+    } else if (answer == AsNew) {
+        const auto newName = Prompt::text(this, "Save as new template", "Name of the new template:", name + " 2");
         QString error;
-        if (!ok || !controller_->saveTemplateAsNew(id, newName, &error)) {
-            if (!error.isEmpty()) QMessageBox::warning(this, "Save as new template", error);
+        if (!newName || !controller_->saveTemplateAsNew(id, *newName, &error)) {
+            if (!error.isEmpty()) Prompt::error(this, "Save as new template", error);
             controller_->undo();
         }
-    } else if (box.clickedButton() == detach) {
+    } else if (answer == Detach) {
         controller_->detachTemplate(id);
     } else {
         controller_->undo();
@@ -965,10 +943,9 @@ void MainWindow::askTemplatesOutdated(const QStringList& ids) {
                      .arg(gps::templates::modified(controller_->plan(), t->id) ? "  (its changes here would be lost)" : "");
     }
     if (lines.isEmpty()) return;
-    const auto answer = QMessageBox::question(this, "Templates were updated",
-        "The library has newer versions of templates this file uses:\n\n  " + lines.join("\n  ") + "\n\nUse the newer versions?",
-        QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
-    if (answer == QMessageBox::Yes) controller_->updateTemplates(ids);
+    if (Prompt::yes(this, "Templates were updated",
+                    "The library has newer versions of templates this file uses:\n\n  " + lines.join("\n  ") + "\n\nUse the newer versions?"))
+        controller_->updateTemplates(ids);
 }
 
 // The earlier versions of the open file, newest first; the chosen one comes back as an unsaved change.

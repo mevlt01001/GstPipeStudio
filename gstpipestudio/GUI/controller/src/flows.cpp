@@ -16,7 +16,6 @@
 
 #include "capspage.h"
 #include "capstext.h"
-#include "confirmdialog.h"
 #include "drawer.h"
 #include "pickerpage.h"
 #include "propertypage.h"
@@ -26,9 +25,6 @@
 #include "theme.h"
 
 namespace {
-
-
-QString pluralElements(int n) { return QString("%1 element%2").arg(n).arg(n == 1 ? "" : "s"); }
 
 void clearTabLayout(QWidget* tab) {
     if (!tab || !tab->layout()) return;
@@ -207,24 +203,6 @@ void Flows::closeCaps() {
 
 // The user closed the drawer or cancelled while the validation of an edit was still running: no caps page opens afterwards.
 void Flows::abandonPending() { disconnect(pending_); }
-
-void Flows::confirmRemoval(const gps::Removal& removal, const QString& verb, std::function<void()> accepted) {
-    if (removal.elements.empty()) {
-        accepted();
-        return;
-    }
-    QStringList lines;
-    for (const std::string& name : removal.elements) {
-        const gps::Element* e = controller_->plan().find(name);
-        lines << fromStd(name) + (e ? "   (" + fromStd(e->factory) + ")" : QString());
-    }
-    int n = static_cast<int>(removal.elements.size());
-    QString heading = QString("These %1 will be removed, with %2 link%3").arg(pluralElements(n)).arg(removal.links).arg(removal.links == 1 ? "" : "s");
-    auto* dialog = new ConfirmDialog("Remove elements", heading, lines, verb + " " + pluralElements(n), window_);
-    connect(dialog, &QDialog::accepted, this, std::move(accepted));
-    connect(dialog, &QDialog::finished, dialog, &QObject::deleteLater);
-    dialog->open();
-}
 
 // ---- Add element (Right Drawer ONLY presents PickerPage)
 

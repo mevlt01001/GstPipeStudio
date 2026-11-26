@@ -7,10 +7,7 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QGuiApplication>
-#include <QInputDialog>
 #include <QMenu>
-#include <QMessageBox>
-#include <QPushButton>
 #include <QUrl>
 
 #include "appservices.h"
@@ -20,6 +17,7 @@
 #include "mainwindow.h"
 #include "newprojectdialog.h"
 #include "projectfile.h"
+#include "prompt.h"
 #include "savetarget.h"
 #include "versionhistory.h"
 
@@ -49,12 +47,9 @@ void FileOperations::run(ExplorerAction action, const ExplorerEntry& entry) {
     switch (action) {
     case ExplorerAction::Open:
     case ExplorerAction::Edit: open(entry); break;
-    case ExplorerAction::Rename: {
-        bool ok = false;
-        const QString to = QInputDialog::getText(window_, "Rename", "New name of " + entry.name, QLineEdit::Normal, entry.name, &ok);
-        if (ok) rename(entry, to);
+    case ExplorerAction::Rename:
+        if (const auto to = Prompt::text(window_, "Rename", "New name of " + entry.name, entry.name)) rename(entry, *to);
         break;
-    }
     case ExplorerAction::Delete: remove(entry); break;
     case ExplorerAction::Export: exportComponent(entry); break;
     case ExplorerAction::Import: importInto(entry.origin); break;
@@ -140,18 +135,13 @@ bool FileOperations::remove(const ExplorerEntry& entry) {
     if (provider) notes << provider->removalNote(entry.path);
     if (!unsaved.isEmpty()) notes << "Open with unsaved changes: " + unsaved.join(", ") + ". The tab keeps them, marked deleted.";
     notes.removeAll(QString());
-    QMessageBox box(unsaved.isEmpty() ? QMessageBox::Question : QMessageBox::Warning, "Delete",
-                    provider ? "Delete the " + entry.origin + " " + entry.name + " from the library? It goes to the trash."
-                    : entry.isFolder() ? "Move " + entry.name + " and everything in it to the trash?"
-                             : "Move " + entry.name + " to the trash?",
-                    QMessageBox::NoButton, window_);
-    box.setObjectName("confirmDelete");
-    box.setInformativeText(notes.join("\n\n"));
-    QPushButton* trash = box.addButton("Move to trash", QMessageBox::DestructiveRole);
-    trash->setObjectName("moveToTrash");
-    box.setDefaultButton(box.addButton(QMessageBox::Cancel));
-    box.exec();
-    if (box.clickedButton() != trash) return false;
+    const QString question = provider ? "Delete the " + entry.origin + " " + entry.name + " from the library? It goes to the trash."
+                             : entry.isFolder() ? "Move " + entry.name + " and everything in it to the trash?"
+                                                : "Move " + entry.name + " to the trash?";
+    const Prompt::Question ask{"confirmDelete", "Delete", question, notes.join("\n\n"),
+                               {{"Move to trash", "moveToTrash", QMessageBox::DestructiveRole}, Prompt::cancel()}, 1,
+                               unsaved.isEmpty() ? QMessageBox::Question : QMessageBox::Warning};
+    if (Prompt::ask(window_, ask) != 0) return false;
 
     const bool removed = provider ? provider->remove(entry.path) : QFile::moveToTrash(entry.location());
     if (!removed) {
@@ -218,4 +208,4 @@ void FileOperations::rebind(const QString& key, std::unique_ptr<SaveTarget> targ
     }
 }
 
-void FileOperations::fail(const QString& title, const QString& text) const { QMessageBox::warning(window_, title, text); }
+void FileOperations::fail(const QString& title, const QString& text) const { Prompt::error(window_, title, text); }

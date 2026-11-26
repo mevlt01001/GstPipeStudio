@@ -71,7 +71,6 @@ private:
 
     void presentProperties(DrawerPage* page, const QString& title);  // the one way a page enters the Properties tab
     void presentCaps(CapsPage* page, const QString& title, const QString& subtitle);
-    void confirmRemoval(const gps::Removal& removal, const QString& verb, std::function<void()> accepted);
     void newElementProperties(const QString& factory);
     void newElement(Mode mode, const QString& element, const QString& identity, const QString& factory);
     // Runs an edit; when the validation succeeds the bottom Caps tab opens for the link from (element, identity).
