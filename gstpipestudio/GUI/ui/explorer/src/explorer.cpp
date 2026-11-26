@@ -270,14 +270,24 @@ Explorer::Section* Explorer::sectionOf(const QTreeWidgetItem* item) {
     return nullptr;
 }
 
-// Del moves the selected row to the trash; the window's Delete (of the canvas) does not see the key.
+namespace {
+// The keys of the canvas commands (Delete, Cut, Copy, Paste, Duplicate, Select all): in the tree they would act on a
+// canvas the user is not looking at.
+bool canvasKey(const QKeyEvent* key) {
+    return key->key() == Qt::Key_Delete || key->key() == Qt::Key_Backspace || key->matches(QKeySequence::Cut) ||
+           key->matches(QKeySequence::Copy) || key->matches(QKeySequence::Paste) || key->matches(QKeySequence::SelectAll) ||
+           (key->key() == Qt::Key_D && key->modifiers() == Qt::ControlModifier);
+}
+}  // namespace
+
+// The canvas commands do not see their keys while the tree has focus; Del moves the selected row to the trash.
 bool Explorer::eventFilter(QObject* watched, QEvent* event) {
-    const bool del = (event->type() == QEvent::ShortcutOverride || event->type() == QEvent::KeyPress) &&
-                     static_cast<QKeyEvent*>(event)->key() == Qt::Key_Delete;
-    if (watched != tree_ || !del) return QWidget::eventFilter(watched, event);
+    const bool key = event->type() == QEvent::ShortcutOverride || event->type() == QEvent::KeyPress;
+    if (watched != tree_ || !key || !canvasKey(static_cast<QKeyEvent*>(event))) return QWidget::eventFilter(watched, event);
     event->accept();
     QTreeWidgetItem* item = tree_->currentItem();
-    if (event->type() == QEvent::KeyPress && item && actionsOf(item).contains(ExplorerAction::Delete))
+    if (event->type() == QEvent::KeyPress && static_cast<QKeyEvent*>(event)->key() == Qt::Key_Delete && item &&
+        actionsOf(item).contains(ExplorerAction::Delete))
         operations_.remove(entryOf(item));
     return true;
 }

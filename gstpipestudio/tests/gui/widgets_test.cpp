@@ -1136,6 +1136,12 @@ private slots:
         QVERIFY(!QFile::exists(notes));
         QVERIFY(waitFor([&] { return w.explorer()->itemOf("project|" + notes) == nullptr; }));
         QCOMPARE(c->plan().elements.size(), size_t(1));  // the canvas's Delete did not see the key
+        w.scene()->element(fromStd(c->plan().elements.front().name))->setSelected(true);
+        support::refreshed();
+        tree->setFocus();
+        QTest::keyClick(tree, Qt::Key_Backspace);  // nor Backspace, nor the other canvas keys
+        QTest::keyClick(tree, Qt::Key_X, Qt::ControlModifier);
+        QCOMPARE(c->plan().elements.size(), size_t(1));
 
         QVERIFY(!addAfter(*c, fromStd(c->plan().elements.front().name), "src", "fakesink").isEmpty());
         tree->setCurrentItem(w.explorer()->itemOf("project|" + door));
