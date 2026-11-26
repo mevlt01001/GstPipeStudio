@@ -285,6 +285,16 @@ static void projectFolder() {
     CHECK_EQ(error, std::string());
     CHECK_EQ(tpl::members(back, id).size(), size_t(3));
     CHECK(!tpl::modified(back, id));
+    // Another conf of the folder holding an older revision writes its copy inline: cam.conf keeps revision 3.
+    Graph older;
+    const std::string old = tpl::insertTemplate(older, decodeTemplate(), 0, 0);
+    tpl::sync(older, old, 2);
+    CHECK(older.saveProject((folder / "door.conf").string(), &error));
+    CHECK(Graph::load((folder / "cam.conf").string(), &back, &error));
+    CHECK_EQ(back.instance(id)->revision, 3);
+    CHECK(Graph::load((folder / "door.conf").string(), &back, &error));
+    CHECK_EQ(back.instance(old)->revision, 2);
+    CHECK(!tpl::modified(back, old));
     // Without the copy it is not found (no library given).
     std::filesystem::remove_all(folder / "templates");
     CHECK(!Graph::load((folder / "cam.conf").string(), &back, &error));

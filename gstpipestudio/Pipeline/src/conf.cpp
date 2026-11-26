@@ -77,18 +77,29 @@ int suffixOf(const std::string& name) {
 
 }  // namespace
 
+std::vector<std::string> Graph::referencable() const {
+    std::vector<std::string> out;
+    for (const TemplateInstance& t : instances) {
+        if (t.parent.empty() && !templates::modified(*this, t.id)) out.push_back(t.id);
+    }
+    return out;
+}
+
 std::string Graph::toConf(Form form) const {
-    // In the reference form, the members of an unchanged top-level copy are written as the copy: "<copy>" for an
-    // element, "<member inside the template>.<pad>" for a pad. A changed copy is written inline, so nothing is lost.
+    return writeConf(form, form == Form::Reference ? referencable() : std::vector<std::string>());
+}
+
+std::string Graph::writeConf(Form form, const std::vector<std::string>& copies) const {
+    // In the reference form, the members of each copy referenced are written as the copy: "<copy>" for an element,
+    // "<member inside the template>.<pad>" for a pad. Every other copy is written inline, so nothing is lost.
     std::map<std::string, std::string> owner;  // member element or nested instance -> the referenced copy around it
     std::vector<const TemplateInstance*> referenced;
-    if (form == Form::Reference) {
-        for (const TemplateInstance& t : instances) {
-            if (!t.parent.empty() || templates::modified(*this, t.id)) continue;
-            referenced.push_back(&t);
-            for (const std::string& m : templates::members(*this, t.id)) owner[m] = t.id;
-            for (const std::string& n : templates::nested(*this, t.id)) owner[n] = t.id;
-        }
+    for (const std::string& id : copies) {
+        const TemplateInstance* t = instance(id);
+        if (!t) continue;
+        referenced.push_back(t);
+        for (const std::string& m : templates::members(*this, t->id)) owner[m] = t->id;
+        for (const std::string& n : templates::nested(*this, t->id)) owner[n] = t->id;
     }
     auto end = [&](const std::string& element, const std::string& pad, std::string* outPad) {
         auto copy = owner.find(element);
@@ -359,13 +370,31 @@ std::string folderOf(const std::string& path) {
 
 bool Graph::save(const std::string& path, std::string* error) const { return files::writeAtomic(path, toConf(), error); }
 
+std::string Graph::templatesFolder(const std::string& confPath) { return folderOf(confPath) + "/" + kTemplatesFolder; }
+
+// The revision of the template file there, 0 when there is none or it cannot be read.
+int Graph::revisionOf(const std::string& templateFile) {
+    std::ifstream file(templateFile, std::ios::binary);
+    if (!file) return 0;
+    std::stringstream text;
+    text << file.rdbuf();
+    Graph tmpl;
+    return fromConf(text.str(), &tmpl, nullptr) ? tmpl.revision : 0;
+}
+
+// The confs of one folder share its templates/: a copy older than the file there (another conf took a newer revision)
+// is written inline instead, so saving this conf never takes the other one back.
 bool Graph::saveProject(const std::string& path, std::string* error) const {
-    const std::string folder = folderOf(path) + "/templates";
-    for (const TemplateInstance& t : instances) {
-        if (!t.parent.empty() || templates::modified(*this, t.id)) continue;  // written inline in the conf
-        if (!files::writeAtomic(folder + "/" + templates::fileName(t.templateName), templates::extract(*this, t.id).toConf(), error)) return false;
+    const std::string folder = templatesFolder(path);
+    std::vector<std::string> referenced;
+    for (const std::string& id : referencable()) {
+        const TemplateInstance* t = instance(id);
+        const std::string file = folder + "/" + templates::fileName(t->templateName);
+        if (revisionOf(file) > t->revision) continue;
+        if (!files::writeAtomic(file, templates::extract(*this, id).toConf(), error)) return false;
+        referenced.push_back(id);
     }
-    return files::writeAtomic(path, toConf(Form::Reference), error);
+    return files::writeAtomic(path, writeConf(Form::Reference, referenced), error);
 }
 
 bool Graph::load(const std::string& path, Graph* out, std::string* error, const std::vector<std::string>& libraries) {
@@ -376,7 +405,7 @@ bool Graph::load(const std::string& path, Graph* out, std::string* error, const 
     }
     std::stringstream text;
     text << file.rdbuf();
-    std::vector<std::string> folders{folderOf(path) + "/templates"};
+    std::vector<std::string> folders{templatesFolder(path)};
     folders.insert(folders.end(), libraries.begin(), libraries.end());
     if (const char* more = std::getenv("GPS_TEMPLATE_PATH")) {
         std::stringstream list(more);
