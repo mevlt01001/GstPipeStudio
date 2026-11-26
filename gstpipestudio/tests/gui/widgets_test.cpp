@@ -37,6 +37,7 @@
 #include "drawer.h"
 #include "elementitem.h"
 #include "document.h"
+#include "documenttabs.h"
 #include "documentbackup.h"
 #include "documentregistry.h"
 #include "backupservice.h"
@@ -546,11 +547,27 @@ private slots:
         QCOMPARE(view.routing(), layout::Routing::RightAngles);
         QCOMPARE(Settings::linkRouting(), layout::Routing::RightAngles);
         view.setConnectedMove(true);
+        support::refreshed();
         QVERIFY(w.findChild<QAction*>("actionConnectedMove")->isChecked());
         view.setConnectedMove(false);
         w.findChild<QAction*>("actionLinkCurves")->trigger();
         QVERIFY(!rightAngles->isChecked());
         QCOMPARE(view.routing(), layout::Routing::Curves);
+    }
+
+    // The first tab's controller is the caller's and outlives its tab: what it says afterwards reaches no closed tab.
+    void theCallersControllerOutlivesItsClosedTab() {
+        MainWindow w(c.get());
+        w.show();
+        Document* first = w.front();
+        Document* second = w.newDocument();
+        w.documentTabs()->close(first);  // without asking: the fixture's canvas may hold an earlier test's work
+        QCOMPARE(w.documents(), QList<Document*>{second});
+        emit c->templatesOutdated({"gone"});
+        emit c->changed();
+        support::refreshed();
+        QCOMPARE(w.front(), second);
+        QVERIFY(second->takeOutdated().isEmpty());
     }
 
     // The tabs open when the window closed come back the next time, the one in front in front.

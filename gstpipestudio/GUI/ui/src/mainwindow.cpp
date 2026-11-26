@@ -98,7 +98,7 @@ MainWindow::MainWindow(Controller* controller, QWidget* parent)
     restoreGeometry(Settings::windowGeometry());
     restoreState(Settings::windowState());
     built_ = true;
-    connect(&services_.view(), &ViewPreferences::changed, commands_, &CommandSet::refresh);
+    connect(&services_.view(), &ViewPreferences::changed, this, &MainWindow::scheduleRefresh);
     if (QClipboard* clipboard = QGuiApplication::clipboard()) connect(clipboard, &QClipboard::dataChanged, this, &MainWindow::scheduleRefresh);
     // GStreamer is checked once for the whole window; every tab shows the answer.
     connect(&services_.environment(), &EnvironmentService::checked, this, &MainWindow::onEnvironment);
@@ -390,16 +390,17 @@ void MainWindow::wire(Document* d) {
     connect(d->view(), &CanvasView::deletePressed, d, &Document::deleteSelection);
     connect(d->flows(), &Flows::componentMenuRequested, files_, &FileOperations::componentMenu);
     connect(d->flows(), &Flows::importRequested, files_, &FileOperations::importInto);
-    connect(c, &Controller::templateChanged, this, [this, isFront](const QString& id) { if (isFront()) askTemplateChange(id); }, Qt::QueuedConnection);
-    connect(c, &Controller::templatesOutdated, this, [this, d, isFront](const QStringList& ids) {
+    // The document is their context: the caller's controller outlives the first tab when that tab closes.
+    connect(c, &Controller::templateChanged, d, [this, isFront](const QString& id) { if (isFront()) askTemplateChange(id); }, Qt::QueuedConnection);
+    connect(c, &Controller::templatesOutdated, d, [this, d, isFront](const QStringList& ids) {
         if (isFront()) askTemplatesOutdated(ids);
         else d->deferOutdated(ids);
     }, Qt::QueuedConnection);
-    connect(c, &Controller::changed, this, [this, d] {
+    connect(c, &Controller::changed, d, [this, d] {
         tabs_->refresh(d);
         scheduleRefresh();
     });
-    connect(c, &Controller::notice, this, [this, isFront](const QString& text) { if (isFront()) statusBar()->showMessage(text, 10000); });
+    connect(c, &Controller::notice, d, [this, isFront](const QString& text) { if (isFront()) statusBar()->showMessage(text, 10000); });
 }
 
 void MainWindow::activate(Document* d) { tabs_->activate(d); }
