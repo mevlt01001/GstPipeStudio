@@ -78,6 +78,9 @@ public:
     // Its file changed on disk while it had unsaved work and another tab was in front: asked when it comes to the front.
     void deferChangedOnDisk(DiskChange why) { changedOnDisk_ = why; }
     std::optional<DiskChange> takeChangedOnDisk() { return std::exchange(changedOnDisk_, std::nullopt); }
+    // Something waits for it to finish what it runs (MainWindow::whenIdle): one wait, however many ask.
+    bool startWaiting() { return !std::exchange(waiting_, true); }
+    void stopWaiting() { waiting_ = false; }
 
 private:
     void showState();  // its canvas and pages follow whether it can be edited now
@@ -103,4 +106,5 @@ private:
     QStringList outdated_;
     std::optional<DiskChange> changedOnDisk_;
     bool fileDeleted_ = false;
+    bool waiting_ = false;
 };

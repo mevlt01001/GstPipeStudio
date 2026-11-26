@@ -531,13 +531,13 @@ ChangeWords wordsFor(const Document* d, DiskChange why) {
 
 // Someone else changed a tab's file: without unsaved work it is read again; with some, the user chooses, when the tab
 // is in front. Asked again when a deferred tab comes to the front, it may be clean or saved by then. A busy tab is
-// asked once it has finished.
+// asked once it has finished, once for all the changes meanwhile.
 void MainWindow::onChangedOnDisk(Document* d, DiskChange why) {
     tabs_->refresh(d);                            // a deleted file that is back loses its mark
     scheduleRefresh();
     if (!registry_->changedSinceRead(d)) return;  // saved or reloaded meanwhile, or back as it was
     if (d->controller()->busy()) {
-        QTimer::singleShot(DocumentRegistry::kSettleMs, d, [this, d, why] { onChangedOnDisk(d, why); });
+        whenIdle(d, [this, d, why] { onChangedOnDisk(d, why); });
     } else if (!d->controller()->hasUnsavedWork()) {
         d->controller()->reload();
         statusBar()->showMessage(wordsFor(d, why).reloaded, 10000);
@@ -564,9 +564,20 @@ void MainWindow::askReload(Document* d, DiskChange why) {
                             1, QMessageBox::Warning},
                      [this, asked](int answer) {
         if (!asked) return;
-        if (answer == 0) asked->controller()->reload();
+        if (answer == 0) whenIdle(asked, [asked] { if (asked) asked->controller()->reload(); });  // a validation may still run
         else registry_->accept(asked);
     });
+}
+
+void MainWindow::whenIdle(Document* d, const std::function<void()>& then) {
+    if (!d->controller()->busy()) {
+        then();
+    } else if (d->startWaiting()) {
+        QTimer::singleShot(DocumentRegistry::kSettleMs, d, [this, d, then] {
+            d->stopWaiting();
+            whenIdle(d, then);
+        });
+    }
 }
 
 // ---- templates

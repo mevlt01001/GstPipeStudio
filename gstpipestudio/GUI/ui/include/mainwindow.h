@@ -4,6 +4,7 @@
 #pragma once
 
 #include <QMainWindow>
+#include <functional>
 #include <memory>
 
 #include "commandset.h"
@@ -95,6 +96,8 @@ private:
     void onEnvironment();
     void onChangedOnDisk(Document* document, DiskChange why);
     void askReload(Document* document, DiskChange why);
+    // then, once the document no longer runs or validates; while it waits, a second ask is dropped.
+    void whenIdle(Document* document, const std::function<void()>& then);
     void onLibraryChanged();  // a template a tab edits may have a newer revision, saved from another tab
     void askTemplateChange(const QString& id);
     void askTemplatesOutdated(const QStringList& ids);
