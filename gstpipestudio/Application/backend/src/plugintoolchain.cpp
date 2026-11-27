@@ -214,6 +214,8 @@ bool PluginModules::publish(const QString& source, const QString& destination, Q
         if (data.isEmpty()) return fail(input.errorString());
         if (output.write(data) != data.size()) return fail(output.errorString());
     }
+    // Flush Qt's buffered writes before setting the new inode's timestamp.
+    if (!output.flush()) return fail(output.errorString());
     const QDateTime previous = QFileInfo(destination).lastModified();
     const QDateTime now = QDateTime::currentDateTimeUtc();
     // The native registry compares timestamps in whole seconds as well as file size.
