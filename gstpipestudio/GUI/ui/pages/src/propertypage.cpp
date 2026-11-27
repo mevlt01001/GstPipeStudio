@@ -114,7 +114,7 @@ PropertyPage::PropertyPage(const PropertyPageInput& input, QWidget* parent) : Dr
     // Request pads, src and sink alike: how many to ask for before the run; never fewer than the linked ones.
     auto requestCounts = [&](const QString& title, const std::vector<PadTemplateInfo>& templates, const std::string& prefix,
                              const std::map<std::string, int>& linked, const std::map<std::string, int>& start,
-                             QMap<QString, QSpinBox*>& spins) {
+                             QMap<QString, QSpinBox*>& spins, bool patternOnly = false) {
         auto* group = new QGroupBox(title, this);
         auto* form = new QVBoxLayout(group);
         auto countOf = [](const std::map<std::string, int>& counts, const std::string& name) {
@@ -122,7 +122,7 @@ PropertyPage::PropertyPage(const PropertyPageInput& input, QWidget* parent) : Dr
             return found == counts.end() ? 0 : found->second;
         };
         for (const PadTemplateInfo& t : templates) {
-            if (!t.isRequest()) continue;
+            if (!t.isRequest() || (patternOnly && !gps::isTemplateName(t.name))) continue;
             auto* line = new QHBoxLayout;
             line->addWidget(new QLabel(fromStd(t.name), group));
             auto* spin = new QSpinBox(group);
@@ -142,7 +142,7 @@ PropertyPage::PropertyPage(const PropertyPageInput& input, QWidget* parent) : Dr
         hasSide = true;
     };
     requestCounts("Request src pads", input.info.srcTemplates(), "padCount_", input.linkedSrc, input.requestSrc, pads_);
-    requestCounts("Request sink pads", input.info.sinkTemplates(), "sinkPadCount_", input.linkedSink, input.requestSink, sinkPadsCount_);
+    requestCounts("Request sink pads", input.info.sinkTemplates(), "sinkPadCount_", input.linkedSink, input.requestSink, sinkPadsCount_, true);
 
     if (input.sinkPads.size() > 1) {
         auto* group = new QGroupBox("Connect to sink pad", this);

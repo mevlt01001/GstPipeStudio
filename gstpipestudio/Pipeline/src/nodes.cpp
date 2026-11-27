@@ -57,7 +57,7 @@ NodePorts NodeShape::ports(const std::vector<std::string>& members) const {
         }
         if (const FactoryDefinition* definition = definitions_(e->factory)) {
             for (const Pad& t : definition->templates) {
-                if (t.direction == Pad::Direction::Sink && t.presence == Pad::Presence::Request)
+                if (t.direction == Pad::Direction::Sink && t.presence == Pad::Presence::Request && isTemplateName(t.templateName))
                     out.requests.push_back({e->name, t.templateName, Pad::Direction::Sink});
             }
         }

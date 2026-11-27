@@ -15,9 +15,12 @@ std::vector<PadTemplateInfo> templatesOf(const std::vector<PadTemplateInfo>& all
     return out;
 }
 
-std::map<std::string, int> defaultRequests(const std::vector<PadTemplateInfo>& templates) {
+std::map<std::string, int> defaultRequests(const std::vector<PadTemplateInfo>& templates, bool patternOnly = false) {
     std::vector<std::pair<std::string, std::string>> list;
-    for (const PadTemplateInfo& t : templates) list.push_back({t.name, t.presence});
+    for (const PadTemplateInfo& t : templates) {
+        if (patternOnly && !isTemplateName(t.name)) continue;
+        list.push_back({t.name, t.presence});
+    }
     return defaultRequestSrc(list);
 }
 
@@ -57,6 +60,6 @@ FactoryDefinition definitionOf(const ElementInfo& info) {
 }
 
 std::map<std::string, int> ElementInfo::defaultRequestSrc() const { return defaultRequests(srcTemplates()); }
-std::map<std::string, int> ElementInfo::defaultRequestSink() const { return defaultRequests(sinkTemplates()); }
+std::map<std::string, int> ElementInfo::defaultRequestSink() const { return defaultRequests(sinkTemplates(), true); }
 
 }  // namespace gps

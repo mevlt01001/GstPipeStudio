@@ -273,7 +273,7 @@ QList<ExistingTarget> DocumentViews::existingTargets(const QString& element, con
         if (!inf || plan().wouldCycle(toStd(element), e.name)) continue;
         for (const PadTemplateInfo& t : inf->sinkTemplates()) {
             if (!gps::structuresMeet(allowed, t.structures)) continue;
-            if (!t.isRequest() && plan().sinkPadTaken(e.name, t.name)) continue;
+            if (!gps::isTemplateName(t.name) && plan().sinkPadTaken(e.name, t.name)) continue;
             out.append({fromStd(e.name), fromStd(e.factory), fromStd(t.name), t.isRequest()});
         }
     }

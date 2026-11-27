@@ -98,8 +98,8 @@ const PadReport* reportOf(const UpdateResult& observed, const std::string& eleme
 }
 }  // namespace
 // The one place pads exist (SPEC 4): every template gives its pads, the last run tells their native names and caps.
-//   sink, not Request   one pad named after the template
-//   sink, Request       "<template>#<k>" for every link into it, at least the requested count
+//   sink, Always / Sometimes / singleton Request (!isTemplateName)  one pad named after the template
+//   sink, pattern Request (isTemplateName, e.g. sink_%u)              "<template>#<k>" for every link into it, at least the requested count
 //   src, Always         one pad named after the template
 //   src, Request        "<template>#<k>" up to the requested count, or further when a link or the last run used k
 //   src, Sometimes      "<template>#<k>" for every k a link or the last run used
@@ -125,7 +125,7 @@ std::vector<Pad> padsOf(const Graph& graph, const Element& element, const Factor
     for (const Pad& t : factory->templates) {
         const bool src = t.direction == Pad::Direction::Source;
         std::vector<int> ordinals;  // -1: the pad named after the template
-        if (src ? t.presence == Pad::Presence::Always : t.presence != Pad::Presence::Request) {
+        if (src ? t.presence == Pad::Presence::Always : !isTemplateName(t.templateName)) {
             ordinals = {-1};
         } else if (!src) {
             int n = requested(element.requestSink, t.templateName);
