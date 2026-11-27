@@ -13,6 +13,8 @@ class QTreeWidgetItem;
 namespace ExplorerLook {
 
 constexpr const char* kDot = " ●";  // after the name of a file with unsaved changes
+constexpr const char* kValidBadge = " ✓";
+constexpr const char* kErrorBadge = " !";
 
 void apply(QTreeWidgetItem* item, const ExplorerEntry& entry);
 QString text(const ExplorerEntry& entry);

@@ -41,6 +41,9 @@ public:
     void copyPath(const ExplorerEntry& entry);
     void exportComponent(const ExplorerEntry& entry);
     void importInto(const QString& providerKind);
+    void newPipeline(const ExplorerEntry& parentEntry);
+    void duplicateFile(const ExplorerEntry& entry);
+    void runPipeline(const ExplorerEntry& entry);
     void newProject();
 
     void setUrlOpener(UrlOpener* opener) { opener_ = opener; }  // what Reveal opens folders with (tests)

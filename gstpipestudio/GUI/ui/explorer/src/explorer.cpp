@@ -3,9 +3,11 @@
 
 #include <QDir>
 #include <QFileInfo>
+#include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QLineEdit>
 #include <QStyledItemDelegate>
+#include <QToolButton>
 #include <QToolTip>
 #include <QTreeWidget>
 #include <QVBoxLayout>
@@ -14,6 +16,7 @@
 #include "explorerlook.h"
 #include "explorersource.h"
 #include "fileoperations.h"
+#include "savetarget.h"
 #include "theme.h"
 
 using Kind = ExplorerEntry::Kind;
@@ -90,6 +93,38 @@ Explorer::Explorer(const QList<ExplorerSource*>& sections, FileOperations& opera
     setObjectName("explorer");
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(4);
+
+    auto* bar = new QHBoxLayout;
+    bar->setContentsMargins(6, 6, 6, 0);
+    bar->setSpacing(4);
+    filter_ = new QLineEdit(this);
+    filter_->setObjectName("explorerFilter");
+    filter_->setPlaceholderText("Filter projects, templates…");
+    filter_->setClearButtonEnabled(true);
+    connect(filter_, &QLineEdit::textChanged, this, &Explorer::applyFilter);
+    bar->addWidget(filter_, 1);
+
+    auto* newBtn = new QToolButton(this);
+    newBtn->setObjectName("explorerNewProjectButton");
+    newBtn->setText("+");
+    newBtn->setToolTip("New project…");
+    newBtn->setAutoRaise(true);
+    connect(newBtn, &QToolButton::clicked, &operations_, &FileOperations::newProject);
+    bar->addWidget(newBtn);
+
+    auto* refreshBtn = new QToolButton(this);
+    refreshBtn->setObjectName("explorerRefreshButton");
+    refreshBtn->setText("↻");
+    refreshBtn->setToolTip("Refresh Explorer");
+    refreshBtn->setAutoRaise(true);
+    connect(refreshBtn, &QToolButton::clicked, this, [this] {
+        for (Section& s : sections_) s.source->refresh();
+        refresh();
+    });
+    bar->addWidget(refreshBtn);
+    layout->addLayout(bar);
+
     tree_ = new QTreeWidget(this);
     tree_->setObjectName("explorerTree");
     tree_->setHeaderHidden(true);
@@ -97,7 +132,7 @@ Explorer::Explorer(const QList<ExplorerSource*>& sections, FileOperations& opera
     tree_->setEditTriggers(QAbstractItemView::EditKeyPressed);
     tree_->setItemDelegate(new RenameDelegate(operations, tree_));
     tree_->installEventFilter(this);
-    layout->addWidget(tree_);
+    layout->addWidget(tree_, 1);
     for (ExplorerSource* source : sections) {
         auto* header = new QTreeWidgetItem(tree_);
         header->setFlags(Qt::ItemIsEnabled);
@@ -147,7 +182,19 @@ QList<ExplorerAction> Explorer::actionsOf(const QTreeWidgetItem* item) { return 
 ExplorerEntry Explorer::entryOf(const QTreeWidgetItem* item) const {
     ExplorerEntry e = sourceEntry(item);
     const QString key = e.key();
-    if (!key.isEmpty() && editor_.open.contains(key)) e.state = editor_.open.value(key);
+    if (!key.isEmpty()) {
+        if (editor_.open.contains(key)) e.state = editor_.open.value(key);
+        if (e.kind == Kind::Conf && editor_.validation.contains(key)) e.validation = editor_.validation.value(key);
+    }
+    if (e.kind == Kind::Project) {
+        const QString folder = e.location();
+        for (auto it = editor_.open.cbegin(); it != editor_.open.cend(); ++it) {
+            if (SaveTarget::kindOf(it.key()) != ProjectConfTarget::kKind) continue;
+            if (QFileInfo(SaveTarget::valueOf(it.key())).absolutePath() != folder) continue;
+            if (it.value() == ExplorerEntry::State::Unsaved) e.state = ExplorerEntry::State::Unsaved;
+            else if (it.value() == ExplorerEntry::State::Open && e.state == ExplorerEntry::State::Ok) e.state = ExplorerEntry::State::Open;
+        }
+    }
     return e;
 }
 
@@ -180,9 +227,39 @@ void Explorer::reload(Section& s) {
     s.entries = entries;
     s.built = true;
     decorate(s.header);
+    applyFilter();
     if (ownsSelection) {
         if (QTreeWidgetItem* again = itemOf(selected)) tree_->setCurrentItem(again);
     }
+}
+
+void Explorer::applyFilter() {
+    if (!filter_) return;
+    const QString query = filter_->text().trimmed();
+    std::function<bool(QTreeWidgetItem*, const Section&)> filterItem = [&](QTreeWidgetItem* item, const Section& sec) {
+        const ExplorerEntry e = sourceEntry(item);
+        bool childMatched = false;
+        for (int i = 0; i < item->childCount(); ++i) {
+            if (filterItem(item->child(i), sec)) childMatched = true;
+        }
+        if (query.isEmpty()) {
+            item->setHidden(false);
+            if (item != sec.header) item->setExpanded(sec.expanded.contains(e.id()));
+            return true;
+        }
+        if (item == sec.header) {
+            item->setHidden(false);
+            item->setExpanded(true);
+            return true;
+        }
+        const bool selfMatched = e.kind != Kind::Hint &&
+                                 (e.name.contains(query, Qt::CaseInsensitive) || item->text(0).contains(query, Qt::CaseInsensitive));
+        const bool visible = selfMatched || childMatched;
+        item->setHidden(!visible);
+        if (childMatched) item->setExpanded(true);
+        return visible;
+    };
+    for (const Section& s : std::as_const(sections_)) filterItem(s.header, s);
 }
 
 void Explorer::fill(QTreeWidgetItem* parent, const Section& s, const QList<ExplorerEntry>& entries) {
@@ -209,13 +286,23 @@ void Explorer::reveal(const QString& key) {
     if (key.isEmpty()) return;
     for (const Section& s : std::as_const(sections_)) {
         QTreeWidgetItem* found = nullptr;
+        QTreeWidgetItem* fallback = nullptr;
         forEach(s.header, [&](QTreeWidgetItem* item) {
-            if (!found && sourceEntry(item).key() == key) found = item;
+            const ExplorerEntry e = sourceEntry(item);
+            if (e.key() != key) return;
+            if (e.kind != Kind::Project && !found) found = item;
+            else if (!fallback) fallback = item;
         });
-        if (!found) continue;
-        for (QTreeWidgetItem* up = found->parent(); up; up = up->parent()) up->setExpanded(true);
-        tree_->setCurrentItem(found);
-        tree_->scrollToItem(found);
+        QTreeWidgetItem* target = found ? found : fallback;
+        if (!target) continue;
+        for (QTreeWidgetItem* up = target->parent(); up; up = up->parent()) {
+            up->setExpanded(true);
+            if (up->parent()) {
+                if (Section* sec = sectionOf(up)) sec->expanded.insert(sourceEntry(up).id());
+            }
+        }
+        tree_->setCurrentItem(target);
+        tree_->scrollToItem(target);
         return;
     }
 }

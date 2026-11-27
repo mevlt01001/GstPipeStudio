@@ -47,6 +47,8 @@ void FileOperations::run(ExplorerAction action, const ExplorerEntry& entry) {
     switch (action) {
     case ExplorerAction::Open:
     case ExplorerAction::Edit: open(entry); break;
+    case ExplorerAction::Run: runPipeline(entry); break;
+    case ExplorerAction::Duplicate: duplicateFile(entry); break;
     case ExplorerAction::Rename:
         if (const auto to = Prompt::text(window_, "Rename", "New name of " + entry.name, entry.name)) rename(entry, *to);
         break;
@@ -55,6 +57,7 @@ void FileOperations::run(ExplorerAction action, const ExplorerEntry& entry) {
     case ExplorerAction::Import: importInto(entry.origin); break;
     case ExplorerAction::Reveal: reveal(entry); break;
     case ExplorerAction::CopyPath: copyPath(entry); break;
+    case ExplorerAction::NewPipeline: newPipeline(entry); break;
     case ExplorerAction::NewProject: newProject(); break;
     case ExplorerAction::Refresh: break;  // the Explorer's own: it reads its sections again
     }
@@ -66,7 +69,9 @@ void FileOperations::popup(const QList<ExplorerAction>& actions, const ExplorerE
     menu->setObjectName("explorerMenu");
     menu->setAttribute(Qt::WA_DeleteOnClose);
     for (ExplorerAction action : actions) {
-        if (action == ExplorerAction::Delete || action == ExplorerAction::NewProject || action == ExplorerAction::Refresh) menu->addSeparator();
+        if (action == ExplorerAction::Delete || action == ExplorerAction::NewPipeline ||
+            action == ExplorerAction::NewProject || action == ExplorerAction::Refresh)
+            menu->addSeparator();
         menu->addAction(ExplorerLook::actionText(action, entry), this, [this, action, entry, own] {
             if (!own || !own(action)) run(action, entry);
         })->setObjectName(ExplorerLook::actionName(action));
@@ -185,6 +190,60 @@ void FileOperations::importInto(const QString& providerKind) {
 void FileOperations::newProject() {
     const QString conf = NewProjectDialog::ask(window_, window_->documentTabs()->openFiles());
     if (!conf.isEmpty()) window_->documentTabs()->target()->controller()->newPlan(std::make_unique<ProjectConfTarget>(conf));
+}
+
+void FileOperations::newPipeline(const ExplorerEntry& parentEntry) {
+    const QString folder = parentEntry.location();
+    if (folder.isEmpty()) return;
+    const auto raw = Prompt::text(window_, "New pipeline", "Pipeline name:");
+    if (!raw) return;
+    QString name = raw->trimmed();
+    if (name.isEmpty()) return;
+    if (!name.endsWith(".conf")) name += ".conf";
+    if (name.contains('/') || name == "." || name == "..") {
+        fail("New pipeline", "A name cannot contain / or be . or ..");
+        return;
+    }
+    const QString path = QDir(folder).filePath(name);
+    if (QFileInfo::exists(path)) {
+        fail("New pipeline", name + " already exists in this project.");
+        return;
+    }
+    window_->documentTabs()->target()->controller()->newPlan(std::make_unique<ProjectConfTarget>(path));
+}
+
+void FileOperations::duplicateFile(const ExplorerEntry& entry) {
+    if (entry.kind != Kind::Conf || !QFileInfo::exists(entry.path)) return;
+    const QFileInfo info(entry.path);
+    const QString base = info.completeBaseName();
+    QString copyPath = info.dir().filePath(base + "_copy.conf");
+    for (int n = 2; QFileInfo::exists(copyPath); ++n)
+        copyPath = info.dir().filePath(QString("%1_copy%2.conf").arg(base).arg(n));
+    if (!QFile::copy(entry.path, copyPath)) {
+        fail("Duplicate", "Unable to copy " + entry.name + ".");
+        return;
+    }
+    gps::Graph copy;
+    std::string error;
+    if (gps::Graph::fromConf(QString::fromUtf8([&] { QFile f(copyPath); return f.open(QIODevice::ReadOnly) ? f.readAll() : QByteArray(); }()).toStdString(), &copy, &error)) {
+        editManifest(copyPath, [&](ProjectFile& manifest) {
+            manifest.record(copyPath, copy);
+            return true;
+        });
+    }
+    emit wrote();
+    window_->openFile(copyPath);
+}
+
+void FileOperations::runPipeline(const ExplorerEntry& entry) {
+    if (entry.kind != Kind::Conf) return;
+    window_->openFile(entry.path);
+    Controller* c = window_->front()->controller();
+    if (c->canRun()) c->run();
+    else {
+        c->refresh();
+        window_->notify({NoticeSeverity::Info, "Validating pipeline", "Validation started before running.", false});
+    }
 }
 
 QList<Document*> FileOperations::tabsOf(const ExplorerEntry& entry) const {

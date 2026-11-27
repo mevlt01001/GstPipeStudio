@@ -21,6 +21,7 @@ struct ExplorerEntry {
     // From the disk: Ok, Outdated (uses older template revisions than the library), Missing (listed, not on disk).
     // From the editor: Open, Unsaved, Deleted (its tab's file was deleted on disk).
     enum class State { Ok, Open, Unsaved, Outdated, Missing, Deleted };
+    enum class Validation { None, Valid, Invalid };
 
     Kind kind = Kind::Hint;
     QString origin;  // the section it is in (ExplorerSource::id)
@@ -28,9 +29,10 @@ struct ExplorerEntry {
     QString name;    // what the row reads
     QString detail;  // more, for its tooltip: a component's description, the templates an outdated file holds
     State state = State::Ok;
+    Validation validation = Validation::None;
     QList<ExplorerEntry> children;  // a folder's
 
-    QString id() const { return origin + "|" + path; }  // which row it is, across rebuilds
+    QString id() const { return origin + "|" + (kind == Kind::Project ? location() : path); }  // which row it is, across rebuilds
     QString key() const;       // the session key of the tab it opens in (SaveTarget), "" when it opens in none
     QString location() const;  // the file or folder on disk: a project's folder; "" for a component
     bool isFolder() const { return kind == Kind::Folder || kind == Kind::Project; }
@@ -44,6 +46,7 @@ struct EditorState {
     QString front;        // the front tab's session key
     QString projectConf;  // the front tab's project conf, "" when it is none
     QHash<QString, ExplorerEntry::State> open;  // Open, Unsaved or Deleted
+    QHash<QString, ExplorerEntry::Validation> validation;
     int unsaved = 0;      // tabs with unsaved work, untitled ones too
 
     QStringList openFiles() const;  // the paths of the open project confs

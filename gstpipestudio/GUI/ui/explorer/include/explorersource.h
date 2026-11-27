@@ -15,7 +15,7 @@ class ComponentProvider;
 class TemplateLibrary;
 
 // What a menu of the Explorer can do; FileOperations carries each one out.
-enum class ExplorerAction { Open, Edit, Rename, Delete, Export, Import, Reveal, CopyPath, NewProject, Refresh };
+enum class ExplorerAction { Open, Edit, Run, Duplicate, Rename, Delete, Export, Import, Reveal, CopyPath, NewPipeline, NewProject, Refresh };
 
 class ExplorerSource : public QObject {
     Q_OBJECT
@@ -33,7 +33,7 @@ public:
     ExplorerEntry header(const EditorState& editor) const;  // its header row
     QList<ExplorerAction> actions(const ExplorerEntry& entry) const;  // the menu of a row or of its header
 
-    // The Explorer's sections: Project, Projects, and one per component provider.
+    // The Explorer's sections: Projects, and one per component provider.
     static QList<ExplorerSource*> standard(AppServices& services, QObject* parent);
 
 signals:
@@ -44,27 +44,7 @@ protected:
     virtual QList<ExplorerAction> rowActions(const ExplorerEntry& entry) const;  // by kind: what files offer
 };
 
-// The front tab's project folder: its sub-folders and files, and the confs its manifest lists that are gone.
-class ProjectSection : public ExplorerSource {
-    Q_OBJECT
-public:
-    ProjectSection(const TemplateLibrary& library, QObject* parent);
-
-    QString id() const override { return "project"; }
-    QString label(const EditorState& editor) const override;
-    QString tooltip(const EditorState& editor) const override;
-    QList<ExplorerEntry> entries(const EditorState& editor) const override;
-    QString emptyHint() const override { return "Not saved yet"; }
-    QStringList watched(const EditorState& editor) const override;
-
-protected:
-    QList<ExplorerAction> sectionActions() const override;
-
-private:
-    const TemplateLibrary& library_;
-};
-
-// Every project: the folders of the projects location and the projects the registry remembers, merged once.
+// Every project: the folders of the projects location, the projects the registry remembers, and any open project.
 class ProjectsSection : public ExplorerSource {
     Q_OBJECT
 public:

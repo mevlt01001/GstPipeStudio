@@ -491,9 +491,14 @@ void MainWindow::showExplorer() {
     editor.projectConf = controller()->target().projectConf();
     for (const Document* d : documents()) {
         const bool unsaved = d->controller()->hasUnsavedWork();
-        editor.open[d->controller()->target().sessionKey()] = d->fileDeleted() ? ExplorerEntry::State::Deleted
-                                                              : unsaved          ? ExplorerEntry::State::Unsaved
-                                                                                 : ExplorerEntry::State::Open;
+        const QString key = d->controller()->target().sessionKey();
+        editor.open[key] = d->fileDeleted() ? ExplorerEntry::State::Deleted
+                                              : unsaved          ? ExplorerEntry::State::Unsaved
+                                                                 : ExplorerEntry::State::Open;
+        const UpdateResult& r = d->controller()->result();
+        if (r.valid() && !r.ok()) editor.validation[key] = ExplorerEntry::Validation::Invalid;
+        else if (r.valid() && r.ok() && r.complete()) editor.validation[key] = ExplorerEntry::Validation::Valid;
+        else editor.validation[key] = ExplorerEntry::Validation::None;
         editor.unsaved += unsaved;
     }
     explorer_->present(editor);

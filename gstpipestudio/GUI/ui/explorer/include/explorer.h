@@ -16,6 +16,7 @@
 #include "explorersource.h"
 
 class FileOperations;
+class QLineEdit;
 class QTreeWidget;
 class QTreeWidgetItem;
 
@@ -30,6 +31,7 @@ public:
     void refresh();                           // every section read again now
     QString title() const;                    // the panel's title: "Explorer", or "Explorer · 2 unsaved"
     QTreeWidget* tree() const { return tree_; }
+    QLineEdit* filter() const { return filter_; }
     ExplorerEntry entryOf(const QTreeWidgetItem* item) const;  // a row's entry, with the editor's state on it
     QTreeWidgetItem* itemOf(const QString& entryId) const;     // the row of an entry (ExplorerEntry::id), null if none
 
@@ -48,6 +50,7 @@ private:
     void reload(Section& section);  // asks the section; rebuilds its rows only when they changed
     void fill(QTreeWidgetItem* parent, const Section& section, const QList<ExplorerEntry>& entries);
     void decorate(QTreeWidgetItem* item);  // its look, with the editor's state, and its children's
+    void applyFilter();
     void reveal(const QString& key);       // the row of a tab's session key selected and scrolled to
     void rewatch();
     void showMenu(const QPoint& at);
@@ -58,6 +61,7 @@ private:
 
     QList<Section> sections_;
     FileOperations& operations_;
+    QLineEdit* filter_ = nullptr;
     QTreeWidget* tree_;
     QFileSystemWatcher watcher_;
     QTimer settle_;

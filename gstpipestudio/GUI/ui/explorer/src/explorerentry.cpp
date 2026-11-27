@@ -22,7 +22,7 @@ QString ExplorerEntry::location() const {
 
 bool ExplorerEntry::operator==(const ExplorerEntry& other) const {
     return kind == other.kind && origin == other.origin && path == other.path && name == other.name && detail == other.detail &&
-           state == other.state && children == other.children;
+           state == other.state && validation == other.validation && children == other.children;
 }
 
 QStringList EditorState::openFiles() const {
@@ -35,5 +35,6 @@ QStringList EditorState::openFiles() const {
 }
 
 bool EditorState::operator==(const EditorState& other) const {
-    return front == other.front && projectConf == other.projectConf && open == other.open && unsaved == other.unsaved;
+    return front == other.front && projectConf == other.projectConf && open == other.open && validation == other.validation &&
+           unsaved == other.unsaved;
 }

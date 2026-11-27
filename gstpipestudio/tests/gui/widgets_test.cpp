@@ -1030,27 +1030,51 @@ private slots:
             for (int i = 0; i < section->childCount(); ++i) out << section->child(i)->text(0);
             return out;
         };
-        QVERIFY(waitFor([&] { return childTexts(tree->topLevelItem(1)) == QStringList({"door", "yard"}); }));  // the folder is watched
-        QCOMPARE(tree->topLevelItem(0)->text(0), QString("Project · door"));
-        QCOMPARE(childTexts(tree->topLevelItem(0)), QStringList({"templates/", "door.conf", "door.gpsproj"}));
-        QCOMPARE(childTexts(tree->topLevelItem(0)->child(0)), QStringList({"Tail.conf"}));
-        QCOMPARE(childTexts(tree->topLevelItem(2)), QStringList({"Tail"}));
-        QCOMPARE(tree->topLevelItem(3)->text(0), QString("Plugins"));  // no plugins yet: it says where they will appear
-        QCOMPARE(childTexts(tree->topLevelItem(3)), QStringList({"Custom elements will appear here"}));
+        QVERIFY(waitFor([&] { return childTexts(tree->topLevelItem(0)) == QStringList({"door", "yard"}); }));  // the folder is watched
+        QCOMPARE(tree->topLevelItem(0)->text(0), QString("Projects"));
+        QTreeWidgetItem* doorItem = tree->topLevelItem(0)->child(0);
+        QCOMPARE(childTexts(doorItem), QStringList({"templates/", "door ✓"}));  // .gpsproj hidden, .conf stripped, valid badge shown
+        QCOMPARE(childTexts(doorItem->child(0)), QStringList({"Tail"}));
+        QCOMPARE(childTexts(tree->topLevelItem(1)), QStringList({"Tail"}));
+        QCOMPARE(tree->topLevelItem(2)->text(0), QString("Plugins"));  // no plugins yet: it says where they will appear
+        QCOMPARE(childTexts(tree->topLevelItem(2)), QStringList({"Custom elements will appear here"}));
         QVERIFY(w.grab().save(shotDir() + "/explorer.png"));
 
+        // Filter bar narrows visible projects/templates and restores them when cleared.
+        QLineEdit* filter = w.explorer()->filter();
+        QVERIFY(filter);
+        filter->setText("yard");
+        QVERIFY(doorItem->isHidden());
+        QVERIFY(!tree->topLevelItem(0)->child(1)->isHidden());
+        filter->clear();
+        QVERIFY(!doorItem->isHidden());
+
+        // A conf row offers Run pipeline, Duplicate, New pipeline, etc.; Duplicate creates door_copy.conf and opens it.
+        QTreeWidgetItem* doorConfItem = doorItem->child(1);
+        tree->scrollToItem(doorConfItem);
+        emit tree->customContextMenuRequested(tree->visualItemRect(doorConfItem).center());
+        QMenu* confMenu = visibleChild<QMenu>(&w);
+        QVERIFY(confMenu);
+        QVERIFY(actionOf(confMenu, "explorerDuplicate"));
+        QVERIFY(actionOf(confMenu, "explorerRun"));
+        confMenu->close();
+        w.fileOperations()->duplicateFile(w.explorer()->entryOf(doorConfItem));
+        QVERIFY(QFile::exists(root.filePath("door/door_copy.conf")));
+        QVERIFY(waitFor([&] { return w.tabs()->count() == 2; }, 30000));
+        QVERIFY(settle(*w.front()->controller()));
+
         // A project opens with a double click, in a tab of its own; a template opens in its own tab too.
-        emit tree->itemActivated(tree->topLevelItem(1)->child(1), 0);
-        QCOMPARE(w.tabs()->count(), 2);
+        emit tree->itemActivated(tree->topLevelItem(0)->child(1), 0);
+        QCOMPARE(w.tabs()->count(), 3);
         Controller* yard = w.front()->controller();
         QVERIFY(waitFor([&] { return yard->target().path() == root.filePath("yard/yard.conf"); }, 30000));
         QVERIFY(settle(*yard));
-        QVERIFY(waitFor([&] { return tree->topLevelItem(0)->text(0) == "Project · yard"; }));
-        emit tree->itemActivated(tree->topLevelItem(2)->child(0), 0);
-        QCOMPARE(w.tabs()->count(), 3);
+        QVERIFY(waitFor([&] { return w.explorer()->itemOf("projects|" + root.filePath("yard/yard.conf")) != nullptr; }));
+        emit tree->itemActivated(tree->topLevelItem(1)->child(0), 0);
+        QCOMPARE(w.tabs()->count(), 4);
         QCOMPARE(w.front()->controller()->target().libraryTemplate(), QString("Tail"));
         // A template's right click is the library's menu.
-        QTreeWidgetItem* tail = tree->topLevelItem(2)->child(0);
+        QTreeWidgetItem* tail = tree->topLevelItem(1)->child(0);
         tree->scrollToItem(tail);
         emit tree->customContextMenuRequested(tree->visualItemRect(tail).center());
         QCOMPARE(takeMenu(&w), QStringList({"Edit template", "Rename", "Export…", "Delete"}));
@@ -1072,20 +1096,20 @@ private slots:
         QVERIFY(w.saveFlow()->saveAs(w.front(), door));
         QTreeWidget* tree = w.explorer()->tree();
         auto row = [&](const QString& origin, const QString& path) { return w.explorer()->itemOf(origin + "|" + path); };
-        QVERIFY(waitFor([&] { return row("project", door) && tree->currentItem() == row("project", door); }));
-        QTreeWidgetItem* file = row("project", door);
+        QVERIFY(waitFor([&] { return row("projects", door) && tree->currentItem() == row("projects", door); }));
+        QTreeWidgetItem* file = row("projects", door);
         QCOMPARE(w.explorer()->entryOf(file).state, ExplorerEntry::State::Open);
         QVERIFY(file->font(0).bold());
         QCOMPARE(w.panels()->dock(w.explorer())->windowTitle(), QString("Explorer"));
 
         QVERIFY(!addAfter(*c, fromStd(c->plan().elements.front().name), "src", "fakesink").isEmpty());
         refreshed();
-        QCOMPARE(row("project", door)->text(0), QString("door.conf ●"));
+        QCOMPARE(row("projects", door)->text(0), QString("door ●"));
         QCOMPARE(w.panels()->dock(w.explorer())->windowTitle(), QString("Explorer · 1 unsaved"));
         QCOMPARE(w.findChild<QAction*>("actionPanelExplorer")->text(), QString("Explorer"));  // View > Panels keeps its name
         QVERIFY(c->undo());
         refreshed();
-        QCOMPARE(row("project", door)->text(0), QString("door.conf"));
+        QCOMPARE(row("projects", door)->text(0), QString("door"));
         QCOMPARE(w.panels()->dock(w.explorer())->windowTitle(), QString("Explorer"));
 
         // Another tab in front: its file is selected; the first stays bold, it is still open.
@@ -1093,15 +1117,15 @@ private slots:
         QVERIFY(!addSource(*w.front()->controller(), "videotestsrc").isEmpty());
         const QString yard = root.filePath("yard/yard.conf");
         QVERIFY(w.saveFlow()->saveAs(w.front(), yard));
-        QVERIFY(waitFor([&] { return row("project", yard) && tree->currentItem() == row("project", yard); }));
+        QVERIFY(waitFor([&] { return row("projects", yard) && tree->currentItem() == row("projects", yard); }));
         QVERIFY(row("projects", door)->font(0).bold());
 
         // Deleted on disk under its tab: listed still, struck through, until it is saved again.
         QVERIFY(QFile::remove(yard));
-        QVERIFY(waitFor([&] { return row("project", yard) && w.explorer()->entryOf(row("project", yard)).state == ExplorerEntry::State::Deleted; }));
-        QVERIFY(row("project", yard)->font(0).strikeOut());
+        QVERIFY(waitFor([&] { return row("projects", yard) && w.explorer()->entryOf(row("projects", yard)).state == ExplorerEntry::State::Deleted; }));
+        QVERIFY(row("projects", yard)->font(0).strikeOut());
         QVERIFY(w.saveFlow()->save(w.front()));
-        QVERIFY(waitFor([&] { return row("project", yard) && w.explorer()->entryOf(row("project", yard)).state == ExplorerEntry::State::Open; }));
+        QVERIFY(waitFor([&] { return row("projects", yard) && w.explorer()->entryOf(row("projects", yard)).state == ExplorerEntry::State::Open; }));
         Settings::setProjectsLocation({});
         useUserDir({});
     }
@@ -1120,9 +1144,9 @@ private slots:
         QVERIFY(taken.open(QIODevice::WriteOnly));
         taken.close();
         QTreeWidget* tree = w.explorer()->tree();
-        QVERIFY(waitFor([&] { return w.explorer()->itemOf("project|" + taken.fileName()) != nullptr; }));
+        QVERIFY(waitFor([&] { return w.explorer()->itemOf("projects|" + taken.fileName()) != nullptr; }));
         tree->setFocus();
-        tree->setCurrentItem(w.explorer()->itemOf("project|" + door));
+        tree->setCurrentItem(w.explorer()->itemOf("projects|" + door));
         QTest::keyClick(tree, Qt::Key_F2);
         auto* editor = tree->findChild<QLineEdit*>("explorerRenameEditor");
         QVERIFY(editor);
@@ -1140,7 +1164,7 @@ private slots:
         QCOMPARE(w.tabs()->tabText(0), QString("front.conf"));
         QCOMPARE(ProjectFile::load(ProjectFile::pathForConf(front)).confs(), QStringList({"front.conf"}));
         QVERIFY(!c->modified());
-        QVERIFY(waitFor([&] { return w.explorer()->itemOf("project|" + front) && tree->currentItem() == w.explorer()->itemOf("project|" + front); }));
+        QVERIFY(waitFor([&] { return w.explorer()->itemOf("projects|" + front) && tree->currentItem() == w.explorer()->itemOf("projects|" + front); }));
         QVERIFY(w.saveFlow()->save(w.front()));
         QVERIFY(QFile::exists(front) && !QFile::exists(door));
         useUserDir({});
@@ -1180,7 +1204,7 @@ private slots:
     // tab from the Explorer; one no tab has offers only its path.
     void aConfNotOnDiskOpensItsTabFromTheExplorer() {
         QTemporaryDir root;
-        ProjectSection section(c->services().library(), nullptr);
+        ProjectsSection section(c->services().library(), nullptr);
         ExplorerEntry e;
         e.kind = ExplorerEntry::Kind::Conf;
         e.path = root.filePath("fresh/fresh.conf");
@@ -1206,15 +1230,15 @@ private slots:
         QVERIFY(file.open(QIODevice::WriteOnly) && file.write("x") == 1);
         file.close();
         QTreeWidget* tree = w.explorer()->tree();
-        QVERIFY(waitFor([&] { return w.explorer()->itemOf("project|" + notes) != nullptr; }));
+        QVERIFY(waitFor([&] { return w.explorer()->itemOf("projects|" + notes) != nullptr; }));
         tree->setFocus();
-        tree->setCurrentItem(w.explorer()->itemOf("project|" + notes));
+        tree->setCurrentItem(w.explorer()->itemOf("projects|" + notes));
         QString asked;
         answer(&w, "moveToTrash", &asked);
         QTest::keyClick(tree, Qt::Key_Delete);
         QVERIFY(asked.startsWith("Move notes.txt to the trash?"));
         QVERIFY(!QFile::exists(notes));
-        QVERIFY(waitFor([&] { return w.explorer()->itemOf("project|" + notes) == nullptr; }));
+        QVERIFY(waitFor([&] { return w.explorer()->itemOf("projects|" + notes) == nullptr; }));
         QCOMPARE(c->plan().elements.size(), size_t(1));  // the canvas's Delete did not see the key
         w.scene()->element(fromStd(c->plan().elements.front().name))->setSelected(true);
         support::refreshed();
@@ -1224,7 +1248,7 @@ private slots:
         QCOMPARE(c->plan().elements.size(), size_t(1));
 
         QVERIFY(!addAfter(*c, fromStd(c->plan().elements.front().name), "src", "fakesink").isEmpty());
-        tree->setCurrentItem(w.explorer()->itemOf("project|" + door));
+        tree->setCurrentItem(w.explorer()->itemOf("projects|" + door));
         answer(&w, "cancel", &asked);
         QTest::keyClick(tree, Qt::Key_Delete);
         QVERIFY(asked.contains("Open with unsaved changes: door.conf"));

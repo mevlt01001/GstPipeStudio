@@ -27,15 +27,17 @@ ExplorerEntry entry(Kind kind, const QString& origin, const QString& path, const
     return e;
 }
 
-// The folder's sub-folders, then its files; a .conf opens in a tab.
+// The folder's sub-folders, then its files; hidden files and internal .gpsproj manifests are omitted, a .conf opens in a tab.
 QList<ExplorerEntry> listFolder(const QString& origin, const QString& dir, int depth) {
     QList<ExplorerEntry> out;
     for (const QFileInfo& f : QDir(dir).entryInfoList(QDir::AllEntries | QDir::NoDotAndDotDot, QDir::DirsFirst | QDir::Name)) {
+        if (f.fileName().startsWith('.')) continue;
         if (f.isDir()) {
             ExplorerEntry folder = entry(Kind::Folder, origin, f.absoluteFilePath(), f.fileName());
             if (depth < kDepth) folder.children = listFolder(origin, f.absoluteFilePath(), depth + 1);
             out << folder;
         } else {
+            if (f.suffix() == "gpsproj") continue;
             out << entry(f.suffix() == "conf" ? Kind::Conf : Kind::File, origin, f.absoluteFilePath(), f.fileName());
         }
     }
@@ -95,57 +97,21 @@ QList<ExplorerAction> ExplorerSource::actions(const ExplorerEntry& e) const {
 QList<ExplorerAction> ExplorerSource::rowActions(const ExplorerEntry& e) const {
     using A = ExplorerAction;
     switch (e.kind) {
-    case Kind::Conf: return {A::Open, A::Rename, A::Delete, A::Reveal, A::CopyPath};
+    case Kind::Conf: return {A::Open, A::Run, A::Duplicate, A::Rename, A::Delete, A::Reveal, A::CopyPath};
     case Kind::File: return {A::Rename, A::Delete, A::Reveal, A::CopyPath};
-    case Kind::Folder: return {A::Delete, A::Reveal, A::CopyPath};
-    case Kind::Project: return {A::Open, A::Delete, A::Reveal, A::CopyPath, A::NewProject};
+    case Kind::Folder:
+        if (e.name != "templates") return {A::NewPipeline, A::Delete, A::Reveal, A::CopyPath};
+        return {A::Delete, A::Reveal, A::CopyPath};
+    case Kind::Project: return {A::Open, A::NewPipeline, A::Delete, A::Reveal, A::CopyPath, A::NewProject};
     default: return {};
     }
 }
 
 QList<ExplorerSource*> ExplorerSource::standard(AppServices& services, QObject* parent) {
-    QList<ExplorerSource*> out{new ProjectSection(services.library(), parent), new ProjectsSection(services.library(), parent)};
+    QList<ExplorerSource*> out{new ProjectsSection(services.library(), parent)};
     for (ComponentProvider* provider : services.providers()) out << new ComponentSection(*provider, parent);
     return out;
 }
-
-// ---- ProjectSection
-
-ProjectSection::ProjectSection(const TemplateLibrary& library, QObject* parent) : ExplorerSource(parent), library_(library) {}
-
-QString ProjectSection::label(const EditorState& editor) const {
-    const QString folder = folderOf(editor.projectConf);
-    return folder.isEmpty() ? "Project" : "Project · " + QFileInfo(folder).fileName();
-}
-
-QString ProjectSection::tooltip(const EditorState& editor) const { return folderOf(editor.projectConf); }
-
-QList<ExplorerEntry> ProjectSection::entries(const EditorState& editor) const {
-    const QString folder = folderOf(editor.projectConf);
-    if (folder.isEmpty()) return {};
-    QList<ExplorerEntry> out = listFolder(id(), folder, 0);
-    const ProjectFile manifest = ProjectFile::load(ProjectFile::pathForConf(editor.projectConf));
-    for (ExplorerEntry& e : out) {
-        if (e.kind == Kind::Conf) markOutdated(e, manifest.templatesOf(e.path), library_);
-    }
-    // Listed by the manifest or open in a tab, but not on disk.
-    QStringList expected;
-    for (const QString& conf : manifest.confs()) expected << QDir(folder).filePath(conf);
-    for (const QString& open : editor.openFiles()) {
-        if (folderOf(open) == folder && !expected.contains(open)) expected << open;
-    }
-    for (const QString& conf : std::as_const(expected)) {
-        if (!QFileInfo::exists(conf)) out << entry(Kind::Conf, id(), conf, QFileInfo(conf).fileName(), State::Missing);
-    }
-    return out;
-}
-
-QStringList ProjectSection::watched(const EditorState& editor) const {
-    const QString folder = folderOf(editor.projectConf);
-    return folder.isEmpty() ? QStringList() : QStringList{folder, ProjectFile::templatesFolder(editor.projectConf)};
-}
-
-QList<ExplorerAction> ProjectSection::sectionActions() const { return {ExplorerAction::NewProject, ExplorerAction::Refresh}; }
 
 // ---- ProjectsSection
 
@@ -153,18 +119,45 @@ ProjectsSection::ProjectsSection(const TemplateLibrary& library, QObject* parent
 
 QString ProjectsSection::tooltip(const EditorState&) const { return Settings::projectsLocation(); }
 
-QList<ExplorerEntry> ProjectsSection::entries(const EditorState&) const {
+QList<ExplorerEntry> ProjectsSection::entries(const EditorState& editor) const {
     QStringList folders;
     for (const QFileInfo& dir : QDir(Settings::projectsLocation()).entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot)) folders << dir.absoluteFilePath();
     for (const QString& manifest : ProjectRegistry::projects()) folders << QFileInfo(manifest).absolutePath();
+    if (const QString active = folderOf(editor.projectConf); !active.isEmpty()) folders << active;
+    for (const QString& openFile : editor.openFiles()) {
+        if (const QString f = folderOf(openFile); !f.isEmpty()) folders << f;
+    }
     folders.removeDuplicates();
     QList<ExplorerEntry> out;
     for (const QString& folder : std::as_const(folders)) {
-        const QString conf = mainConf(folder);
+        QString conf = mainConf(folder);
+        if (conf.isEmpty()) {
+            for (const QString& openFile : editor.openFiles()) {
+                if (folderOf(openFile) == folder) {
+                    conf = openFile;
+                    break;
+                }
+            }
+        }
         if (conf.isEmpty()) continue;
-        ExplorerEntry e = entry(Kind::Project, id(), conf, QFileInfo(folder).fileName());
-        markOutdated(e, ProjectFile::load(ProjectFile::pathForConf(conf)).templates(), library_);
-        out << e;
+        ExplorerEntry proj = entry(Kind::Project, id(), conf, QFileInfo(folder).fileName());
+        const ProjectFile manifest = ProjectFile::load(ProjectFile::pathForConf(conf));
+        if (QFileInfo(folder).isDir()) {
+            proj.children = listFolder(id(), folder, 0);
+            for (ExplorerEntry& child : proj.children) {
+                if (child.kind == Kind::Conf) markOutdated(child, manifest.templatesOf(child.path), library_);
+            }
+        }
+        QStringList expected;
+        for (const QString& listed : manifest.confs()) expected << QDir(folder).filePath(listed);
+        for (const QString& openFile : editor.openFiles()) {
+            if (folderOf(openFile) == folder && !expected.contains(openFile)) expected << openFile;
+        }
+        for (const QString& missing : std::as_const(expected)) {
+            if (!QFileInfo::exists(missing)) proj.children << entry(Kind::Conf, id(), missing, QFileInfo(missing).fileName(), State::Missing);
+        }
+        markOutdated(proj, manifest.templates(), library_);
+        out << proj;
     }
     std::sort(out.begin(), out.end(), [](const ExplorerEntry& a, const ExplorerEntry& b) {
         const int byName = a.name.compare(b.name, Qt::CaseInsensitive);
@@ -173,7 +166,17 @@ QList<ExplorerEntry> ProjectsSection::entries(const EditorState&) const {
     return out;
 }
 
-QStringList ProjectsSection::watched(const EditorState&) const { return {Settings::projectsLocation()}; }
+QStringList ProjectsSection::watched(const EditorState& editor) const {
+    QStringList dirs{Settings::projectsLocation()};
+    if (const QString active = folderOf(editor.projectConf); !active.isEmpty()) {
+        dirs << active << ProjectFile::templatesFolder(editor.projectConf);
+    }
+    for (const QString& openFile : editor.openFiles()) {
+        if (const QString f = folderOf(openFile); !f.isEmpty()) dirs << f;
+    }
+    dirs.removeDuplicates();
+    return dirs;
+}
 
 QList<ExplorerAction> ProjectsSection::sectionActions() const { return {ExplorerAction::NewProject, ExplorerAction::Refresh}; }
 
