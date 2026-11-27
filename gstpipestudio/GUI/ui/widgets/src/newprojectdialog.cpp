@@ -33,7 +33,7 @@ NewProjectDialog::NewProjectDialog(QWidget* parent, const QStringList& open) : Q
     auto* placeRow = new QHBoxLayout;
     where_ = new QLabel(this);
     where_->setObjectName("projectFolder");
-    where_->setStyleSheet("color: " + Theme::muted().name() + ";");
+    Theme::setStyle(where_, "color: @muted@;");
     auto* change = new QPushButton("Change…", this);
     change->setObjectName("changeLocation");
     placeRow->addWidget(where_, 1);
@@ -41,7 +41,7 @@ NewProjectDialog::NewProjectDialog(QWidget* parent, const QStringList& open) : Q
     form->addRow("Folder", placeRow);
     root->addLayout(form);
     error_ = new QLabel(this);
-    error_->setStyleSheet("color: " + Theme::error().name() + ";");
+    Theme::setStyle(error_, "color: @error@;");
     error_->hide();
     root->addWidget(error_);
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);

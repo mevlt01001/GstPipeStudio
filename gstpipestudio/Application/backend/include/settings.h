@@ -35,6 +35,8 @@ void setWindow(const QByteArray& geometry, const QByteArray& state);
 
 layout::Routing linkRouting();
 void setLinkRouting(layout::Routing routing);
+bool lightTheme();
+void setLightTheme(bool on);
 bool autoAlign();
 void setAutoAlign(bool on);
 

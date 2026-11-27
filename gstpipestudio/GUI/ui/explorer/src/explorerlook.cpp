@@ -38,8 +38,8 @@ QString validationLine(const ExplorerEntry& e) {
     return QString();
 }
 
-const QIcon& pipelineIcon() {
-    static const QIcon icon = [] {
+QIcon pipelineIcon() {
+    return [] {
         QPixmap pm(16, 16);
         pm.fill(Qt::transparent);
         QPainter p(&pm);
@@ -52,11 +52,10 @@ const QIcon& pipelineIcon() {
         p.drawRoundedRect(10, 5, 5, 6, 1.5, 1.5);
         return QIcon(pm);
     }();
-    return icon;
 }
 
-const QIcon& componentIcon() {
-    static const QIcon icon = [] {
+QIcon componentIcon() {
+    return [] {
         QPixmap pm(16, 16);
         pm.fill(Qt::transparent);
         QPainter p(&pm);
@@ -68,7 +67,6 @@ const QIcon& componentIcon() {
         p.drawLine(8, 11, 8, 14);
         return QIcon(pm);
     }();
-    return icon;
 }
 
 struct Badge { QString text; QColor color; };

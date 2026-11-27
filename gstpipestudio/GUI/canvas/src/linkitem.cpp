@@ -83,7 +83,7 @@ QPainterPath LinkItem::shape() const {
 void LinkItem::paint(QPainter* p, const QStyleOptionGraphicsItem* option, QWidget* widget) {
     p->setRenderHint(QPainter::Antialiasing);
     bool selected = isSelected();
-    p->setPen(QPen(hover_ || selected ? Theme::accentHover() : QColor("#5f9400"), hover_ || selected ? 3 : 2));
+    p->setPen(QPen(hover_ || selected ? Theme::accentHover() : Theme::link(), hover_ || selected ? 3 : 2));
     p->setBrush(Qt::NoBrush);
     p->drawPath(path_);
 

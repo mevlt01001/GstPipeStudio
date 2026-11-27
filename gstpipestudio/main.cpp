@@ -12,6 +12,7 @@
 #include "buildinfo.h"
 #include "gstpipestudio.h"
 #include "theme.h"
+#include "settings.h"
 
 namespace {
 
@@ -81,7 +82,7 @@ int main(int argc, char** argv) {
     parser.addVersionOption();
     parser.addPositionalArgument("pipeline", "Pipeline .conf file", "[pipeline]");
     parser.process(app);
-    Theme::apply(app);
+    Theme::apply(app, Settings::lightTheme() ? Theme::Mode::Light : Theme::Mode::Dark);
 
     try {
         GstPipeStudio studio;

@@ -105,7 +105,7 @@ void ElementItem::paint(QPainter* p, const QStyleOptionGraphicsItem*, QWidget*) 
     p->drawRoundedRect(box, 6, 6);
     p->save();
     p->setClipPath(shape());
-    p->fillRect(QRectF(0, 0, kBoxWidth, kHeader), view_.isTemplate ? QColor("#263526") : QColor("#333333"));
+    p->fillRect(QRectF(0, 0, kBoxWidth, kHeader), view_.isTemplate ? Theme::templateHeader() : Theme::elementHeader());
     p->restore();
     p->setPen(Theme::line());
     p->drawLine(QPointF(1, kHeader), QPointF(kBoxWidth - 1, kHeader));

@@ -1,29 +1,52 @@
-// theme.h – the colours of UI_RULES 1 (rule 10) and the one style sheet built from them.
+// The active desktop colour scheme and its shared widget and canvas roles.
 #pragma once
 
 #include <QColor>
+#include <QObject>
 #include <QString>
+#include <functional>
 
 class QApplication;
+class QWidget;
 
-class Theme {
+class Theme : public QObject {
+    Q_OBJECT
 public:
-    static QColor background() { return QColor("#202224"); }
-    static QColor panel() { return QColor("#242424"); }
-    static QColor box() { return QColor("#2a2a2a"); }
-    static QColor line() { return QColor("#3a3a3a"); }
-    static QColor text() { return QColor("#e8e8e8"); }
-    static QColor muted() { return QColor("#9a9a9a"); }
-    static QColor accent() { return QColor("#76B900"); }
-    static QColor accentHover() { return QColor("#8ed000"); }
-    static QColor onAccent() { return QColor("#101010"); }  // text on an accent button
-    static QColor focusRing() { return accent(); }
-    static QColor error() { return QColor("#ff6369"); }
-    static QColor warning() { return QColor("#f5a524"); }
+    enum class Mode { Dark, Light };
 
-    // WCAG contrast ratio of two colours, 1 to 21.
+    static Mode mode();
+    static void apply(QApplication& app, Mode mode = Mode::Dark);
+    static void setMode(QApplication& app, Mode mode);
+    static void onChanged(QObject* context, std::function<void()> refresh);
+    static void setStyle(QWidget* widget, const QString& tokens);
+
+    static QColor background();
+    static QColor panel();
+    static QColor box();
+    static QColor line();
+    static QColor text();
+    static QColor muted();
+    static QColor accent();
+    static QColor accentHover();
+    static QColor onAccent();
+    static QColor focusRing() { return accent(); }
+    static QColor error();
+    static QColor warning();
+    static QColor grid();
+    static QColor elementHeader();
+    static QColor templateHeader();
+    static QColor link();
+    static QColor selection();
+    static QColor itemHover();
+    static QColor chartSeries(int series);
+
     static double contrast(const QColor& a, const QColor& b);
     static QString styleSheet();
-    // DejaVu Sans 10 and the style sheet.
-    static void apply(QApplication& app);
+
+signals:
+    void changed();
+
+private:
+    static Theme& instance();
+    Mode mode_ = Mode::Dark;
 };

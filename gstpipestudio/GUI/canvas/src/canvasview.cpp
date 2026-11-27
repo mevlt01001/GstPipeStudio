@@ -26,6 +26,7 @@ CanvasView::CanvasView(QGraphicsScene* scene, QWidget* parent) : QGraphicsView(s
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);  // middle-drag or Space+drag pans; left-drag rubber-band selects
     setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     setObjectName("canvas");
+    Theme::onChanged(this, [this] { viewport()->update(); });
 }
 
 void CanvasView::zoomBy(double factor) {
@@ -119,7 +120,7 @@ void CanvasView::wheelEvent(QWheelEvent* event) {
 
 void CanvasView::drawBackground(QPainter* p, const QRectF& rect) {
     p->fillRect(rect, Theme::background());
-    p->setPen(QPen(QColor("#242424"), 0));
+    p->setPen(QPen(Theme::grid(), 0));
     double left = std::floor(rect.left() / kGrid) * kGrid;
     double top = std::floor(rect.top() / kGrid) * kGrid;
     for (double x = left; x < rect.right(); x += kGrid) p->drawLine(QPointF(x, rect.top()), QPointF(x, rect.bottom()));

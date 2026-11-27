@@ -82,7 +82,7 @@ PluginWizardDialog::PluginWizardDialog(PluginLibrary& library, std::optional<Plu
     problem_ = new QLabel;
     problem_->setObjectName("pluginSpecError");
     problem_->setWordWrap(true);
-    problem_->setStyleSheet("color: " + Theme::error().name());
+    Theme::setStyle(problem_, "color: @error@;");
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Cancel);
     save_ = buttons->addButton(editing_ ? "Save Specification" : "Create && Build", QDialogButtonBox::AcceptRole);
     save_->setObjectName("pluginCreateBuild");

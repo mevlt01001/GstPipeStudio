@@ -20,7 +20,7 @@ int drawPill(QPainter* p, int right, const QRect& row, const QString& text, bool
     p->setPen(filled ? Qt::NoPen : QPen(Theme::accent(), 1));
     p->setBrush(filled ? Theme::accent() : Qt::NoBrush);
     p->drawRoundedRect(pill, 9, 9);
-    p->setPen(filled ? QColor("#101010") : Theme::accent());
+    p->setPen(filled ? Theme::onAccent() : Theme::accent());
     p->drawText(pill, Qt::AlignCenter, text);
     p->restore();
     return pill.left() - 6;
@@ -49,10 +49,10 @@ void FactoryDelegate::paint(QPainter* p, const QStyleOptionViewItem& option, con
     }
 
     if (option.state & QStyle::State_Selected) {
-        p->fillRect(row, QColor("#34420f"));
+        p->fillRect(row, Theme::selection());
         p->fillRect(QRect(row.left(), row.top(), 3, row.height()), Theme::accent());
     } else if (option.state & QStyle::State_MouseOver) {
-        p->fillRect(row, QColor("#2e2e2e"));
+        p->fillRect(row, Theme::itemHover());
     }
 
     int right = row.right() - 10;

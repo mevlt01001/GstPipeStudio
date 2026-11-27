@@ -139,13 +139,15 @@ void TemplatePeek::paintEvent(QPaintEvent*) {
         for (const std::string& m : gps::templates::members(content_, t.id)) around = around.isNull() ? laid_.nodes.value(fromStd(m)) : around.united(laid_.nodes.value(fromStd(m)));
         if (around.isNull()) continue;
         p.setPen(QPen(Theme::accent(), 1.2 / scale_));
-        p.setBrush(QColor(118, 185, 0, 14));
+        auto fill = Theme::accent();
+        fill.setAlpha(14);
+        p.setBrush(fill);
         p.drawRoundedRect(around.adjusted(-kFramePad, -kFramePad - 14, kFramePad, kFramePad), 8, 8);
         p.setFont(small);
         p.drawText(around.adjusted(-kFramePad + 6, -kFramePad - 14, 0, 0).topLeft() + QPointF(0, 11), fromStd(t.templateName));
     }
     // Links along their routes.
-    p.setPen(QPen(QColor("#5f9400"), 1.6 / scale_));
+    p.setPen(QPen(Theme::link(), 1.6 / scale_));
     p.setBrush(Qt::NoBrush);
     for (const auto& pieces : laid_.edges) {
         for (const QList<QPointF>& piece : pieces) {

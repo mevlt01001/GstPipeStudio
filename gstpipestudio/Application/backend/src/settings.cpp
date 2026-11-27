@@ -65,6 +65,10 @@ void setLinkRouting(layout::Routing routing) {
     QSettings().setValue("view/linkStyle", routing == layout::Routing::RightAngles ? "rightAngles" : "curves");
 }
 
+bool lightTheme() { return QSettings().value("view/lightTheme", false).toBool(); }
+
+void setLightTheme(bool on) { QSettings().setValue("view/lightTheme", on); }
+
 bool autoAlign() { return QSettings().value("view/autoAlign", false).toBool(); }
 
 void setAutoAlign(bool on) { QSettings().setValue("view/autoAlign", on); }

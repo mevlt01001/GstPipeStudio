@@ -29,13 +29,13 @@ int timeoutFor(NoticeSeverity severity) {
     return 0;
 }
 
-QColor accentFor(NoticeSeverity severity) {
+const char* accentFor(NoticeSeverity severity) {
     switch (severity) {
-    case NoticeSeverity::Info: return Theme::accent();
-    case NoticeSeverity::Warning: return Theme::warning();
-    case NoticeSeverity::Error: return Theme::error();
+    case NoticeSeverity::Info: return "@accent@";
+    case NoticeSeverity::Warning: return "@warning@";
+    case NoticeSeverity::Error: return "@error@";
     }
-    return Theme::error();
+    return "@error@";
 }
 
 QStyle::StandardPixmap iconFor(NoticeSeverity severity) {
@@ -65,12 +65,11 @@ public:
         setObjectName("toastCard");
         setFocusPolicy(Qt::NoFocus);
         setAttribute(Qt::WA_StyledBackground, true);
-        const QColor stripe = accentFor(notice.severity);
-        setStyleSheet(QString("QFrame#toastCard { background: %1; border: 1px solid %2; border-left: 4px solid %3; border-radius: 4px; }"
-                              "QLabel#toastTitle { color: %4; font-weight: bold; }"
-                              "QLabel#toastDetail { color: %5; }"
-                              "QLabel#toastCount { color: %3; font-weight: bold; }")
-                          .arg(Theme::box().name(), Theme::line().name(), stripe.name(), Theme::text().name(), Theme::muted().name()));
+        Theme::setStyle(this, QString(
+            "QFrame#toastCard { background: @box@; border: 1px solid @line@; border-left: 4px solid %1; border-radius: 4px; }"
+            "QLabel#toastTitle { color: @text@; font-weight: bold; }"
+            "QLabel#toastDetail { color: @muted@; }"
+            "QLabel#toastCount { color: %1; font-weight: bold; }").arg(accentFor(notice.severity)));
 
         auto* root = new QVBoxLayout(this);
         root->setContentsMargins(12, 10, 10, 10);

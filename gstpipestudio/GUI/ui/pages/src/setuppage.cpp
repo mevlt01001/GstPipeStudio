@@ -1,5 +1,6 @@
 // setuppage.cpp
 #include "setuppage.h"
+#include "theme.h"
 
 #include <QClipboard>
 #include <QGuiApplication>
@@ -33,7 +34,8 @@ SetupPage::SetupPage(QWidget* parent) : QWidget(parent) {
     commandLabel_->setObjectName("setupCommand");
     commandLabel_->setTextInteractionFlags(Qt::TextSelectableByMouse);
     commandLabel_->setWordWrap(true);
-    commandLabel_->setStyleSheet("font-family: 'DejaVu Sans Mono'; background: #242424; border: 1px solid #3a3a3a; border-radius: 4px; padding: 10px;");
+    Theme::setStyle(commandLabel_, "font-family: 'DejaVu Sans Mono'; background: @panel@; border: 1px solid @line@;"
+                                    " border-radius: 4px; padding: 10px;");
 
     auto* buttons = new QHBoxLayout;
     auto* retry = new QPushButton("Retry", this);

@@ -82,8 +82,8 @@ PropertyPage::PropertyPage(const PropertyPageInput& input, QWidget* parent) : Dr
         editor->setObjectName("editor_" + name);
         editor->setMaximumWidth(420);
         auto mark = [label, editor, deprecated = p.deprecated] {
-            label->setStyleSheet(deprecated ? "color: " + Theme::muted().name() + ";"
-                                 : editor->isDefault() ? QString() : "color: " + Theme::accent().name() + "; font-weight: bold;");
+            Theme::setStyle(label, deprecated ? "color: @muted@;" :
+                           editor->isDefault() ? QString() : "color: @accent@; font-weight: bold;");
         };
         mark();
         connect(editor, &PropertyEditor::edited, label, mark);
@@ -166,8 +166,8 @@ PropertyPage::PropertyPage(const PropertyPageInput& input, QWidget* parent) : Dr
     if (input.canDelete) {
         auto* del = new QPushButton("Delete", this);
         del->setObjectName("deleteElementButton");
-        del->setStyleSheet("QPushButton { background: #3b1c1e; border-color: #ff6369; color: #ff6369; font-weight: bold; }"
-                           "QPushButton:hover { background: #ff6369; color: #111111; }");
+        Theme::setStyle(del, "QPushButton { background: @danger@; border-color: @error@; color: @error@; font-weight: bold; }"
+                             "QPushButton:hover { background: @error@; color: @dangerText@; }");
         buttons->insertWidget(0, del);
         connect(del, &QPushButton::clicked, this, &PropertyPage::deleteRequested);
     }

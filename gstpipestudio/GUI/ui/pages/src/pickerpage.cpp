@@ -1,5 +1,6 @@
 // pickerpage.cpp
 #include "pickerpage.h"
+#include "theme.h"
 
 #include <QButtonGroup>
 #include <QHBoxLayout>
@@ -57,10 +58,11 @@ PickerPage::PickerPage(const PickerData& data, QWidget* parent) : DrawerPage(par
                 btn->setText(label);
                 btn->setCheckable(true);
                 btn->setCursor(Qt::PointingHandCursor);
-                btn->setStyleSheet(
-                    "QToolButton { background: #2d2d2d; border: 1px solid #444444; border-radius: 4px; padding: 4px 10px; color: #b8b8b8; }"
-                    "QToolButton:hover { border-color: #76b900; color: #e8e8e8; }"
-                    "QToolButton:checked { background: #76b900; color: #111111; border-color: #76b900; font-weight: bold; }");
+                Theme::setStyle(btn,
+                    "QToolButton { background: @chip@; border: 1px solid @scrollbar@; border-radius: 4px;"
+                    " padding: 4px 10px; color: @chipMuted@; }"
+                    "QToolButton:hover { border-color: @accent@; color: @text@; }"
+                    "QToolButton:checked { background: @accent@; color: @onAccent@; border-color: @accent@; font-weight: bold; }");
                 if (id == 0) btn->setChecked(true);
                 group->addButton(btn, id);
                 row->addWidget(btn);

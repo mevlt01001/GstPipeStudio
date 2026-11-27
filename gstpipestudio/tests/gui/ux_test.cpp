@@ -43,6 +43,7 @@
 #include "supportreport.h"
 #include "testsupport.h"
 #include "theme.h"
+#include "settings.h"
 #include "validationindicator.h"
 
 using namespace support;
@@ -596,7 +597,52 @@ private slots:
 
     // ---- theme
 
+    void lightThemeChangesTheOpenWindowAndPersists() {
+        const auto restore = qScopeGuard([] {
+            Settings::setLightTheme(false);
+            Theme::setMode(*qApp, Theme::Mode::Dark);
+        });
+        MainWindow w(c.get());
+        w.show();
+        QString src = addSource(*c, "videotestsrc");
+        QVERIFY(!src.isEmpty());
+        QVERIFY(!addAfter(*c, src, "src", "fakesink").isEmpty());
+        refreshed();
+        const auto revision = c->pipeline().lastChange().revision;
+        const auto dark = Theme::background();
+        QAction* action = w.findChild<QAction*>("actionLightTheme");
+        QVERIFY(action && action->isCheckable() && !action->isChecked());
+        action->trigger();
+        QCOMPARE(Theme::mode(), Theme::Mode::Light);
+        QVERIFY(action->isChecked());
+        QVERIFY(Settings::lightTheme());
+        QCOMPARE(qApp->palette().color(QPalette::Window), Theme::background());
+        QVERIFY(Theme::background().lightness() > dark.lightness());
+        QVERIFY(Theme::accent().green() > Theme::accent().red());
+        QCOMPARE(c->pipeline().lastChange().revision, revision);
+        QVERIFY(w.findChild<QLabel*>("environmentLabel")->styleSheet().contains(Theme::muted().name()));
+        QVERIFY(w.findChild<QLabel*>("stateLabel")->styleSheet().contains(Theme::accent().name()));
+        w.view()->fitAll();
+        refreshed();
+        QVERIFY(w.grab().save(QDir(shotDir()).filePath("light-theme.png")));
+
+        action->trigger();
+        QCOMPARE(Theme::mode(), Theme::Mode::Dark);
+        QVERIFY(!action->isChecked());
+        QVERIFY(!Settings::lightTheme());
+        QCOMPARE(Theme::background(), dark);
+    }
+
+    void themeColoursMeetTheContrastRules_data() {
+        QTest::addColumn<bool>("light");
+        QTest::newRow("dark") << false;
+        QTest::newRow("light") << true;
+    }
+
     void themeColoursMeetTheContrastRules() {
+        QFETCH(bool, light);
+        const auto restore = qScopeGuard([] { Theme::setMode(*qApp, Theme::Mode::Dark); });
+        Theme::setMode(*qApp, light ? Theme::Mode::Light : Theme::Mode::Dark);
         const QColor surfaces[] = {Theme::background(), Theme::panel(), Theme::box()};
         for (const QColor& surface : surfaces) {
             QVERIFY2(Theme::contrast(Theme::text(), surface) >= 4.5, qPrintable("text on " + surface.name()));
@@ -611,7 +657,7 @@ private slots:
         QVERIFY(Theme::contrast(Theme::onAccent(), Theme::accentHover()) >= 4.5);
         QVERIFY(Theme::contrast(QColor("#ffffff"), QColor("#000000")) > 20.9);  // the formula itself: 21:1
         QVERIFY(Theme::contrast(QColor("#777777"), QColor("#ffffff")) > 4.4 && Theme::contrast(QColor("#777777"), QColor("#ffffff")) < 4.6);
-        // The style sheet really draws the 2 px focus ring and dark text on the green buttons.
+        // The style sheet really draws the 2 px focus ring and text on the green buttons.
         QVERIFY(Theme::styleSheet().contains("QPushButton:focus { border: 2px solid " + Theme::focusRing().name()));
         QVERIFY(Theme::styleSheet().contains("QPushButton#saveButton, QPushButton[accent=\"true\"] { background: " + Theme::accent().name() + "; color: " + Theme::onAccent().name()));
     }

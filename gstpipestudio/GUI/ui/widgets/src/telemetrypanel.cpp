@@ -35,7 +35,7 @@ protected:
         p.drawText(area.bottomRight() + QPointF(-28, 19), "now");
         bool any = false; int line = 0;
         for (auto it = series.cbegin(); it != series.cend(); ++it, ++line) {
-            const QColor color = QColor::fromHsv((line * 137 + 80) % 360, 185, 230);
+            const QColor color = Theme::chartSeries(line);
             p.setPen(QPen(color, 2));
             QPainterPath path; bool open = false;
             const auto& points = it.value();

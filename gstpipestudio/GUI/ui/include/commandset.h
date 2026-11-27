@@ -21,7 +21,7 @@ enum class Command {
     // Edit
     Undo, Redo, Cut, Copy, Paste, Duplicate, Delete, SelectAll, Find,
     // View
-    NextTab, PreviousTab, ZoomIn, ZoomOut, Fit, Arrange, AutoAlignment, LinkCurves, LinkRightAngles, ConnectedMove,
+    LightTheme, NextTab, PreviousTab, ZoomIn, ZoomOut, Fit, Arrange, AutoAlignment, LinkCurves, LinkRightAngles, ConnectedMove,
     // Pipeline
     AddElement, AddTemplate, AddPlugin, AddLaunch, SaveAsTemplate, TemplateParameters, ConnectSelected, DisconnectSelected, AlignSelection,
     Validate, Run,

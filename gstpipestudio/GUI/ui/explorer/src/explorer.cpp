@@ -80,7 +80,7 @@ private:
     static void show(QLineEdit* line, const QString& error) {
         line->setProperty("refused", error);
         line->setToolTip(error);
-        line->setStyleSheet(error.isEmpty() ? QString() : "border: 1px solid " + Theme::error().name() + ";");
+        Theme::setStyle(line, error.isEmpty() ? QString() : "border: 1px solid @error@;");
         if (!error.isEmpty()) QToolTip::showText(line->mapToGlobal(QPoint(0, line->height())), error, line);
     }
 
@@ -133,6 +133,9 @@ Explorer::Explorer(const QList<ExplorerSource*>& sections, FileOperations& opera
     tree_->setEditTriggers(QAbstractItemView::EditKeyPressed);
     tree_->setItemDelegate(new RenameDelegate(operations, tree_));
     tree_->installEventFilter(this);
+    Theme::onChanged(this, [this] {
+        for (const auto& section : sections_) decorate(section.header);
+    });
     layout->addWidget(tree_, 1);
     for (ExplorerSource* source : sections) {
         auto* header = new QTreeWidgetItem(tree_);

@@ -28,12 +28,12 @@ bool PanelSlot::present(DrawerPage* page, const QString& title, const QString& s
     row->setContentsMargins(0, 0, 0, 0);
     auto* titleLabel = new QLabel(title, head);
     titleLabel->setObjectName(name_ + "Title");
-    titleLabel->setStyleSheet("font-weight: bold; color: " + Theme::accent().name() + ";");
+    Theme::setStyle(titleLabel, "font-weight: bold; color: @accent@;");
     row->addWidget(titleLabel);
     if (!subtitle.isEmpty()) {
         auto* subLabel = new QLabel(subtitle, head);
         subLabel->setObjectName(name_ + "Subtitle");
-        subLabel->setStyleSheet("color: " + Theme::muted().name() + ";");
+        Theme::setStyle(subLabel, "color: @muted@;");
         row->addWidget(subLabel);
     }
     row->addStretch(1);

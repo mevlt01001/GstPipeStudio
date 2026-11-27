@@ -32,8 +32,8 @@ AboutDialog::AboutDialog(const QString& runtime, QWidget* parent) : QDialog(pare
     info->setWordWrap(true);
     info->setTextInteractionFlags(Qt::TextSelectableByMouse);
     layout->addWidget(info);
-    auto* links = new QLabel("<a style=\"color:#8ed000\" href=\"https://github.com/mevlt01001/GstPipeStudio\">Project & contributions</a> "
-                             "· <a style=\"color:#8ed000\" href=\"https://github.com/mevlt01001/GstPipeStudio/issues\">Report a "
+    auto* links = new QLabel("<a href=\"https://github.com/mevlt01001/GstPipeStudio\">Project & contributions</a> "
+                             "· <a href=\"https://github.com/mevlt01001/GstPipeStudio/issues\">Report a "
                              "problem</a><br>Open source · MIT License",
                              this);
     links->setOpenExternalLinks(true);

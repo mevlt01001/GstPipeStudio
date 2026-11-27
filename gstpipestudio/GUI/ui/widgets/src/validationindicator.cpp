@@ -71,5 +71,5 @@ void ValidationIndicator::refresh() {
     else if (mode_ == Slow) label_->setText("Validation is taking longer than expected");
     else if (mode_ == Stopped) label_->setText("The validator stopped unexpectedly");
     else label_->setText("Validating…");
-    label_->setStyleSheet(mode_ == Stopped ? "color: " + Theme::error().name() : QString());
+    Theme::setStyle(label_, mode_ == Stopped ? "color: @error@;" : QString());
 }

@@ -88,13 +88,23 @@ public:
         connect(this, &QPlainTextEdit::blockCountChanged, this, [this] { layoutGutter(); });
         connect(this, &QPlainTextEdit::updateRequest, gutter_, qOverload<>(&QWidget::update));
         layoutGutter();
-        new CppHighlighter(document());
+        auto* highlighter = new CppHighlighter(document());
+        Theme::onChanged(this, [this, highlighter] {
+            highlighter->rehighlight();
+            applyDiagnostics();
+        });
     }
 
     void showDiagnostics(const QList<BuildDiagnostic>& diagnostics) {
+        issues_ = diagnostics;
+        applyDiagnostics();
+    }
+
+private:
+    void applyDiagnostics() {
         messages_.clear();
         QList<QTextEdit::ExtraSelection> marks;
-        for (const auto& error : diagnostics) {
+        for (const auto& error : issues_) {
             const auto block = document()->findBlockByNumber(error.line - 1);
             if (!block.isValid() || error.severity == "note") continue;
             auto color = error.severity == "warning" ? Theme::warning() : Theme::error();
@@ -111,6 +121,7 @@ public:
         gutter_->update();
     }
 
+public:
     void jump(int line, int column) {
         const auto block = document()->findBlockByNumber(line - 1);
         if (!block.isValid()) return;
@@ -182,6 +193,7 @@ private:
 
     Gutter* gutter_;
     QHash<int, Mark> messages_;
+    QList<BuildDiagnostic> issues_;
 };
 
 PluginEditorWindow::PluginEditorWindow(PluginLibrary& library, QString id, QWidget* parent)
@@ -205,7 +217,7 @@ PluginEditorWindow::PluginEditorWindow(PluginLibrary& library, QString id, QWidg
     layout->addLayout(row);
     diskWarning_ = new QLabel;
     diskWarning_->setWordWrap(true);
-    diskWarning_->setStyleSheet("color: " + Theme::warning().name());
+    Theme::setStyle(diskWarning_, "color: @warning@;");
     diskWarning_->hide();
     layout->addWidget(diskWarning_);
 
@@ -239,6 +251,7 @@ PluginEditorWindow::PluginEditorWindow(PluginLibrary& library, QString id, QWidg
         if (QFileInfo(issue.file).fileName() == QFileInfo(library_.sourcePath(id_)).fileName()) code_->jump(issue.line, issue.column);
     });
     connect(&library_, &PluginLibrary::changed, this, &PluginEditorWindow::refresh);
+    Theme::onChanged(this, [this] { refresh(); });
     connect(&library_, &PluginLibrary::buildOutputLine, this, [this](const QString& id, const QString& line) {
         if (id == id_) output_->appendPlainText(line);
     });

@@ -63,7 +63,7 @@ TemplatePage::TemplatePage(const TemplatePageInput& input, QWidget* parent) : Dr
 
     error_ = new QLabel(this);
     error_->setObjectName("templateError");
-    error_->setStyleSheet("color: " + Theme::error().name() + ";");
+    Theme::setStyle(error_, "color: @error@;");
     error_->setWordWrap(true);
     error_->hide();
     root->addWidget(error_);

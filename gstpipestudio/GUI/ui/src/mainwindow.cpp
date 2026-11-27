@@ -2,6 +2,7 @@
 #include "mainwindow.h"
 
 #include <QActionGroup>
+#include <QApplication>
 #include <QClipboard>
 #include <QCloseEvent>
 #include <QDialog>
@@ -111,6 +112,7 @@ MainWindow::MainWindow(AppServices& services, DocumentSessions* sessions, Contro
     restoreState(Settings::windowState());
     built_ = true;
     connect(&services_.view(), &ViewPreferences::changed, this, &MainWindow::scheduleRefresh);
+    Theme::onChanged(this, [this] { refreshState(); });
     if (QClipboard* clipboard = QGuiApplication::clipboard()) connect(clipboard, &QClipboard::dataChanged, this, &MainWindow::scheduleRefresh);
     // GStreamer is checked once for the whole window; every tab shows the answer.
     connect(&services_.environment(), &EnvironmentService::checked, this, &MainWindow::onEnvironment);
@@ -218,6 +220,11 @@ void MainWindow::buildCommands() {
         {C::Fit, "actionFit", "Zoom to &fit", {QKeySequence(Qt::CTRL | Qt::Key_0)}, [this] { view()->fitAll(); }},
         {C::Arrange, "actionArrange", "Arrange &pipeline", {QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_L)}, [this] { controller()->niceAlign(); }, withPlan},
         // The view preferences are the process's: the menu sets them once, every tab follows.
+        {C::LightTheme, "actionLightTheme", "&Light theme", {}, [] {
+             const bool light = Theme::mode() != Theme::Mode::Light;
+             Settings::setLightTheme(light);
+             Theme::setMode(*qApp, light ? Theme::Mode::Light : Theme::Mode::Dark);
+         }},
         {C::AutoAlignment, "actionAutoAlignment", "&Auto alignment", {}, [this] {
              services_.view().setAutoAlign(!services_.view().autoAlign());
              if (services_.view().autoAlign()) controller()->niceAlign();
@@ -282,6 +289,7 @@ void MainWindow::buildCommands() {
     commands_->setTip(C::AddLaunch, "Add elements from a gst-launch pipeline into the current project (Ctrl+Shift+I)");
     commands_->setTip(C::AutoAlignment, "Align the whole canvas after every edit; a dragged box slides back into place");
     commands_->setTip(C::ConnectedMove, "Drag an element to move its connected component; undo restores all positions");
+    commands_->setChecked(C::LightTheme, [] { return Theme::mode() == Theme::Mode::Light; });
     commands_->setChecked(C::AutoAlignment, [this] { return services_.view().autoAlign(); });
     commands_->setChecked(C::LinkCurves, [this] { return services_.view().routing() == layout::Routing::Curves; });
     commands_->setChecked(C::LinkRightAngles, [this] { return services_.view().routing() == layout::Routing::RightAngles; });
@@ -332,6 +340,7 @@ void MainWindow::buildMenus() {
     viewMenu->addActions({c[C::ZoomIn], c[C::ZoomOut], c[C::Fit]});
     viewMenu->addSeparator();
     viewMenu->addActions({c[C::Arrange], c[C::AutoAlignment]});
+    viewMenu->addAction(c[C::LightTheme]);
     QMenu* linkStyle = viewMenu->addMenu("&Link style");  // the next nice alignment routes links as curves or right-angle lines
     auto* styles = new QActionGroup(this);
     for (Command style : {C::LinkCurves, C::LinkRightAngles}) linkStyle->addAction(styles->addAction(c[style]));
@@ -370,14 +379,14 @@ void MainWindow::buildStatusBar() {
     environment_ = new QLabel(this);
     environment_->setObjectName("environmentLabel");
     environment_->setMinimumWidth(1);
-    environment_->setStyleSheet("color: " + Theme::muted().name() + ";");
+    Theme::setStyle(environment_, "color: @muted@;");
     command_ = new QLineEdit(this);
     command_->setObjectName("commandLabel");
     command_->setAccessibleName("Pipeline launch command");
     command_->setReadOnly(true);
     command_->setFrame(false);
     command_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
-    command_->setStyleSheet("font-family: 'DejaVu Sans Mono'; background: transparent; border: 0; color: " + Theme::muted().name() + ";");
+    Theme::setStyle(command_, "font-family: 'DejaVu Sans Mono'; background: transparent; border: 0; color: @muted@;");
     statusBar()->setSizeGripEnabled(false);
     statusBar()->addWidget(state_);
     statusBar()->addWidget(environment_);

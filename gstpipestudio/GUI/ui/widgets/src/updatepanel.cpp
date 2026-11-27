@@ -55,6 +55,7 @@ UpdatePanel::UpdatePanel(Controller* controller, QWidget* parent) : QWidget(pare
     root->addWidget(table_, 1);
 
     connect(controller, &Controller::changed, this, &UpdatePanel::refresh);
+    Theme::onChanged(this, [this] { refresh(); });
     refresh();
 }
 

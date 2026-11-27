@@ -61,6 +61,10 @@ WindowChrome::WindowChrome(QMainWindow* window, QMenuBar* menu) : QWidget(window
         b->setAccessibleName(tip);
         b->setToolTip(tip);
         b->setIcon(controlIcon(icon));
+        Theme::onChanged(b, [this, b, icon] {
+            const auto state = icon == QStyle::SP_TitleBarMaxButton && window_->isMaximized() ? QStyle::SP_TitleBarNormalButton : icon;
+            b->setIcon(controlIcon(state));
+        });
         b->setFixedSize(36, 32);
         row->addWidget(b);
         connect(b, &QToolButton::clicked, this, action);
