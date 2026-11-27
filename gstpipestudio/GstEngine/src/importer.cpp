@@ -3,6 +3,7 @@
 #include <gst/gst.h>
 #include <algorithm>
 #include <map>
+#include <set>
 
 namespace gps {
 namespace {
@@ -11,6 +12,14 @@ std::string textOf(const GValue* value) {
     if (G_VALUE_HOLDS_STRING(value)) {
         const char* s = g_value_get_string(value);
         return s ? s : "";
+    }
+    if (GST_VALUE_HOLDS_CAPS(value)) {
+        const GstCaps* caps = gst_value_get_caps(value);
+        if (!caps) return "";
+        gchar* text = gst_caps_to_string(caps);
+        std::string out = text ? text : "";
+        g_free(text);
+        return out;
     }
     gchar* encoded = gst_value_serialize(value);
     std::string text = encoded ? encoded : "";
@@ -106,15 +115,106 @@ void probe(GstElement* root, int ms, std::vector<std::string>* warnings) {
     if (bus) gst_object_unref(bus);
 }
 
+bool hasSometimesTemplates(const std::vector<GstElement*>& elements) {
+    for (GstElement* el : elements) {
+        GstElementFactory* factory = gst_element_get_factory(el);
+        if (!factory) continue;
+        for (const GList* t = gst_element_factory_get_static_pad_templates(factory); t; t = t->next) {
+            const auto* tmpl = static_cast<const GstStaticPadTemplate*>(t->data);
+            if (tmpl->presence == GST_PAD_SOMETIMES) return true;
+        }
+    }
+    return false;
+}
+
+std::vector<GstElement*> topologicalOrder(const std::vector<GstElement*>& elements) {
+    std::set<GstElement*> memberSet(elements.begin(), elements.end());
+    std::map<GstElement*, int> inDegree;
+    std::map<GstElement*, std::vector<GstElement*>> adj;
+    for (GstElement* el : elements) inDegree[el] = 0;
+
+    for (GstElement* el : elements) {
+        for (GstPad* pad : padsOf(el, GST_PAD_SRC)) {
+            if (GstPad* peer = gst_pad_get_peer(pad)) {
+                if (GstElement* target = gst_pad_get_parent_element(peer)) {
+                    if (memberSet.count(target) && target != el) {
+                        adj[el].push_back(target);
+                        ++inDegree[target];
+                    }
+                    gst_object_unref(target);
+                }
+                gst_object_unref(peer);
+            }
+            gst_object_unref(pad);
+        }
+    }
+
+    auto cmpName = [](GstElement* a, GstElement* b) {
+        return std::string(GST_ELEMENT_NAME(a)) < std::string(GST_ELEMENT_NAME(b));
+    };
+    std::vector<GstElement*> ready;
+    for (GstElement* el : elements) {
+        if (inDegree[el] == 0) ready.push_back(el);
+    }
+    std::sort(ready.begin(), ready.end(), cmpName);
+
+    std::vector<GstElement*> ordered;
+    std::set<GstElement*> placed;
+    while (!ready.empty()) {
+        GstElement* cur = ready.front();
+        ready.erase(ready.begin());
+        if (!placed.insert(cur).second) continue;
+        ordered.push_back(cur);
+        for (GstElement* next : adj[cur]) {
+            if (--inDegree[next] == 0) {
+                ready.push_back(next);
+                std::sort(ready.begin(), ready.end(), cmpName);
+            }
+        }
+    }
+    for (GstElement* el : elements) {
+        if (placed.insert(el).second) ordered.push_back(el);
+    }
+    return ordered;
+}
+
+void collapseCapsFilters(Graph& graph) {
+    for (bool collapsed = true; collapsed;) {
+        collapsed = false;
+        for (size_t idx = 0; idx < graph.elements.size(); ++idx) {
+            const Element& e = graph.elements[idx];
+            if (e.factory != "capsfilter" || !e.requestSrc.empty() || !e.requestSink.empty() || e.props.size() != 1) continue;
+            auto capsIt = e.props.find("caps");
+            if (capsIt == e.props.end() || capsIt->second.empty()) continue;
+            const std::vector<int> in = graph.linksInto(e.name);
+            const std::vector<int> out = graph.linksFromElement(e.name);
+            if (in.size() != 1 || out.size() != 1) continue;
+            Connection& inLink = graph.links[static_cast<size_t>(in[0])];
+            const Connection& outLink = graph.links[static_cast<size_t>(out[0])];
+            if (!inLink.caps.empty() || !inLink.sinkPadProps.empty()) continue;
+
+            inLink.sinkElement = outLink.sinkElement;
+            inLink.sinkPad = outLink.sinkPad;
+            inLink.sinkPadProps = outLink.sinkPadProps;
+            inLink.caps = capsIt->second;
+            graph.links.erase(graph.links.begin() + out[0]);
+            graph.elements.erase(graph.elements.begin() + static_cast<long>(idx));
+            collapsed = true;
+            break;
+        }
+    }
+}
+
 } // namespace
 
 bool importLaunch(const std::string& description, int probeMs, ImportResult* out, std::string* error) {
     if (!out || !error) return false;
     error->clear();
-    if (description.empty()) { *error = "pipeline description is empty"; return false; }
+    const std::string normalized = normalizeLaunchText(description);
+    if (normalized.empty()) { *error = "pipeline description is empty"; return false; }
     if (probeMs < 0 || probeMs > 10000) { *error = "probe time must be 0–10000 ms"; return false; }
     GError* parseError = nullptr;
-    GstElement* root = gst_parse_launch(description.c_str(), &parseError);
+    GstElement* root = gst_parse_launch(normalized.c_str(), &parseError);
     if (parseError || !root) {
         *error = parseError ? parseError->message : "GStreamer could not parse the pipeline";
         g_clear_error(&parseError);
@@ -124,21 +224,43 @@ bool importLaunch(const std::string& description, int probeMs, ImportResult* out
     ImportResult result;
     result.nativeName = GST_ELEMENT_NAME(root);
     result.graph.name = result.nativeName;
-    probe(root, probeMs, &result.warnings);
-    auto native = children(root, error);
+
+    auto initial = children(root, error);
+    if (!error->empty()) { gst_element_set_state(root, GST_STATE_NULL); gst_object_unref(root); return false; }
+
+    std::map<GstElement*, Props> authoredProps;
+    for (GstElement* child : initial) {
+        authoredProps[child] = changedProperties(child, &result.warnings);
+    }
+
+    const bool needsProbe = probeMs > 0 && hasSometimesTemplates(initial);
+    for (GstElement* child : initial) gst_object_unref(child);
+
+    if (needsProbe) probe(root, probeMs, &result.warnings);
+    auto native = topologicalOrder(children(root, error));
     if (!error->empty()) { gst_element_set_state(root, GST_STATE_NULL); gst_object_unref(root); return false; }
     std::map<GstElement*, std::string> identities;
     for (GstElement* child : native) {
         GstElementFactory* factory = gst_element_get_factory(child);
         if (!factory) { *error = "pipeline contains an explicit bin without an element factory"; break; }
         std::string factoryName = gst_plugin_feature_get_name(GST_PLUGIN_FEATURE(factory));
-        std::string id = result.graph.addSource(factoryName, changedProperties(child, &result.warnings));
+        auto foundProps = authoredProps.find(child);
+        Props props = foundProps != authoredProps.end()
+                          ? foundProps->second
+                          : changedProperties(child, &result.warnings);
+        std::string id = result.graph.addSource(factoryName, std::move(props));
         identities[child] = id;
     }
     if (error->empty()) {
         for (GstElement* child : native) {
             const std::string& id = identities.at(child);
             Element* authored = result.graph.find(id);
+            for (GstPad* pad : padsOf(child, GST_PAD_SINK)) {
+                const NativePad sink(pad);
+                if (sink.presence == GST_PAD_REQUEST && isTemplateName(sink.templateName))
+                    ++authored->requestSink[sink.templateName];
+                gst_object_unref(pad);
+            }
             std::map<std::string, int> ordinals;
             for (GstPad* pad : padsOf(child, GST_PAD_SRC)) {
                 const NativePad source(pad);
@@ -166,6 +288,7 @@ bool importLaunch(const std::string& description, int probeMs, ImportResult* out
     gst_element_set_state(root, GST_STATE_NULL);
     gst_object_unref(root);
     if (!error->empty()) return false;
+    collapseCapsFilters(result.graph);
     Graph check;
     if (!Graph::fromConf(result.graph.toConf(), &check, error)) return false;
     *out = std::move(result);

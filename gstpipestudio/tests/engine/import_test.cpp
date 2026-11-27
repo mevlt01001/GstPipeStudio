@@ -47,5 +47,28 @@ int main(int argc, char** argv) {
     std::puts("-- parser errors do not replace the caller's graph");
     CHECK(!gps::importLaunch("not_a_real_element ! fakesink", 0, &imported, &error));
     CHECK(!error.empty());
-    return 0;
+
+    std::puts("-- multi-line gst-launch with env var, inline caps collapse and clean defaults");
+    CHECK(gps::importLaunch(
+        "GST_PLUGIN_PATH=/tmp gst-launch-1.0 -e \\\n"
+        "  videotestsrc is-live=true ! video/x-raw,format=RGBA,width=640,height=480 ! videoconvert ! fakesink sync=false",
+        500, &imported, &error));
+    CHECK_EQ(imported.graph.elements.size(), 3u);
+    CHECK_EQ(imported.graph.links.size(), 2u);
+    CHECK_EQ(imported.graph.elements[0].factory, std::string("videotestsrc"));
+    CHECK_EQ(imported.graph.elements[1].factory, std::string("videoconvert"));
+    CHECK(gpstest::contains(imported.graph.links[0].caps, "format=(string)RGBA"));
+    CHECK(!gpstest::contains(imported.graph.links[0].caps, "\\"));
+
+    std::puts("-- exact-named Request sink pads (flvmux.audio) survive import and update");
+    CHECK(gps::importLaunch("audiotestsrc num-buffers=5 ! audioconvert ! alawenc ! flvmux name=mux ! fakesink sync=false", 300, &imported, &error));
+    bool hasExactAudioLink = false;
+    for (const auto& l : imported.graph.links) {
+        if (l.sinkPad == "audio") hasExactAudioLink = true;
+    }
+    CHECK(hasExactAudioLink);
+    updated = gps::update(imported.graph, options, {});
+    CHECK_EQ(updated.status, "ok");
+    CHECK(updated.complete());
+    return finish("import_test");
 }

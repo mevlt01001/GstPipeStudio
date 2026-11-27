@@ -393,6 +393,85 @@ bool Builder::endsHaveCaps() const {
     return true;
 }
 
+bool Builder::allPlannedLinksConnected() const {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    for (const Connection& l : plan_.links) {
+        const bool ok = std::any_of(pads_.begin(), pads_.end(), [&](const PadInfo& p) {
+            return p.element == l.srcElement && p.identity == l.srcPad && p.linked;
+        });
+        if (!ok) return false;
+    }
+    for (const auto& node : nodes_) {
+        GstElementFactory* factory = gst_element_get_factory(node.second);
+        if (!factory) continue;
+        bool hasSometimesSrc = false;
+        for (const GList* t = gst_element_factory_get_static_pad_templates(factory); t; t = t->next) {
+            const auto* tmpl = static_cast<const GstStaticPadTemplate*>(t->data);
+            if (tmpl->direction == GST_PAD_SRC && tmpl->presence == GST_PAD_SOMETIMES) {
+                hasSometimesSrc = true;
+                break;
+            }
+        }
+        if (hasSometimesSrc) {
+            const bool anySrc = std::any_of(pads_.begin(), pads_.end(), [&](const PadInfo& p) {
+                return p.element == node.first;
+            });
+            if (!anySrc) return false;
+        }
+    }
+    return true;
+}
+
+bool Builder::allLinkedPadsHaveCaps() const {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    if (!allPlannedLinksConnected() || !endsHaveCaps() || pads_.empty()) return false;
+    for (const PadInfo& p : pads_) {
+        if (!p.linked) continue;
+        GstCaps* srcCaps = gst_pad_get_current_caps(p.pad);
+        const bool hasSrcCaps = srcCaps != nullptr;
+        if (srcCaps) gst_caps_unref(srcCaps);
+        if (!hasSrcCaps) return false;
+        if (GstPad* peer = gst_pad_get_peer(p.pad)) {
+            GstCaps* sinkCaps = gst_pad_get_current_caps(peer);
+            const bool hasSinkCaps = sinkCaps != nullptr;
+            if (sinkCaps) gst_caps_unref(sinkCaps);
+            gst_object_unref(peer);
+            if (!hasSinkCaps) return false;
+        }
+    }
+    return true;
+}
+
+bool Builder::hasUnqueuedMultiSinkFanout() const {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    for (const Element& e : plan_.elements) {
+        const std::vector<int> out = plan_.linksFromElement(e.name);
+        if (out.size() < 2) continue;
+        int unqueuedSinks = 0;
+        for (int idx : out) {
+            std::vector<std::string> todo{plan_.links[static_cast<size_t>(idx)].sinkElement};
+            std::set<std::string> seen;
+            bool reachesSinkWithoutQueue = false;
+            while (!todo.empty() && !reachesSinkWithoutQueue) {
+                const std::string cur = todo.back();
+                todo.pop_back();
+                if (!seen.insert(cur).second) continue;
+                const Element* node = plan_.find(cur);
+                if (!node || node->factory == kQueueFactory) continue;
+                const std::vector<int> nextLinks = plan_.linksFromElement(cur);
+                if (nextLinks.empty()) {
+                    reachesSinkWithoutQueue = true;
+                    break;
+                }
+                for (int nextIdx : nextLinks) todo.push_back(plan_.links[static_cast<size_t>(nextIdx)].sinkElement);
+            }
+            if (reachesSinkWithoutQueue) ++unqueuedSinks;
+        }
+        if (unqueuedSinks >= 2) return true;
+    }
+    return false;
+}
+
 bool Builder::markUnknownData(GstObject* src) {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     for (PadInfo& p : pads_) {

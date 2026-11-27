@@ -70,6 +70,9 @@ public:
     // True when src is the typefind of a temporary end: that pad now carries unknown data.
     bool markUnknownData(GstObject* src);
     bool endsHaveCaps() const;
+    bool allPlannedLinksConnected() const;
+    bool allLinkedPadsHaveCaps() const;
+    bool hasUnqueuedMultiSinkFanout() const;
 
     std::vector<PadReport> report() const;
 

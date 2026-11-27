@@ -198,5 +198,38 @@ void nodeShapes() {
     CHECK(g.linkExisting(c, "src", k, "sink"));
     CHECK(!shape.firstFree(tail, D::Sink).has_value());
     CHECK(shape.role(head) == Role::Source && shape.ports(head).srcs.front().link >= 0);
+
+    // Exact-named Request sink templates (no '%'): singleton identity without '#0', and taken once linked.
+    Pipeline exactDoc;
+    exactDoc.registerFactory("src", {true, {pad("src", D::Source, P::Always)}});
+    exactDoc.registerFactory("ovl", {false, {pad("sink_video", D::Sink, P::Request), pad("sink_param", D::Sink, P::Request), pad("src", D::Source, P::Always)}});
+    std::string s1, s2, ovl;
+    CHECK(exactDoc.editor().execute(EditAction([&](Graph& eg, std::string*) {
+        s1 = eg.addElement("src");
+        s2 = eg.addElement("src");
+        ovl = eg.addElement("ovl");
+        return eg.linkExisting(s1, "src", ovl, "sink_video");
+    })));
+    std::vector<std::string> ovlIds;
+    for (const Pad& p : exactDoc.graph().find(ovl)->pads) ovlIds.push_back(p.identity);
+    CHECK(ovlIds == std::vector<std::string>({"sink_video", "sink_param", "src"}));
+    CHECK(exactDoc.graph().sinkOf(0) == (PadRef{ovl, "sink_video", D::Sink}));
+    CHECK_EQ(exactDoc.graph().linkInto(ovl, "sink_video"), 0);
+    CHECK(exactDoc.peer({s1, "src", D::Source}) == (PadRef{ovl, "sink_video", D::Sink}));
+    CHECK(exactDoc.peer({ovl, "sink_video", D::Sink}) == (PadRef{s1, "src", D::Source}));
+    const NodeShape exactShape(exactDoc.graph(), exactDoc);
+    CHECK(exactShape.firstFree(NodeRef::element(ovl), D::Sink) == (PadRef{ovl, "sink_param", D::Sink}));
+    CHECK(!exactDoc.editor().execute(EditAction([&](Graph& eg, std::string*) {
+        return eg.linkExisting(s2, "src", ovl, "sink_video");
+    })));
 }
-int main(){transactions();invariantsAndFragments();results();pads();savePoint();padRefs();nodeShapes();return finish("pipeline_test");}
+
+void launchTextHelpers() {
+    CHECK_EQ(normalizeLaunchText("GST_PLUGIN_PATH=/tmp/p gst-launch-1.0 -e -v \\\n  videotestsrc ! fakesink"),
+             std::string("videotestsrc ! fakesink"));
+    CHECK(looksLikeLaunchText("GST_DEBUG=3 gst-launch-1.0 -e videotestsrc ! fakesink"));
+    CHECK(looksLikeLaunchText("videotestsrc ! queue ! autovideosink"));
+    CHECK(!looksLikeLaunchText("[pipeline]\nformat=1\n\nelement a videotestsrc"));
+    CHECK(!looksLikeLaunchText("# comment"));
+}
+int main(){transactions();invariantsAndFragments();results();pads();savePoint();padRefs();nodeShapes();launchTextHelpers();return finish("pipeline_test");}

@@ -60,10 +60,19 @@ UpdateResult update(const Graph& plan, const UpdateOptions& options, const LogFn
         } else {
             GstBus* bus = gst_element_get_bus(pipeline);
             auto say = [&](const std::string& line) { if (log) log(line); };
-            say("PLAYING");
-            if (gst_element_set_state(pipeline, GST_STATE_PLAYING) == GST_STATE_CHANGE_FAILURE) say("PLAYING was refused, waiting for the bus message");
+            const GstStateChangeReturn paused = gst_element_set_state(pipeline, GST_STATE_PAUSED);
+            const bool livePipeline = (paused == GST_STATE_CHANGE_NO_PREROLL);
+            if (paused == GST_STATE_CHANGE_FAILURE) {
+                say("PAUSED was refused, waiting for the bus message");
+            } else {
+                say(livePipeline ? "PLAYING (live)" : "PLAYING");
+                if (gst_element_set_state(pipeline, GST_STATE_PLAYING) == GST_STATE_CHANGE_FAILURE)
+                    say("PLAYING was refused, waiting for the bus message");
+            }
             bool settled = false;
             double unknownSince = 0;  // when the last typefind error came
+            constexpr double kLiveCapsGraceMs = 400.0;
+            constexpr double kLiveIdleGraceMs = 1500.0;
             while (!settled) {
                 if (nowMs() - begin > options.timeoutMs) {
                     result.status = "timeout";
@@ -91,6 +100,17 @@ UpdateResult update(const Graph& plan, const UpdateOptions& options, const LogFn
                 if (unknownSince > 0 && nowMs() - unknownSince > kUnknownGraceMs && builder.endsHaveCaps()) {
                     say("no ASYNC_DONE expected: an end sees unknown data, the other ends are ready");
                     break;
+                }
+                if (livePipeline && builder.refused().empty() && builder.missing().empty() && !builder.failed()) {
+                    const double elapsed = nowMs() - begin;
+                    if (elapsed >= kLiveCapsGraceMs && builder.allLinkedPadsHaveCaps()) {
+                        say("live pipeline: all links and caps negotiated; waiting for live input");
+                        break;
+                    }
+                    if (elapsed >= kLiveIdleGraceMs && builder.allPlannedLinksConnected() && !builder.hasUnqueuedMultiSinkFanout()) {
+                        say("live pipeline: links ready, waiting for live input");
+                        break;
+                    }
                 }
                 GstMessage* msg = gst_bus_timed_pop_filtered(
                     bus, kPollMs * GST_MSECOND,

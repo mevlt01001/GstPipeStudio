@@ -23,21 +23,6 @@ int main(int argc, char** argv) {
     }
     if (path.empty() || description.empty()) return gps::usageError(output,
         "gps-import --output <pipeline.conf> [--probe-ms N] <pipeline description>");
-    const std::string prefix = "gst-launch-1.0";
-    if (description.rfind(prefix + " ", 0) == 0) {
-        description.erase(0, prefix.size() + 1);
-        bool stripped = true;
-        while (stripped) {
-            stripped = false;
-            for (const char* flag : {"-v ", "--verbose ", "-e ", "--eos-on-shutdown ", "-q ", "--quiet "}) {
-                if (description.rfind(flag, 0) == 0) {
-                    description.erase(0, std::string(flag).size());
-                    stripped = true;
-                    break;
-                }
-            }
-        }
-    }
     gps::ImportResult imported;
     bool ok = gps::importLaunch(description, probeMs, &imported, &error);
     if (ok) ok = imported.graph.save(path, &error);

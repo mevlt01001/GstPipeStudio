@@ -710,4 +710,171 @@ bool Graph::removeQueue(const std::string& queueName) {
     return true;
 }
 
+namespace {
+
+std::string trimLaunch(const std::string& text) {
+    const size_t first = text.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) return "";
+    return text.substr(first, text.find_last_not_of(" \t\r\n") - first + 1);
+}
+
+std::string unfoldContinuations(const std::string& text) {
+    std::string out;
+    out.reserve(text.size());
+    for (size_t i = 0; i < text.size(); ++i) {
+        if (text[i] == '\\' && i + 1 < text.size() && (text[i + 1] == '\n' || (text[i + 1] == '\r' && i + 2 < text.size() && text[i + 2] == '\n'))) {
+            if (text[i + 1] == '\r') ++i;
+            ++i;
+            out.push_back(' ');
+            continue;
+        }
+        out.push_back(text[i]);
+    }
+    return out;
+}
+
+size_t skipSpaces(const std::string& text, size_t pos) {
+    while (pos < text.size() && (text[pos] == ' ' || text[pos] == '\t' || text[pos] == '\r' || text[pos] == '\n')) ++pos;
+    return pos;
+}
+
+size_t consumeShellToken(const std::string& text, size_t pos) {
+    char quote = 0;
+    while (pos < text.size()) {
+        const char c = text[pos];
+        if (quote) {
+            if (c == '\\' && quote == '"' && pos + 1 < text.size()) {
+                pos += 2;
+                continue;
+            }
+            if (c == quote) quote = 0;
+            ++pos;
+            continue;
+        }
+        if (c == '\'' || c == '"') {
+            quote = c;
+            ++pos;
+            continue;
+        }
+        if (c == '\\' && pos + 1 < text.size()) {
+            pos += 2;
+            continue;
+        }
+        if (c == ' ' || c == '\t' || c == '\r' || c == '\n') break;
+        ++pos;
+    }
+    return pos;
+}
+
+bool isEnvAssignment(const std::string& token) {
+    const size_t eq = token.find('=');
+    if (eq == std::string::npos || eq == 0) return false;
+    const unsigned char first = static_cast<unsigned char>(token[0]);
+    if (!std::isalpha(first) && first != '_') return false;
+    for (size_t i = 1; i < eq; ++i) {
+        const unsigned char c = static_cast<unsigned char>(token[i]);
+        if (!std::isalnum(c) && c != '_') return false;
+    }
+    return true;
+}
+
+bool hasLaunchCommandPrefix(const std::string& text, size_t pos, size_t* after) {
+    for (const std::string& cmd : {std::string("gst-launch-1.0"), std::string("gst-launch")}) {
+        if (text.compare(pos, cmd.size(), cmd) == 0) {
+            const size_t end = pos + cmd.size();
+            if (end == text.size() || text[end] == ' ' || text[end] == '\t' || text[end] == '\r' || text[end] == '\n') {
+                if (after) *after = end;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool hasBangSeparator(const std::string& text) {
+    char quote = 0;
+    for (size_t i = 0; i < text.size(); ++i) {
+        const char c = text[i];
+        if (quote) {
+            if (c == '\\' && quote == '"' && i + 1 < text.size()) {
+                ++i;
+                continue;
+            }
+            if (c == quote) quote = 0;
+            continue;
+        }
+        if (c == '\'' || c == '"') {
+            quote = c;
+            continue;
+        }
+        if (c == '!') {
+            const bool leftOk = i == 0 || std::isspace(static_cast<unsigned char>(text[i - 1]));
+            const bool rightOk = i + 1 >= text.size() || std::isspace(static_cast<unsigned char>(text[i + 1]));
+            if (leftOk && rightOk) return true;
+        }
+    }
+    return false;
+}
+
+}  // namespace
+
+std::string normalizeLaunchText(const std::string& text) {
+    std::string unfolded = trimLaunch(unfoldContinuations(text));
+    if (unfolded.empty()) return "";
+
+    size_t pos = 0;
+    while (pos < unfolded.size()) {
+        const size_t start = skipSpaces(unfolded, pos);
+        if (start >= unfolded.size()) break;
+        const size_t end = consumeShellToken(unfolded, start);
+        const std::string token = unfolded.substr(start, end - start);
+        if (!isEnvAssignment(token)) break;
+        const size_t next = skipSpaces(unfolded, end);
+        if (hasLaunchCommandPrefix(unfolded, next, nullptr) || hasBangSeparator(unfolded.substr(next))) {
+            pos = next;
+        } else {
+            break;
+        }
+    }
+
+    size_t afterCmd = 0;
+    if (hasLaunchCommandPrefix(unfolded, pos, &afterCmd)) {
+        pos = skipSpaces(unfolded, afterCmd);
+        while (pos < unfolded.size()) {
+            const size_t end = consumeShellToken(unfolded, pos);
+            const std::string flag = unfolded.substr(pos, end - pos);
+            const bool known = flag == "-v" || flag == "--verbose" || flag == "-e" || flag == "--eos-on-shutdown" ||
+                               flag == "-q" || flag == "--quiet" || flag == "-m" || flag == "--messages" ||
+                               flag == "-t" || flag == "--tags" || flag == "-f" || flag == "--no-fault" ||
+                               flag == "--no-position";
+            if (!known) break;
+            pos = skipSpaces(unfolded, end);
+        }
+    }
+    return trimLaunch(unfolded.substr(pos));
+}
+
+bool looksLikeLaunchText(const std::string& text) {
+    const std::string trimmed = trimLaunch(text);
+    if (trimmed.empty() || trimmed[0] == '[' || trimmed[0] == '#') return false;
+    if (trimmed.find("\nelement ") != std::string::npos || trimmed.rfind("element ", 0) == 0 ||
+        trimmed.find("\nformat=") != std::string::npos || trimmed.rfind("format=", 0) == 0) {
+        return false;
+    }
+
+    const std::string unfolded = trimLaunch(unfoldContinuations(trimmed));
+    size_t pos = 0;
+    while (pos < unfolded.size()) {
+        const size_t start = skipSpaces(unfolded, pos);
+        const size_t end = consumeShellToken(unfolded, start);
+        if (!isEnvAssignment(unfolded.substr(start, end - start))) {
+            pos = start;
+            break;
+        }
+        pos = skipSpaces(unfolded, end);
+    }
+    if (hasLaunchCommandPrefix(unfolded, pos, nullptr)) return true;
+    return hasBangSeparator(normalizeLaunchText(trimmed));
+}
+
 }  // namespace gps

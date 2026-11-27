@@ -248,4 +248,9 @@ private:
 // srcTemplates: (template name, presence) of every src template.
 std::map<std::string, int> defaultRequestSrc(const std::vector<std::pair<std::string, std::string>>& srcTemplates);
 
+// Strips shell continuations, leading env vars, "gst-launch[-1.0]" and its CLI flags into a clean pipeline string.
+std::string normalizeLaunchText(const std::string& text);
+// True when text looks like a gst-launch command or pipeline description (and not a .conf file).
+bool looksLikeLaunchText(const std::string& text);
+
 }  // namespace gps

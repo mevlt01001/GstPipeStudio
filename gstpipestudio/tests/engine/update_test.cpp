@@ -313,6 +313,16 @@ static void updateTwice() {
     CHECK(!pad(between, "dm", "audio_%u#0"));
 }
 
+static void liveWaitingForInput() {
+    std::puts("-- live source waiting for external input settles as ok");
+    P p;
+    p.el("u", "udpsrc", {{"port", "0"}}).el("k", "fakesink").link("u", "src", "k", "sink");
+    UpdateResult r = update(p.plan, 6000);
+    CHECK_EQ(brief(r), "ok");
+    CHECK(r.complete());
+    CHECK(r.ms < 4000);
+}
+
 static void jsonShape() {
     std::puts("-- UpdateResult JSON keys");
     P p;
@@ -341,6 +351,7 @@ int main(int argc, char** argv) {
     timeoutNoQueue();
     unknownFactory();
     updateTwice();
+    liveWaitingForInput();
     jsonShape();
     return finish("update_test");
 }
