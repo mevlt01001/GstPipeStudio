@@ -62,6 +62,7 @@ public:
     Failure failure() const;
     std::vector<std::string> missing() const;
     std::vector<std::string> refused() const;
+    std::vector<ElementDiagnostic> diagnostics() const;
     std::vector<std::string> freePads() const;  // "element.identity" of src pads left without link and without end
     // The Graph links whose src pad never appeared are added to missing(). element "" = all elements.
     void checkMissing(const std::string& element = "");
@@ -111,6 +112,7 @@ private:
     std::map<std::pair<std::string, std::string>, int> seen_;  // (element, template) -> pads so far
     std::set<std::string> identities_;                         // "element\tidentity" of every src pad so far
     std::vector<std::string> missing_, refused_, free_;
+    std::vector<ElementDiagnostic> diagnostics_;
     bool failed_ = false;
     Failure failure_;
 };

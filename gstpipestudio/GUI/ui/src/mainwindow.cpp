@@ -399,6 +399,9 @@ void MainWindow::added(Document* d) {
     for (auto [page, title, room] : {std::tuple{static_cast<QWidget*>(d->log()), "Log", 0}, {d->updates(), "Validation", 0},
                                      {d->telemetry(), "Live metrics", 400}, {d->propsTab(), "Properties", 400}, {d->capsTab(), "Caps", 400}})
         panels_->add(page, title, room);
+    connect(&services_.diagnosticLog(), &DiagnosticLog::recorded, d->log(), [log = d->log()](const LogRecord& r) {
+        log->appendRaw(r.formatted());
+    });
     d->flows()->setBottomPanels(panels_, d->propsTab(), d->capsTab(), d->updates());
     statusBar()->addPermanentWidget(d->indicator());
     registry_->track(d);
@@ -434,6 +437,10 @@ void MainWindow::wire(Document* d) {
 void MainWindow::notify(const Notice& notice) {
     if (notifications_) notifications_->push(notice);
     statusBar()->showMessage(notice.summary(), 10000);
+}
+
+void MainWindow::appendDiagnostic(LogChannel channel, const QString& source, const QString& message, NoticeSeverity severity) {
+    services_.diagnosticLog().append(channel, severity, source, message);
 }
 
 void MainWindow::activate(Document* d) { tabs_->activate(d); }

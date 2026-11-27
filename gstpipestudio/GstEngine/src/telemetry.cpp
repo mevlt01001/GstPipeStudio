@@ -41,9 +41,9 @@ void TelemetrySampler::attach(Node& node, GstPad* pad) {
     probe->owner = this; probe->node = &node; probe->pad = GST_PAD(gst_object_ref(pad));
     probe->source = GST_PAD_DIRECTION(pad) == GST_PAD_SRC;
     gst_segment_init(&probe->segment, GST_FORMAT_UNDEFINED);
+    if (probe->source) node.hasSourcePad.store(true, std::memory_order_relaxed);
     probe->id = gst_pad_add_probe(pad, static_cast<GstPadProbeType>(GST_PAD_PROBE_TYPE_BUFFER | GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM), onProbe, probe.get(), nullptr);
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (probe->source) node.hasSourcePad = true;
+    std::lock_guard<std::mutex> lock(probesMutex_);
     probes_.push_back(std::move(probe));
 }
 GstPadProbeReturn TelemetrySampler::onProbe(GstPad*, GstPadProbeInfo* info, gpointer data) {
@@ -54,7 +54,7 @@ GstPadProbeReturn TelemetrySampler::onProbe(GstPad*, GstPadProbeInfo* info, gpoi
         if (GST_EVENT_TYPE(event) == GST_EVENT_SEGMENT) {
             const GstSegment* segment = nullptr;
             gst_event_parse_segment(event, &segment);
-            std::lock_guard<std::mutex> lock(self.mutex_);
+            std::lock_guard<std::mutex> lock(probe.segmentMutex);
             probe.segment = *segment;
             probe.hasSegment = segment->format == GST_FORMAT_TIME;
         }
@@ -62,11 +62,11 @@ GstPadProbeReturn TelemetrySampler::onProbe(GstPad*, GstPadProbeInfo* info, gpoi
     }
     GstBuffer* buffer = gst_pad_probe_info_get_buffer(info);
     if (!buffer) return GST_PAD_PROBE_OK;
-    double ageMs = -1;
-    if (probe.source && self.live_.load() && GST_BUFFER_PTS_IS_VALID(buffer)) {
+    gint64 ageUs = -1;
+    if (probe.source && self.live_.load(std::memory_order_relaxed) && GST_BUFFER_PTS_IS_VALID(buffer)) {
         GstClockTime running = GST_CLOCK_TIME_NONE;
         {
-            std::lock_guard<std::mutex> lock(self.mutex_);
+            std::lock_guard<std::mutex> lock(probe.segmentMutex);
             if (probe.hasSegment) running = gst_segment_to_running_time(&probe.segment, GST_FORMAT_TIME, GST_BUFFER_PTS(buffer));
         }
         if (GST_CLOCK_TIME_IS_VALID(running)) {
@@ -74,24 +74,30 @@ GstPadProbeReturn TelemetrySampler::onProbe(GstPad*, GstPadProbeInfo* info, gpoi
             if (clock) {
                 GstClockTime now = gst_clock_get_time(clock);
                 GstClockTime base = gst_element_get_base_time(self.pipeline_);
-                if (GST_CLOCK_TIME_IS_VALID(base) && now >= base)
-                    ageMs = now - base >= running ? static_cast<double>(now - base - running) / GST_MSECOND : 0.0;
+                if (GST_CLOCK_TIME_IS_VALID(base) && now >= base) {
+                    const GstClockTime ageNs = now - base >= running ? (now - base - running) : 0;
+                    ageUs = static_cast<gint64>(ageNs / GST_USECOND);
+                }
                 gst_object_unref(clock);
             }
         }
     }
-    std::lock_guard<std::mutex> lock(self.mutex_);
     if (probe.source) {
-        ++probe.node->outgoing;
-        if (ageMs >= 0) { probe.node->ageTotal += ageMs; ++probe.node->ageCount; }
-        if (probe.node->pendingSinceUs) {
-            probe.node->processingTotalMs += static_cast<double>(g_get_monotonic_time() - probe.node->pendingSinceUs) / 1000.0;
-            ++probe.node->processingCycles;
-            probe.node->pendingSinceUs = 0;
+        probe.node->outgoing.fetch_add(1, std::memory_order_relaxed);
+        if (ageUs >= 0) {
+            probe.node->ageTotalUs.fetch_add(ageUs, std::memory_order_relaxed);
+            probe.node->ageCount.fetch_add(1, std::memory_order_relaxed);
+        }
+        gint64 pending = probe.node->pendingSinceUs.exchange(0, std::memory_order_acq_rel);
+        if (pending > 0) {
+            const gint64 elapsedUs = std::max<gint64>(0, g_get_monotonic_time() - pending);
+            probe.node->processingTotalUs.fetch_add(elapsedUs, std::memory_order_relaxed);
+            probe.node->processingCycles.fetch_add(1, std::memory_order_relaxed);
         }
     } else {
-        ++probe.node->incoming;
-        if (!probe.node->pendingSinceUs) probe.node->pendingSinceUs = g_get_monotonic_time();
+        probe.node->incoming.fetch_add(1, std::memory_order_relaxed);
+        gint64 expected = 0;
+        probe.node->pendingSinceUs.compare_exchange_strong(expected, g_get_monotonic_time(), std::memory_order_acq_rel);
     }
     return GST_PAD_PROBE_OK;
 }
@@ -110,7 +116,7 @@ void TelemetrySampler::onQos(GstMessage* message) {
     guint64 processed = G_MAXUINT64, dropped = G_MAXUINT64;
     gst_message_parse_qos_stats(message, &format, &processed, &dropped);
     if (format != GST_FORMAT_BUFFERS || processed == G_MAXUINT64 || dropped == G_MAXUINT64) return;
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::mutex> lock(node->qosMutex);
     auto& previous = node->qosReporters[reporter];
     node->qosProcessed += processed >= previous.first ? processed - previous.first : processed;
     node->qosDropped += dropped >= previous.second ? dropped - previous.second : dropped;
@@ -122,14 +128,21 @@ TelemetrySample TelemetrySampler::sample(double elapsedMs) {
     for (Node* entry : order_) {
         Node& node = *entry;
         ElementTelemetry item; item.element = node.name;
+        item.inputBuffers = node.incoming.exchange(0, std::memory_order_relaxed);
+        item.outputBuffers = node.outgoing.exchange(0, std::memory_order_relaxed);
+        const std::uint64_t ages = node.ageCount.exchange(0, std::memory_order_relaxed);
+        const gint64 ageUs = node.ageTotalUs.exchange(0, std::memory_order_relaxed);
+        item.ageMs = ages ? (static_cast<double>(ageUs) / 1000.0) / ages : -1;
+        const std::uint64_t cycles = node.processingCycles.exchange(0, std::memory_order_relaxed);
+        const gint64 procUs = node.processingTotalUs.exchange(0, std::memory_order_relaxed);
+        item.processingMs = cycles ? (static_cast<double>(procUs) / 1000.0) / cycles : -1;
+        item.processingCycles = cycles;
+        const gint64 pending = node.pendingSinceUs.load(std::memory_order_acquire);
+        item.pendingMs = node.hasSourcePad.load(std::memory_order_relaxed) && pending > 0
+                             ? static_cast<double>(std::max<gint64>(0, g_get_monotonic_time() - pending)) / 1000.0
+                             : -1;
         {
-            std::lock_guard<std::mutex> lock(mutex_);
-            item.inputBuffers = node.incoming; item.outputBuffers = node.outgoing;
-            item.ageMs = node.ageCount ? node.ageTotal / node.ageCount : -1;
-            item.processingMs = node.processingCycles ? node.processingTotalMs / node.processingCycles : -1;
-            item.processingCycles = node.processingCycles;
-            item.pendingMs = node.hasSourcePad && node.pendingSinceUs
-                                 ? static_cast<double>(g_get_monotonic_time() - node.pendingSinceUs) / 1000.0 : -1;
+            std::lock_guard<std::mutex> lock(node.qosMutex);
             if (node.qosUpdated) {
                 item.qosProcessed = node.qosProcessed;
                 item.qosDropped = node.qosDropped;
@@ -138,8 +151,6 @@ TelemetrySample TelemetrySampler::sample(double elapsedMs) {
                 node.qosProcessed = node.qosDropped = 0;
                 node.qosUpdated = false;
             }
-            node.incoming = node.outgoing = node.ageCount = 0; node.ageTotal = 0;
-            node.processingCycles = 0; node.processingTotalMs = 0;
         }
         if (g_object_class_find_property(G_OBJECT_GET_CLASS(node.element), "current-level-time")) {
             guint64 level = 0;

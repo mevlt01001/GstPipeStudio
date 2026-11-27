@@ -9,6 +9,7 @@
 #include <memory>
 
 #include "backupservice.h"
+#include "diagnosticlog.h"
 #include "documenttiming.h"
 #include "environmentservice.h"
 #include "factorycatalog.h"
@@ -34,6 +35,7 @@ public:
     ComponentProvider* provider(const QString& kind) { return providerOf(providers(), kind); }
     ViewPreferences& view() { return view_; }
     BackupService& backups() { return backups_; }
+    DiagnosticLog& diagnosticLog() { return diagnosticLog_; }
 
 private:
     DocumentTiming timing_;
@@ -44,4 +46,5 @@ private:
     PluginLibrary plugins_;
     ViewPreferences view_;
     BackupService backups_;
+    DiagnosticLog diagnosticLog_;
 };

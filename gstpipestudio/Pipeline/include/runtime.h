@@ -25,6 +25,13 @@ struct PadReport {
     std::vector<StructureInfo> allowedStructures;
 };
 
+struct ElementDiagnostic {
+    std::string element;
+    std::string pad;
+    std::string message;
+    bool isError = true;
+};
+
 struct UpdateResult {
     std::string status = "ok";  // ok | error | timeout | pad-missing
     std::string message, errorElement;
@@ -32,6 +39,7 @@ struct UpdateResult {
     std::vector<PadReport> pads;
     std::vector<std::string> missing;  // "element.identity" the Graph wants and GStreamer never made
     std::vector<std::string> refused;  // "src.pad -> sink.pad: reason"
+    std::vector<ElementDiagnostic> diagnostics;
 
     bool valid() const { return !status.empty(); }  // false before the first validation
     bool ok() const { return status == "ok"; }

@@ -69,9 +69,13 @@ template <class V> void fields(V& v, PadReport& p) {
     v("unknownData", p.unknownData); v("caps", p.caps); v("allowed", p.allowed); v("allowedStructures", p.allowedStructures);
 }
 
+template <class V> void fields(V& v, ElementDiagnostic& d) {
+    v("element", d.element); v("pad", d.pad); v("message", d.message); v("isError", d.isError);
+}
+
 template <class V> void fields(V& v, UpdateResult& r) {
     v("status", r.status); v("message", r.message); v("errorElement", r.errorElement); v("ms", r.ms);
-    v("pads", r.pads); v("missing", r.missing); v("refused", r.refused);
+    v("pads", r.pads); v("missing", r.missing); v("refused", r.refused); v("diagnostics", r.diagnostics);
     v.constant("complete", r.complete());  // for readers of the JSON; the struct computes it
 }
 

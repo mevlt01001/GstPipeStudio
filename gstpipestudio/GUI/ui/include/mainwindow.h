@@ -9,6 +9,7 @@
 
 #include "commandset.h"
 #include "componentprovider.h"
+#include "diagnosticlog.h"
 #include "documentregistry.h"
 #include "notice.h"
 
@@ -82,6 +83,8 @@ public:
     DocumentRegistry* registry() const { return registry_; }  // the open tabs' files, watched on disk
     NotificationOverlay* notifications() const { return notifications_; }
     void notify(const Notice& notice);
+    void appendDiagnostic(LogChannel channel, const QString& source, const QString& message,
+                          NoticeSeverity severity = NoticeSeverity::Info);
 
 protected:
     void closeEvent(QCloseEvent* event) override;  // hot exit: asks nothing, every tab comes back on the next start

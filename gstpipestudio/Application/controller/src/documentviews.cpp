@@ -65,6 +65,12 @@ QString DocumentViews::elementNote(const QString& element, bool* isError) const 
         *isError = true;
         return fromStd(r.message);
     }
+    for (const gps::ElementDiagnostic& d : r.diagnostics) {
+        if (fromStd(d.element) == element) {
+            *isError = d.isError;
+            return fromStd(d.message);
+        }
+    }
     for (const std::vector<std::string>* list : {&r.refused, &r.missing}) {
         for (const std::string& text : *list) {
             const QString entry = fromStd(text);

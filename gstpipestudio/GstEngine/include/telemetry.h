@@ -25,13 +25,14 @@ private:
         std::string name;
         GstElement* element = nullptr;
         gulong padAdded = 0;
-        std::uint64_t incoming = 0, outgoing = 0;
-        double ageTotal = 0;
-        std::uint64_t ageCount = 0;
-        gint64 pendingSinceUs = 0;
-        bool hasSourcePad = false;
-        double processingTotalMs = 0;
-        std::uint64_t processingCycles = 0;
+        std::atomic<std::uint64_t> incoming{0}, outgoing{0};
+        std::atomic<gint64> ageTotalUs{0};
+        std::atomic<std::uint64_t> ageCount{0};
+        std::atomic<gint64> pendingSinceUs{0};
+        std::atomic<bool> hasSourcePad{false};
+        std::atomic<gint64> processingTotalUs{0};
+        std::atomic<std::uint64_t> processingCycles{0};
+        std::mutex qosMutex;
         std::map<GstObject*, std::pair<std::uint64_t, std::uint64_t>> qosReporters;
         std::uint64_t qosProcessed = 0, qosDropped = 0;
         bool qosUpdated = false;
@@ -42,6 +43,7 @@ private:
         GstPad* pad;
         gulong id = 0;
         bool source;
+        std::mutex segmentMutex;
         GstSegment segment;
         bool hasSegment = false;
     };
@@ -51,8 +53,8 @@ private:
     GstElement* pipeline_;
     std::map<std::string, std::unique_ptr<Node>> nodes_;
     std::vector<Node*> order_;
+    std::mutex probesMutex_;
     std::list<std::unique_ptr<Probe>> probes_;
-    std::mutex mutex_;
     std::atomic<bool> live_{false};
 };
 } // namespace gps

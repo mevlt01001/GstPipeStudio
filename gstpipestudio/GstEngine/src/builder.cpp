@@ -252,7 +252,9 @@ Builder::Link Builder::link(PadInfo& info, const Connection& l) {
     GstPad* sinkPad = requested ? requestPad(sinkElement, l.sinkPad, [this](const std::string& line) { say(line); })
                                 : gst_element_get_static_pad(sinkElement, l.sinkPad.c_str());
     if (!sinkPad) {
-        refused_.push_back(label + ": " + (requested ? "unable to request the sink pad" : "the sink pad does not exist"));
+        const std::string reason = requested ? "unable to request the sink pad" : "the sink pad does not exist";
+        refused_.push_back(label + ": " + reason);
+        diagnostics_.push_back({l.sinkElement, l.sinkPad, label + ": " + reason, true});
         say("refused: " + refused_.back());
         return Link::Refused;
     }
@@ -271,11 +273,15 @@ Builder::Link Builder::link(PadInfo& info, const Connection& l) {
     GstCaps* filter = l.caps.empty() ? nullptr : gst_caps_from_string(l.caps.c_str());
     Link result = Link::Done;
     if (!l.caps.empty() && !filter) {
-        refused_.push_back(label + ": the caps text cannot be read: " + cut(l.caps));
+        const std::string reason = "the caps text cannot be read: " + cut(l.caps);
+        refused_.push_back(label + ": " + reason);
+        diagnostics_.push_back({info.element, info.identity, label + ": " + reason, true});
         result = Link::Refused;
     } else if (!gst_element_link_pads_filtered(byName_[info.element], GST_PAD_NAME(info.pad), sinkElement, GST_PAD_NAME(sinkPad),
                                                filter)) {
-        refused_.push_back(label + ": " + whyRefused(info.pad, sinkPad, filter));
+        const std::string reason = whyRefused(info.pad, sinkPad, filter);
+        refused_.push_back(label + ": " + reason);
+        diagnostics_.push_back({info.element, info.identity, label + ": " + reason, true});
         result = Link::Refused;
     }
     if (result == Link::Refused) {
@@ -345,6 +351,11 @@ std::vector<std::string> Builder::refused() const {
     return refused_;
 }
 
+std::vector<ElementDiagnostic> Builder::diagnostics() const {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    return diagnostics_;
+}
+
 std::vector<std::string> Builder::freePads() const {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     return free_;
@@ -360,6 +371,7 @@ void Builder::checkMissing(const std::string& element) {
         if (identities_.count(l.srcElement + "\t" + l.srcPad)) continue;
         if (std::find(missing_.begin(), missing_.end(), label) == missing_.end()) {
             missing_.push_back(label);
+            diagnostics_.push_back({l.srcElement, l.srcPad, label, false});
             say("pad did not appear: " + label);
         }
     }
@@ -373,6 +385,7 @@ void Builder::checkNamedPads() {
         if (identities_.count(l.srcElement + "\t" + l.srcPad)) continue;
         if (std::find(missing_.begin(), missing_.end(), label) == missing_.end()) {
             missing_.push_back(label);
+            diagnostics_.push_back({l.srcElement, l.srcPad, label, false});
             say("pad does not exist: " + label);
         }
     }

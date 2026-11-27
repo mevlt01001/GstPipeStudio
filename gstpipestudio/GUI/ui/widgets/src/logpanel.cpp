@@ -16,3 +16,5 @@ LogPanel::LogPanel(QWidget* parent) : QPlainTextEdit(parent) {
 void LogPanel::append(const QString& line) {
     appendPlainText(QTime::currentTime().toString("HH:mm:ss") + "  " + line);
 }
+
+void LogPanel::appendRaw(const QString& line) { appendPlainText(line); }

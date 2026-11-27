@@ -167,6 +167,10 @@ UpdateResult update(const Graph& plan, const UpdateOptions& options, const LogFn
         }
         result.missing = builder.missing();
         result.refused = builder.refused();
+        result.diagnostics = builder.diagnostics();
+        if (!result.ok() && !result.errorElement.empty()) {
+            result.diagnostics.insert(result.diagnostics.begin(), {result.errorElement, {}, result.message, true});
+        }
         if (result.status == "pad-missing") result.message = "the plan needs pad " + result.missing.front() + ", but the element never created it";
         // A refused link often leaves a sink without input, and a sink without input never prerolls.
         if (result.status == "timeout" && !result.refused.empty()) result.message += "; refused link: " + result.refused.front();

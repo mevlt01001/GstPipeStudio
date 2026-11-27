@@ -2,7 +2,6 @@
 
 #include <QApplication>
 
-#include "logpanel.h"
 #include "notice.h"
 
 int GstPipeStudio::run(QApplication& application, const QString& pipelinePath) {
@@ -13,6 +12,6 @@ int GstPipeStudio::run(QApplication& application, const QString& pipelinePath) {
 }
 
 void GstPipeStudio::reportError(const QString& title, const QString& detail) {
-    window_.logPanel()->append(detail.isEmpty() ? title : title + ": " + detail);
+    services_.diagnosticLog().error(LogChannel::System, title, detail.isEmpty() ? title : detail);
     window_.notify({NoticeSeverity::Error, title, detail, true});
 }

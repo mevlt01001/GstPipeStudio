@@ -14,7 +14,8 @@ PAD = {"element": is_str, "pad": is_str, "identity": is_str, "template": is_str,
        "allowedStructures": lambda v: isinstance(v, list)}
 RESULT = {"status": lambda v: v in ("ok", "error", "timeout", "pad-missing"), "message": is_str, "errorElement": is_str,
           "ms": is_num, "pads": lambda v: isinstance(v, list), "missing": lambda v: isinstance(v, list) and all(is_str(x) for x in v),
-          "refused": lambda v: isinstance(v, list) and all(is_str(x) for x in v), "complete": is_bool}
+          "refused": lambda v: isinstance(v, list) and all(is_str(x) for x in v),
+          "diagnostics": lambda v: isinstance(v, list), "complete": is_bool}
 
 
 def pad(d, element, identity, src=True):

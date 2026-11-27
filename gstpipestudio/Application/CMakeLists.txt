@@ -36,6 +36,7 @@ add_library(gps_application STATIC
     backend/include/startupcheck.h backend/src/startupcheck.cpp
     backend/include/supportreport.h backend/src/supportreport.cpp
     model/include/elementedit.h
+    model/include/diagnosticlog.h model/src/diagnosticlog.cpp
     model/include/notice.h
     model/include/capslabel.h model/src/capslabel.cpp
     model/include/contract.h model/src/contract.cpp
@@ -49,6 +50,7 @@ add_library(gps_application STATIC
     controller/include/canvaslayout.h controller/src/canvaslayout.cpp
     controller/include/outline.h controller/src/outline.cpp
     controller/include/documentbackup.h controller/src/documentbackup.cpp
+    layout/include/boxplacement.h layout/src/boxplacement.cpp
     layout/include/layoutgraph.h
     layout/include/elkengine.h layout/src/elkengine.cpp
     layout/include/layoutrunner.h layout/src/layoutrunner.cpp)

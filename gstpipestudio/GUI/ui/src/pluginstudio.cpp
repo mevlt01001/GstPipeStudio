@@ -23,7 +23,7 @@ PluginStudio::PluginStudio(PluginLibrary& library, MainWindow* window)
     : QObject(window), library_(library), window_(window) {
     connect(&library_, &PluginLibrary::notice, this, [this](const QString& text) { fail("Plugin library", text); });
     connect(&library_, &PluginLibrary::buildOutputLine, this, [this](const QString& id, const QString& text) {
-        if (auto* front = window_->front()) front->log()->append("[" + id + "] " + text);
+        window_->appendDiagnostic(LogChannel::PluginBuild, id, text);
     });
 }
 

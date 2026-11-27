@@ -31,7 +31,7 @@ set(GPS_PRIVATE_DIR lib/gstpipestudio)
 # GPS_DIRS lets one developer build only what they work on while others are mid-edit:
 #   -DGPS_DIRS="Pipeline;Application;GUI;tests" -DGPS_TEST_DIRS="unit;gui"
 set(GPS_DIRS "Pipeline;GstEngine;tools;plugin;Application;GUI;packaging;tests" CACHE STRING "Directories to build")
-set(GPS_TEST_DIRS "unit;engine;cli;plugin;gui;sweep;deepstream" CACHE STRING "Test groups to build")
+set(GPS_TEST_DIRS "unit;engine;cli;plugin;application;gui;sweep;deepstream" CACHE STRING "Test groups to build")
 set(GPS_ELEMENT_SDK_BUILD_DIR "${CMAKE_BINARY_DIR}/sdk")
 # Tests may build the SDK even when the packaging unit is omitted.
 if("packaging" IN_LIST GPS_DIRS OR ("tests" IN_LIST GPS_DIRS AND "gui" IN_LIST GPS_TEST_DIRS AND "tools" IN_LIST GPS_DIRS))

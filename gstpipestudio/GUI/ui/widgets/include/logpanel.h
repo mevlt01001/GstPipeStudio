@@ -10,4 +10,5 @@ public:
 
 public slots:
     void append(const QString& line);
+    void appendRaw(const QString& line);
 };
