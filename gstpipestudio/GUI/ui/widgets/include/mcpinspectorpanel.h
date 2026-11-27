@@ -17,7 +17,7 @@ public:
     explicit McpInspectorPanel(McpAuditLogger& audit, QWidget* parent = nullptr);
 
     int entryCount() const { return entries_.size(); }
-    QString mcpConfigJson() const;
+    static QString mcpConfigJson();
 
 signals:
     void configCopied();

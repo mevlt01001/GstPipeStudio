@@ -73,4 +73,8 @@ bool autoAlign() { return QSettings().value("view/autoAlign", false).toBool(); }
 
 void setAutoAlign(bool on) { QSettings().setValue("view/autoAlign", on); }
 
+bool onboardingCompleted() { return QSettings().value("app/onboardingCompleted", false).toBool(); }
+
+void setOnboardingCompleted(bool done) { QSettings().setValue("app/onboardingCompleted", done); }
+
 }  // namespace Settings

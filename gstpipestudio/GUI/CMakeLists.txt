@@ -31,6 +31,7 @@ add_library(gps_gui STATIC
     ui/widgets/include/plugineditorwindow.h ui/widgets/src/plugineditorwindow.cpp
     ui/widgets/include/newprojectdialog.h ui/widgets/src/newprojectdialog.cpp
     ui/widgets/include/notificationoverlay.h ui/widgets/src/notificationoverlay.cpp
+    ui/widgets/include/onboardingdialog.h ui/widgets/src/onboardingdialog.cpp
     ui/include/fileoperations.h ui/src/fileoperations.cpp
     ui/explorer/include/explorerentry.h ui/explorer/src/explorerentry.cpp
     ui/explorer/include/explorersource.h ui/explorer/src/explorersource.cpp

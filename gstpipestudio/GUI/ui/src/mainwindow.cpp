@@ -26,6 +26,7 @@
 #include <tuple>
 
 #include "aboutdialog.h"
+#include "onboardingdialog.h"
 #include "appservices.h"
 #include "buildinfo.h"
 #include "canvasscene.h"
@@ -133,6 +134,10 @@ MainWindow::MainWindow(AppServices& services, DocumentSessions* sessions, Contro
     connect(&services_.environment(), &EnvironmentService::checked, this, &MainWindow::onEnvironment);
     services_.environment().check();
     activate(front());
+    if (!Settings::onboardingCompleted() && QGuiApplication::platformName() != "offscreen" &&
+        !qEnvironmentVariableIsSet("GPS_TEST_MODE")) {
+        QTimer::singleShot(0, this, &MainWindow::showWelcomeTour);
+    }
 }
 
 // The documents go first, while the docks and stacks that show their pages still stand.
@@ -271,6 +276,7 @@ void MainWindow::buildCommands() {
         {C::Run, "actionRun", "&Run", {QKeySequence(Qt::CTRL | Qt::Key_Return)}, [this] { controller()->running() ? controller()->stopRun() : (void)controller()->run(); },
          [this] { return controller()->running() ? QString() : firstOf(environmentReason(), controller()->runBlockedReason()); }},
 
+        {C::WelcomeTour, "actionWelcomeTour", "&Welcome & Quick Tour…", {}, [this] { showWelcomeTour(); }},
         {C::GstInfo, "actionGstInfo", "&GStreamer information", {}, [this] {
              const StartupResult& env = services_.environment().result();
              Prompt::inform(this, "GStreamer information", env.version.isEmpty() ? "GStreamer was not checked or not found." : env.statusText());
@@ -369,7 +375,7 @@ void MainWindow::buildMenus() {
     pipeline->addActions({c[C::Validate], c[C::Run]});
 
     QMenu* help = menuBar()->addMenu("&Help");
-    help->addActions({c[C::GstInfo], c[C::Support]});
+    help->addActions({c[C::WelcomeTour], c[C::GstInfo], c[C::Support]});
     help->addSeparator();
     help->addAction(c[C::About]);
 
@@ -825,6 +831,11 @@ void MainWindow::addLaunch() {
 void MainWindow::focusSearch() {
     if (drawer()->isOpen()) drawer()->focusSearch();
     else if (flows()->propertyPage()) flows()->propertyPage()->focusFirst();
+}
+
+void MainWindow::showWelcomeTour() {
+    OnboardingDialog dialog(this);
+    dialog.exec();
 }
 
 void MainWindow::showAbout() {

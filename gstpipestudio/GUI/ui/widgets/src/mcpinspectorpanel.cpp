@@ -127,7 +127,7 @@ McpInspectorPanel::McpInspectorPanel(McpAuditLogger& audit, QWidget* parent)
     loadRecent();
 }
 
-QString McpInspectorPanel::mcpConfigJson() const {
+QString McpInspectorPanel::mcpConfigJson() {
     const QJsonObject root{
         {"mcpServers", QJsonObject{{"gstpipestudio", QJsonObject{{"command", "gps-mcp"}}}}},
     };

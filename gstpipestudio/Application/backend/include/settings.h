@@ -39,5 +39,7 @@ bool lightTheme();
 void setLightTheme(bool on);
 bool autoAlign();
 void setAutoAlign(bool on);
+bool onboardingCompleted();
+void setOnboardingCompleted(bool done);
 
 }  // namespace Settings

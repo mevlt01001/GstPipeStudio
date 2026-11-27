@@ -122,6 +122,7 @@ private:
     void exportSharedLibrary();
     void addLaunch();
     void focusSearch();
+    void showWelcomeTour();
     void showAbout();
     // Why commands are off: GStreamer is not ready, a step is running, the canvas cannot be edited now, or nothing fit is
     // selected.

@@ -1,7 +1,7 @@
 name: PR Fast Check
 
 # Quick validation for Pull Requests: tests on a single target (Ubuntu 22.04 x86_64)
-# in ~2 minutes rather than running all 6 matrix targets and slow ARM emulation.
+# rather than running all 6 matrix targets and slow ARM emulation.
 on:
   push:
     branches: [main, dev-zero]
@@ -9,12 +9,18 @@ on:
   pull_request:
     paths:
       - gstpipestudio/**
+      - element_sdk/**
+      - runtime_sdk/**
       - .github/workflows/**
       - docs/**
       - README.md
       - CONTRIBUTING.md
       - docker/**
       - .dockerignore
+
+concurrency:
+  group: pr-check-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -29,7 +35,7 @@ jobs:
       - name: Install Base Dependencies
         run: |
           apt-get update
-          env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git ca-certificates
+          env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git ca-certificates ccache
 
       - uses: actions/checkout@v4
 
@@ -48,31 +54,75 @@ jobs:
       - name: Build Tools Setup
         run: gstpipestudio/scripts/check_build_tools.sh
 
-      - name: Build
+      - name: ccache Cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ccache-ubuntu22.04-x86_64-${{ github.sha }}
+          restore-keys: |
+            ccache-ubuntu22.04-x86_64-
+
+      - name: Build and Test ElementSDK
+        run: |
+          cmake -S element_sdk -B build-elem -G Ninja \
+            -DGPS_ELEM_SANITIZERS=OFF \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          cmake --build build-elem -j
+          ctest --test-dir build-elem --output-on-failure
+
+      - name: Build and Test RuntimeSDK
+        run: |
+          cmake -S runtime_sdk -B build-runtime -G Ninja \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          cmake --build build-runtime -j
+          ctest --test-dir build-runtime --output-on-failure
+
+      - name: Build GstPipeStudio
         run: |
           cmake \
-          -S gstpipestudio \
-          -B build \
-          -G Ninja \
-          -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_PREFIX_PATH="$HOME/Qt/6.8.3" \
-          -DCMAKE_INSTALL_PREFIX=/usr \
-          -DGPS_BUNDLE_QT=ON
-          cmake --build build
+            -S gstpipestudio \
+            -B build \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$HOME/Qt/6.8.3" \
+            -DCMAKE_INSTALL_PREFIX=/usr \
+            -DGPS_BUNDLE_QT=ON \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          cmake --build build -j
 
-      - name: Test
-        run: cd build && ctest --output-on-failure
+      - name: Test GstPipeStudio & Smoke Check gps-mcp
+        run: |
+          set -o pipefail
+          ctest --test-dir build --output-on-failure | tee /tmp/ctest.log
+          echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"ci-smoke","version":"1.0"}}}' \
+            | build/bin/gps-mcp --headless > /tmp/mcp-smoke.json
+          python3 -c 'import json; d = json.load(open("/tmp/mcp-smoke.json")); assert "result" in d and "serverInfo" in d["result"], d'
+          {
+            echo "## PR Fast Check Summary"
+            echo "- ElementSDK CTest: passed"
+            echo "- RuntimeSDK CTest: passed"
+            echo "- GstPipeStudio CTest:"
+            grep -E "tests passed|Total Test time" /tmp/ctest.log | sed 's/^/  - /'
+            echo "- gps-mcp initialize smoke check: passed"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Stage install
         run: DESTDIR=/tmp/stage cmake --install build
 
       - name: Package Check
-        run: gstpipestudio/scripts/make_deb.sh 22.04 x86_64
-
+        run: |
+          gstpipestudio/scripts/make_deb.sh 22.04 x86_64
+          dpkg-deb -c out/GstPipeStudio-22.04-x86_64.deb > /tmp/deb-contents.txt
+          grep -q "./usr/bin/gps-mcp" /tmp/deb-contents.txt
+          grep -q "./usr/lib/gstpipestudio/sdk/" /tmp/deb-contents.txt
+          grep -q "./usr/lib/gstpipestudio/runtime_sdk/" /tmp/deb-contents.txt
 
       - name: Upload review artifacts
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: dev-zero-review
           path: |

@@ -26,7 +26,7 @@ enum class Command {
     AddElement, AddTemplate, AddPlugin, AddLaunch, SaveAsTemplate, TemplateParameters, ConnectSelected, DisconnectSelected, AlignSelection,
     Validate, Run,
     // Help
-    GstInfo, Support, About,
+    WelcomeTour, GstInfo, Support, About,
     // What a context menu was opened on
     EditProperties, RemoveQueue, EditCaps, ReplaceBehind, CutLink, InsertQueue, EditTemplate, ToggleTemplate, DetachTemplate,
 };

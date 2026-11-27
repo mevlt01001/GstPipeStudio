@@ -80,6 +80,9 @@
 #include "theme.h"
 #include "buildinfo.h"
 #include "aboutdialog.h"
+#include "onboardingdialog.h"
+#include "settings.h"
+#include <QStackedWidget>
 #include "connectionpreview.h"
 #include <QMovie>
 #include "telemetrypanel.h"
@@ -2980,6 +2983,67 @@ private slots:
         QVERIFY(cfg.isObject());
         QCOMPARE(cfg.object().value("mcpServers").toObject().value("gstpipestudio").toObject().value("command").toString(),
                  QString("gps-mcp"));
+    }
+
+    void onboardingTourStepsThroughPagesCopiesMcpAndMarksCompleted() {
+        Settings::setOnboardingCompleted(false);
+        const auto reset = qScopeGuard([] { Settings::setOnboardingCompleted(false); });
+        QVERIFY(!Settings::onboardingCompleted());
+
+        MainWindow w(c.get());
+        w.show();
+
+        auto* action = w.findChild<QAction*>("actionWelcomeTour");
+        QVERIFY(action);
+
+        bool completedDialog = false;
+        whenModal(&w, [&](QWidget* modal) {
+            auto* dialog = qobject_cast<OnboardingDialog*>(modal);
+            QVERIFY(dialog);
+            const auto guard = qScopeGuard([&] {
+                if (dialog->result() != QDialog::Accepted) dialog->reject();
+            });
+
+            auto* stack = dialog->findChild<QStackedWidget*>("onboardingStack");
+            auto* stepLabel = dialog->findChild<QLabel*>("onboardingStepLabel");
+            auto* backBtn = dialog->findChild<QPushButton*>("onboardingBackButton");
+            auto* nextBtn = dialog->findChild<QPushButton*>("onboardingNextButton");
+            auto* copyBtn = dialog->findChild<QPushButton*>("onboardingCopyMcpButton");
+            QVERIFY(stack && stepLabel && backBtn && nextBtn && copyBtn);
+            QCOMPARE(stack->count(), 4);
+            QCOMPARE(stack->currentIndex(), 0);
+            QCOMPARE(stepLabel->text(), QString("Step 1 of 4"));
+            QVERIFY(!backBtn->isEnabled());
+
+            nextBtn->click();
+            QCOMPARE(stack->currentIndex(), 1);
+            QCOMPARE(stepLabel->text(), QString("Step 2 of 4"));
+            QVERIFY(backBtn->isEnabled());
+
+            nextBtn->click();
+            QCOMPARE(stack->currentIndex(), 2);
+            QCOMPARE(stepLabel->text(), QString("Step 3 of 4"));
+
+            nextBtn->click();
+            QCOMPARE(stack->currentIndex(), 3);
+            QCOMPARE(stepLabel->text(), QString("Step 4 of 4"));
+            QCOMPARE(nextBtn->text(), QString("Get Started"));
+
+            copyBtn->click();
+            const QString copied = QGuiApplication::clipboard()->text();
+            QVERIFY(copied.contains("gps-mcp"));
+            const QJsonDocument cfg = QJsonDocument::fromJson(copied.toUtf8());
+            QVERIFY(cfg.isObject());
+            QCOMPARE(cfg.object().value("mcpServers").toObject().value("gstpipestudio").toObject().value("command").toString(),
+                     QString("gps-mcp"));
+
+            nextBtn->click();
+            completedDialog = (dialog->result() == QDialog::Accepted);
+        });
+
+        action->trigger();
+        QTRY_VERIFY(completedDialog);
+        QVERIFY(Settings::onboardingCompleted());
     }
 
 private:
