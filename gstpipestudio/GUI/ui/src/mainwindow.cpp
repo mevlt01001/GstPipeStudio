@@ -39,6 +39,7 @@
 #include "fileoperations.h"
 #include "logpanel.h"
 #include "flows.h"
+#include "notificationoverlay.h"
 #include "panels.h"
 #include "pipelinefiledialog.h"
 #include "prompt.h"
@@ -86,12 +87,14 @@ MainWindow::MainWindow(AppServices& services, DocumentSessions* sessions, Contro
     connect(tabs_, &DocumentTabs::menuRequested, menus_, &ContextMenus::tab);
     connect(registry_, &DocumentRegistry::changedOnDisk, this, [this](Document* d) { onChangedOnDisk(d, DiskChange::External); });
     connect(registry_, &DocumentRegistry::deletedOnDisk, this, [this](Document* d) {
-        statusBar()->showMessage(d->controller()->target().title() + " was deleted on disk: save to keep it", 10000);
+        notify({NoticeSeverity::Warning, "File deleted on disk", d->controller()->target().title() + " was deleted on disk: save to keep it", false});
     });
     // After the writing tab has taken its save: only the other tabs of that template are told.
     connect(&services_.library(), &TemplateLibrary::changed, this, &MainWindow::onLibraryChanged, Qt::QueuedConnection);
 
     panels_ = new Panels(this);
+    notifications_ = new NotificationOverlay(this);
+    connect(notifications_, &NotificationOverlay::viewLogRequested, this, [this] { panels_->show(logPanel()); });
     buildStatusBar();
     tabs_->add(first);
     explorer_ = new Explorer(ExplorerSource::standard(services_, this), *files_, this);
@@ -404,7 +407,12 @@ void MainWindow::wire(Document* d) {
         tabs_->refresh(d);
         scheduleRefresh();
     });
-    connect(c, &Controller::notice, d, [this, isFront](const QString& text) { if (isFront()) statusBar()->showMessage(text, 10000); });
+    connect(c, &Controller::notification, d, [this](const Notice& n) { notify(n); });
+}
+
+void MainWindow::notify(const Notice& notice) {
+    if (notifications_) notifications_->push(notice);
+    statusBar()->showMessage(notice.summary(), 10000);
 }
 
 void MainWindow::activate(Document* d) { tabs_->activate(d); }
@@ -450,7 +458,7 @@ Document* MainWindow::openComponent(const ComponentRef& component, bool dismissD
     auto target = provider->documentTarget(component.id, ComponentProvider::DocumentAccess::Open, &error);
     if (dismissDrawer && (target || !error.isEmpty())) drawer()->dismiss();
     if (!target) {
-        if (!error.isEmpty()) statusBar()->showMessage(error, 10000);
+        if (!error.isEmpty()) notify({NoticeSeverity::Error, "Unable to open component", error, false});
         return nullptr;
     }
     return tabs_->open(std::move(target));
@@ -555,7 +563,7 @@ void MainWindow::onChangedOnDisk(Document* d, DiskChange why) {
         whenIdle(d, [this, d, why] { onChangedOnDisk(d, why); });
     } else if (!d->controller()->hasUnsavedWork()) {
         d->controller()->reload();
-        statusBar()->showMessage(wordsFor(d, why).reloaded, 10000);
+        notify({NoticeSeverity::Info, "Reloaded from disk", wordsFor(d, why).reloaded, false});
     } else if (d == front()) {
         askReload(d, why);
     } else {

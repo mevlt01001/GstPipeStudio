@@ -59,8 +59,10 @@ void RunSession::finished(Channel& channel, const HelperResult& r) {
     else if (r.outcome == HelperResult::NotFound) status = "not-found";
     else status = "error";
     const QString message = answered ? QString::fromStdString(answer.message) : QString();
+    const QString summary = channel.finishPrefix + status + (message.isEmpty() ? "" : " – " + message);
     if (r.outcome == HelperResult::NotFound) emit notice(channel.helper + " was not found");
-    emit logLine(channel.finishPrefix + status + (message.isEmpty() ? "" : " – " + message));
+    else if (status == "error" || status == "crashed" || status == "refused") emit notice(summary);
+    emit logLine(summary);
     emit changed();
     if (channel.onFinished) channel.onFinished(status);
 }

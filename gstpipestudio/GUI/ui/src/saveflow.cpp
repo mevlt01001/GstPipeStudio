@@ -51,7 +51,7 @@ bool SaveFlow::saveAll(const QList<Document*>& documents) {
             return false;
         }
     }
-    if (!skipped.isEmpty()) window_->statusBar()->showMessage("Not saved: " + skipped.join(", "), 10000);
+    if (!skipped.isEmpty()) window_->notify({NoticeSeverity::Warning, "Some tabs were not saved", skipped.join(", "), false});
     return skipped.isEmpty();
 }
 
@@ -109,7 +109,7 @@ bool SaveFlow::overwrite(Document* d) const {
 
 bool SaveFlow::report(Document* d, const SaveResult& r) const {
     if (r.ok) return true;
-    window_->statusBar()->showMessage(r.error, 10000);
+    window_->notify({NoticeSeverity::Error, "Save failed", r.error, true});
     d->log()->append(r.error);
     return false;
 }

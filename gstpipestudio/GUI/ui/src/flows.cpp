@@ -239,7 +239,11 @@ void Flows::newElement(Mode mode, const QString& element, const QString& identit
         in.acceptText = mode == Mode::Add ? "Add element" : "Replace";
         in.requestSrc = info->defaultRequestSrc();
         std::vector<PadTemplateInfo> choices = controller_->sinkChoices(*info, element, identity);
-        if (choices.empty()) return;
+        if (choices.empty()) {
+            controller_->report(NoticeSeverity::Warning, "No compatible sink pad",
+                                factory + " has no sink pad that can connect here.", false);
+            return;
+        }
         for (const PadTemplateInfo& t : choices) in.sinkPads << fromStd(t.name);
         auto* page = new PropertyPage(in);
         connect(page, &PropertyPage::confirmed, this, [this, mode, page, element, identity, factory, onlyPad = fromStd(choices.front().name)] {

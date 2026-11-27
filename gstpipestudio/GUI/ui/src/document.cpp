@@ -130,6 +130,11 @@ void Document::paste() {
         controller_->addLaunch(text, Controller::kFree, Controller::kFree, [doc = QPointer<Document>(this)](const QStringList& created) {
             if (doc && !created.isEmpty()) doc->scene_->setSelectedElements(created);
         });
+        return;
+    }
+    if (!text.trimmed().isEmpty()) {
+        controller_->report(NoticeSeverity::Warning, "Nothing to paste",
+                            "Clipboard does not contain a GstPipeStudio selection or a gst-launch pipeline.", false);
     }
 }
 

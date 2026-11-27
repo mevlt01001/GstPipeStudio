@@ -49,6 +49,7 @@ HelperClient::HelperClient(QObject* parent)
     connect(process_, &QProcess::finished, this, &HelperClient::onFinished);
     connect(process_, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
         if (error == QProcess::FailedToStart) finish(HelperResult::NotFound, 0);
+        else emit stderrLine("helper process error: " + process_->errorString());
     });
     connect(watchdog_, &QTimer::timeout, this, [this] {
         timedOut_ = true;

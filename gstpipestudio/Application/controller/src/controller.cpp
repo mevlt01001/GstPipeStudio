@@ -36,8 +36,9 @@ Controller::Controller(AppServices& services, QObject* parent)
       templates_(edits_, pipeline_, services.library(), services.catalog(), views_),
       views_(pipeline_, services.catalog(), templates_, *layout_) {
     edits_.setBlocker([this] { return blockedReason(); });
+    auto forwardError = [this](const QString& text) { report(NoticeSeverity::Error, text); };
     connect(&edits_, &EditSession::committed, this, &Controller::committed);
-    connect(&edits_, &EditSession::notice, this, &Controller::notice);
+    connect(&edits_, &EditSession::notice, this, forwardError);
     connect(&edits_, &EditSession::synced, this, &Controller::synced);
     connect(&validation_, &ValidationSession::changed, this, &Controller::changed);
     connect(&validation_, &ValidationSession::finished, this, &Controller::validated);
@@ -46,16 +47,16 @@ Controller::Controller(AppServices& services, QObject* parent)
     connect(&runs_, &RunSession::runFinished, this, &Controller::runFinished);
     connect(&runs_, &RunSession::telemetryReceived, this, &Controller::telemetryReceived);
     connect(&runs_, &RunSession::logLine, this, logger());
-    connect(&runs_, &RunSession::notice, this, &Controller::notice);
+    connect(&runs_, &RunSession::notice, this, forwardError);
     connect(&templates_, &TemplateInstances::templateChanged, this, &Controller::templateChanged);
     connect(&templates_, &TemplateInstances::templatesOutdated, this, &Controller::templatesOutdated);
     connect(&templates_, &TemplateInstances::updated, this, [this] { niceAlign(); });
-    connect(&templates_, &TemplateInstances::notice, this, &Controller::notice);
+    connect(&templates_, &TemplateInstances::notice, this, forwardError);
     connect(&templates_, &TemplateInstances::logLine, this, logger());
     // The shared catalog already knows the factories other documents asked for; the Pipeline learns them now.
     catalog().forEachInfo([this](const QString& factory, const ElementInfo&) { registerFactory(factory); });
     connect(&catalog(), &FactoryCatalog::infoArrived, this, &Controller::registerFactory);
-    connect(&catalog(), &FactoryCatalog::notice, this, &Controller::notice);
+    connect(&catalog(), &FactoryCatalog::notice, this, forwardError);
     connect(&catalog(), &FactoryCatalog::logLine, this, logger());
     connect(&services_.environment(), &EnvironmentService::checked, this, [this](const StartupResult& r) {
         log(r.state == StartupResult::Ready ? r.statusText() : "GStreamer check: the environment is not ready");
@@ -106,6 +107,12 @@ void Controller::log(const QString& line) {
     emit logLine(line);
 }
 
+void Controller::report(NoticeSeverity severity, const QString& title, const QString& detail, bool showLog) {
+    const Notice item{severity, title, detail, showLog};
+    emit notice(item.summary());
+    emit notification(item);
+}
+
 SupportInfo Controller::supportInfo(const QString& title) const {
     SupportInfo i = SupportReport::systemInfo();
     i.title = title;
@@ -128,7 +135,8 @@ void Controller::requestSupport(const QString& title) {
     }
     // No browser (a server, a container): the user pastes the report on the issue page.
     if (QClipboard* clipboard = QGuiApplication::clipboard()) clipboard->setText(SupportReport::text(info));
-    emit notice("No web browser was found. The report was copied to the clipboard: paste it at " + SupportReport::issueUrl());
+    report(NoticeSeverity::Warning, "No web browser found",
+           "The report was copied to the clipboard: paste it at " + SupportReport::issueUrl(), false);
 }
 
 QString Controller::launchCommand() const {
@@ -245,7 +253,8 @@ void Controller::applyEdit(gps::Graph& g, const std::string& element, const Elem
             auto found = wanted.find(t);
             int count = found == wanted.end() ? 0 : found->second;
             if (!(g.*set)(element, t, count))
-                emit notice(fromStd("Unable to set the pad count of " + t + " to " + std::to_string(count) + ": linked pads need it."));
+                report(NoticeSeverity::Warning, "Pad count kept",
+                       fromStd("Unable to set the pad count of " + t + " to " + std::to_string(count) + ": linked pads need it."), false);
         }
     };
     counts(e->requestSrc, edit.requestSrc, &gps::Graph::setRequestSrc);
@@ -341,16 +350,19 @@ bool Controller::addAfter(const QString& element, const QString& pad, const QStr
 
 bool Controller::linkExisting(const QString& element, const QString& pad, const QString& sinkElement, const QString& sinkPad) {
     if (element == sinkElement || plan().wouldCycle(toStd(element), toStd(sinkElement))) {
-        emit notice(fromStd(gps::Graph::ouroborosMessage(toStd(element), toStd(sinkElement))));
+        report(NoticeSeverity::Warning, fromStd(gps::Graph::ouroborosMessage(toStd(element), toStd(sinkElement))), QString(), false);
         return false;
     }
-    return edits_.transact([&](gps::Graph& g, Edit& e) {
+    const bool ok = edits_.transact([&](gps::Graph& g, Edit& e) {
         if (!g.linkExisting(toStd(element), toStd(pad), toStd(sinkElement), toStd(sinkPad))) return false;
         e.action = "Linked " + element + "." + pad + " to an existing element";
         e.linking = padName(srcRef(element, pad)) + " -> " + padName(sinkRef(sinkElement, sinkPad));
         e.touched = sinkElement;
         return true;
     });
+    if (!ok && !editingBlocked())
+        report(NoticeSeverity::Warning, "Cannot connect pads", "The selected pad is already connected or unavailable.", false);
+    return ok;
 }
 
 bool Controller::editElement(const QString& element, const ElementEdit& edit) {
@@ -424,7 +436,10 @@ bool Controller::spliceElements(const QStringList& elements, const QString& link
     const QStringList expanded = outline().expand(elements);
     if (expanded.isEmpty()) return false;
     std::vector<std::string> ids = toStd(expanded);
-    if (!gps::GraphFragment(ids).connected(plan())) return false;
+    if (!gps::GraphFragment(ids).connected(plan())) {
+        report(NoticeSeverity::Warning, "Cannot splice selection", "Selected elements must form a single connected chain.", false);
+        return false;
+    }
 
     const gps::NodePorts ports = shape().ports(ids);
     std::vector<std::pair<std::string, std::string>> freeSinks, freeSrcs;
@@ -650,7 +665,7 @@ void Controller::load(const QString& source, std::shared_ptr<SaveTarget> target,
     std::vector<std::string> libraries;
     for (const QString& folder : (target ? target : target_)->templateFolders()) libraries.push_back(toStd(folder));
     if (!gps::Graph::load(toStd(source), loaded.get(), &error, libraries)) {
-        emit notice("Unable to open the file: " + fromStd(error));
+        report(NoticeSeverity::Error, "Unable to open file", fromStd(error), true);
         return;
     }
     opening_ = true;
@@ -659,14 +674,15 @@ void Controller::load(const QString& source, std::shared_ptr<SaveTarget> target,
         opening_ = false;
         pending_.reset();
         if (!ok) {
-            emit notice("Unable to open the file: the plan uses an element this installation does not have.");
+            report(NoticeSeverity::Error, "Unable to open file",
+                   "The plan uses an element this installation does not have.", true);
             emit changed();
             return;
         }
         std::string failure;
         if (how != Load::Replace) {
             if (!pipeline_.reset(*loaded, &failure)) {
-                emit notice(fromStd(failure));
+                report(NoticeSeverity::Error, "Unable to open file", fromStd(failure), true);
                 emit changed();  // no longer opening: the canvas and the tab title follow
                 return;
             }
@@ -690,7 +706,7 @@ void Controller::load(const QString& source, std::shared_ptr<SaveTarget> target,
 bool Controller::runImportLaunch(const QString& description, std::function<void(const QString& path)> onReady) {
     if (busy() || description.trimmed().isEmpty()) return false;
     const QString helper = findHelper("gps-import");
-    if (helper.isEmpty()) { emit notice("gps-import was not found"); return false; }
+    if (helper.isEmpty()) { report(NoticeSeverity::Error, "Import failed", "gps-import was not found", true); return false; }
     const QString path = tmp_.filePath("import.conf");
     opening_ = true;
     emit changed();
@@ -701,13 +717,15 @@ bool Controller::runImportLaunch(const QString& description, std::function<void(
         reply.status.clear();
         const bool answered = result.read(&reply);
         if (reply.status != "ok") {
-            emit notice("Import failed: " + (answered ? fromStd(reply.message) : QString("gps-import did not answer")));
+            report(NoticeSeverity::Error, "Import failed",
+                   answered ? fromStd(reply.message) : QString("gps-import did not answer"), true);
             emit changed();
             return;
         }
         log(QString("Imported native pipeline %1: %2 elements, %3 links").arg(fromStd(reply.nativeName)).arg(reply.elements).arg(reply.links));
         for (const std::string& warning : reply.warnings) log("[gps-import] " + fromStd(warning));
-        if (!reply.warnings.empty()) emit notice("Imported with warnings. Review the Log and validate before running.");
+        if (!reply.warnings.empty())
+            report(NoticeSeverity::Warning, "Imported with warnings", "Review the Log and validate before running.", true);
         onReady(path);
     });
     return true;
@@ -727,11 +745,12 @@ bool Controller::addLaunch(const QString& description, double targetX, double ta
         std::vector<std::string> libraries;
         for (const QString& folder : target_->templateFolders()) libraries.push_back(toStd(folder));
         if (!gps::Graph::load(toStd(path), imported.get(), &error, libraries)) {
-            emit notice("Unable to import pipeline: " + fromStd(error));
+            report(NoticeSeverity::Error, "Unable to import pipeline", fromStd(error), true);
             emit changed();
             return;
         }
         if (imported->empty()) {
+            report(NoticeSeverity::Warning, "Nothing to import", "The pipeline description contained no elements.", true);
             emit changed();
             return;
         }
@@ -740,7 +759,8 @@ bool Controller::addLaunch(const QString& description, double targetX, double ta
         catalog().fetchMissing(*imported, this, [this, imported, targetX, targetY, onAdded](bool ok) {
             opening_ = false;
             if (!ok) {
-                emit notice("Unable to import pipeline: it uses an element this installation does not have.");
+                report(NoticeSeverity::Error, "Unable to import pipeline",
+                       "It uses an element this installation does not have.", true);
                 emit changed();
                 return;
             }

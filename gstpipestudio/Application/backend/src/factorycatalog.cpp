@@ -116,6 +116,8 @@ void FactoryCatalog::fetchCompatible(const QString& caps, QObject* context, Name
         if (r.read(&answer)) {
             names = fromStd(answer.factories);
             compatible_.insert(caps, names);
+        } else {
+            emit notice("Unable to query compatible elements from gps-inspect.");
         }
         done(names);
     });

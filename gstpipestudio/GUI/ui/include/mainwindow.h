@@ -10,6 +10,7 @@
 #include "commandset.h"
 #include "componentprovider.h"
 #include "documentregistry.h"
+#include "notice.h"
 
 class AppServices;
 class CanvasScene;
@@ -24,6 +25,7 @@ class Explorer;
 class FileOperations;
 class Flows;
 class LogPanel;
+class NotificationOverlay;
 class QLabel;
 class QTabBar;
 class Panels;
@@ -77,6 +79,8 @@ public:
     FileOperations* fileOperations() const { return files_; }  // every file operation the user asks for
     SaveFlow* saveFlow() const { return saveFlow_; }
     DocumentRegistry* registry() const { return registry_; }  // the open tabs' files, watched on disk
+    NotificationOverlay* notifications() const { return notifications_; }
+    void notify(const Notice& notice);
 
 protected:
     void closeEvent(QCloseEvent* event) override;  // hot exit: asks nothing, every tab comes back on the next start
@@ -130,6 +134,7 @@ private:
     ContextMenus* menus_;
     Panels* panels_ = nullptr;
     Explorer* explorer_ = nullptr;
+    NotificationOverlay* notifications_ = nullptr;
     QLabel* state_ = nullptr;
     QLabel* environment_ = nullptr;
     QLabel* command_ = nullptr;

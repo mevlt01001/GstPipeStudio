@@ -32,6 +32,7 @@ add_library(gps_application STATIC
     backend/include/startupcheck.h backend/src/startupcheck.cpp
     backend/include/supportreport.h backend/src/supportreport.cpp
     model/include/elementedit.h
+    model/include/notice.h
     model/include/capslabel.h model/src/capslabel.cpp
     model/include/contract.h model/src/contract.cpp
     model/include/elementview.h

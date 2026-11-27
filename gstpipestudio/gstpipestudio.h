@@ -9,6 +9,7 @@ class QApplication;
 class GstPipeStudio final {
 public:
     int run(QApplication& application, const QString& pipelinePath);
+    void reportError(const QString& title, const QString& detail);
 
 private:
     AppServices services_;

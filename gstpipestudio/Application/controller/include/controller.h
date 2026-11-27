@@ -26,6 +26,7 @@
 #include "documentviews.h"
 #include "editsession.h"
 #include "elementedit.h"
+#include "notice.h"
 #include "pipeline.h"
 #include "runsession.h"
 #include "savetarget.h"
@@ -181,6 +182,7 @@ public:
         stopRun();
         stopMonitoring();
     }
+    void report(NoticeSeverity severity, const QString& title, const QString& detail = QString(), bool showLog = true);
 
 signals:
     void changed();                         // anything the views show has changed
@@ -188,6 +190,7 @@ signals:
     void updateFinished(bool ok);
     void logLine(const QString& line);      // helper stderr and events
     void notice(const QString& text);       // something the user must be told (helper missing, open failed ...)
+    void notification(const Notice& notice);
     void runFinished(const QString& status);
     void telemetryReceived(const gps::TelemetrySample& sample);
     void templateChanged(const QString& id);              // its content no longer matches its template: what now?

@@ -51,6 +51,7 @@
 #include <QTreeWidget>
 #include <QPointer>
 #include "newprojectdialog.h"
+#include "notificationoverlay.h"
 #include "panels.h"
 #include "templateframeitem.h"
 #include "templatepage.h"
@@ -2733,6 +2734,37 @@ private slots:
         QVERIFY(addSubmenu->actions().contains((*w.commands())[Command::AddTemplate]));
         QVERIFY(addSubmenu->actions().contains(addLaunchAction));
         canvasMenu->close();
+
+        // 7. NotificationOverlay: sticky Errors, View Log action, deduplication, max stacking, and paste feedback.
+        NotificationOverlay* overlay = w.notifications();
+        QVERIFY(overlay);
+        overlay->dismissAll();
+        QCOMPARE(overlay->count(), 0);
+        w.notify({NoticeSeverity::Error, "Import failed", "missing plugin", true});
+        QCOMPARE(overlay->count(), 1);
+        w.notify({NoticeSeverity::Error, "Import failed", "missing plugin", true});
+        QCOMPARE(overlay->count(), 1);
+        QLabel* countBadge = overlay->findChild<QLabel*>("toastCount");
+        QVERIFY(countBadge && countBadge->text() == QString("×2"));
+        QPushButton* viewLog = overlay->findChild<QPushButton*>("toastViewLog");
+        QVERIFY(viewLog);
+        viewLog->click();
+        QVERIFY(w.panels()->showing(w.logPanel()));
+
+        w.notify({NoticeSeverity::Info, "Saved", "ok", false});
+        w.notify({NoticeSeverity::Error, "Second error", "detail 2", true});
+        w.notify({NoticeSeverity::Error, "Third error", "detail 3", true});
+        QCOMPARE(overlay->count(), 3);
+        w.notify({NoticeSeverity::Error, "Fourth error", "detail 4", true});
+        QCOMPARE(overlay->count(), 3);  // Info evicted, 3 errors kept
+        for (QLabel* lbl : overlay->findChildren<QLabel*>("toastTitle")) QVERIFY(lbl->text() != QString("Saved"));
+        overlay->dismissAll();
+
+        QGuiApplication::clipboard()->setText("not a pipeline");
+        w.front()->paste();
+        QCOMPARE(overlay->count(), 1);
+        QCOMPARE(overlay->findChild<QLabel*>("toastTitle")->text(), QString("Nothing to paste"));
+        overlay->dismissAll();
     }
 
 private:

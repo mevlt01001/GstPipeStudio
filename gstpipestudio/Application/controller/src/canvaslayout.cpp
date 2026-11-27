@@ -153,7 +153,7 @@ void CanvasLayout::finished(quint64 ticket, bool ok, const layout::Result& resul
     pending_ = 0;
     const std::optional<Pin> pin = std::exchange(pin_, std::nullopt);
     if (!ok) {
-        emit controller_.logLine("Layout failed: " + error);
+        controller_.report(NoticeSeverity::Error, "Layout failed", error, true);
         emit aligned(false);
         return;
     }

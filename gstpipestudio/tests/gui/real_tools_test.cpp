@@ -6,12 +6,14 @@
 #include <QDir>
 #include <QAction>
 #include <QClipboard>
+#include <QLabel>
 #include <QTemporaryDir>
 
 #include "canvasscene.h"
 #include "canvasview.h"
 #include "document.h"
 #include "mainwindow.h"
+#include "notificationoverlay.h"
 #include "drawer.h"
 #include "pickerpage.h"
 #include "theme.h"
@@ -148,6 +150,11 @@ private slots:
         window.front()->paste();
         QVERIFY(waitFor([&] { return c->plan().elements.size() == 5 && !c->busy() && !c->canvasLayout().busy(); }, 15000));
         QCOMPARE(window.documents().size(), 1);
+
+        window.notifications()->dismissAll();
+        QVERIFY(c->addLaunch("not_a_real_element ! fakesink"));
+        QVERIFY(waitFor([&] { return window.notifications()->count() >= 1 && !c->busy(); }, 15000));
+        QCOMPARE(window.notifications()->findChild<QLabel*>("toastTitle")->text(), QString("Import failed"));
     }
 
     // The same screenshots as with the fakes, but with the real catalog (hundreds of factories) and real caps.
