@@ -1,4 +1,6 @@
-# GstPipeStudio architecture (dev-zero)
+# GstPipeStudio architecture (v0.5 modular & dev-zero)
+
+> See [Product Vision](../PRODUCT_VISION.md) for the full 7-unit modular DAG (`Pipeline`, `ElementSDK`, `RuntimeSDK`, `GstEngine`, `Application`, `MCP`, `GUI`), product scope, and commercial boundaries.
 
 The desktop entry point constructs `GstPipeStudio`, which owns the shared services, document sessions and main window. Each document session owns a controller and its backup. The window owns the views and releases them before closing their sessions.
 

@@ -1,18 +1,16 @@
 # GstPipeStudio repository instructions
 
-Read [Coding Style](docs/development/coding-style.md) and the [architecture](docs/architecture/README.md) before changing code. The style applies to every change in this repository.
+Read [Product Vision](docs/PRODUCT_VISION.md), [Coding Style](docs/development/coding-style.md) and the [architecture](docs/architecture/README.md) before changing code. The style applies to every change in this repository.
 
-- Identify the class that owns the affected rule before editing. Search its callers across the GUI, CLI tools and GStreamer plugin. Extend the owner and migrate callers when the rule is scattered.
-- Preserve the boundaries between the GUI, application use cases, Pipeline and GstEngine. Keep dependency wiring at the application entry point. Reuse the existing extension contracts before introducing one.
-- Add feature variants through an existing behavior contract or one registration at its owner. Review all conditionals introduced by the change, including type tests, mode flags, repeated switches and ternaries. Use guards for local invariants and errors.
+- Respect the 7-unit dependency DAG: `Pipeline` (pure C++17, no Qt/GStreamer), `ElementSDK` (`element_sdk/`, no Qt/`gstpipestudio`), `RuntimeSDK` (`runtime_sdk/`, standalone host C/C++ `.so` loader, no Qt/`gstpipestudio`), `GstEngine` (`Pipeline` + GStreamer, no Qt), `Application` (`Pipeline` + Qt Core/Gui, no `QtWidgets` or direct GStreamer), `MCP` (`gps-mcp` + `Application/mcp/`), and `GUI` (`Application` + Qt Widgets).
+- Identify the class that owns the affected rule before editing. Search its callers across the GUI, CLI tools, MCP server and GStreamer plugin. Extend the owner and migrate callers when the rule is scattered.
+- Keep dependency wiring at the composition root (`AppServices` / `GstPipeStudio` / CLI `main`). Reuse existing extension contracts (`IAction`, `IExecutionBackend`, `SaveTarget`, `ComponentProvider`) before introducing new ones.
+- Add feature variants through an existing behavior contract or one registration at its owner. Use guards for local invariants and errors; route user-facing errors through `Notice` / `DiagnosticLog` instead of silent failure.
 - Pass caller-adjustable values through typed options or object constructors. Parse external settings at the composition boundary and keep each default with its option.
-- Treat changes to these rules as a separate design decision. State the rule, reason, affected entry points and verification, then obtain maintainer approval before changing the rule.
-- Describe the effect on existing projects, templates, CLI behavior and user workflows. Obtain maintainer approval before an observable behavior change.
-- Work in small commits on a separate branch. From the repository root, verify each change in the DeepStream development image.
+- Verify every change in the DeepStream development image from the repository root:
 
   ```sh
-  docker/dev.sh deepstream 'cmake --build build-docker-deepstream -j'
-  docker/dev.sh deepstream 'cd build-docker-deepstream && ctest --output-on-failure'
+  docker/dev.sh deepstream 'cmake --build build-docker-deepstream -j && cd build-docker-deepstream && ctest --output-on-failure'
   ```
 
 - Record build failures and skipped tests distinctly. Hardware support requires a test on the relevant hardware.
