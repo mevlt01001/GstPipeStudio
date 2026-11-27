@@ -3,6 +3,7 @@
 
 #include <QPointer>
 #include <memory>
+#include <algorithm>
 
 #include "helperclient.h"
 
@@ -20,17 +21,32 @@ HelperClient* FactoryCatalog::ask(const QStringList& args, std::function<void(co
     return HelperClient::run(this, "gps-inspect", args, 30000, [this](const QString& line) { emit logLine(line); }, std::move(done));
 }
 
-void FactoryCatalog::load() {
-    ask({"list"}, [this](const HelperResult& r) {
+void FactoryCatalog::load() { reloadList(); }
+
+void FactoryCatalog::reloadList(std::function<void(bool)> done) {
+    const auto request = ++listRequest_;
+    const auto revision = registryRevision_;
+    ask({"list"}, [this, request, revision, done = std::move(done)](const HelperResult& r) mutable {
+        if (request != listRequest_) {
+            if (done) done(false);
+            return;
+        }
+        if (revision != registryRevision_) {
+            reloadList(std::move(done));
+            return;
+        }
         gps::FactoryList list;
         if (!r.read(&list)) {
             emit notice("Unable to read the element list: gps-inspect did not run or gave an unusable answer.");
+            if (done) done(false);
             return;
         }
         entries_ = std::move(list.elements);
+        compatible_.clear();
         loaded_ = true;
         emit logLine(QString("Element list: %1 factories").arg(entries_.size()));
         emit ready();
+        if (done) done(true);
     });
 }
 
@@ -63,19 +79,46 @@ void FactoryCatalog::fetchInfo(const QString& factory, QObject* context, InfoCal
         return;
     }
     pending_[factory].append(whileAlive(context, std::move(done)));
-    if (pending_[factory].size() > 1) return;  // a call for this factory is already on its way
+    if (infoRequests_.contains(factory)) return;  // a call for this factory is already on its way
 
-    ask({"element", factory}, [this, factory](const HelperResult& r) {
+    requestInfo(factory, false, {});
+}
+
+void FactoryCatalog::reloadFactory(const QString& factory, std::function<void(bool)> done) {
+    requestInfo(factory, true, std::move(done));
+}
+
+void FactoryCatalog::requestInfo(const QString& factory, bool reload, std::function<void(bool)> done) {
+    const auto request = ++infoRequest_;
+    infoRequests_.insert(factory, request);
+    ask({"element", factory}, [this, factory, reload, request, done = std::move(done)](const HelperResult& r) {
+        if (request != infoRequests_.value(factory)) {
+            if (done) done(false);
+            return;
+        }
+        infoRequests_.remove(factory);
         ElementInfo answer;
-        if (r.read(&answer) && answer.entry.factory == toStd(factory)) {
+        const auto name = toStd(factory);
+        const bool ok = r.read(&answer) && answer.entry.factory == name;
+        if (ok) {
             definitions_[factory] = gps::definitionOf(answer);
             infos_[factory] = std::move(answer);
+            if (reload) {
+                ++registryRevision_;
+                compatible_.clear();
+                const auto row = std::lower_bound(entries_.begin(), entries_.end(), name,
+                    [](const FactoryEntry& entry, const std::string& key) { return entry.factory < key; });
+                if (row == entries_.end() || row->factory != name) entries_.insert(row, infos_.at(factory).entry);
+                else *row = infos_.at(factory).entry;
+            }
             emit infoArrived(factory);
+            if (reload) emit factoryReloaded(factory);
         } else {
             emit notice(QString("Unable to read the information of element '%1'.").arg(factory));
         }
-        QList<InfoCallback> waiting = pending_.take(factory);
-        for (const InfoCallback& cb : waiting) cb(info(factory));
+        const auto waiting = pending_.take(factory);
+        for (const auto& cb : waiting) cb(info(factory));
+        if (done) done(ok);
     });
 }
 
@@ -110,7 +153,13 @@ void FactoryCatalog::fetchCompatible(const QString& caps, QObject* context, Name
     }
     QStringList args = {"compatible"};
     if (!caps.isEmpty()) args << "--caps" << caps;
-    ask(args, [this, caps, done = whileAlive(context, std::move(done))](const HelperResult& r) {
+    const auto revision = registryRevision_;
+    ask(args, [this, caps, revision, context = QPointer<QObject>(context), done = std::move(done)](const HelperResult& r) {
+        if (!context) return;
+        if (revision != registryRevision_) {
+            fetchCompatible(caps, context, done);
+            return;
+        }
         QStringList names;
         gps::CompatibleFactories answer;
         if (r.read(&answer)) {

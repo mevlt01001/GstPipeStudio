@@ -18,6 +18,7 @@ add_library(gps_application STATIC
     backend/include/projectfile.h backend/src/projectfile.cpp
     backend/include/versionhistory.h backend/src/versionhistory.cpp
     backend/include/componentprovider.h backend/src/componentprovider.cpp
+    backend/include/pluginpaths.h backend/src/pluginpaths.cpp
     backend/include/pluginlibrary.h
     backend/include/templatelibrary.h backend/src/templatelibrary.cpp
     backend/include/settings.h backend/src/settings.cpp

@@ -9,6 +9,7 @@ namespace AppPaths {
 
 QString state();      // what the app remembers: the list of projects, the hot-exit backups
 
+QString plugins();    // data/plugins, or GPS_USER_DIR/plugins for portable use
 QString templates();  // data/templates: one .conf per template
 QString backups();    // state()/backups: the unsaved content of the open tabs (BackupService)
 

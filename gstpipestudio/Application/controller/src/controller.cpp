@@ -4,6 +4,7 @@
 
 #include "actions.h"
 #include "canvasmetrics.h"
+#include "pluginpaths.h"
 #include "templates.h"
 
 #include <QClipboard>
@@ -56,6 +57,11 @@ Controller::Controller(AppServices& services, QObject* parent)
     // The shared catalog already knows the factories other documents asked for; the Pipeline learns them now.
     catalog().forEachInfo([this](const QString& factory, const ElementInfo&) { registerFactory(factory); });
     connect(&catalog(), &FactoryCatalog::infoArrived, this, &Controller::registerFactory);
+    connect(&catalog(), &FactoryCatalog::factoryReloaded, this, [this](const QString& factory) {
+        if (std::none_of(plan().elements.begin(), plan().elements.end(),
+                         [&](const gps::Element& element) { return element.factory == toStd(factory); })) return;
+        validation_.request();  // emits changed, after the Pipeline receives the current pad definitions
+    });
     connect(&catalog(), &FactoryCatalog::notice, this, forwardError);
     connect(&catalog(), &FactoryCatalog::logLine, this, logger());
     connect(&services_.environment(), &EnvironmentService::checked, this, [this](const StartupResult& r) {
@@ -143,6 +149,8 @@ QString Controller::launchCommand() const {
     if (target_->projectConf().isEmpty()) return QString();
     QFileInfo file(target_->projectConf());
     QString text = "GPS_PIPELINE_PATH=" + shellQuote(file.absolutePath()) + " gst-launch-1.0 " + shellQuote(file.completeBaseName());
+    const QString pluginPath = PluginPaths::searchPath(QProcessEnvironment::systemEnvironment());
+    if (!pluginPath.isEmpty()) text.prepend("GST_PLUGIN_PATH_1_0=" + shellQuote(pluginPath) + " ");
     for (const gps::ExposedParam& p : plan().exposed) text += " " + fromStd(p.name) + "=VALUE";
     return text;
 }

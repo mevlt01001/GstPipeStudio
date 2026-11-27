@@ -1,5 +1,6 @@
 // helperclient.cpp – QProcess wrapper with a watchdog; emits `finished` exactly once.
 #include "helperclient.h"
+#include "pluginpaths.h"
 
 #include <QCoreApplication>
 #include <QFileInfo>
@@ -62,6 +63,10 @@ void HelperClient::start(const QString& program, const QStringList& args, int ki
         QTimer::singleShot(0, this, [this] { finish(HelperResult::NotFound, 0); });
         return;
     }
+    auto environment = QProcessEnvironment::systemEnvironment();
+    const QString pluginPath = PluginPaths::searchPath(environment);
+    if (!pluginPath.isEmpty()) environment.insert("GST_PLUGIN_PATH_1_0", pluginPath);
+    process_->setProcessEnvironment(environment);
     process_->start(program, args);
     if (killAfterMs > 0) watchdog_->start(killAfterMs);
 }

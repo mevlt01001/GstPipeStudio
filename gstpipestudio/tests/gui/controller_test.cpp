@@ -1,5 +1,7 @@
 // controller_test.cpp – every flow of SPEC 8 driven through the Controller against the fake helpers.
 #include <QDir>
+#include <QScopeGuard>
+#include "pluginpaths.h"
 #include <QLineF>
 #include <QSignalSpy>
 #include <QFileInfo>
@@ -58,6 +60,58 @@ private slots:
         QVERIFY(!c->services().catalog().traits()("tee").isSource);
         QVERIFY(need(*c, "audiotestsrc")->entry.isSource);
         QVERIFY(c->services().catalog().traits()("audiotestsrc").isSource);
+    }
+
+    void reloadsAPluginIntoAnOpenController() {
+        const QString module = qEnvironmentVariable("GPS_RELOAD_TEST_PLUGIN");
+        if (module.isEmpty()) QSKIP("This build has no SDK plugin fixture");
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const auto bin = qgetenv("GPS_BIN_DIR");
+        const auto user = qgetenv("GPS_USER_DIR");
+        const auto registry = qgetenv("GST_REGISTRY");
+        const auto restore = qScopeGuard([&] {
+            bin.isNull() ? qunsetenv("GPS_BIN_DIR") : qputenv("GPS_BIN_DIR", bin);
+            user.isNull() ? qunsetenv("GPS_USER_DIR") : qputenv("GPS_USER_DIR", user);
+            registry.isNull() ? qunsetenv("GST_REGISTRY") : qputenv("GST_REGISTRY", registry);
+        });
+        qputenv("GPS_BIN_DIR", qgetenv("GPS_REAL_BIN_DIR"));
+        qputenv("GPS_USER_DIR", dir.path().toUtf8());
+        qputenv("GST_REGISTRY", dir.filePath("registry.bin").toUtf8());
+        AppServices local;
+        Controller opened(local);
+        auto& catalog = local.catalog();
+        catalog.load();
+        QTRY_VERIFY_WITH_TIMEOUT(catalog.loaded(), 30000);
+        QVERIFY(!catalog.entry("simplethreshold"));
+        QVERIFY(QDir().mkpath(PluginPaths::binaries()));
+        QVERIFY(QFile::copy(module, QDir(PluginPaths::binaries()).filePath("libgstsimplethreshold.so")));
+
+        QSignalSpy reloaded(&catalog, &FactoryCatalog::factoryReloaded);
+        catalog.reloadFactory("simplethreshold");
+        QTRY_COMPARE(reloaded.size(), 1);
+        const auto* info = catalog.info("simplethreshold");
+        const auto* definition = catalog.definition("simplethreshold");
+        QVERIFY(info);
+        QVERIFY(definition);
+        const QString src = addSource(opened, "videotestsrc", withProps({{"num-buffers", "3"}}));
+        QVERIFY(!src.isEmpty());
+        const QString filter = addAfter(opened, src, "src", "simplethreshold");
+        QVERIFY(!filter.isEmpty());
+        QVERIFY(!addAfter(opened, filter, "src", "fakesink").isEmpty());
+        QVERIFY(opened.result().ok());
+
+        QSignalSpy changed(&opened, &Controller::changed);
+        QSignalSpy validated(&opened, &Controller::updateFinished);
+        catalog.reloadFactory("simplethreshold");
+        QTRY_COMPARE(reloaded.size(), 2);
+        QTRY_VERIFY(!validated.isEmpty());
+        QVERIFY(!changed.isEmpty());
+        QVERIFY(!opened.plan().find(toStd(filter))->pads.empty());
+        QVERIFY(opened.result().ok());
+        QCOMPARE(catalog.info("simplethreshold"), info);
+        QCOMPARE(catalog.definition("simplethreshold"), definition);
+        QVERIFY(settle(opened));
     }
 
     void emptyCanvas() {

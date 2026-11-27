@@ -6,6 +6,7 @@
 #include <QObject>
 #include <QStringList>
 #include <functional>
+#include <cstdint>
 #include <map>
 #include <vector>
 
@@ -25,6 +26,8 @@ public:
     explicit FactoryCatalog(QObject* parent = nullptr) : QObject(parent) {}
 
     void load();  // the factory list; ready() when it arrived
+    void reloadList(std::function<void(bool)> done = {});
+    void reloadFactory(const QString& factory, std::function<void(bool)> done = {});
     bool loaded() const { return loaded_; }
     const std::vector<FactoryEntry>& entries() const { return entries_; }
 
@@ -46,6 +49,7 @@ public:
 
 signals:
     void ready();
+    void factoryReloaded(const QString& factory);
     void infoArrived(const QString& factory);  // before the callbacks that waited for it run
     void notice(const QString& text);
     void logLine(const QString& line);
@@ -53,7 +57,13 @@ signals:
 private:
     HelperClient* ask(const QStringList& args, std::function<void(const HelperResult&)> done);
 
+    void requestInfo(const QString& factory, bool reload, std::function<void(bool)> done);
+
     std::vector<FactoryEntry> entries_;
+    std::uint64_t registryRevision_ = 0;
+    std::uint64_t listRequest_ = 0;
+    std::uint64_t infoRequest_ = 0;
+    QHash<QString, std::uint64_t> infoRequests_;
     bool loaded_ = false;
     std::map<QString, ElementInfo> infos_;  // node based: pointers handed out stay valid
     std::map<QString, gps::FactoryDefinition> definitions_;  // one for every info

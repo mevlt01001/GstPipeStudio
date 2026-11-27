@@ -27,6 +27,15 @@ if(TARGET gps-update AND TARGET gps-inspect AND TARGET gps-run AND TARGET gps-im
     set_property(TEST gui.real_tools_test APPEND PROPERTY ENVIRONMENT "GPS_REAL_BIN_DIR=$<TARGET_FILE_DIR:gps-update>")
 endif()
 
+if(TARGET gps_element_sdk_plugin AND TARGET gps-inspect AND TARGET gps-update)
+    add_library(gps_reload_test_plugin MODULE "${GPS_ROOT}/../element_sdk/examples/simplethreshold.cpp")
+    set_target_properties(gps_reload_test_plugin PROPERTIES OUTPUT_NAME gstsimplethreshold LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+    target_link_libraries(gps_reload_test_plugin PRIVATE gps_element_sdk_plugin)
+    add_dependencies(controller_test gps_reload_test_plugin gps-inspect gps-update)
+    set_property(TEST gui.controller_test APPEND PROPERTY ENVIRONMENT
+        "GPS_RELOAD_TEST_PLUGIN=$<TARGET_FILE:gps_reload_test_plugin>" "GPS_REAL_BIN_DIR=$<TARGET_FILE_DIR:gps-inspect>")
+endif()
+
 # Maintainer-only capture of a real, hardware-free feature walkthrough. Not a CI test.
 if(TARGET gps-monitor)
     add_executable(demo_capture demo_capture.cpp)

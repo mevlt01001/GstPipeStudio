@@ -24,6 +24,10 @@ QString below(const QString& base, const char* name) {
 namespace AppPaths {
 
 QString state() { return folder(QStandardPaths::StateLocation, "state"); }
+QString plugins() {
+    const QString root = qEnvironmentVariable("GPS_USER_DIR");
+    return QDir(root.isEmpty() ? QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) : root).filePath("plugins");
+}
 QString templates() { return below(folder(QStandardPaths::AppDataLocation, "data"), "templates"); }
 QString backups() { return below(state(), "backups"); }
 
