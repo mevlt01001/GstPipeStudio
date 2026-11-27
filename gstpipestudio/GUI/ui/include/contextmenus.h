@@ -5,6 +5,8 @@
 
 #include <QList>
 #include <QObject>
+#include <QPointF>
+#include <limits>
 #include <optional>
 
 #include "commandset.h"
@@ -18,7 +20,8 @@ class ContextMenus : public QObject {
 public:
     ContextMenus(CommandSet& commands, QWidget* window);
 
-    void canvas(Document& document, const QPoint& at);
+    void canvas(Document& document, const QPoint& at,
+                const QPointF& scenePos = {std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::quiet_NaN()});
     // An element: its own menu, or the selection's when several are selected or it is inside a collapsed template.
     // Not selected yet, it becomes the selection, as a right click makes it.
     void element(Document& document, const QString& element, const QPoint& at);

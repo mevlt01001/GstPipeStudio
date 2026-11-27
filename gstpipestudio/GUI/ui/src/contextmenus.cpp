@@ -13,14 +13,28 @@ constexpr std::nullopt_t separator = std::nullopt;
 
 ContextMenus::ContextMenus(CommandSet& commands, QWidget* window) : QObject(window), commands_(commands), window_(window) {}
 
-void ContextMenus::canvas(Document& d, const QPoint& at) {
-    QList<Item> items{Command::AddElement, Command::AddTemplate};
+void ContextMenus::canvas(Document& d, const QPoint& at, const QPointF& scenePos) {
+    commands_.setTarget({QString(), QString(), QString(), scenePos});
+    commands_.refresh();
+    auto* menu = new QMenu(window_);
+    menu->setObjectName("canvasMenu");
+    menu->setAttribute(Qt::WA_DeleteOnClose);
+    auto* addMenu = menu->addMenu("&Add");
+    addMenu->setObjectName("menuAdd");
+    addMenu->addAction(commands_[Command::AddElement]);
+    addMenu->addAction(commands_[Command::AddTemplate]);
+    addMenu->addAction(commands_[Command::AddLaunch]);
+    QList<Item> items;
     if (!d.selection().isEmpty())
         items << separator << Command::SaveAsTemplate << Command::AlignSelection << Command::ConnectSelected << Command::Duplicate
               << Command::Copy << Command::Cut << Command::Delete;
     items << separator << Command::Undo << Command::Redo << Command::Paste << separator << Command::SelectAll << Command::Fit
           << Command::Arrange << Command::Validate;
-    popup("canvasMenu", {}, items, at);
+    for (const Item& item : items) {
+        if (item) menu->addAction(commands_[*item]);
+        else menu->addSeparator();
+    }
+    menu->popup(at);
 }
 
 void ContextMenus::element(Document& d, const QString& element, const QPoint& at) {

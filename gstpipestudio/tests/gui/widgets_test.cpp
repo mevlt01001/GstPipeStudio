@@ -25,6 +25,7 @@
 #include <QTemporaryDir>
 #include <QWheelEvent>
 #include <QTimer>
+#include <QToolBar>
 #include <QToolButton>
 #include <QToolTip>
 #include <QMessageBox>
@@ -2717,6 +2718,21 @@ private slots:
         scene_rebuild(w);
         QVERIFY(w.scene()->element(convert) != w.scene()->element(sink));
         QCOMPARE(w.scene()->links().size(), 2);
+
+        // 6. Canvas Add submenu & toolbar expose Add from gst-launch.
+        QAction* addLaunchAction = w.findChild<QAction*>("actionAddLaunch");
+        QVERIFY(addLaunchAction);
+        QToolBar* toolbar = w.findChild<QToolBar*>("toolbar");
+        QVERIFY(toolbar && toolbar->actions().contains(addLaunchAction));
+        w.contextMenus()->canvas(*w.front(), w.mapToGlobal(QPoint(200, 200)), QPointF(120, 140));
+        QMenu* canvasMenu = visibleChild<QMenu>(&w);
+        QVERIFY(canvasMenu);
+        QMenu* addSubmenu = canvasMenu->findChild<QMenu*>("menuAdd");
+        QVERIFY(addSubmenu);
+        QVERIFY(addSubmenu->actions().contains((*w.commands())[Command::AddElement]));
+        QVERIFY(addSubmenu->actions().contains((*w.commands())[Command::AddTemplate]));
+        QVERIFY(addSubmenu->actions().contains(addLaunchAction));
+        canvasMenu->close();
     }
 
 private:

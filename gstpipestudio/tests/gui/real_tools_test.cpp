@@ -5,10 +5,12 @@
 // The GUI depends only on the JSON of SPEC 7, so this is the check that the real tools speak it.
 #include <QDir>
 #include <QAction>
+#include <QClipboard>
 #include <QTemporaryDir>
 
 #include "canvasscene.h"
 #include "canvasview.h"
+#include "document.h"
 #include "mainwindow.h"
 #include "drawer.h"
 #include "pickerpage.h"
@@ -126,6 +128,26 @@ private slots:
         QVERIFY(c->run());
         QVERIFY(waitFor([&] { return finished.count() == 1; }, 10000));
         QCOMPARE(finished[0][0].toString(), QString("eos"));
+    }
+
+    void addsLaunchPipelineIntoActiveProjectAndClipboardPaste() {
+        QTemporaryDir dir;
+        const QString projectPath = dir.filePath("proj/pipeline.conf");
+        c->newPlan(std::make_unique<ProjectConfTarget>(projectPath));
+        MainWindow window(c.get());
+        window.show();
+
+        QVERIFY(window.front()->controller()->addLaunch("videotestsrc num-buffers=5 is-live=true ! queue ! fakesink sync=false"));
+        QVERIFY(waitFor([&] { return c->plan().elements.size() == 3 && !c->busy() && !c->canvasLayout().busy(); }, 15000));
+        QCOMPARE(window.documents().size(), 1);
+        QCOMPARE(c->target().path(), projectPath);
+        const auto& els = c->plan().elements;
+        QVERIFY(els[0].x != els[1].x || els[1].x != els[2].x);
+
+        QGuiApplication::clipboard()->setText("gst-launch-1.0 audiotestsrc num-buffers=5 ! fakesink sync=false");
+        window.front()->paste();
+        QVERIFY(waitFor([&] { return c->plan().elements.size() == 5 && !c->busy() && !c->canvasLayout().busy(); }, 15000));
+        QCOMPARE(window.documents().size(), 1);
     }
 
     // The same screenshots as with the fakes, but with the real catalog (hundreds of factories) and real caps.

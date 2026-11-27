@@ -3,6 +3,7 @@
 
 #include <QClipboard>
 #include <QGuiApplication>
+#include <QPointer>
 #include <QHBoxLayout>
 #include <QStackedWidget>
 #include <QTimer>
@@ -116,11 +117,20 @@ void Document::cutSelection() {
 
 void Document::paste() {
     QClipboard* clipboard = QGuiApplication::clipboard();
+    if (!clipboard) return;
+    const QString text = clipboard->text();
     gps::Graph clip;
     std::string error;
-    if (!clipboard || !gps::Graph::fromConf(clipboard->text().toStdString(), &clip, &error)) return;
-    const QStringList created = controller_->pasteSubplan(clip);
-    if (!created.isEmpty()) scene_->setSelectedElements(created);
+    if (gps::Graph::fromConf(text.toStdString(), &clip, &error)) {
+        const QStringList created = controller_->pasteSubplan(clip);
+        if (!created.isEmpty()) scene_->setSelectedElements(created);
+        return;
+    }
+    if (gps::looksLikeLaunchText(text.toStdString())) {
+        controller_->addLaunch(text, Controller::kFree, Controller::kFree, [doc = QPointer<Document>(this)](const QStringList& created) {
+            if (doc && !created.isEmpty()) doc->scene_->setSelectedElements(created);
+        });
+    }
 }
 
 void Document::duplicateSelection() {

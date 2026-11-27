@@ -8,8 +8,10 @@
 #include <QKeySequence>
 #include <QList>
 #include <QObject>
+#include <QPointF>
 #include <QString>
 #include <functional>
+#include <limits>
 
 class QAction;
 
@@ -21,7 +23,7 @@ enum class Command {
     // View
     NextTab, PreviousTab, ZoomIn, ZoomOut, Fit, Arrange, AutoAlignment, LinkCurves, LinkRightAngles, ConnectedMove,
     // Pipeline
-    AddElement, AddTemplate, SaveAsTemplate, TemplateParameters, ConnectSelected, DisconnectSelected, AlignSelection,
+    AddElement, AddTemplate, AddLaunch, SaveAsTemplate, TemplateParameters, ConnectSelected, DisconnectSelected, AlignSelection,
     Validate, Run,
     // Help
     GstInfo, Support, About,
@@ -44,6 +46,7 @@ public:
     // What a context menu was opened on.
     struct Target {
         QString element, pad, instance;
+        QPointF scenePos{std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::quiet_NaN()};
     };
 
     explicit CommandSet(QObject* parent);

@@ -510,7 +510,10 @@ void Controller::setPositions(const QList<QPair<QString, QPointF>>& positions) {
     }
     std::vector<gps::Placement> moves;
     for (const auto& entry : updates) moves.push_back(entry.second);
-    if (!moves.empty()) edits_.perform(gps::MoveElementsAction(std::move(moves)), {QString(), QString(), QString(), true});
+    if (!moves.empty()) {
+        if (!layout_->applying()) alignWhenValidated_ = false;
+        edits_.perform(gps::MoveElementsAction(std::move(moves)), {QString(), QString(), QString(), true});
+    }
 }
 
 // Left to right (then sources, filters, sinks, then top to bottom), each element feeds the next one: its first free src
@@ -678,12 +681,13 @@ void Controller::load(const QString& source, std::shared_ptr<SaveTarget> target,
         alignWhenValidated_ = true;
         templates_.forget();
         emit changed();
+        layout_->align();
         validation_.request();
         templates_.offer();
     });
 }
 
-bool Controller::importLaunch(const QString& description) {
+bool Controller::runImportLaunch(const QString& description, std::function<void(const QString& path)> onReady) {
     if (busy() || description.trimmed().isEmpty()) return false;
     const QString helper = findHelper("gps-import");
     if (helper.isEmpty()) { emit notice("gps-import was not found"); return false; }
@@ -691,7 +695,7 @@ bool Controller::importLaunch(const QString& description) {
     opening_ = true;
     emit changed();
     HelperClient::run(this, "gps-import", {"--output", path, "--probe-ms", "1000", description.trimmed()}, 13000, logger(),
-              [this, path](const HelperResult& result) {
+              [this, path, onReady = std::move(onReady)](const HelperResult& result) {
         opening_ = false;
         gps::ImportReply reply;
         reply.status.clear();
@@ -704,9 +708,55 @@ bool Controller::importLaunch(const QString& description) {
         log(QString("Imported native pipeline %1: %2 elements, %3 links").arg(fromStd(reply.nativeName)).arg(reply.elements).arg(reply.links));
         for (const std::string& warning : reply.warnings) log("[gps-import] " + fromStd(warning));
         if (!reply.warnings.empty()) emit notice("Imported with warnings. Review the Log and validate before running.");
-        load(path, nullptr, Load::Replace, "Imported a gst-launch pipeline");
+        onReady(path);
     });
     return true;
+}
+
+bool Controller::importLaunch(const QString& description) {
+    return runImportLaunch(description, [this](const QString& path) {
+        load(path, nullptr, Load::Replace, "Imported a gst-launch pipeline");
+    });
+}
+
+bool Controller::addLaunch(const QString& description, double targetX, double targetY,
+                           std::function<void(const QStringList&)> onAdded) {
+    return runImportLaunch(description, [this, targetX, targetY, onAdded = std::move(onAdded)](const QString& path) {
+        auto imported = std::make_shared<gps::Graph>();
+        std::string error;
+        std::vector<std::string> libraries;
+        for (const QString& folder : target_->templateFolders()) libraries.push_back(toStd(folder));
+        if (!gps::Graph::load(toStd(path), imported.get(), &error, libraries)) {
+            emit notice("Unable to import pipeline: " + fromStd(error));
+            emit changed();
+            return;
+        }
+        if (imported->empty()) {
+            emit changed();
+            return;
+        }
+        opening_ = true;
+        emit changed();
+        catalog().fetchMissing(*imported, this, [this, imported, targetX, targetY, onAdded](bool ok) {
+            opening_ = false;
+            if (!ok) {
+                emit notice("Unable to import pipeline: it uses an element this installation does not have.");
+                emit changed();
+                return;
+            }
+            const bool wasEmpty = plan().empty();
+            const QPointF anchor = (std::isfinite(targetX) && std::isfinite(targetY))
+                                       ? QPointF(targetX, targetY)
+                                       : (wasEmpty ? QPointF(40, 40) : views_.freeSpot());
+            const QStringList created = pasteSubplan(*imported, anchor.x(), anchor.y());
+            emit changed();
+            if (!created.isEmpty()) {
+                if (wasEmpty) layout_->align();
+                else layout_->align(created, CanvasLayout::Pin{created, anchor});
+                if (onAdded) onAdded(created);
+            }
+        });
+    });
 }
 
 // Saving ends every template edit; the target writes the plan, and the document is bound to it, saved there. A target

@@ -65,9 +65,9 @@ std::optional<QString> text(QWidget* parent, const QString& title, const QString
     return ok ? std::optional<QString>(answer) : std::nullopt;
 }
 
-std::optional<QString> lines(QWidget* parent, const QString& title, const QString& label) {
+std::optional<QString> lines(QWidget* parent, const QString& title, const QString& label, const QString& initial) {
     bool ok = false;
-    const QString answer = QInputDialog::getMultiLineText(parent, title, label, QString(), &ok);
+    const QString answer = QInputDialog::getMultiLineText(parent, title, label, initial, &ok);
     return ok ? std::optional<QString>(answer) : std::nullopt;
 }
 

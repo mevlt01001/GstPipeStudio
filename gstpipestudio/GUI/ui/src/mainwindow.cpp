@@ -183,7 +183,7 @@ void MainWindow::buildCommands() {
          }},
         {C::Revert, "actionRevert", "Re&vert file", {}, [this] { controller()->revert(); }, [this] { return controller()->canRevert() ? QString() : "Nothing to revert"; }},
         {C::CloseTab, "actionCloseTab", "&Close tab", {QKeySequence(Qt::CTRL | Qt::Key_W), QKeySequence(Qt::CTRL | Qt::Key_F4)}, [this] { closeDocument(front()); }},
-        {C::ImportLaunch, "actionImportLaunch", "Import gst-launch pipeline…", {}, [this] { importLaunch(); }, environment},
+        {C::ImportLaunch, "actionImportLaunch", "New from &gst-launch…", {}, [this] { importLaunch(); }, environment},
         {C::VersionHistory, "actionVersionHistory", "Version &history…", {}, [this] { showVersionHistory(); }, [this] {
              return firstOf(busyReason(), VersionHistory::versions(front()->path()).isEmpty() ? "No earlier versions" : QString());
          }},
@@ -224,6 +224,7 @@ void MainWindow::buildCommands() {
         {C::AddElement, "actionAddElement", "Add &element…", {QKeySequence(Qt::CTRL | Qt::Key_E), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_E)},
          [this] { flows()->chooseElement(); }, add},
         {C::AddTemplate, "actionAddTemplate", "Add &template…", {QKeySequence(Qt::CTRL | Qt::Key_T)}, [this] { flows()->chooseComponent(); }, add},
+        {C::AddLaunch, "actionAddLaunch", "From &gst-launch…", {QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_I)}, [this] { addLaunch(); }, add},
         {C::SaveAsTemplate, "actionSaveTemplateElement", "Save as &template…", {QKeySequence(Qt::CTRL | Qt::Key_G)}, [this] { flows()->saveAsTemplate(front()->selection()); }, selected},
         {C::TemplateParameters, "actionTemplateParameters", "Template &parameters…", {}, [this] { flows()->editTemplateParameters(); }, [this] {
              return firstOf(editReason(), controller()->target().libraryTemplate().isEmpty() ? "Only a library template has parameters" : QString());
@@ -268,14 +269,15 @@ void MainWindow::buildCommands() {
     });
     commands_->setTip(C::Validate, "Validate the pipeline (Ctrl+R)");
     commands_->setTip(C::AddElement, "Add an element: a source, a filter or a sink (Ctrl+E)");
+    commands_->setTip(C::AddLaunch, "Add elements from a gst-launch pipeline into the current project (Ctrl+Shift+I)");
     commands_->setTip(C::AutoAlignment, "Align the whole canvas after every edit; a dragged box slides back into place");
     commands_->setTip(C::ConnectedMove, "Drag an element to move its connected component; undo restores all positions");
     commands_->setChecked(C::AutoAlignment, [this] { return services_.view().autoAlign(); });
     commands_->setChecked(C::LinkCurves, [this] { return services_.view().routing() == layout::Routing::Curves; });
     commands_->setChecked(C::LinkRightAngles, [this] { return services_.view().routing() == layout::Routing::RightAngles; });
     commands_->setChecked(C::ConnectedMove, [this] { return services_.view().connectedMove(); });
-    for (auto [id, words] : {std::pair{C::AddElement, "Add element"}, {C::AddTemplate, "Add template"}, {C::Undo, "Undo"}, {C::Redo, "Redo"},
-                             {C::Delete, "Delete"}, {C::SaveAsTemplate, "Save as template"}})
+    for (auto [id, words] : {std::pair{C::AddElement, "Add element"}, {C::AddTemplate, "Add template"}, {C::AddLaunch, "Add gst-launch"},
+                             {C::Undo, "Undo"}, {C::Redo, "Redo"}, {C::Delete, "Delete"}, {C::SaveAsTemplate, "Save as template"}})
         (*commands_)[id]->setIconText(words);
     commands_->refresh();
 }
@@ -326,7 +328,7 @@ void MainWindow::buildMenus() {
     viewMenu->addAction(c[C::ConnectedMove]);
 
     QMenu* pipeline = menuBar()->addMenu("&Pipeline");
-    pipeline->addActions({c[C::AddElement], c[C::AddTemplate], c[C::SaveAsTemplate], c[C::TemplateParameters], c[C::ConnectSelected]});
+    pipeline->addActions({c[C::AddElement], c[C::AddTemplate], c[C::AddLaunch], c[C::SaveAsTemplate], c[C::TemplateParameters], c[C::ConnectSelected]});
     pipeline->addSeparator();
     pipeline->addActions({c[C::Validate], c[C::Run]});
 
@@ -345,7 +347,7 @@ void MainWindow::buildMenus() {
     bar->addSeparator();
     bar->addActions({c[C::Validate], c[C::Run]});
     bar->addSeparator();
-    bar->addActions({c[C::AddElement], c[C::AddTemplate], c[C::SaveAsTemplate]});
+    bar->addActions({c[C::AddElement], c[C::AddTemplate], c[C::AddLaunch], c[C::SaveAsTemplate]});
     bar->addSeparator();
     bar->addAction(c[C::Delete]);
     bar->widgetForAction(c[C::Run])->setObjectName("primaryAction");
@@ -386,7 +388,7 @@ void MainWindow::wire(Document* d) {
     auto isFront = [this, d] { return d == front(); };
     connect(scene, &CanvasScene::elementMenuRequested, d, [this, d](const QString& e, const QPoint& at) { menus_->element(*d, e, at); }, Qt::QueuedConnection);
     connect(scene, &CanvasScene::templateMenuRequested, d, [this, d](const QString& id, const QPoint& at) { menus_->templateFrame(*d, id, at); }, Qt::QueuedConnection);
-    connect(scene, &CanvasScene::canvasContextMenuRequested, d, [this, d](const QPoint& at, const QPointF&) { menus_->canvas(*d, at); }, Qt::QueuedConnection);
+    connect(scene, &CanvasScene::canvasContextMenuRequested, d, [this, d](const QPoint& at, const QPointF& scenePos) { menus_->canvas(*d, at, scenePos); }, Qt::QueuedConnection);
     connect(scene, &CanvasScene::linkMenuRequested, menus_, &ContextMenus::link, Qt::QueuedConnection);
     connect(scene, &QGraphicsScene::selectionChanged, this, [this, isFront] { if (isFront()) scheduleRefresh(); });
     connect(d->view(), &CanvasView::deletePressed, d, &Document::deleteSelection);
@@ -677,14 +679,37 @@ void MainWindow::showVersionHistory() {
     controller()->restoreVersion(list->currentItem()->data(Qt::UserRole).toString());
 }
 
-void MainWindow::importLaunch() {
-    const auto description = Prompt::lines(this, "Import gst-launch pipeline",
+std::optional<QString> MainWindow::askLaunchDescription(const QString& title) {
+    QString initial;
+    if (const QClipboard* clipboard = QGuiApplication::clipboard()) {
+        const QString text = clipboard->text();
+        if (gps::looksLikeLaunchText(text.toStdString())) initial = text.trimmed();
+    }
+    const auto description = Prompt::lines(this, title,
         "Paste a gst-launch-1.0 command or its pipeline description.\n"
-        "The pipeline runs briefly in the background to discover dynamic pads.");
-    if (!description || description->trimmed().isEmpty()) return;
+        "The pipeline runs briefly in the background only if dynamic pads must be discovered.",
+        initial);
+    if (!description || description->trimmed().isEmpty()) return std::nullopt;
+    return description;
+}
+
+void MainWindow::importLaunch() {
+    const auto description = askLaunchDescription("New from gst-launch");
+    if (!description) return;
     Document* d = tabs_->target();
     d->opening("imported");
     d->controller()->importLaunch(*description);
+}
+
+void MainWindow::addLaunch() {
+    const QPointF at = commands_->target().scenePos;
+    commands_->setTarget({});
+    const auto description = askLaunchDescription("Add from gst-launch");
+    if (!description) return;
+    Document* d = front();
+    d->controller()->addLaunch(*description, at.x(), at.y(), [doc = QPointer<Document>(d)](const QStringList& created) {
+        if (doc && !created.isEmpty()) doc->scene()->setSelectedElements(created);
+    });
 }
 
 // The drawer's search when it is open, else the Properties tab's first field.

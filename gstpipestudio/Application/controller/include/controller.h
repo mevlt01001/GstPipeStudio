@@ -167,6 +167,9 @@ public:
     void revert();                                // reload, when there are changes to drop
     bool canRevert() const;                       // modified, not busy, and the target's file is on disk
     bool importLaunch(const QString& description); // brief native probe, then opens an unsaved canvas graph
+    // Brief native probe, then inserts into the active document (keeping its SaveTarget) and lays out immediately.
+    bool addLaunch(const QString& description, double targetX = kFree, double targetY = kFree,
+                   std::function<void(const QStringList&)> onAdded = {});
     SaveResult save() { return write(target_); }   // to the target
     SaveResult saveAs(std::unique_ptr<SaveTarget> target) { return write(std::move(target)); }  // written, bound to it
     bool refresh();  // validate again
@@ -210,6 +213,7 @@ private:
                      const std::function<void()>& retry);
     void alignAfterEdit();
     void alignOpened();
+    bool runImportLaunch(const QString& description, std::function<void(const QString& path)> onReady);
     void applyEdit(gps::Graph& g, const std::string& element, const ElementEdit& edit);
     void makeRoomForQueue(gps::Graph& g, const std::string& source, const std::string& queue);
     static QPointF spotAfter(const gps::Element& from);  // where something added after its pad goes

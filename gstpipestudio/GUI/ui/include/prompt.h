@@ -40,6 +40,6 @@ void error(QWidget* parent, const QString& title, const QString& text);
 void inform(QWidget* parent, const QString& title, const QString& text);
 // A line of text (a name) or several (a pasted command); nothing when the user cancelled.
 std::optional<QString> text(QWidget* parent, const QString& title, const QString& label, const QString& initial = QString());
-std::optional<QString> lines(QWidget* parent, const QString& title, const QString& label);
+std::optional<QString> lines(QWidget* parent, const QString& title, const QString& label, const QString& initial = QString());
 
 }  // namespace Prompt

@@ -106,7 +106,9 @@ private:
     void askTemplatesOutdated(const QStringList& ids);
     Document* openComponent(const ComponentRef& component, bool dismissDrawer);
     void showVersionHistory();
+    std::optional<QString> askLaunchDescription(const QString& title);
     void importLaunch();
+    void addLaunch();
     void focusSearch();
     void showAbout();
     // Why commands are off: GStreamer is not ready, a step is running, the canvas cannot be edited now, or nothing fit is
