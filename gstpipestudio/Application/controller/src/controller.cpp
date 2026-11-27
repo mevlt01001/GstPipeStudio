@@ -163,7 +163,10 @@ void Controller::committed(const Edit& edit, bool restoring) {
 
 void Controller::validated(bool ok) {
     emit updateFinished(ok);
-    if (!notValidated()) alignOpened();
+    if (!notValidated()) {
+        alignOpened();
+        alignAfterEdit();
+    }
 }
 
 // ---- template copies
@@ -591,9 +594,11 @@ bool Controller::niceAlign(const QStringList& elements) {
 // An edit of the user's, with automatic alignment on: the whole canvas follows, once for a burst of edits.
 void Controller::alignAfterEdit() {
     if (!services_.view().autoAlign() || layout_->applying() || alignQueued_) return;
+    if (layout_->syncUniformShift() || layout_->isAligned()) return;
     alignQueued_ = true;
     QTimer::singleShot(0, this, [this] {
         alignQueued_ = false;
+        if (!services_.view().autoAlign() || layout_->applying() || layout_->syncUniformShift() || layout_->isAligned()) return;
         niceAlign();
     });
 }

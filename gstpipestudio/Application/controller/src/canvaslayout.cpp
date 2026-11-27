@@ -194,12 +194,68 @@ void CanvasLayout::finished(quint64 ticket, bool ok, const layout::Result& resul
     controller_.setPositions(moves);
     applying_ = false;
     revision_ = controller_.pipeline().lastChange().revision;
+    executionRevision_ = controller_.pipeline().lastChange().executionRevision;
     valid_ = true;
     emit applied(from);
     emit aligned(true);
 }
 
 bool CanvasLayout::fresh() const { return valid_ && controller_.pipeline().lastChange().revision == revision_; }
+
+std::optional<QPointF> CanvasLayout::targetPos(const QString& box) const {
+    if (!valid_ || !result_.nodes.contains(box)) return std::nullopt;
+    return result_.nodes[box].topLeft();
+}
+
+bool CanvasLayout::isAligned(double tolerance) const {
+    if (!valid_ || controller_.plan().empty()) return false;
+    if (controller_.pipeline().lastChange().executionRevision != executionRevision_) return false;
+    const Outline outline = controller_.outline();
+    QSet<QString> seen;
+    for (const gps::Element& e : controller_.plan().elements) {
+        const QString box = outline.boxOf(fromStd(e.name));
+        if (seen.contains(box)) continue;
+        seen.insert(box);
+        if (!result_.nodes.contains(box)) return false;
+        const QRectF actual = boxRect(box);
+        const QRectF target = result_.nodes[box];
+        if (qAbs(actual.x() - target.x()) > tolerance || qAbs(actual.y() - target.y()) > tolerance ||
+            qAbs(actual.height() - target.height()) > tolerance) {
+            return false;
+        }
+    }
+    return !seen.isEmpty();
+}
+
+bool CanvasLayout::syncUniformShift(double tolerance) {
+    if (!valid_ || controller_.plan().empty()) return false;
+    if (controller_.pipeline().lastChange().executionRevision != executionRevision_) return false;
+    const Outline outline = controller_.outline();
+    QSet<QString> seen;
+    std::optional<QPointF> delta;
+    for (const gps::Element& e : controller_.plan().elements) {
+        const QString box = outline.boxOf(fromStd(e.name));
+        if (seen.contains(box)) continue;
+        seen.insert(box);
+        if (!result_.nodes.contains(box)) return false;
+        const QRectF actual = boxRect(box);
+        const QRectF target = result_.nodes[box];
+        if (qAbs(actual.height() - target.height()) > tolerance) return false;
+        const QPointF d = actual.topLeft() - target.topLeft();
+        if (!delta) delta = d;
+        else if (qAbs(d.x() - delta->x()) > tolerance || qAbs(d.y() - delta->y()) > tolerance) return false;
+    }
+    if (!delta) return false;
+    if (!qFuzzyIsNull(delta->x()) || !qFuzzyIsNull(delta->y())) {
+        for (QRectF& r : result_.nodes) r.translate(*delta);
+        for (QPointF& p : result_.ports) p += *delta;
+        for (auto& pieces : result_.edges)
+            for (auto& piece : pieces)
+                for (QPointF& p : piece) p += *delta;
+    }
+    revision_ = controller_.pipeline().lastChange().revision;
+    return true;
+}
 
 QList<QList<QPointF>> CanvasLayout::route(const QString& linkId) const {
     return fresh() ? result_.edges.value(linkId) : QList<QList<QPointF>>();

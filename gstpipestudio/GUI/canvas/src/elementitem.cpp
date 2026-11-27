@@ -199,7 +199,8 @@ void ElementItem::paint(QPainter* p, const QStyleOptionGraphicsItem*, QWidget*) 
 QVariant ElementItem::itemChange(GraphicsItemChange change, const QVariant& value) {
     if (change == ItemPositionHasChanged) {
         if (auto* canvas = qobject_cast<CanvasScene*>(scene())) {
-            canvas->followConnectedMove(view_.name, pos()); canvas->updateLinks();
+            canvas->followItemDrag(this);
+            if (!canvas->liveSpringMoving()) canvas->updateLinks();
         }
     }
     return QGraphicsItem::itemChange(change, value);
@@ -240,7 +241,7 @@ void ElementItem::mousePressEvent(QGraphicsSceneMouseEvent* event) {
     QGraphicsItem::mousePressEvent(event);
     if (event->button() == Qt::LeftButton) {
         setCursor(Qt::ClosedHandCursor); setZValue(2);
-        if (auto* canvas = qobject_cast<CanvasScene*>(scene())) canvas->beginConnectedMove(view_.name);
+        if (auto* canvas = qobject_cast<CanvasScene*>(scene())) canvas->beginItemDrag(view_.name);
     }
     event->accept();  // a press must reach the release below
 }
@@ -253,14 +254,16 @@ void ElementItem::mouseReleaseEvent(QGraphicsSceneMouseEvent* event) {
     }
     QGraphicsItem::mouseReleaseEvent(event);
     unsetCursor(); setZValue(1);
-    if (auto* canvas = qobject_cast<CanvasScene*>(scene())) canvas->finishConnectedMove();
     if (pos() != pressPos_) {
         if (auto* canvas = qobject_cast<CanvasScene*>(scene())) canvas->elementDragged(view_.name, pos());
-    } else if (event->button() == Qt::LeftButton && event->modifiers() == Qt::NoModifier) {
-        if (auto* canvas = qobject_cast<CanvasScene*>(scene())) {
-            // A click opens the Properties tab: a template's parameters, an element's properties.
-            if (view_.isTemplate) canvas->frameActivated(view_.groupId);
-            else if (canvas->selectedElementNames().size() <= 1) canvas->elementDoubleClicked(view_.name);
+    } else {
+        if (auto* canvas = qobject_cast<CanvasScene*>(scene())) canvas->finishItemDrag();
+        if (event->button() == Qt::LeftButton && event->modifiers() == Qt::NoModifier) {
+            if (auto* canvas = qobject_cast<CanvasScene*>(scene())) {
+                // A click opens the Properties tab: a template's parameters, an element's properties.
+                if (view_.isTemplate) canvas->frameActivated(view_.groupId);
+                else if (canvas->selectedElementNames().size() <= 1) canvas->elementDoubleClicked(view_.name);
+            }
         }
     }
 }

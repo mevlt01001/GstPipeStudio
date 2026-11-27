@@ -44,6 +44,9 @@ public:
 
     // The last answer, while the canvas is as it left it.
     bool fresh() const;
+    std::optional<QPointF> targetPos(const QString& box) const;
+    bool isAligned(double tolerance = 1.0) const;
+    bool syncUniformShift(double tolerance = 1.0);
     QList<QList<QPointF>> route(const QString& linkId) const;
     struct Frame {
         QRectF rect;
@@ -69,7 +72,8 @@ private:
     quint64 pending_ = 0;
     std::optional<Pin> pin_;
     bool applying_ = false;
-    layout::Result result_;       // in canvas coordinates
-    std::uint64_t revision_ = 0;  // the document revision the result belongs to
+    layout::Result result_;                // in canvas coordinates
+    std::uint64_t revision_ = 0;           // the document revision the result belongs to
+    std::uint64_t executionRevision_ = 0;  // the topology revision the result belongs to
     bool valid_ = false;
 };

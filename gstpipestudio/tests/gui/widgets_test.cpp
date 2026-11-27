@@ -2791,6 +2791,47 @@ private slots:
         overlay->dismissAll();
     }
 
+    void liveAutoAlignFollowsDraggedElement() {
+        MainWindow w(c.get()); w.show();
+        QString src, convert, sink;
+        buildChain(w, &src, &convert, &sink);
+        QSignalSpy aligned(&c->canvasLayout(), &CanvasLayout::aligned);
+        QVERIFY(c->niceAlign());
+        QVERIFY(aligned.wait(30000));
+        aligned.clear();
+        scene_rebuild(w);
+        QTest::qWait(350);  // let the post-align slide animation settle before reading initial positions
+
+        c->services().view().setAutoAlign(true);
+        ElementItem* srcItem = w.scene()->element(src);
+        ElementItem* convertItem = w.scene()->element(convert);
+        ElementItem* sinkItem = w.scene()->element(sink);
+        QVERIFY(srcItem && convertItem && sinkItem);
+        const QPointF oldSrc = srcItem->pos(), oldConvert = convertItem->pos(), oldSink = sinkItem->pos();
+        const QPointF delta(180, 90);
+
+        w.scene()->beginItemDrag(src);
+        QVERIFY(w.scene()->liveAlignActive());
+        srcItem->setPos(oldSrc + delta);
+        QVERIFY(w.scene()->liveAlignRunning());
+        QTRY_VERIFY_WITH_TIMEOUT(!w.scene()->liveAlignRunning(), 3000);
+        QVERIFY(QLineF(convertItem->pos(), oldConvert + delta).length() < 1.0);
+        QVERIFY(QLineF(sinkItem->pos(), oldSink + delta).length() < 1.0);
+        QCOMPARE(w.scene()->element(src), srcItem);
+
+        w.scene()->elementDragged(src, srcItem->pos());
+        QTRY_VERIFY_WITH_TIMEOUT(
+            QLineF(QPointF(c->plan().find(toStd(sink))->x, c->plan().find(toStd(sink))->y), oldSink + delta).length() < 1.0,
+            3000);
+        QVERIFY(!aligned.wait(200));  // uniform shift preserved equilibrium without re-running ELK
+        QVERIFY(c->canvasLayout().isAligned());
+
+        // Dropping reverts cleanly in a single undo step.
+        QVERIFY(c->undo());
+        QVERIFY(QLineF(QPointF(c->plan().find(toStd(sink))->x, c->plan().find(toStd(sink))->y), oldSink).length() < 1.0);
+        c->services().view().setAutoAlign(false);
+    }
+
 private:
     // The scene rebuilds when the event loop turns; tests that look at it right away rebuild by hand.
     void scene_rebuild(MainWindow& w) {

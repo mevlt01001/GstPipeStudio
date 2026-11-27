@@ -5,6 +5,7 @@
 #include <QGraphicsScene>
 #include <QElapsedTimer>
 #include <QPointer>
+#include <QTimer>
 #include <QVariantAnimation>
 #include <QHash>
 #include <QPair>
@@ -65,7 +66,14 @@ public:
     void frameExpanded(const QString& instanceId);
     void peekTemplate(const QString& instanceId);  // a quick look inside a collapsed template, near the pointer
     void updateLinks();
-    // With View > Move connected elements together, a drag moves the element's connected component.
+    // With View > Move connected elements together, a drag moves the element's connected component;
+    // with Auto alignment on, non-dragged boxes smoothly follow in equilibrium around the dragged anchor.
+    void beginItemDrag(const QString& name);
+    void followItemDrag(ElementItem* item);
+    void finishItemDrag();
+    bool liveSpringMoving() const { return liveSpringMoving_; }
+    bool liveAlignActive() const { return !liveAnchor_.isNull(); }
+    bool liveAlignRunning() const { return liveAlignTimer_.isActive(); }
     void beginConnectedMove(const QString& name);
     void followConnectedMove(const QString& name, const QPointF& position);
     void finishConnectedMove();
@@ -97,6 +105,11 @@ private:
     QString movingAnchor_;
     QPointF anchorStart_;
     QHash<QString, QPointF> connectedStart_;
+    QTimer liveAlignTimer_;
+    bool liveSpringMoving_ = false;
+    QPointer<ElementItem> liveAnchor_;
+    QHash<ElementItem*, QPointF> liveOffsets_;
+    void stepLiveAlign();
 
     Controller* controller_;
     QHash<QString, ElementItem*> elements_;

@@ -27,6 +27,8 @@
 
 CanvasScene::CanvasScene(Controller* controller, QObject* parent) : QGraphicsScene(parent), controller_(controller) {
     setSceneRect(-2000, -2000, 4000, 4000);
+    liveAlignTimer_.setInterval(16);
+    connect(&liveAlignTimer_, &QTimer::timeout, this, &CanvasScene::stepLiveAlign);
     connect(controller_, &Controller::telemetryReceived, this, &CanvasScene::applyTelemetry);
     connect(&controller_->canvasLayout(), &CanvasLayout::applied, this, [this](const QHash<QString, QPointF>& from) {
         animateFrom_ = from;
@@ -116,7 +118,7 @@ void CanvasScene::scheduleRebuild() {
 void CanvasScene::rebuild() {
     pending_ = false;
     if (slide_) slide_->stop();  // its items go away with the rebuild
-    finishConnectedMove();
+    finishItemDrag();
     dragWire_ = nullptr;
     if (!hasExplicitSelection_ && !elements_.isEmpty()) {
         const QStringList current = selectedElementNames();
@@ -306,15 +308,11 @@ void CanvasScene::elementDoubleClicked(const QString& element) {
     if (!locked_) emit elementActivated(element);
 }
 void CanvasScene::elementDragged(const QString& element, const QPointF&) {
-    if (locked_) return;
-    QList<QPair<QString, QPointF>> positions;
-    QSet<ElementItem*> seenItems;
-    for (ElementItem* item : std::as_const(elements_)) {
-        if (!item || seenItems.contains(item)) continue;
-        seenItems.insert(item);
-        positions.append({item->view().name, item->pos()});
+    if (locked_) {
+        finishItemDrag();
+        return;
     }
-    emit elementsMoved(positions);
+    bool foundSplice = false;
     if (this->element(element)) {
         QStringList selNames = selectedElementNames();
         if (!selNames.contains(element)) selNames = controller_->outline().expand({element});
@@ -325,12 +323,12 @@ void CanvasScene::elementDragged(const QString& element, const QPointF&) {
                 if (!draggedItems.contains(ei)) draggedItems << ei;
             }
         }
-        bool foundSplice = false;
         for (LinkItem* link : links_) {
             const LinkView& lv = link->view();
             if (draggedSet.contains(fromStd(lv.src.element)) || draggedSet.contains(fromStd(lv.sink.element))) continue;
             for (ElementItem* di : draggedItems) {
                 if (di->collidesWithItem(link)) {
+                    finishItemDrag();
                     emit elementSpliced(element, fromStd(lv.src.element), fromStd(lv.src.identity));
                     foundSplice = true;
                     break;
@@ -339,6 +337,37 @@ void CanvasScene::elementDragged(const QString& element, const QPointF&) {
             if (foundSplice) break;
         }
     }
+    if (foundSplice) return;
+
+    QList<QPair<QString, QPointF>> positions;
+    QSet<ElementItem*> seenItems;
+    if (liveAnchor_) {
+        QHash<QString, QPointF> lagging;
+        for (ElementItem* item : std::as_const(elements_)) {
+            if (!item || seenItems.contains(item)) continue;
+            seenItems.insert(item);
+            auto it = liveOffsets_.constFind(item);
+            if (it != liveOffsets_.constEnd()) {
+                const QPointF target = liveAnchor_->pos() + it.value();
+                if (item->pos() != target) lagging.insert(item->view().name, item->pos());
+                positions.append({item->view().name, target});
+            } else {
+                positions.append({item->view().name, item->pos()});
+            }
+        }
+        animateFrom_ = lagging;
+        finishItemDrag();
+        emit elementsMoved(positions);
+        return;
+    }
+
+    for (ElementItem* item : std::as_const(elements_)) {
+        if (!item || seenItems.contains(item)) continue;
+        seenItems.insert(item);
+        positions.append({item->view().name, item->pos()});
+    }
+    finishItemDrag();
+    emit elementsMoved(positions);
 }
 void CanvasScene::linkClicked(const QString& srcElement, const QString& srcIdentity) {
     if (!locked_) emit linkClickedSignal(srcElement, srcIdentity);
@@ -399,4 +428,79 @@ void CanvasScene::followConnectedMove(const QString& name, const QPointF& positi
         if (auto* item = element(it.key())) item->setPos(it.value()+delta);
     movingConnected_ = false;
 }
+void CanvasScene::beginItemDrag(const QString& name) {
+    finishItemDrag();
+    if (slide_) slide_->stop();
+    if (locked_) return;
+    if (!controller_->services().view().autoAlign()) {
+        beginConnectedMove(name);
+        return;
+    }
+    ElementItem* anchor = element(name);
+    if (!anchor) return;
+    QSet<ElementItem*> dragged{anchor};
+    for (const QString& selected : selectedElementNames()) {
+        if (ElementItem* item = element(selected)) dragged.insert(item);
+    }
+    const Outline outline = controller_->outline();
+    const CanvasLayout& layout = controller_->canvasLayout();
+    const QPointF anchorRef = layout.targetPos(outline.boxOf(name)).value_or(anchor->pos());
+    QSet<ElementItem*> seen;
+    bool needsStep = false;
+    for (ElementItem* item : std::as_const(elements_)) {
+        if (!item || seen.contains(item) || dragged.contains(item)) continue;
+        seen.insert(item);
+        const QPointF itemRef = layout.targetPos(outline.boxOf(item->view().name)).value_or(item->pos());
+        const QPointF offset = itemRef - anchorRef;
+        liveOffsets_.insert(item, offset);
+        const QPointF diff = (anchor->pos() + offset) - item->pos();
+        if (std::hypot(diff.x(), diff.y()) > 0.5) needsStep = true;
+    }
+    liveAnchor_ = anchor;
+    if (needsStep && !liveOffsets_.isEmpty()) liveAlignTimer_.start();
+}
+
+void CanvasScene::followItemDrag(ElementItem* item) {
+    if (liveSpringMoving_ || !item) return;
+    if (liveAnchor_) {
+        if (item == liveAnchor_ && !liveOffsets_.isEmpty() && !liveAlignTimer_.isActive()) liveAlignTimer_.start();
+        return;
+    }
+    followConnectedMove(item->view().name, item->pos());
+}
+
+void CanvasScene::finishItemDrag() {
+    liveAlignTimer_.stop();
+    liveAnchor_.clear();
+    liveOffsets_.clear();
+    finishConnectedMove();
+}
+
+void CanvasScene::stepLiveAlign() {
+    if (!liveAnchor_ || liveOffsets_.isEmpty()) {
+        liveAlignTimer_.stop();
+        return;
+    }
+    liveSpringMoving_ = true;
+    bool settled = true;
+    constexpr double kFollow = 0.22;
+    constexpr double kSnap = 0.5;
+    for (auto it = liveOffsets_.cbegin(); it != liveOffsets_.cend(); ++it) {
+        ElementItem* item = it.key();
+        if (!item) continue;
+        const QPointF target = liveAnchor_->pos() + it.value();
+        const QPointF cur = item->pos();
+        const QPointF diff = target - cur;
+        if (std::hypot(diff.x(), diff.y()) <= kSnap) {
+            if (cur != target) item->setPos(target);
+        } else {
+            item->setPos(cur + diff * kFollow);
+            settled = false;
+        }
+    }
+    liveSpringMoving_ = false;
+    updateLinks();
+    if (settled) liveAlignTimer_.stop();
+}
+
 void CanvasScene::finishConnectedMove() { movingAnchor_.clear(); connectedStart_.clear(); }

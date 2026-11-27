@@ -145,6 +145,35 @@ private slots:
         QVERIFY(at(chain.convert).y() > line + 300);
     }
 
+    void alignedInvariantAndUniformShift() {
+        const Chain chain = makeChain();
+        QVERIFY(settle(*c));
+        QSignalSpy done(&c->canvasLayout(), &CanvasLayout::aligned);
+        QVERIFY(c->niceAlign());
+        QVERIFY(done.wait(30000));
+        QVERIFY(c->canvasLayout().fresh());
+        QVERIFY(c->canvasLayout().isAligned());
+
+        auto at = [&](const QString& name) { const auto* e = c->plan().find(toStd(name)); return QPointF(e->x, e->y); };
+        c->services().view().setAutoAlign(true);
+        // Uniformly shifting every box preserves equilibrium without re-running ELK.
+        const QPointF delta(120, 80);
+        c->setPositions({{chain.src, at(chain.src) + delta},
+                         {chain.convert, at(chain.convert) + delta},
+                         {chain.sink, at(chain.sink) + delta}});
+        QVERIFY(!done.wait(250));
+        QVERIFY(c->canvasLayout().isAligned());
+        QVERIFY(c->canvasLayout().fresh());
+        QVERIFY(!c->linkViews().front().route.isEmpty());
+
+        // Breaking alignment on one box triggers automatic re-alignment back to equilibrium.
+        c->setPositions({{chain.convert, at(chain.convert) + QPointF(0, 300)}});
+        QVERIFY(!c->canvasLayout().isAligned());
+        QVERIFY(done.wait(30000));
+        QVERIFY(c->canvasLayout().isAligned());
+        c->services().view().setAutoAlign(false);
+    }
+
     void addSourceRunsAnUpdate() {
         need(*c, "videotestsrc");
         QSignalSpy finished(c.get(), &Controller::updateFinished);
