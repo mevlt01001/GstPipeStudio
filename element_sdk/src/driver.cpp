@@ -36,15 +36,17 @@ bool TaskDriver::start(Element* owner, std::function<void()> stepFn) {
         m_lockInit = true;
     }
 
-    m_task = gst_task_new(&TaskDriver::taskFunc, this, nullptr);
-    if (!m_task) {
+    GstTask* task = gst_task_new(&TaskDriver::taskFunc, this, nullptr);
+    if (!task) {
         return false;
     }
-    gst_task_set_lock(m_task, &m_taskLock);
+    gst_task_set_lock(task, &m_taskLock);
+    std::lock_guard<std::mutex> lock(m_wakeMutex);
+    m_task = task;
     m_running.store(true, std::memory_order_release);
-    if (!gst_task_start(m_task)) {
+    if (!gst_task_start(task)) {
         m_running.store(false, std::memory_order_release);
-        gst_object_unref(m_task);
+        gst_object_unref(task);
         m_task = nullptr;
         return false;
     }
@@ -52,6 +54,7 @@ bool TaskDriver::start(Element* owner, std::function<void()> stepFn) {
 }
 
 void TaskDriver::pause() {
+    std::lock_guard<std::mutex> lock(m_wakeMutex);
     if (m_task) {
         gst_task_pause(m_task);
     }
@@ -71,12 +74,17 @@ void TaskDriver::unblock() {
 }
 
 void TaskDriver::stop() {
-    if (m_task) {
+    GstTask* task;
+    {
+        std::lock_guard<std::mutex> lock(m_wakeMutex);
+        // A streaming callback can still ask to pause while it is being joined.
+        task = std::exchange(m_task, nullptr);
+    }
+    if (task) {
         unblock();
-        gst_task_stop(m_task);
-        gst_task_join(m_task);
-        gst_object_unref(m_task);
-        m_task = nullptr;
+        gst_task_stop(task);
+        gst_task_join(task);
+        gst_object_unref(task);
     }
     m_running.store(false, std::memory_order_release);
 }
@@ -95,9 +103,7 @@ void TaskDriver::taskFunc(gpointer userData) {
         return;
     }
     if (self->m_unblocking.load(std::memory_order_acquire)) {
-        if (self->m_task) {
-            gst_task_pause(self->m_task);
-        }
+        self->pause();
         return;
     }
     try {
@@ -108,16 +114,12 @@ void TaskDriver::taskFunc(gpointer userData) {
         if (self->m_owner) {
             self->m_owner->reportException("TaskDriver::taskFunc", e.what());
         }
-        if (self->m_task && !self->m_unblocking.load(std::memory_order_acquire)) {
-            gst_task_pause(self->m_task);
-        }
+        self->pause();
     } catch (...) {
         if (self->m_owner) {
             self->m_owner->reportException("TaskDriver::taskFunc", "unknown C++ exception");
         }
-        if (self->m_task && !self->m_unblocking.load(std::memory_order_acquire)) {
-            gst_task_pause(self->m_task);
-        }
+        self->pause();
     }
 }
 

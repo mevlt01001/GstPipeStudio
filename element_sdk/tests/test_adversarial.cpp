@@ -320,6 +320,22 @@ void testTransformStickyEventOrder() {
     gst_object_unref(pipe);
 }
 
+void testTaskDriverStopsWhileCallbackPauses() {
+    gps::elem::TaskDriver driver;
+    for (int attempt = 0; attempt < 32; ++attempt) {
+        std::atomic<bool> entered{false};
+        TEST_CHECK(driver.start(nullptr, [&] {
+            entered.store(true, std::memory_order_release);
+            driver.waitFor(GST_SECOND);
+            driver.pause();
+        }));
+        for (int poll = 0; !entered.load(std::memory_order_acquire) && poll < 1000; ++poll) g_usleep(100);
+        TEST_CHECK(entered.load(std::memory_order_acquire));
+        driver.stop();
+        TEST_CHECK(!driver.isRunning());
+    }
+}
+
 void testTaskDriverUnblockNoSpin() {
     gps::elem::TaskDriver driver;
     std::atomic<int> steps{0};
@@ -644,6 +660,7 @@ int main(int argc, char** argv) {
     testSinkPrerollAndFlushClearsDeferredEos();
     testTransformStickyEventOrder();
     testTaskDriverUnblockNoSpin();
+    testTaskDriverStopsWhileCallbackPauses();
     testBarrierConcurrentFlushAndPts();
     testConcurrentMultiSrcPortPush();
     testCustomMetaThrowingCopyDuringTeeCow();
