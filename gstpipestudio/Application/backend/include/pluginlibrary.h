@@ -24,6 +24,7 @@ public:
     QString placementError(const QString& id) const override;
     std::optional<gps::NodeRef> place(gps::Graph& graph, const QString& id, double x, double y) const override;
     QList<ComponentAction> actions(const QString& id) const override;
+    bool canCreate() const override { return true; }
     bool canImport() const override { return true; }
     QString nameError(const QString& id, const QString& wanted) const override;
     bool rename(const QString& id, const QString& name, QString* newId, QString* error) override;
@@ -38,6 +39,7 @@ public:
     QString newIdError(const QString& id) const;
     QString directory(const QString& id) const;
     QString sourcePath(const QString& id) const;
+    QString moduleFileName(const QString& id) const;
     PluginBuildState state(const QString& id) const;
     QString statusText(const QString& id) const;
     PluginBuildResult lastBuild(const QString& id) const;
@@ -61,6 +63,7 @@ private:
 
     const Entry* find(const QString& id) const;
     QString modulePath(const Entry& entry) const;
+    QStringList moduleMembers(const Entry& entry) const;
     QByteArray fingerprint(const QString& id) const;
     bool writeManifest(const QString& at, const Entry& entry, QString* error) const;
     void writeBuildRecord(const QString& id);

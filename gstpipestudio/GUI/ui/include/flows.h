@@ -37,7 +37,7 @@ public:
     void chooseElement();
     // A component to place: the templates, later the plugins (a list in the right drawer; hovering one shows a peek).
     // Its right click and Import are the window's file operations; the list follows the providers' changes.
-    void chooseComponent();
+    void chooseComponent(const QString& providerKind = {});
     void editTemplateParameters();  // of the library template being edited on the canvas
     // Left click on a free src pad (opens PickerPage in the right drawer)
     void fromFreePad(const QString& element, const QString& identity);
@@ -65,6 +65,7 @@ private:
 
     void presentProperties(DrawerPage* page, const QString& title);  // the one way a page enters the Properties tab
     void presentCaps(CapsPage* page, const QString& title, const QString& subtitle);
+    void showElementProperties(const QString& element, const std::optional<ElementEdit>& pending);
     void newElementProperties(const QString& factory);
     void newElement(Mode mode, const QString& element, const QString& identity, const QString& factory);
     // Runs an edit; when the validation succeeds the bottom Caps tab opens for the link from (element, identity).

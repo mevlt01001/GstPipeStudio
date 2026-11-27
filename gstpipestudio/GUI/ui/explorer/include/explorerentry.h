@@ -8,6 +8,8 @@
 #include <QMetaType>
 #include <QString>
 
+#include "componentprovider.h"
+
 struct ExplorerEntry {
     enum class Kind {
         Section,    // a section's header
@@ -31,6 +33,7 @@ struct ExplorerEntry {
     State state = State::Ok;
     Validation validation = Validation::None;
     QList<ExplorerEntry> children;  // a folder's
+    ComponentStatus componentStatus = ComponentStatus::None;
 
     QString id() const { return origin + "|" + (kind == Kind::Project ? location() : path); }  // which row it is, across rebuilds
     QString key() const;       // the session key of the tab it opens in (SaveTarget), "" when it opens in none

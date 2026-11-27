@@ -26,6 +26,9 @@ add_library(gps_gui STATIC
     ui/include/prompt.h ui/src/prompt.cpp
     ui/include/saveflow.h ui/src/saveflow.cpp
     ui/include/documentregistry.h ui/src/documentregistry.cpp
+    ui/include/pluginstudio.h ui/src/pluginstudio.cpp
+    ui/widgets/include/pluginwizarddialog.h ui/widgets/src/pluginwizarddialog.cpp
+    ui/widgets/include/plugineditorwindow.h ui/widgets/src/plugineditorwindow.cpp
     ui/widgets/include/newprojectdialog.h ui/widgets/src/newprojectdialog.cpp
     ui/widgets/include/notificationoverlay.h ui/widgets/src/notificationoverlay.cpp
     ui/include/fileoperations.h ui/src/fileoperations.cpp

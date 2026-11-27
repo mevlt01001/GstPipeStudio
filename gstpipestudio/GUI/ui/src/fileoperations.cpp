@@ -18,6 +18,7 @@
 #include "mainwindow.h"
 #include "newprojectdialog.h"
 #include "projectfile.h"
+#include "pluginstudio.h"
 #include "prompt.h"
 #include "savetarget.h"
 #include "versionhistory.h"
@@ -34,7 +35,13 @@ void editManifest(const QString& conf, const std::function<bool(ProjectFile&)>& 
 
 }  // namespace
 
-FileOperations::FileOperations(AppServices& services, MainWindow* window) : QObject(window), services_(services), window_(window) {
+FileOperations::FileOperations(AppServices& services, MainWindow* window)
+    : QObject(window), services_(services), window_(window), plugins_(new PluginStudio(services.plugins(), window)) {
+    libraryFiles_.insert(services.plugins().kind(), {
+        [this] { plugins_->importPlugin(); },
+        [this](const QString& id) { plugins_->exportPlugin(id); },
+        [this](const QString& id) { return plugins_->closeEditor(id); },
+    });
     // Renamed anywhere (here, the picker, a test), a component's tab follows: it saves under the new name.
     for (ComponentProvider* provider : services.providers()) {
         connect(provider, &ComponentProvider::renamed, this, [this, provider](const QString& from, const QString& to) {
@@ -59,6 +66,14 @@ void FileOperations::run(ExplorerAction action, const ExplorerEntry& entry) {
     case ExplorerAction::CopyPath: copyPath(entry); break;
     case ExplorerAction::NewPipeline: newPipeline(entry); break;
     case ExplorerAction::NewProject: newProject(); break;
+    case ExplorerAction::NewPlugin: newPlugin(); break;
+    case ExplorerAction::AddComponent: plugins_->insert(entry.path); break;
+    case ExplorerAction::EditPluginCode: plugins_->edit(entry.path); break;
+    case ExplorerAction::EditPluginSpec: plugins_->editSpec(entry.path); break;
+    case ExplorerAction::BuildPlugin: plugins_->build(entry.path); break;
+    case ExplorerAction::CopyAiPrompt: plugins_->copyPrompt(entry.path); break;
+    case ExplorerAction::OpenPluginEditor: plugins_->openExternal(entry.path); break;
+    case ExplorerAction::RevealPlugin: plugins_->reveal(entry.path); break;
     case ExplorerAction::Refresh: break;  // the Explorer's own: it reads its sections again
     }
 }
@@ -148,6 +163,8 @@ bool FileOperations::remove(const ExplorerEntry& entry) {
                                unsaved.isEmpty() ? QMessageBox::Question : QMessageBox::Warning};
     if (Prompt::ask(window_, ask) != 0) return false;
 
+    const auto flow = libraryFiles_.constFind(entry.origin);
+    if (flow != libraryFiles_.constEnd() && !flow->close(entry.path)) return false;
     const bool removed = provider ? provider->remove(entry.path) : QFile::moveToTrash(entry.location());
     if (!removed) {
         fail("Delete", "Unable to move " + entry.name + " to the trash.");
@@ -169,6 +186,8 @@ void FileOperations::copyPath(const ExplorerEntry& entry) {
 }
 
 void FileOperations::exportComponent(const ExplorerEntry& entry) {
+    const auto flow = libraryFiles_.constFind(entry.origin);
+    if (flow != libraryFiles_.constEnd()) return flow->exportTo(entry.path);
     const ComponentProvider* provider = services_.provider(entry.origin);
     if (!provider) return;
     const QString file = QFileDialog::getSaveFileName(window_, "Export " + entry.origin, QDir::home().filePath(entry.path + ".conf"), "Templates (*.conf)");
@@ -177,6 +196,8 @@ void FileOperations::exportComponent(const ExplorerEntry& entry) {
 }
 
 void FileOperations::importInto(const QString& providerKind) {
+    const auto flow = libraryFiles_.constFind(providerKind);
+    if (flow != libraryFiles_.constEnd()) return flow->import();
     ComponentProvider* provider = services_.provider(providerKind);
     if (!provider || !provider->canImport()) return;
     const QString file = QFileDialog::getOpenFileName(window_, "Import " + providerKind, QDir::homePath(), "Templates (*.conf)");
@@ -187,6 +208,9 @@ void FileOperations::importInto(const QString& providerKind) {
 }
 
 // Asks its name; nothing is written yet: the first save makes the folder.
+void FileOperations::newPlugin() { plugins_->create(); }
+bool FileOperations::closePluginEditors() { return plugins_->closeEditors(); }
+
 void FileOperations::newProject() {
     const QString conf = NewProjectDialog::ask(window_, window_->documentTabs()->openFiles());
     if (!conf.isEmpty()) window_->documentTabs()->target()->controller()->newPlan(std::make_unique<ProjectConfTarget>(conf));

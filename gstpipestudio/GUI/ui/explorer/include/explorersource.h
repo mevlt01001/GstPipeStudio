@@ -15,7 +15,10 @@ class ComponentProvider;
 class TemplateLibrary;
 
 // What a menu of the Explorer can do; FileOperations carries each one out.
-enum class ExplorerAction { Open, Edit, Run, Duplicate, Rename, Delete, Export, Import, Reveal, CopyPath, NewPipeline, NewProject, Refresh };
+enum class ExplorerAction {
+    Open, Edit, Run, Duplicate, Rename, Delete, Export, Import, Reveal, CopyPath, NewPipeline, NewProject, Refresh,
+    NewPlugin, AddComponent, EditPluginCode, EditPluginSpec, BuildPlugin, CopyAiPrompt, OpenPluginEditor, RevealPlugin
+};
 
 class ExplorerSource : public QObject {
     Q_OBJECT
@@ -28,6 +31,7 @@ public:
     virtual QList<ExplorerEntry> entries(const EditorState& editor) const = 0;
     virtual QString emptyHint() const = 0;
     virtual QStringList watched(const EditorState&) const { return {}; }  // folders whose changes it shows
+    virtual QList<ExplorerAction> quickActions() const { return {}; }
     virtual void refresh() {}  // Refresh: reads again what it does not watch
 
     ExplorerEntry header(const EditorState& editor) const;  // its header row
@@ -75,6 +79,7 @@ public:
     QList<ExplorerEntry> entries(const EditorState& editor) const override;
     QString emptyHint() const override;
     void refresh() override;
+    QList<ExplorerAction> quickActions() const override;
 
     // A component's row, and what its menu offers: what its provider supports.
     static ExplorerEntry entryOf(const ComponentProvider& provider, const QString& id);

@@ -16,6 +16,7 @@ const QStringList directions{"Sink", "Src"};
 const QStringList presences{"Always", "Request", "Sometimes"};
 const QStringList capsPresets{"VideoRaw", "VideoNvmm", "AudioRaw", "ByteStream", "CustomMime", "Any"};
 const QStringList inputs{"Direct", "Mailbox", "BoundedQueue"};
+const QStringList coordinationModes{"Independent", "AllReady", "PtsWindow"};
 const QStringList overflows{"Block", "DropOldest", "DropNewest"};
 const QStringList propertyTypes{"Bool", "Int", "UInt", "Int64", "UInt64", "Float", "Double", "String"};
 const QStringList mutabilities{"Null", "Ready", "Paused", "Playing"};
@@ -92,13 +93,15 @@ struct PropertyBehavior {
 const PropertyBehavior propertyBehaviors[]{
     {"bool", boolean}, {"int32_t", numbers<int32_t>}, {"uint32_t", numbers<uint32_t>},
     {"int64_t", numbers<int64_t>}, {"uint64_t", numbers<uint64_t>}, {"float", numbers<float>},
-    {"double", numbers<double>}, {"std::string", [](const PluginPropertySpec& p, const QString&) -> QStringList { return {p.defaultValue}; }},
+    {"double", numbers<double>},
+    {"std::string", [](const PluginPropertySpec& p, const QString&) -> QStringList { return {p.defaultValue}; }},
 };
 }  // namespace
 
 QStringList pluginArchetypeNames() { return archetypes; }
 QStringList pluginCapsNames() { return capsPresets; }
 QStringList pluginInputNames() { return inputs; }
+QStringList pluginCoordinationNames() { return coordinationModes; }
 QStringList pluginOverflowNames() { return overflows; }
 QStringList pluginPresenceNames() { return presences; }
 QStringList pluginPropertyTypeNames() { return propertyTypes; }
@@ -194,6 +197,14 @@ QString PluginSpec::error() const {
                 return "AudioFilter requires raw audio caps.";
         }
     }
+    if (coordination != PluginCoordination::Independent) {
+        const auto queues = std::count_if(ports.begin(), ports.end(), [](const auto& p) {
+            return p.direction == PluginDirection::Sink && p.presence == PluginPresence::Always && p.inputMode == PluginInput::BoundedQueue;
+        });
+        if (selected != PluginArchetype::GeneralElement || queues < 2)
+            return "Queue coordination needs at least two Always inputs in BoundedQueue mode.";
+        if (toleranceMs < 0) return "The PTS tolerance must be zero or greater.";
+    }
     if (!uriProtocol.isEmpty() && (selected != PluginArchetype::Source || !matches("[a-z][a-z0-9+.-]*", uriProtocol)))
         return "Enter a valid URI scheme for a Source archetype.";
     names = {"name", "parent"};
@@ -224,8 +235,10 @@ QJsonObject PluginSpec::toJson() const {
             {"mutability", nameOf(mutabilities, p.mutability)}, {"controllable", p.controllable}});
     return {{"schema", 1}, {"id", id}, {"longName", longName}, {"klass", klass}, {"description", description},
             {"author", author}, {"version", version}, {"license", license}, {"archetype", nameOf(archetypes, archetype)},
-            {"live", live}, {"clockSync", clockSync}, {"uriProtocol", uriProtocol}, {"ports", portValues}, {"properties", propertyValues},
-            {"extraPkgConfig", QJsonArray::fromStringList(extraPkgConfig)}, {"extraFindPackages", QJsonArray::fromStringList(extraFindPackages)}};
+            {"live", live}, {"clockSync", clockSync}, {"uriProtocol", uriProtocol},
+            {"coordination", nameOf(coordinationModes, coordination)}, {"toleranceMs", toleranceMs},
+            {"ports", portValues}, {"properties", propertyValues}, {"extraPkgConfig", QJsonArray::fromStringList(extraPkgConfig)},
+            {"extraFindPackages", QJsonArray::fromStringList(extraFindPackages)}};
 }
 
 bool PluginSpec::fromJson(const QJsonObject& object, PluginSpec* out, QString* error) {
@@ -241,6 +254,8 @@ bool PluginSpec::fromJson(const QJsonObject& object, PluginSpec* out, QString* e
     spec.live = object.value("live").toBool();
     spec.clockSync = object.value("clockSync").toBool();
     spec.uriProtocol = object.value("uriProtocol").toString();
+    spec.toleranceMs = object.value("toleranceMs").toInt(spec.toleranceMs);
+    if (!parseEnum(object, "coordination", coordinationModes, spec.coordination)) return fail(error, "Unknown queue coordination mode.");
     if (!parseEnum(object, "archetype", archetypes, spec.archetype)) return fail(error, "Unknown plugin archetype.");
     spec.ports.clear();
     for (const auto& value : object.value("ports").toArray()) {

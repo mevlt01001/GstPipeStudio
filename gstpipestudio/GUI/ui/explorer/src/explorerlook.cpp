@@ -55,6 +55,46 @@ const QIcon& pipelineIcon() {
     return icon;
 }
 
+const QIcon& componentIcon() {
+    static const QIcon icon = [] {
+        QPixmap pm(16, 16);
+        pm.fill(Qt::transparent);
+        QPainter p(&pm);
+        p.setRenderHint(QPainter::Antialiasing);
+        p.setPen(QPen(Theme::muted(), 1.4, Qt::SolidLine, Qt::RoundCap));
+        p.drawRoundedRect(4, 6, 8, 5, 1, 1);
+        p.drawLine(6, 3, 6, 6);
+        p.drawLine(10, 3, 10, 6);
+        p.drawLine(8, 11, 8, 14);
+        return QIcon(pm);
+    }();
+    return icon;
+}
+
+struct Badge { QString text; QColor color; };
+
+Badge badge(ComponentStatus status) {
+    switch (status) {
+    case ComponentStatus::Ready: return {"  ✓", Theme::accentHover()};
+    case ComponentStatus::Pending: return {"  ●", Theme::warning()};
+    case ComponentStatus::Failed: return {"  !", Theme::error()};
+    case ComponentStatus::None: return {};
+    }
+    return {};
+}
+
+struct ActionLook { const char* name; const char* text; };
+const ActionLook actions[]{
+    {"explorerOpen", "Open"}, {"explorerEdit", "Edit"}, {"explorerRun", "Run pipeline"},
+    {"explorerDuplicate", "Duplicate"}, {"explorerRename", "Rename"}, {"explorerDelete", "Delete"},
+    {"explorerExport", "Export…"}, {"explorerImport", "Import…"}, {"explorerReveal", "Reveal in file manager"},
+    {"explorerCopyPath", "Copy path"}, {"explorerNewPipeline", "New pipeline…"}, {"explorerNewProject", "New project…"},
+    {"explorerRefresh", "Refresh"}, {"explorerNewPlugin", "New custom plugin…"}, {"explorerAddComponent", "Add to pipeline"},
+    {"explorerEditPluginCode", "Edit code"}, {"explorerEditPluginSpec", "Edit specification…"}, {"explorerBuildPlugin", "Build && Reload"},
+    {"explorerCopyAiPrompt", "Copy AI prompt"}, {"explorerOpenPluginEditor", "Open in external editor"},
+    {"explorerRevealPlugin", "Reveal in file manager"},
+};
+
 }  // namespace
 
 QString text(const ExplorerEntry& e) {
@@ -65,7 +105,7 @@ QString text(const ExplorerEntry& e) {
         if (e.validation == Validation::Invalid) return label + kErrorBadge;
         if (e.validation == Validation::Valid) return label + kValidBadge;
     }
-    return label;
+    return label + badge(e.componentStatus).text;
 }
 
 QString tooltip(const ExplorerEntry& e) {
@@ -89,50 +129,22 @@ void apply(QTreeWidgetItem* item, const ExplorerEntry& e) {
     if (e.kind == Kind::Hint || e.state == State::Missing) colour = Theme::muted();
     else if (e.state == State::Deleted || e.validation == Validation::Invalid) colour = Theme::error();
     else if (e.state == State::Outdated) colour = Theme::warning();
+    const auto status = badge(e.componentStatus);
+    if (status.color.isValid()) colour = status.color;
     item->setForeground(0, colour);
     QStyle* style = QApplication::style();
     if (e.kind == Kind::Folder || e.kind == Kind::Project) item->setIcon(0, style->standardIcon(QStyle::SP_DirIcon));
     else if (e.kind == Kind::Conf) item->setIcon(0, pipelineIcon());
+    else if (e.componentStatus != ComponentStatus::None) item->setIcon(0, componentIcon());
     else if (e.kind == Kind::File) item->setIcon(0, style->standardIcon(QStyle::SP_FileIcon));
 }
 
 QString actionText(ExplorerAction action, const ExplorerEntry& e) {
-    const QString kind = e.kind == Kind::Component ? " " + e.origin : QString();  // "Edit template"
-    switch (action) {
-    case ExplorerAction::Open: return "Open";
-    case ExplorerAction::Edit: return "Edit" + kind;
-    case ExplorerAction::Run: return "Run pipeline";
-    case ExplorerAction::Duplicate: return "Duplicate";
-    case ExplorerAction::Rename: return "Rename";
-    case ExplorerAction::Delete: return "Delete";
-    case ExplorerAction::Export: return "Export…";
-    case ExplorerAction::Import: return "Import…";
-    case ExplorerAction::Reveal: return "Reveal in file manager";
-    case ExplorerAction::CopyPath: return "Copy path";
-    case ExplorerAction::NewPipeline: return "New pipeline…";
-    case ExplorerAction::NewProject: return "New project…";
-    case ExplorerAction::Refresh: return "Refresh";
-    }
-    return QString();
+    QString label = actions[static_cast<int>(action)].text;
+    if (e.kind == Kind::Component && action == ExplorerAction::Edit) label += " " + e.origin;
+    return label;
 }
 
-QString actionName(ExplorerAction action) {
-    switch (action) {
-    case ExplorerAction::Open: return "explorerOpen";
-    case ExplorerAction::Edit: return "explorerEdit";
-    case ExplorerAction::Run: return "explorerRun";
-    case ExplorerAction::Duplicate: return "explorerDuplicate";
-    case ExplorerAction::Rename: return "explorerRename";
-    case ExplorerAction::Delete: return "explorerDelete";
-    case ExplorerAction::Export: return "explorerExport";
-    case ExplorerAction::Import: return "explorerImport";
-    case ExplorerAction::Reveal: return "explorerReveal";
-    case ExplorerAction::CopyPath: return "explorerCopyPath";
-    case ExplorerAction::NewPipeline: return "explorerNewPipeline";
-    case ExplorerAction::NewProject: return "explorerNewProject";
-    case ExplorerAction::Refresh: return "explorerRefresh";
-    }
-    return QString();
-}
+QString actionName(ExplorerAction action) { return actions[static_cast<int>(action)].name; }
 
 }  // namespace ExplorerLook

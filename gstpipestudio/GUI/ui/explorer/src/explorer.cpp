@@ -5,6 +5,7 @@
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QKeyEvent>
+#include <QLabel>
 #include <QLineEdit>
 #include <QStyledItemDelegate>
 #include <QToolButton>
@@ -100,7 +101,7 @@ Explorer::Explorer(const QList<ExplorerSource*>& sections, FileOperations& opera
     bar->setSpacing(4);
     filter_ = new QLineEdit(this);
     filter_->setObjectName("explorerFilter");
-    filter_->setPlaceholderText("Filter projects, templates…");
+    filter_->setPlaceholderText("Filter projects and components…");
     filter_->setClearButtonEnabled(true);
     connect(filter_, &QLineEdit::textChanged, this, &Explorer::applyFilter);
     bar->addWidget(filter_, 1);
@@ -137,8 +138,38 @@ Explorer::Explorer(const QList<ExplorerSource*>& sections, FileOperations& opera
         auto* header = new QTreeWidgetItem(tree_);
         header->setFlags(Qt::ItemIsEnabled);
         header->setExpanded(true);
-        sections_.append({source, header});
+        sections_.append({source, header, {}, {}, {}});
         connect(source, &ExplorerSource::changed, &settle_, qOverload<>(&QTimer::start));
+        const auto quick = source->quickActions();
+        if (quick.isEmpty()) continue;
+        auto* widget = new QWidget(tree_);
+        auto* row = new QHBoxLayout(widget);
+        row->setContentsMargins(2, 0, 2, 0);
+        auto* label = new QLabel(source->label(editor_));
+        auto font = label->font();
+        font.setBold(true);
+        label->setFont(font);
+        label->setAttribute(Qt::WA_TransparentForMouseEvents);
+        row->addWidget(label, 1);
+        for (const auto action : quick) {
+            auto* button = new QToolButton(widget);
+            const auto entry = source->header(editor_);
+            button->setAutoRaise(true);
+            const bool refreshing = action == ExplorerAction::Refresh;
+            button->setText(refreshing ? "↻" : "+");
+            button->setObjectName(refreshing ? "explorerRefreshPluginsButton" : ExplorerLook::actionName(action) + "Button");
+            button->setToolTip(ExplorerLook::actionText(action, entry));
+            connect(button, &QToolButton::clicked, this, [this, source, action, entry, refreshing] {
+                if (refreshing) {
+                    source->refresh();
+                    refresh();
+                } else {
+                    operations_.run(action, entry);
+                }
+            });
+            row->addWidget(button);
+        }
+        tree_->setItemWidget(header, 0, widget);
     }
 
     settle_.setSingleShot(true);
@@ -148,7 +179,8 @@ Explorer::Explorer(const QList<ExplorerSource*>& sections, FileOperations& opera
     connect(&operations, &FileOperations::wrote, &settle_, qOverload<>(&QTimer::start));
     connect(tree_, &QTreeWidget::itemActivated, this, [this](QTreeWidgetItem* item) {
         const QList<ExplorerAction> offered = actionsOf(item);
-        if (offered.contains(ExplorerAction::Open) || offered.contains(ExplorerAction::Edit)) operations_.open(entryOf(item));
+        if (offered.contains(ExplorerAction::AddComponent)) operations_.run(ExplorerAction::AddComponent, entryOf(item));
+        else if (offered.contains(ExplorerAction::Open) || offered.contains(ExplorerAction::Edit)) operations_.open(entryOf(item));
     });
     connect(tree_, &QWidget::customContextMenuRequested, this, &Explorer::showMenu);
     connect(tree_, &QTreeWidget::itemExpanded, this, [this](QTreeWidgetItem* item) { sectionOf(item)->expanded.insert(sourceEntry(item).id()); });
@@ -253,7 +285,8 @@ void Explorer::applyFilter() {
             return true;
         }
         const bool selfMatched = e.kind != Kind::Hint &&
-                                 (e.name.contains(query, Qt::CaseInsensitive) || item->text(0).contains(query, Qt::CaseInsensitive));
+                                 (e.name.contains(query, Qt::CaseInsensitive) || item->text(0).contains(query, Qt::CaseInsensitive) ||
+                                  (e.kind == Kind::Component && e.path.contains(query, Qt::CaseInsensitive)));
         const bool visible = selfMatched || childMatched;
         item->setHidden(!visible);
         if (childMatched) item->setExpanded(true);

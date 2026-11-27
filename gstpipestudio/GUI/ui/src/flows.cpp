@@ -133,12 +133,15 @@ void Flows::chooseElement() {
     drawer_->present(page, "Add element", "Choose an element to place on the canvas: a source, a filter or a sink.", Drawer::Replace);
 }
 
-void Flows::chooseComponent() {
+void Flows::chooseComponent(const QString& providerKind) {
     if (controller_->editingBlocked()) return;
     PickerData data;
-    data.providers = providers();
+    for (const auto* provider : providers()) {
+        if (providerKind.isEmpty() || provider->kind() == providerKind) data.providers << provider;
+    }
+    if (data.providers.isEmpty()) return;
     data.componentMenu = [this](const ComponentRef& component, const QPoint& at) { emit componentMenuRequested(component, at); };
-    for (ComponentProvider* provider : controller_->services().providers()) {
+    for (const auto* provider : data.providers) {
         if (!provider->canImport()) continue;
         data.importComponent = [this, kind = provider->kind()] { emit importRequested(kind); };
         break;
@@ -150,12 +153,16 @@ void Flows::chooseComponent() {
         controller_->place(choice.component);
     });
     // Renamed, deleted or imported from anywhere: the list is shown again, with it.
-    for (ComponentProvider* provider : controller_->services().providers()) {
-        connect(provider, &ComponentProvider::changed, page, [this, page] {
-            if (drawer_->page() == page) chooseComponent();
+    for (const auto* provider : data.providers) {
+        connect(provider, &ComponentProvider::changed, page, [this, page, providerKind] {
+            if (drawer_->page() == page) chooseComponent(providerKind);
         }, Qt::QueuedConnection);
     }
-    const bool none = std::all_of(data.providers.begin(), data.providers.end(), [](const ComponentProvider* p) { return p->components().isEmpty(); });
+    if (!providerKind.isEmpty()) {
+        drawer_->present(page, "Add custom plugin", "Choose a custom element to place on the canvas.", Drawer::Replace);
+        return;
+    }
+    const bool none = std::all_of(data.providers.begin(), data.providers.end(), [](const auto* p) { return p->components().isEmpty(); });
     drawer_->present(page, "Add template",
                      none ? "No templates yet: select elements and use Save as template."
                           : "Choose a saved template; hover one for a quick look inside.",
@@ -331,7 +338,10 @@ void Flows::addQueue(const QString& element, const QString& identity) {
 }
 
 void Flows::editProperties(const QString& element) {
-    if (controller_->editingBlocked()) return;
+    if (!controller_->editingBlocked()) showElementProperties(element, std::nullopt);
+}
+
+void Flows::showElementProperties(const QString& element, const std::optional<ElementEdit>& pending) {
     const QString grp = controller_->outline().collapsedTemplate(element);
     if (!grp.isEmpty()) {
         controller_->setTemplateExpanded(grp, true);
@@ -345,9 +355,9 @@ void Flows::editProperties(const QString& element) {
     in.info = *info;
     in.acceptText = "Save";
     in.canDelete = true;
-    in.props = e->props;
-    in.requestSrc = e->requestSrc;
-    in.requestSink = e->requestSink;
+    in.props = pending ? pending->props : e->props;
+    in.requestSrc = pending ? pending->requestSrc : e->requestSrc;
+    in.requestSink = pending ? pending->requestSink : e->requestSink;
     in.linkedSrc = controller_->plan().linkedRequestPads(e->name, gps::Pad::Direction::Source);
     in.linkedSink = controller_->plan().linkedRequestPads(e->name, gps::Pad::Direction::Sink);
     auto* page = new PropertyPage(in);
@@ -358,7 +368,15 @@ void Flows::editProperties(const QString& element) {
         closeProperties();
         controller_->deleteElement(element);
     });
-    presentProperties(page, "Edit properties · " + title(element));
+    connect(&catalog(), &FactoryCatalog::factoryReloaded, page, [this, page, element, factory = fromStd(e->factory)](const QString& id) {
+        if (factory == id && propertyPage() == page) showElementProperties(element, page->edit());
+    }, Qt::QueuedConnection);
+    const QString heading = "Edit properties · " + title(element);
+    if (!pending) {
+        presentProperties(page, heading);
+    } else if (props_.present(page, heading, {}, PanelSlot::Visibility::Keep)) {
+        connect(page, &DrawerPage::cancelled, this, &Flows::closeProperties);
+    }
 }
 
 

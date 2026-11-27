@@ -23,6 +23,7 @@ void ContextMenus::canvas(Document& d, const QPoint& at, const QPointF& scenePos
     addMenu->setObjectName("menuAdd");
     addMenu->addAction(commands_[Command::AddElement]);
     addMenu->addAction(commands_[Command::AddTemplate]);
+    addMenu->addAction(commands_[Command::AddPlugin]);
     addMenu->addAction(commands_[Command::AddLaunch]);
     QList<Item> items;
     if (!d.selection().isEmpty())

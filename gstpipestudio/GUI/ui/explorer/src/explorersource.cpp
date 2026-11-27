@@ -69,6 +69,11 @@ QString mainConf(const QString& folder) {
 ExplorerEntry componentEntry(const ComponentInfo& c) {
     ExplorerEntry e = entry(Kind::Component, c.ref.provider, c.ref.id, c.title);
     e.detail = c.description;
+    e.componentStatus = c.status;
+    if (c.status != ComponentStatus::None) {
+        const QStringList details{c.ref.id, c.description, c.hint};
+        e.detail = details.join('\n');
+    }
     return e;
 }
 
@@ -204,7 +209,10 @@ ExplorerEntry ComponentSection::entryOf(const ComponentProvider& provider, const
     for (const ComponentInfo& c : provider.components()) {
         if (c.ref.id == id) return componentEntry(c);
     }
-    return componentEntry({{provider.kind(), id}, id});
+    ComponentInfo fallback;
+    fallback.ref = {provider.kind(), id};
+    fallback.title = id;
+    return componentEntry(fallback);
 }
 
 QList<ExplorerAction> ComponentSection::actionsOf(const ComponentProvider& provider, const QString& id) {
@@ -215,14 +223,28 @@ QList<ExplorerAction> ComponentSection::actionsOf(const ComponentProvider& provi
         case ComponentAction::Rename: out << ExplorerAction::Rename; break;
         case ComponentAction::Export: out << ExplorerAction::Export; break;
         case ComponentAction::Delete: out << ExplorerAction::Delete; break;
+        case ComponentAction::Place: out << ExplorerAction::AddComponent; break;
+        case ComponentAction::EditCode: out << ExplorerAction::EditPluginCode; break;
+        case ComponentAction::EditSpec: out << ExplorerAction::EditPluginSpec; break;
+        case ComponentAction::Build: out << ExplorerAction::BuildPlugin; break;
+        case ComponentAction::CopyAiPrompt: out << ExplorerAction::CopyAiPrompt; break;
+        case ComponentAction::ExternalEditor: out << ExplorerAction::OpenPluginEditor; break;
+        case ComponentAction::Reveal: out << ExplorerAction::RevealPlugin; break;
         }
     }
     return out;
 }
 
 QList<ExplorerAction> ComponentSection::sectionActions() const {
-    if (provider_.canImport()) return {ExplorerAction::Import, ExplorerAction::Refresh};
-    return ExplorerSource::sectionActions();
+    QList<ExplorerAction> actions;
+    if (provider_.canCreate()) actions << ExplorerAction::NewPlugin;
+    if (provider_.canImport()) actions << ExplorerAction::Import;
+    return actions << ExplorerAction::Refresh;
+}
+
+QList<ExplorerAction> ComponentSection::quickActions() const {
+    if (provider_.canCreate()) return {ExplorerAction::NewPlugin, ExplorerAction::Refresh};
+    return {};
 }
 
 QList<ExplorerAction> ComponentSection::rowActions(const ExplorerEntry& e) const { return actionsOf(provider_, e.path); }

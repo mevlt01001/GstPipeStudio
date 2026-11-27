@@ -15,7 +15,7 @@ void PanelSlot::attach(Panels* panels, QWidget* tab, QWidget* fallback) {
     fallback_ = fallback;
 }
 
-bool PanelSlot::present(DrawerPage* page, const QString& title, const QString& subtitle) {
+bool PanelSlot::present(DrawerPage* page, const QString& title, const QString& subtitle, Visibility visibility) {
     if (!tab_ || !panels_) {
         page->deleteLater();
         return false;
@@ -41,8 +41,10 @@ bool PanelSlot::present(DrawerPage* page, const QString& title, const QString& s
     page->setParent(tab_);
     layout->addWidget(page, 1);
     page->show();
-    panels_->show(tab_);
-    page->focusFirst();
+    if (visibility == Visibility::BringToFront) {
+        panels_->show(tab_);
+        page->focusFirst();
+    }
     return true;
 }
 

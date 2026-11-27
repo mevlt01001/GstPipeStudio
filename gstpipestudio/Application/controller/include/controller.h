@@ -232,6 +232,7 @@ private:
     std::shared_ptr<SaveTarget> target_ = std::make_shared<UntitledTarget>(1);
     EditSession edits_{pipeline_};
     ValidationSession validation_{pipeline_, services_.timing()};
+    bool factoryReloadPending_ = false;
     RunSession runs_;
     CanvasLayout* layout_;
     TemplateInstances templates_;

@@ -29,7 +29,8 @@ QString portRegistration(const PluginPortSpec& p) {
     const QString args = cppString(p.name) + ", " + caps(p) + ", Presence::" + pluginPresenceNames().at(static_cast<int>(p.presence));
     if (p.direction == PluginDirection::Src) return "        b.addSrcPort(" + args + ");\n";
     return "        b.addSinkPort(" + args + ", InputMode::" + pluginInputNames().at(static_cast<int>(p.inputMode)) +
-           ", " + QString::number(p.queueCapacity) + ", OverflowPolicy::" + pluginOverflowNames().at(static_cast<int>(p.overflowPolicy)) + ");\n";
+           ", " + QString::number(p.queueCapacity) + ", OverflowPolicy::" +
+           pluginOverflowNames().at(static_cast<int>(p.overflowPolicy)) + ");\n";
 }
 
 QString memberOf(const PluginPropertySpec& p) {
@@ -99,9 +100,45 @@ QString sourceOptions(const PluginSpec& spec) {
     return text;
 }
 
+QString barrierOptions(const PluginSpec& spec) {
+    QStringList ports;
+    for (const auto& p : spec.ports) {
+        if (p.direction == PluginDirection::Sink && p.inputMode == PluginInput::BoundedQueue)
+            ports << "sinkPort(" + cppString(p.name) + ")";
+    }
+    const QString policy = spec.coordination == PluginCoordination::PtsWindow
+        ? "PtsWindow{" + QString::number(spec.toleranceMs) + " * GST_MSECOND}" : "AllQueuesReady{}";
+    return "    bool start() override {\n"
+           "        barrier_.setPorts({" + ports.join(", ") + "});\n"
+           "        barrier_.setPolicy(" + policy + ");\n" + R"cpp(        barrier_.resetUnblock();
+        driver_.setUnblockCallback([this] { barrier_.unblock(); });
+        return driver_.start(this, [this] {
+            std::vector<std::optional<Buffer>> batch;
+            const auto status = barrier_.acquire(batch);
+            if (status == BarrierStatus::Timeout) return;
+            if (status == BarrierStatus::Eos) endStream();
+            if (status != BarrierStatus::Ready || processBatch(batch) != GST_FLOW_OK) driver_.pause();
+        });
+    }
+
+    void unblock() override { driver_.unblock(); }
+
+    bool stop() override {
+        driver_.stop();
+        barrier_.setPorts({});
+        return true;
+    }
+
+    BarrierCoordinator barrier_;
+    TaskDriver driver_;
+)cpp";
+}
+
 QString generalOptions(const PluginSpec& spec) {
-    const auto primary = std::find_if(spec.ports.begin(), spec.ports.end(), [](const auto& p) {
-        return p.direction == PluginDirection::Sink && p.presence == PluginPresence::Always && p.inputMode != PluginInput::Mailbox;
+    const bool coordinated = spec.coordination != PluginCoordination::Independent;
+    const auto primary = std::find_if(spec.ports.begin(), spec.ports.end(), [coordinated](const auto& p) {
+        return p.direction == PluginDirection::Sink && p.presence == PluginPresence::Always &&
+               (coordinated ? p.inputMode == PluginInput::BoundedQueue : p.inputMode != PluginInput::Mailbox);
     });
     const bool outputs = spec.hasPort(PluginDirection::Src);
     const bool queued = std::any_of(spec.ports.begin(), spec.ports.end(), [](const auto& p) {
@@ -132,7 +169,9 @@ QString generalOptions(const PluginSpec& spec) {
         text += "        for (auto* src : allSrcPorts()) linkInternal(*sinkPort(" + cppString(primary->name) + "), *src);\n";
     }
     text += "        noMorePads();\n        return true;\n    }\n";
-    if (queued) {
+    if (coordinated) {
+        text += barrierOptions(spec);
+    } else if (queued) {
         text += R"cpp(    bool start() override {
         for (auto* input : allSinkPorts()) {
             if (input->inputMode() != InputMode::BoundedQueue) continue;
@@ -275,6 +314,12 @@ const ArchetypeBehavior behaviors[]{
         return result;
     }
 
+    GstFlowReturn processBatch(std::vector<std::optional<Buffer>>& batch) {
+        // Coordinated inputs arrive in port declaration order. The starter forwards the first buffer.
+        if (batch.empty() || !batch.front()) return GST_FLOW_OK;
+        return process(primaryInput(), std::move(*batch.front()));
+    }
+
     void endStream() {
         if (isSinkRole()) postOrDeferEos();
         for (auto* src : allSrcPorts()) src->pushEos();
@@ -334,6 +379,7 @@ QString optionsAndDescription(const PluginSpec& spec) { return describe(spec) + 
 QString PluginScaffolder::source(const PluginSpec& spec) {
     const auto& type = behavior(spec);
     QString text = R"cpp(#include "gps_elem/archetypes.h"
+#include "gps_elem/barrier.h"
 #include "gps_elem/register.h"
 
 #include <cstring>
@@ -410,7 +456,9 @@ SDK API excerpts (see the installed gps_elem headers for the full contracts):
 - ReadMap::data(), WriteMap::data(), size(), valid()
 - SinkPort::latest(), SinkPort::pop(GstClockTime timeoutNs = GST_CLOCK_TIME_NONE)
 - SrcPort::setCaps(const Caps&), SrcPort::push(Buffer), SrcPort::pushEos()
-- ByteStreamAdapter and CustomMeta<T> are available in gps_elem/byte_stream.h and gps_elem/meta.h.
+- ByteStreamAdapter::push(Buffer), available() const and takeBuffer(size_t, GstClockTime* = nullptr, GstClockTime* = nullptr).
+- CustomMeta<T>::attach(Buffer&, T), get(const Buffer&) and getMutable(Buffer&) use gps_elem/meta.h.
+- BarrierCoordinator::acquire(std::vector<std::optional<Buffer>>&) is declared in gps_elem/barrier.h.
 Check the headers before introducing calls. Keep buffer maps scoped and release them before pushing buffers.
 
 Current source:

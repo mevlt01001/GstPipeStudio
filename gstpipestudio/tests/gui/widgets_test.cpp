@@ -16,6 +16,9 @@
 #include <QMenu>
 #include <QPainter>
 #include <QPushButton>
+#include <QPlainTextEdit>
+#include <QSaveFile>
+#include <QScopeGuard>
 #include <QScrollBar>
 #include <QSettings>
 #include <QSignalSpy>
@@ -51,6 +54,8 @@
 #include <QTreeWidget>
 #include <QPointer>
 #include "newprojectdialog.h"
+#include "plugineditorwindow.h"
+#include "pluginwizarddialog.h"
 #include "notificationoverlay.h"
 #include "panels.h"
 #include "templateframeitem.h"
@@ -82,6 +87,21 @@
 using namespace support;
 
 namespace {
+
+class PluginTestBuilder final : public IPluginBuilder {
+public:
+    void build(const PluginBuildRequest& request, QObject* context, Output output, Done done) override {
+        const QString file = QDir(request.directory).filePath(request.id + ".cpp");
+        QTimer::singleShot(10, context, [file, output = std::move(output), done = std::move(done)] {
+            PluginBuildResult result;
+            result.error = "Compiler rejected the example.";
+            result.output = file + ":2:3: error: intentional compiler diagnostic";
+            result.diagnostics = DiagnosticParser::parse(result.output);
+            output(result.output);
+            done(std::move(result));
+        });
+    }
+};
 
 template <class T>
 T* visibleChild(QWidget* parent) {
@@ -235,6 +255,73 @@ private slots:
     }
     void init() { c = makeController(); }
     void cleanup() { c.reset(); }
+
+    void customPluginWizardEditorAndExplorer() {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const auto prior = qgetenv("GPS_USER_DIR");
+        qputenv("GPS_USER_DIR", directory.path().toUtf8());
+        const auto restore = qScopeGuard([&] { prior.isNull() ? qunsetenv("GPS_USER_DIR") : qputenv("GPS_USER_DIR", prior); });
+        AppServices services(DocumentTiming::fromEnvironment(), std::make_unique<PluginTestBuilder>());
+        services.catalog().load();
+        QTRY_VERIFY(services.catalog().loaded());
+        Controller opened(services);
+        MainWindow window(&opened);
+        window.show();
+
+        auto* create = window.findChild<QToolButton*>("explorerNewPluginButton");
+        QVERIFY(create);
+        QVERIFY(window.findChild<QAction*>("actionNewPlugin"));
+        QVERIFY(window.findChild<QAction*>("actionAddPlugin"));
+        whenModal(&window, [](QWidget* modal) {
+            auto* wizard = qobject_cast<PluginWizardDialog*>(modal);
+            QVERIFY(wizard);
+            const auto reject = qScopeGuard([&] { if (wizard->result() != QDialog::Accepted) wizard->reject(); });
+            auto* id = wizard->findChild<QLineEdit*>("pluginId");
+            auto* display = wizard->findChild<QLineEdit*>("pluginDisplayName");
+            auto* accept = wizard->findChild<QPushButton*>("pluginCreateEdit");
+            QVERIFY(id && display && accept);
+            id->setText("videotestsrc");
+            display->setText("Studio Test");
+            QVERIFY(!accept->isEnabled());
+            id->setText("gps_ui_starter");
+            QVERIFY(accept->isEnabled());
+            QCOMPARE(wizard->spec().resolvedArchetype(), PluginArchetype::VideoFilter);
+            wizard->findChild<QPushButton*>("pluginAddSink")->click();
+            QCOMPARE(wizard->spec().resolvedArchetype(), PluginArchetype::GeneralElement);
+            accept->click();
+        });
+        create->click();
+        auto* editor = shown<PluginEditorWindow>(&window);
+        QVERIFY(editor);
+        auto* code = editor->findChild<QPlainTextEdit*>("pluginCppSource");
+        auto* diagnostics = editor->findChild<QListWidget*>("pluginDiagnostics");
+        QVERIFY(code && diagnostics);
+        QTRY_COMPARE(services.plugins().state("gps_ui_starter"), PluginBuildState::Failed);
+        QTRY_COMPARE(diagnostics->count(), 1);
+
+        code->moveCursor(QTextCursor::End);
+        QTest::keyClicks(code, "// user algorithm");
+        press(editor, "pluginCopyPrompt");
+        QVERIFY(QApplication::clipboard()->text().contains("// user algorithm"));
+        QVERIFY(QApplication::clipboard()->text().contains("GPS_PLUGIN_SPEC"));
+        press(editor, "pluginSaveSource");
+        QSaveFile file(services.plugins().sourcePath("gps_ui_starter"));
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        QVERIFY(file.write((code->toPlainText() + "\n// external edit\n").toUtf8()) > 0);
+        QVERIFY(file.commit());
+        QTRY_VERIFY(code->toPlainText().contains("// external edit"));
+
+        press(editor, "pluginBuildReload");
+        QTRY_COMPARE(diagnostics->count(), 1);
+        doubleClick(diagnostics->viewport(), diagnostics->visualItemRect(diagnostics->item(0)).center());
+        QTRY_COMPARE(code->textCursor().blockNumber(), 1);
+        QCOMPARE(code->textCursor().positionInBlock(), 2);
+        QTRY_VERIFY(window.explorer()->itemOf("plugin|gps_ui_starter"));
+        QTRY_VERIFY(window.explorer()->itemOf("plugin|gps_ui_starter")->text(0).endsWith("!"));
+        QVERIFY(window.explorer()->itemOf("plugin|gps_ui_starter")->toolTip(0).contains("build failed"));
+        QVERIFY(editor->close());
+    }
 
     void singleElementContextMenuCopiesAndPastes() {
         MainWindow w(c.get()); w.show();

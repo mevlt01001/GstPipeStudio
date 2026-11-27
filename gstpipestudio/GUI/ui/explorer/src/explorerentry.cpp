@@ -22,7 +22,8 @@ QString ExplorerEntry::location() const {
 
 bool ExplorerEntry::operator==(const ExplorerEntry& other) const {
     return kind == other.kind && origin == other.origin && path == other.path && name == other.name && detail == other.detail &&
-           state == other.state && validation == other.validation && children == other.children;
+           state == other.state && validation == other.validation && children == other.children &&
+           componentStatus == other.componentStatus;
 }
 
 QStringList EditorState::openFiles() const {

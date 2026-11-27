@@ -18,6 +18,10 @@
 #include "mainwindow.h"
 #include "notificationoverlay.h"
 #include "drawer.h"
+#include "explorer.h"
+#include "flows.h"
+#include "propertypage.h"
+#include <QTreeWidgetItem>
 #include "pickerpage.h"
 #include "theme.h"
 
@@ -130,6 +134,7 @@ private slots:
         const auto restore = qScopeGuard([&] { prior.isNull() ? qunsetenv("GPS_USER_DIR") : qputenv("GPS_USER_DIR", prior); });
         AppServices local;
         Controller opened(local);
+        opened.setUpdateTimeoutMs(5000);
         auto& library = local.plugins();
         auto& catalog = local.catalog();
         catalog.load();
@@ -172,6 +177,33 @@ private slots:
             QVERIFY(catalog.info(spec.id));
         }
 
+        PluginSpec join;
+        join.id = "gps_pts_join";
+        join.longName = "PTS Join";
+        join.ports.front().inputMode = PluginInput::BoundedQueue;
+        PluginPortSpec other{"aux", PluginDirection::Sink, PluginPresence::Always, PluginCaps::VideoRaw, "RGBA"};
+        other.inputMode = PluginInput::BoundedQueue;
+        join.ports << other;
+        join.coordination = PluginCoordination::PtsWindow;
+        QVERIFY2(library.createPlugin(join, &error), qPrintable(error));
+        std::optional<PluginBuildResult> joinResult;
+        library.buildPlugin(join.id, this, [&](PluginBuildResult built) { joinResult = std::move(built); });
+        QTRY_VERIFY_WITH_TIMEOUT(joinResult.has_value(), 60000);
+        QVERIFY2(joinResult->ok && joinResult->diagnostics.isEmpty(), qPrintable(joinResult->error + "\n" + joinResult->output));
+
+        Controller coordinated(local);
+        coordinated.setUpdateTimeoutMs(5000);
+        QVERIFY(coordinated.importLaunch("gps_pts_join name=join ! fakesink sync=false "
+                                         "videotestsrc num-buffers=5 ! join.sink "
+                                         "videotestsrc num-buffers=5 ! join.aux"));
+        QTRY_VERIFY_WITH_TIMEOUT(coordinated.plan().elements.size() == 4 && !coordinated.busy(), 20000);
+        QVERIFY2(coordinated.result().ok(), coordinated.result().message.c_str());
+        QVERIFY(coordinated.result().complete());
+        QSignalSpy joined(&coordinated, &Controller::runFinished);
+        QVERIFY(coordinated.run());
+        QTRY_COMPARE_WITH_TIMEOUT(joined.size(), 1, 20000);
+        QCOMPARE(joined.front().front().toString(), QString("eos"));
+
         const QString id = "gps_starter_6";
         QVERIFY(opened.importLaunch("videotestsrc num-buffers=5 ! " + id + " ! fakesink sync=false"));
         QTRY_VERIFY_WITH_TIMEOUT(opened.plan().elements.size() == 3 && !opened.busy(), 20000);
@@ -182,6 +214,16 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(ended.size(), 1, 20000);
         QCOMPARE(ended.front().front().toString(), QString("eos"));
 
+        MainWindow window(&opened);
+        window.show();
+        QTRY_VERIFY(window.explorer()->itemOf("plugin|" + id));
+        QVERIFY(window.explorer()->itemOf("plugin|" + id)->text(0).endsWith("✓"));
+        const auto selected = std::find_if(opened.plan().elements.begin(), opened.plan().elements.end(),
+                                           [&](const auto& element) { return element.factory == toStd(id); });
+        QVERIFY(selected != opened.plan().elements.end());
+        window.flows()->editProperties(fromStd(selected->name));
+        QVERIFY(window.flows()->propertyPage());
+        QVERIFY(!window.flows()->propertyPage()->findChild<QWidget*>("editor_gain"));
         auto spec = library.spec(id).value();
         PluginPropertySpec added;
         added.name = "gain";
@@ -197,6 +239,8 @@ private slots:
         QCOMPARE(catalog.info(id), stable);
         QVERIFY(std::any_of(stable->properties.begin(), stable->properties.end(), [](const auto& p) { return p.name == "gain"; }));
         QVERIFY(settle(opened));
+        QVERIFY2(opened.result().ok(), opened.result().message.c_str());
+        QTRY_VERIFY(window.flows()->propertyPage()->findChild<QWidget*>("editor_gain"));
 
         QFile source(library.sourcePath(id));
         QVERIFY(source.open(QIODevice::ReadOnly));
@@ -210,6 +254,61 @@ private slots:
         QVERIFY(!result->diagnostics.isEmpty());
         QCOMPARE(library.state(id), PluginBuildState::Failed);
         QVERIFY(library.placementError(id).isEmpty());  // the last verified module stays available
+    }
+
+    void importsAllFactoriesFromOneModule() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const auto prior = qgetenv("GPS_USER_DIR");
+        qputenv("GPS_USER_DIR", dir.filePath("build-user").toUtf8());
+        const auto restore = qScopeGuard([&] { prior.isNull() ? qunsetenv("GPS_USER_DIR") : qputenv("GPS_USER_DIR", prior); });
+        AppServices local;
+        auto& catalog = local.catalog();
+        auto& library = local.plugins();
+        catalog.load();
+        QTRY_VERIFY(catalog.loaded());
+
+        PluginSpec spec;
+        spec.id = "gps_compiled_bundle";
+        spec.longName = "Compiled Bundle";
+        QString error;
+        QVERIFY2(library.createPlugin(spec, &error), qPrintable(error));
+        auto source = PluginScaffolder::source(spec);
+        QVERIFY(source.contains("    return registerElement<CustomElement>"));
+        source.replace("    return registerElement<CustomElement>",
+                       "    if (!registerElement<CustomElement>(plugin, \"gps_compiled_alias\")) return false;\n"
+                       "    return registerElement<CustomElement>");
+        QVERIFY2(library.saveSource(spec.id, source, &error), qPrintable(error));
+        std::optional<PluginBuildResult> built;
+        library.buildPlugin(spec.id, this, [&](PluginBuildResult result) { built = std::move(result); });
+        QTRY_VERIFY_WITH_TIMEOUT(built.has_value(), 60000);
+        QVERIFY2(built->ok, qPrintable(built->error + "\n" + built->output));
+
+        // A fresh installation has neither manifest nor published binary.
+        qputenv("GPS_USER_DIR", dir.filePath("import-user").toUtf8());
+        AppServices imported;
+        imported.catalog().load();
+        QTRY_VERIFY(imported.catalog().loaded());
+        QVERIFY(!imported.catalog().entry(spec.id));
+        QString factoryNames, importError;
+        bool finished = false;
+        imported.plugins().importModule(built->module, this, [&](const QString& names, const QString& why) {
+            factoryNames = names;
+            importError = why;
+            finished = true;
+        });
+        QTRY_VERIFY_WITH_TIMEOUT(finished, 30000);
+        QVERIFY2(importError.isEmpty(), qPrintable(importError));
+        QVERIFY(factoryNames.contains(spec.id));
+        QVERIFY(factoryNames.contains("gps_compiled_alias"));
+        QCOMPARE(imported.plugins().components().size(), 2);
+        QCOMPARE(imported.plugins().state(spec.id), PluginBuildState::Built);
+        QVERIFY(imported.plugins().placementError("gps_compiled_alias").isEmpty());
+
+        // A reload sees both manifests and one shared file in .bin.
+        imported.plugins().reload();
+        QCOMPARE(imported.plugins().components().size(), 2);
+        QCOMPARE(imported.plugins().moduleFileName(spec.id), imported.plugins().moduleFileName("gps_compiled_alias"));
     }
 
     void updateAndRunOnARealPipeline() {

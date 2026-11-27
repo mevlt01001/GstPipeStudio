@@ -186,6 +186,7 @@ void MainWindow::buildCommands() {
          }},
         {C::Revert, "actionRevert", "Re&vert file", {}, [this] { controller()->revert(); }, [this] { return controller()->canRevert() ? QString() : "Nothing to revert"; }},
         {C::CloseTab, "actionCloseTab", "&Close tab", {QKeySequence(Qt::CTRL | Qt::Key_W), QKeySequence(Qt::CTRL | Qt::Key_F4)}, [this] { closeDocument(front()); }},
+        {C::NewPlugin, "actionNewPlugin", "New Custom &Plugin…", {}, [this] { files_->newPlugin(); }, environment},
         {C::ImportLaunch, "actionImportLaunch", "New from &gst-launch…", {}, [this] { importLaunch(); }, environment},
         {C::VersionHistory, "actionVersionHistory", "Version &history…", {}, [this] { showVersionHistory(); }, [this] {
              return firstOf(busyReason(), VersionHistory::versions(front()->path()).isEmpty() ? "No earlier versions" : QString());
@@ -227,6 +228,10 @@ void MainWindow::buildCommands() {
         {C::AddElement, "actionAddElement", "Add &element…", {QKeySequence(Qt::CTRL | Qt::Key_E), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_E)},
          [this] { flows()->chooseElement(); }, add},
         {C::AddTemplate, "actionAddTemplate", "Add &template…", {QKeySequence(Qt::CTRL | Qt::Key_T)}, [this] { flows()->chooseComponent(); }, add},
+        {C::AddPlugin, "actionAddPlugin", "Custom plugin…", {}, [this] {
+             if (services_.plugins().components().isEmpty()) files_->newPlugin();
+             else flows()->chooseComponent(services_.plugins().kind());
+         }, add},
         {C::AddLaunch, "actionAddLaunch", "From &gst-launch…", {QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_I)}, [this] { addLaunch(); }, add},
         {C::SaveAsTemplate, "actionSaveTemplateElement", "Save as &template…", {QKeySequence(Qt::CTRL | Qt::Key_G)}, [this] { flows()->saveAsTemplate(front()->selection()); }, selected},
         {C::TemplateParameters, "actionTemplateParameters", "Template &parameters…", {}, [this] { flows()->editTemplateParameters(); }, [this] {
@@ -279,7 +284,7 @@ void MainWindow::buildCommands() {
     commands_->setChecked(C::LinkCurves, [this] { return services_.view().routing() == layout::Routing::Curves; });
     commands_->setChecked(C::LinkRightAngles, [this] { return services_.view().routing() == layout::Routing::RightAngles; });
     commands_->setChecked(C::ConnectedMove, [this] { return services_.view().connectedMove(); });
-    for (auto [id, words] : {std::pair{C::AddElement, "Add element"}, {C::AddTemplate, "Add template"}, {C::AddLaunch, "Add gst-launch"},
+    for (auto [id, words] : {std::pair{C::AddElement, "Add element"}, {C::AddTemplate, "Add template"}, {C::AddPlugin, "Add plugin"}, {C::AddLaunch, "Add gst-launch"},
                              {C::Undo, "Undo"}, {C::Redo, "Redo"}, {C::Delete, "Delete"}, {C::SaveAsTemplate, "Save as template"}})
         (*commands_)[id]->setIconText(words);
     commands_->refresh();
@@ -290,7 +295,7 @@ void MainWindow::buildMenus() {
     using C = Command;
     CommandSet& c = *commands_;
     QMenu* file = menuBar()->addMenu("&File");
-    file->addActions({c[C::NewProject], c[C::New], c[C::Open]});
+    file->addActions({c[C::NewProject], c[C::New], c[C::NewPlugin], c[C::Open]});
     QMenu* recent = file->addMenu("Open &recent");
     recent->setObjectName("menuRecent");
     connect(recent, &QMenu::aboutToShow, this, [this, recent] {
@@ -331,7 +336,7 @@ void MainWindow::buildMenus() {
     viewMenu->addAction(c[C::ConnectedMove]);
 
     QMenu* pipeline = menuBar()->addMenu("&Pipeline");
-    pipeline->addActions({c[C::AddElement], c[C::AddTemplate], c[C::AddLaunch], c[C::SaveAsTemplate], c[C::TemplateParameters], c[C::ConnectSelected]});
+    pipeline->addActions({c[C::AddElement], c[C::AddTemplate], c[C::AddPlugin], c[C::AddLaunch], c[C::SaveAsTemplate], c[C::TemplateParameters], c[C::ConnectSelected]});
     pipeline->addSeparator();
     pipeline->addActions({c[C::Validate], c[C::Run]});
 
@@ -350,7 +355,7 @@ void MainWindow::buildMenus() {
     bar->addSeparator();
     bar->addActions({c[C::Validate], c[C::Run]});
     bar->addSeparator();
-    bar->addActions({c[C::AddElement], c[C::AddTemplate], c[C::AddLaunch], c[C::SaveAsTemplate]});
+    bar->addActions({c[C::AddElement], c[C::AddTemplate], c[C::AddPlugin], c[C::AddLaunch], c[C::SaveAsTemplate]});
     bar->addSeparator();
     bar->addAction(c[C::Delete]);
     bar->widgetForAction(c[C::Run])->setObjectName("primaryAction");
@@ -737,6 +742,10 @@ void MainWindow::showAbout() {
 }
 
 void MainWindow::closeEvent(QCloseEvent* event) {
+    if (!files_->closePluginEditors()) {
+        event->ignore();
+        return;
+    }
     for (Document* d : documents()) {
         d->controller()->stopAll();
         d->backup()->flush();

@@ -17,13 +17,13 @@ class QAction;
 
 enum class Command {
     // File
-    New, NewProject, Open, Save, SaveAs, SaveAll, Revert, CloseTab, ImportLaunch, VersionHistory, Quit,
+    New, NewProject, NewPlugin, Open, Save, SaveAs, SaveAll, Revert, CloseTab, ImportLaunch, VersionHistory, Quit,
     // Edit
     Undo, Redo, Cut, Copy, Paste, Duplicate, Delete, SelectAll, Find,
     // View
     NextTab, PreviousTab, ZoomIn, ZoomOut, Fit, Arrange, AutoAlignment, LinkCurves, LinkRightAngles, ConnectedMove,
     // Pipeline
-    AddElement, AddTemplate, AddLaunch, SaveAsTemplate, TemplateParameters, ConnectSelected, DisconnectSelected, AlignSelection,
+    AddElement, AddTemplate, AddPlugin, AddLaunch, SaveAsTemplate, TemplateParameters, ConnectSelected, DisconnectSelected, AlignSelection,
     Validate, Run,
     // Help
     GstInfo, Support, About,

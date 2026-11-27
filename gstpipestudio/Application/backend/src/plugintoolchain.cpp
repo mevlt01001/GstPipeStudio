@@ -160,7 +160,7 @@ QString CMakePluginBuilder::sdkDirectory() const {
     const auto valid = [](const QString& path) {
         return !path.isEmpty() && QFileInfo::exists(QDir(path).filePath("cmake/GpsElementSdkConfig.cmake"));
     };
-    if (!options_.sdkOverride.isEmpty()) return valid(options_.sdkOverride) ? options_.sdkOverride : QString();
+    if (!options_.sdkOverride.isEmpty()) return valid(options_.sdkOverride) ? QDir(options_.sdkOverride).absolutePath() : QString();
     const QString installed = QDir::cleanPath(QCoreApplication::applicationDirPath() + "/../sdk");
     if (valid(installed)) return installed;
     return valid(options_.sdkBuildDirectory) ? options_.sdkBuildDirectory : QString();

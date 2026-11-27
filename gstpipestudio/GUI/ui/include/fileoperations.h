@@ -20,6 +20,7 @@ class AppServices;
 class Document;
 class MainWindow;
 class SaveTarget;
+class PluginStudio;
 
 class FileOperations : public QObject {
     Q_OBJECT
@@ -45,6 +46,8 @@ public:
     void duplicateFile(const ExplorerEntry& entry);
     void runPipeline(const ExplorerEntry& entry);
     void newProject();
+    void newPlugin();
+    bool closePluginEditors();
 
     void setUrlOpener(UrlOpener* opener) { opener_ = opener; }  // what Reveal opens folders with (tests)
 
@@ -57,8 +60,15 @@ private:
     bool renameFile(const ExplorerEntry& entry, const QString& to);
     void fail(const QString& title, const QString& text) const;
 
+    struct LibraryFiles {
+        std::function<void()> import;
+        std::function<void(const QString&)> exportTo;
+        std::function<bool(const QString&)> close;
+    };
     AppServices& services_;
     MainWindow* window_;
+    PluginStudio* plugins_;
+    QHash<QString, LibraryFiles> libraryFiles_;
     DesktopUrlOpener desktop_;
     UrlOpener* opener_ = &desktop_;
 };

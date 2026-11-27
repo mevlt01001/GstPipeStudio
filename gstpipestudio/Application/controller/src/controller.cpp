@@ -44,7 +44,14 @@ Controller::Controller(AppServices& services, QObject* parent)
     connect(&validation_, &ValidationSession::changed, this, &Controller::changed);
     connect(&validation_, &ValidationSession::finished, this, &Controller::validated);
     connect(&validation_, &ValidationSession::logLine, this, logger());
-    connect(&runs_, &RunSession::changed, this, &Controller::changed);
+    connect(&runs_, &RunSession::changed, this, [this] {
+        if (factoryReloadPending_ && !running() && !monitoring()) {
+            factoryReloadPending_ = false;
+            validation_.request();
+        } else {
+            emit changed();
+        }
+    });
     connect(&runs_, &RunSession::runFinished, this, &Controller::runFinished);
     connect(&runs_, &RunSession::telemetryReceived, this, &Controller::telemetryReceived);
     connect(&runs_, &RunSession::logLine, this, logger());
@@ -60,6 +67,11 @@ Controller::Controller(AppServices& services, QObject* parent)
     connect(&catalog(), &FactoryCatalog::factoryReloaded, this, [this](const QString& factory) {
         if (std::none_of(plan().elements.begin(), plan().elements.end(),
                          [&](const gps::Element& element) { return element.factory == toStd(factory); })) return;
+        if (running() || monitoring()) {
+            factoryReloadPending_ = true;
+            emit changed();
+            return;
+        }
         validation_.request();  // emits changed, after the Pipeline receives the current pad definitions
     });
     connect(&catalog(), &FactoryCatalog::notice, this, forwardError);

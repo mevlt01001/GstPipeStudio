@@ -15,6 +15,7 @@
 #include <QRegularExpression>
 #include <QSaveFile>
 #include <QTemporaryDir>
+#include <memory>
 
 namespace {
 
@@ -87,7 +88,20 @@ QString PluginLibrary::sourcePath(const QString& id) const {
     return QDir(directory(id)).filePath(id + ".cpp");
 }
 
+QString PluginLibrary::moduleFileName(const QString& id) const {
+    if (const auto* entry = find(id)) return entry->module;
+    return {};
+}
+
 QString PluginLibrary::modulePath(const Entry& entry) const { return QDir(root_).filePath(".bin/" + entry.module); }
+
+QStringList PluginLibrary::moduleMembers(const Entry& entry) const {
+    QStringList ids;
+    for (const auto& member : entries_) {
+        if (member.module == entry.module) ids << member.spec.id;
+    }
+    return ids;
+}
 
 QByteArray PluginLibrary::fingerprint(const QString& id) const {
     const QDir folder(directory(id));
@@ -133,8 +147,9 @@ QList<ComponentInfo> PluginLibrary::components() const {
     QList<ComponentInfo> result;
     for (const auto& entry : entries_) {
         const QString id = entry.spec.id;
-        const bool input = entry.spec.hasPort(PluginDirection::Sink);
-        const bool output = entry.spec.hasPort(PluginDirection::Src);
+        const auto* available = QFileInfo(modulePath(entry)).isFile() ? catalog_.entry(id) : nullptr;
+        const bool input = available ? !available->isSource : entry.spec.hasPort(PluginDirection::Sink);
+        const bool output = available ? !available->isSink : entry.spec.hasPort(PluginDirection::Src);
         ComponentInfo info;
         info.ref = {kind(), id};
         info.title = entry.spec.longName;
@@ -144,9 +159,9 @@ QList<ComponentInfo> PluginLibrary::components() const {
         info.role = !input ? gps::Role::Source : output ? gps::Role::Filter : gps::Role::Sink;
         info.takesInput = input;
         info.givesOutput = output;
-        if (stateNow == PluginBuildState::Built) info.status = ComponentStatus::Ready;
-        if (stateNow == PluginBuildState::Outdated || stateNow == PluginBuildState::Building) info.status = ComponentStatus::Pending;
-        if (stateNow == PluginBuildState::Failed) info.status = ComponentStatus::Failed;
+        static const ComponentStatus badges[]{
+            ComponentStatus::Pending, ComponentStatus::Pending, ComponentStatus::Ready, ComponentStatus::Pending, ComponentStatus::Failed};
+        info.status = badges[static_cast<int>(stateNow)];
         result << info;
     }
     return result;
@@ -242,7 +257,6 @@ bool PluginLibrary::installEntry(const Entry& entry, const QString& sourceDirect
     if (!writeManifest(folder.path(), entry, error)) return false;
     if (!QDir().rename(folder.path(), directory(id))) return fail(error, "Unable to install the plugin folder " + directory(id));
     entries_.insert(id, entry);
-    emit changed();
     return true;
 }
 
@@ -250,7 +264,9 @@ bool PluginLibrary::createPlugin(const PluginSpec& spec, QString* error) {
     Entry entry;
     entry.spec = spec;
     entry.module = "libgst" + spec.id + ".so";
-    return installEntry(entry, {}, error);
+    if (!installEntry(entry, {}, error)) return false;
+    emit changed();
+    return true;
 }
 
 bool PluginLibrary::saveSource(const QString& id, const QString& text, QString* error) {
@@ -340,9 +356,11 @@ void PluginLibrary::buildFinished(const QString& id, const QString& root, const 
 QList<ComponentAction> PluginLibrary::actions(const QString& id) const {
     const auto* entry = find(id);
     if (!entry) return {};
-    QList<ComponentAction> result{ComponentAction::Rename, ComponentAction::Export, ComponentAction::Delete};
-    if (!entry->binaryOnly) result.prepend(ComponentAction::Edit);
-    return result;
+    using Action = ComponentAction;
+    QList<Action> result{Action::Place};
+    if (!entry->binaryOnly)
+        result << Action::EditCode << Action::EditSpec << Action::Build << Action::CopyAiPrompt << Action::ExternalEditor;
+    return result << Action::Reveal << Action::Export << Action::Rename << Action::Delete;
 }
 
 QString PluginLibrary::nameError(const QString& id, const QString& wanted) const {
@@ -368,24 +386,56 @@ bool PluginLibrary::rename(const QString& id, const QString& name, QString* newI
 
 bool PluginLibrary::remove(const QString& id) {
     const auto* entry = find(id);
-    if (!entry || building_.contains(buildKey(root_, id))) return false;
-    const auto binary = modulePath(*entry);
-    const auto parked = QDir(directory(id)).filePath(entry->module);
-    const bool hasBinary = QFileInfo::exists(binary);
-    if (hasBinary && !QFile::rename(binary, parked)) return false;
-    if (!QFile::moveToTrash(directory(id))) {
-        if (hasBinary && !QFile::rename(parked, binary)) emit notice("Unable to restore " + binary + " from " + parked);
-        return false;
+    if (!entry) return false;
+    const auto members = moduleMembers(*entry);
+    for (const auto& member : members) {
+        if (building_.contains(buildKey(root_, member))) return false;
     }
-    entries_.remove(id);
-    catalog_.forgetFactory(id);
+
+    QTemporaryDir staging(QDir(root_).filePath(".removed-" + id + "-XXXXXX"));
+    if (!staging.isValid()) return false;
+    const QDir trash(staging.path());
+    const auto binary = modulePath(*entry);
+    const auto parked = trash.filePath(entry->module);
+    QStringList moved;
+    bool movedBinary = false;
+    auto rollback = [&] {
+        bool restored = true;
+        for (const auto& member : moved) {
+            if (!QDir().rename(trash.filePath(member), directory(member))) restored = false;
+        }
+        if (movedBinary && !QFile::rename(parked, binary)) restored = false;
+        if (!restored) {
+            staging.setAutoRemove(false);
+            emit notice("Unable to restore all plugin files. Recover remaining files from " + staging.path());
+        }
+        return false;
+    };
+    if (QFileInfo::exists(binary)) {
+        if (!QFile::rename(binary, parked)) return false;
+        movedBinary = true;
+    }
+    for (const auto& member : members) {
+        if (!QDir().rename(directory(member), trash.filePath(member))) return rollback();
+        moved << member;
+    }
+    if (!QFile::moveToTrash(staging.path())) return rollback();
+    for (const auto& member : members) {
+        entries_.remove(member);
+        catalog_.forgetFactory(member);
+    }
     catalog_.reloadList();
     emit changed();
     return true;
 }
 
-QString PluginLibrary::removalNote(const QString&) const {
-    return "Pipelines using this factory will need the plugin reinstalled before the next validation or run.";
+QString PluginLibrary::removalNote(const QString& id) const {
+    QString note = "Pipelines using this factory will need the plugin reinstalled before the next validation or run.";
+    if (const auto* entry = find(id)) {
+        const auto members = moduleMembers(*entry);
+        if (members.size() > 1) note += "\nThe shared module supplies these factories: " + members.join(", ") + ".";
+    }
+    return note;
 }
 
 bool PluginLibrary::exportTo(const QString& id, const QString& destination, QString* error) const {
@@ -415,7 +465,9 @@ QString PluginLibrary::importFrom(const QString& path, QString* error) {
         fail(error, "Choose a plugin source folder with its manifest, CMakeLists.txt and C++ file.");
         return {};
     }
-    return installEntry(entry, folder.path(), error) ? entry.spec.id : QString();
+    if (!installEntry(entry, folder.path(), error)) return {};
+    emit changed();
+    return entry.spec.id;
 }
 
 void PluginLibrary::importModule(const QString& path, QObject* context, std::function<void(const QString&, const QString&)> done) {
@@ -429,31 +481,54 @@ void PluginLibrary::importModule(const QString& path, QObject* context, std::fun
         if (!guard) return;
         if (root_ != root) return done({}, "The plugin library changed during import.");
         if (!probeError.isEmpty()) return done({}, probeError);
-        if (entries.size() != 1) return done({}, "Import a module that exposes one element factory.");
-        const auto& factory = entries.front();
-        Entry entry;
-        entry.spec.id = fromStd(factory.factory);
-        entry.spec.longName = fromStd(factory.longName);
-        entry.spec.klass = fromStd(factory.klass);
-        entry.spec.archetype = PluginArchetype::GeneralElement;
-        entry.spec.ports.clear();
-        if (!factory.isSource) entry.spec.ports << PluginPortSpec{"sink", PluginDirection::Sink, PluginPresence::Always, PluginCaps::Any, {}};
-        if (!factory.isSink) entry.spec.ports << PluginPortSpec{"src", PluginDirection::Src, PluginPresence::Always, PluginCaps::Any, {}};
-        entry.module = module;
-        entry.binaryOnly = true;
-        const auto id = entry.spec.id;
-        if (QFileInfo::exists(modulePath(entry))) return done({}, "A module named " + module + " already exists.");
-        QString error;
-        if (!installEntry(entry, {}, &error)) return done({}, error);
-        if (!PluginModules::publish(path, modulePath(entry), &error)) {
-            QDir(directory(id)).removeRecursively();  // the directory was just created by this import
-            entries_.remove(id);
-            emit changed();
-            return done({}, error);
+        QList<Entry> imports;
+        QSet<QString> ids;
+        for (const auto& factory : entries) {
+            Entry entry;
+            entry.spec.id = fromStd(factory.factory);
+            entry.spec.longName = factory.longName.empty() ? entry.spec.id : fromStd(factory.longName);
+            entry.spec.klass = fromStd(factory.klass);
+            entry.spec.archetype = PluginArchetype::GeneralElement;
+            entry.spec.ports.clear();
+            if (!factory.isSource)
+                entry.spec.ports << PluginPortSpec{"sink", PluginDirection::Sink, PluginPresence::Always, PluginCaps::Any, {}};
+            if (!factory.isSink)
+                entry.spec.ports << PluginPortSpec{"src", PluginDirection::Src, PluginPresence::Always, PluginCaps::Any, {}};
+            entry.module = module;
+            entry.binaryOnly = true;
+            const auto& id = entry.spec.id;
+            if (const auto why = newIdError(id); !why.isEmpty()) return done({}, why);
+            if (ids.contains(id)) return done({}, "The module registered a factory more than once: " + id);
+            ids.insert(id);
+            imports << std::move(entry);
         }
-        catalog_.reloadFactory(id, [guard, this, id, done](bool ok) {
-            emit changed();
-            if (guard) done(ok ? id : QString(), ok ? QString() : "The imported factory could not be refreshed.");
-        });
+        const auto target = modulePath(imports.front());
+        if (QFileInfo::exists(target)) return done({}, "A module named " + module + " already exists.");
+        QString error;
+        QStringList installed;
+        auto rollback = [&] {
+            for (const auto& id : installed) {
+                if (!QDir(directory(id)).removeRecursively()) emit notice("Unable to remove incomplete plugin import at " + directory(id));
+                entries_.remove(id);
+            }
+            done({}, error);
+        };
+        for (const auto& entry : imports) {
+            if (!installEntry(entry, {}, &error)) return rollback();
+            installed << entry.spec.id;
+        }
+        if (!PluginModules::publish(path, target, &error)) return rollback();
+        auto remaining = std::make_shared<qsizetype>(installed.size());
+        auto failed = std::make_shared<QStringList>();
+        for (const auto& id : installed) {
+            catalog_.reloadFactory(id, [guard, this, id, installed, remaining, failed, done](bool ok) {
+                if (!ok) *failed << id;
+                if (--*remaining != 0) return;
+                emit changed();
+                if (!guard) return;
+                if (failed->isEmpty()) done(installed.join(", "), {});
+                else done({}, "Unable to refresh imported factories: " + failed->join(", "));
+            });
+        }
     });
 }

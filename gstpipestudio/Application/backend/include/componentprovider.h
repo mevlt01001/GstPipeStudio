@@ -37,7 +37,7 @@ struct ComponentInfo {
 // What a component's context menu may offer; the window carries them out (they ask for names and files).
 class SaveTarget;
 
-enum class ComponentAction { Edit, Rename, Export, Delete };
+enum class ComponentAction { Edit, Rename, Export, Delete, Place, EditCode, EditSpec, Build, CopyAiPrompt, ExternalEditor, Reveal };
 
 class ComponentProvider : public QObject {
     Q_OBJECT
@@ -59,6 +59,7 @@ public:
 
     // Managing the components. A provider offers in actions() what it supports; the rest refuse.
     virtual QList<ComponentAction> actions(const QString& id) const;
+    virtual bool canCreate() const { return false; }
     virtual bool canImport() const { return false; }
     virtual QString nameError(const QString& id, const QString& wanted) const;  // why it cannot be renamed so, "" when it can
     virtual bool rename(const QString& id, const QString& to, QString* newId, QString* error);  // says renamed()

@@ -117,7 +117,7 @@ PickerPage::PickerPage(const PickerData& data, QWidget* parent) : DrawerPage(par
             auto* item = new QListWidgetItem(c.title, list_);
             item->setData(LongNameRole, c.description);
             item->setData(HintRole, c.hint);
-            item->setData(SearchRole, (c.title + " " + c.description + " " + provider->kind()).toLower());
+            item->setData(SearchRole, (c.title + " " + c.ref.id + " " + c.description + " " + provider->kind()).toLower());
             item->setData(kProviderRole, c.ref.provider);
             item->setData(kComponentRole, c.ref.id);
             item->setData(kIsSourceRole, c.role == gps::Role::Source);
@@ -165,7 +165,7 @@ PickerPage::PickerPage(const PickerData& data, QWidget* parent) : DrawerPage(par
     if (data.importComponent) {
         auto* import = new QPushButton("Import…", this);
         import->setObjectName("importTemplate");
-        import->setToolTip("Add a template file to the library");
+        import->setToolTip("Import into the library");
         footer->insertWidget(0, import);
         connect(import, &QPushButton::clicked, this, data.importComponent);
     }
