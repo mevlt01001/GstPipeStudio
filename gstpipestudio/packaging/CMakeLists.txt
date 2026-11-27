@@ -8,7 +8,7 @@ install(FILES ${GPS_ROOT}/third_party/elkjs/LICENSE.md DESTINATION share/doc/gst
 
 # The programs are in GPS_PRIVATE_DIR/bin (see the top CMakeLists.txt); bin/ gets a link to each, so they are on the PATH.
 # A program started through its link still looks for its Qt and its helpers where it really is.
-foreach(tool gstpipestudio gps-inspect gps-update gps-run gps-monitor gps-import)
+foreach(tool gstpipestudio gps-inspect gps-update gps-run gps-monitor gps-import gps-mcp)
     install(CODE "
         file(MAKE_DIRECTORY \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/bin\")
         file(CREATE_LINK ../${GPS_PRIVATE_DIR}/bin/${tool} \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/bin/${tool}\" SYMBOLIC)

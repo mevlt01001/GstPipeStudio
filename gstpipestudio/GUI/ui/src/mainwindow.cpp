@@ -42,6 +42,8 @@
 #include "explorersource.h"
 #include "fileoperations.h"
 #include "logpanel.h"
+#include "mcpbridge.h"
+#include "mcpinspectorpanel.h"
 #include "flows.h"
 #include "notificationoverlay.h"
 #include "panels.h"
@@ -101,6 +103,17 @@ MainWindow::MainWindow(AppServices& services, DocumentSessions* sessions, Contro
     connect(notifications_, &NotificationOverlay::viewLogRequested, this, [this] { panels_->show(logPanel()); });
     buildStatusBar();
     tabs_->add(first);
+    mcpPanel_ = new McpInspectorPanel(services_.mcpAudit(), this);
+    panels_->add(mcpPanel_, "MCP", 0, Qt::BottomDockWidgetArea);
+    mcpLabel_->setText(QString("MCP: %1").arg(mcpPanel_->entryCount()));
+    connect(mcpPanel_, &McpInspectorPanel::countChanged, this, [this](int count) {
+        if (mcpLabel_) mcpLabel_->setText(QString("MCP: %1").arg(count));
+    });
+    connect(mcpPanel_, &McpInspectorPanel::configCopied, this, [this] {
+        notify({NoticeSeverity::Info, "MCP Config Copied", "Copied gps-mcp configuration JSON to clipboard.", false});
+    });
+    mcpBridge_ = new McpBridgeServer(services_, services_.mcpAudit(), [this] { return front() ? front()->controller() : nullptr; }, this);
+    if (!qEnvironmentVariableIsSet("GPS_TEST_MODE")) mcpBridge_->start();
     explorer_ = new Explorer(ExplorerSource::standard(services_, this), *files_, this);
     panels_->add(explorer_, "Explorer", 0, Qt::LeftDockWidgetArea);
     resizeDocks({panels_->dock(logPanel())}, {240}, Qt::Vertical);
@@ -384,6 +397,10 @@ void MainWindow::buildStatusBar() {
     environment_->setObjectName("environmentLabel");
     environment_->setMinimumWidth(1);
     Theme::setStyle(environment_, "color: @muted@;");
+    mcpLabel_ = new QLabel("MCP: 0", this);
+    mcpLabel_->setObjectName("mcpLabel");
+    mcpLabel_->setMinimumWidth(1);
+    Theme::setStyle(mcpLabel_, "color: @muted@;");
     command_ = new QLineEdit(this);
     command_->setObjectName("commandLabel");
     command_->setAccessibleName("Pipeline launch command");
@@ -394,6 +411,7 @@ void MainWindow::buildStatusBar() {
     statusBar()->setSizeGripEnabled(false);
     statusBar()->addWidget(state_);
     statusBar()->addWidget(environment_);
+    statusBar()->addWidget(mcpLabel_);
     statusBar()->addPermanentWidget(command_, 1);
 }
 

@@ -13,6 +13,7 @@
 #include "documenttiming.h"
 #include "environmentservice.h"
 #include "factorycatalog.h"
+#include "mcpaudit.h"
 #include "pluginlibrary.h"
 #include "templatelibrary.h"
 #include "viewpreferences.h"
@@ -36,6 +37,7 @@ public:
     ViewPreferences& view() { return view_; }
     BackupService& backups() { return backups_; }
     DiagnosticLog& diagnosticLog() { return diagnosticLog_; }
+    McpAuditLogger& mcpAudit() { return mcpAudit_; }
 
 private:
     DocumentTiming timing_;
@@ -47,4 +49,5 @@ private:
     ViewPreferences view_;
     BackupService backups_;
     DiagnosticLog diagnosticLog_;
+    McpAuditLogger mcpAudit_;
 };

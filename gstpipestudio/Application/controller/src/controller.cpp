@@ -573,6 +573,21 @@ bool Controller::niceAlign(const QStringList& elements) {
     return layout_->align(chosen, layout_->pinOf(chosen.isEmpty() ? fromStd(plan().elementNames()) : chosen));  // what is on screen stays there
 }
 
+bool Controller::applyBatchEdit(const QString& action, const std::function<bool(gps::Graph&, QString*)>& change, QString* error) {
+    if (edits_.blocked()) {
+        if (error) *error = edits_.blockedReason();
+        return false;
+    }
+    QString localError;
+    const bool ok = edits_.transact([&](gps::Graph& g, Edit& e) {
+        if (!change(g, &localError)) return false;
+        e.action = action;
+        return true;
+    });
+    if (!ok && error) *error = localError.isEmpty() ? edits_.blockedReason() : localError;
+    return ok;
+}
+
 // An edit of the user's, with automatic alignment on: the whole canvas follows, once for a burst of edits.
 void Controller::alignAfterEdit() {
     if (!services_.view().autoAlign() || layout_->applying() || alignQueued_) return;

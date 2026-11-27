@@ -47,6 +47,7 @@ add_library(gps_gui STATIC
     ui/widgets/include/capsfieldeditor.h ui/widgets/src/capsfieldeditor.cpp
     ui/widgets/include/factorydelegate.h ui/widgets/src/factorydelegate.cpp
     ui/widgets/include/logpanel.h ui/widgets/src/logpanel.cpp
+    ui/widgets/include/mcpinspectorpanel.h ui/widgets/src/mcpinspectorpanel.cpp
     ui/widgets/include/wheelguard.h ui/widgets/src/wheelguard.cpp
     ui/widgets/include/propertyeditor.h ui/widgets/src/propertyeditor.cpp
     ui/widgets/include/spinner.h ui/widgets/src/spinner.cpp

@@ -156,6 +156,7 @@ public:
     // Nice alignment of the selected elements, or of the whole canvas when the list is empty: one undo step when it
     // lands (asynchronously, canvasLayout().aligned()). Leaves execution untouched.
     bool niceAlign(const QStringList& elements = {});
+    bool applyBatchEdit(const QString& action, const std::function<bool(gps::Graph&, QString*)>& change, QString* error = nullptr);
     CanvasLayout& canvasLayout() { return *layout_; }
     const CanvasLayout& canvasLayout() const { return *layout_; }
 

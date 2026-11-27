@@ -3,7 +3,7 @@ if(TARGET gps_application)
     return()
 endif()
 
-find_package(Qt6 REQUIRED COMPONENTS Gui)
+find_package(Qt6 REQUIRED COMPONENTS Gui Network)
 set(CMAKE_AUTOMOC ON)
 add_subdirectory(${GPS_ROOT}/third_party/quickjs ${CMAKE_BINARY_DIR}/third_party/quickjs)
 
@@ -54,14 +54,18 @@ add_library(gps_application STATIC
     layout/include/boxplacement.h layout/src/boxplacement.cpp
     layout/include/layoutgraph.h
     layout/include/elkengine.h layout/src/elkengine.cpp
-    layout/include/layoutrunner.h layout/src/layoutrunner.cpp)
+    layout/include/layoutrunner.h layout/src/layoutrunner.cpp
+    mcp/include/mcpaudit.h mcp/src/mcpaudit.cpp
+    mcp/include/mcpbridge.h mcp/src/mcpbridge.cpp
+    mcp/include/mcpservercore.h mcp/src/mcpservercore.cpp)
 target_include_directories(gps_application PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/backend/include
     ${CMAKE_CURRENT_SOURCE_DIR}/model/include
     ${CMAKE_CURRENT_SOURCE_DIR}/controller/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/layout/include)
-target_link_libraries(gps_application PUBLIC Qt6::Gui gps_pipeline PRIVATE gps_quickjs)
+    ${CMAKE_CURRENT_SOURCE_DIR}/layout/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/mcp/include)
+target_link_libraries(gps_application PUBLIC Qt6::Gui Qt6::Network gps_pipeline PRIVATE gps_quickjs)
 
 target_compile_definitions(gps_application PRIVATE
     GPS_ELEMENT_SDK_BUILD_DIR="${GPS_ELEMENT_SDK_BUILD_DIR}"

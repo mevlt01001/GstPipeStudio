@@ -68,6 +68,7 @@
 #include "capslabel.h"
 #include "linkitem.h"
 #include "logpanel.h"
+#include "mcpinspectorpanel.h"
 #include "commandset.h"
 #include "contextmenus.h"
 #include "mainwindow.h"
@@ -2939,6 +2940,46 @@ private slots:
         QVERIFY(c->undo());
         QVERIFY(QLineF(QPointF(c->plan().find(toStd(sink))->x, c->plan().find(toStd(sink))->y), oldSink).length() < 1.0);
         c->services().view().setAutoAlign(false);
+    }
+
+    void mcpInspectorPanelRendersLiveAuditAndCopiesConfig() {
+        QTemporaryDir auditDir;
+        QVERIFY(auditDir.isValid());
+        McpAuditLogger audit(auditDir.path());
+        McpInspectorPanel panel(audit);
+
+        auto* table = panel.findChild<QTableWidget*>("mcpAuditTable");
+        auto* reqView = panel.findChild<QPlainTextEdit*>("mcpRequestView");
+        auto* respView = panel.findChild<QPlainTextEdit*>("mcpResponseView");
+        auto* copyBtn = panel.findChild<QPushButton*>("mcpCopyConfigButton");
+        QVERIFY(table && reqView && respView && copyBtn);
+        QCOMPARE(table->rowCount(), 0);
+
+        McpAuditEntry entry;
+        entry.clientName = "test-agent";
+        entry.clientVersion = "1.2";
+        entry.mode = "live-gui";
+        entry.method = "tools/call";
+        entry.toolOrResource = "edit_pipeline";
+        entry.requestJson = R"({"jsonrpc":"2.0","id":1,"method":"tools/call"})";
+        entry.responseJson = R"({"jsonrpc":"2.0","id":1,"result":{"ok":true}})";
+        entry.durationMs = 12.5;
+        entry.ok = true;
+        audit.record(entry);
+
+        QTRY_COMPARE_WITH_TIMEOUT(table->rowCount(), 1, 2000);
+        QCOMPARE(table->item(0, 1)->text(), QString("test-agent 1.2"));
+        QVERIFY(table->item(0, 2)->text().contains("edit_pipeline"));
+        QVERIFY(reqView->toPlainText().contains("\"tools/call\""));
+        QVERIFY(respView->toPlainText().contains("\"ok\": true"));
+
+        copyBtn->click();
+        const QString copied = QGuiApplication::clipboard()->text();
+        QVERIFY(copied.contains("gps-mcp"));
+        const QJsonDocument cfg = QJsonDocument::fromJson(copied.toUtf8());
+        QVERIFY(cfg.isObject());
+        QCOMPARE(cfg.object().value("mcpServers").toObject().value("gstpipestudio").toObject().value("command").toString(),
+                 QString("gps-mcp"));
     }
 
 private:

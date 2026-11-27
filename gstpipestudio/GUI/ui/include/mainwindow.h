@@ -26,6 +26,8 @@ class Explorer;
 class FileOperations;
 class Flows;
 class LogPanel;
+class McpBridgeServer;
+class McpInspectorPanel;
 class NotificationOverlay;
 class QLabel;
 class QLineEdit;
@@ -67,6 +69,7 @@ public:
     Drawer* drawer() const;
     UpdatePanel* updatePanel() const;
     LogPanel* logPanel() const;
+    McpInspectorPanel* mcpPanel() const { return mcpPanel_; }
     QWidget* propertiesTab() const;
     QWidget* capsTab() const;
     SetupPage* setupPage() const;
@@ -139,9 +142,12 @@ private:
     ContextMenus* menus_;
     Panels* panels_ = nullptr;
     Explorer* explorer_ = nullptr;
+    McpInspectorPanel* mcpPanel_ = nullptr;
+    McpBridgeServer* mcpBridge_ = nullptr;
     NotificationOverlay* notifications_ = nullptr;
     QLabel* state_ = nullptr;
     QLabel* environment_ = nullptr;
+    QLabel* mcpLabel_ = nullptr;
     QLineEdit* command_ = nullptr;
     bool built_ = false;         // menus and actions exist: the state can be shown
     bool refreshDue_ = false;    // a refresh is on its way
