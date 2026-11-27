@@ -17,7 +17,7 @@ class QAction;
 
 enum class Command {
     // File
-    New, NewProject, NewPlugin, Open, Save, SaveAs, SaveAll, Revert, CloseTab, ImportLaunch, VersionHistory, Quit,
+    New, NewProject, NewPlugin, Open, Save, SaveAs, SaveAll, Revert, CloseTab, ImportLaunch, ExportSharedLibrary, VersionHistory, Quit,
     // Edit
     Undo, Redo, Cut, Copy, Paste, Duplicate, Delete, SelectAll, Find,
     // View

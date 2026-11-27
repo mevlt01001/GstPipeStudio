@@ -93,6 +93,13 @@ QString PluginLibrary::moduleFileName(const QString& id) const {
     return {};
 }
 
+QString PluginLibrary::publishedModule(const QString& id) const {
+    const auto* entry = find(id);
+    if (!entry) return {};
+    const QString path = modulePath(*entry);
+    return QFileInfo::exists(path) ? path : QString();
+}
+
 QString PluginLibrary::modulePath(const Entry& entry) const { return QDir(root_).filePath(".bin/" + entry.module); }
 
 QStringList PluginLibrary::moduleMembers(const Entry& entry) const {

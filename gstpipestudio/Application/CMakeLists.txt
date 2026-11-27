@@ -23,6 +23,7 @@ add_library(gps_application STATIC
     backend/include/pluginspec.h backend/src/pluginspec.cpp
     backend/include/pluginscaffolder.h backend/src/pluginscaffolder.cpp
     backend/include/plugintoolchain.h backend/src/plugintoolchain.cpp
+    backend/include/pipelinecompiler.h backend/src/pipelinecompiler.cpp
     backend/include/templatelibrary.h backend/src/templatelibrary.cpp
     backend/include/settings.h backend/src/settings.cpp
     backend/include/viewpreferences.h backend/src/viewpreferences.cpp
@@ -62,7 +63,9 @@ target_include_directories(gps_application PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/layout/include)
 target_link_libraries(gps_application PUBLIC Qt6::Gui gps_pipeline PRIVATE gps_quickjs)
 
-target_compile_definitions(gps_application PRIVATE GPS_ELEMENT_SDK_BUILD_DIR="${GPS_ELEMENT_SDK_BUILD_DIR}")
+target_compile_definitions(gps_application PRIVATE
+    GPS_ELEMENT_SDK_BUILD_DIR="${GPS_ELEMENT_SDK_BUILD_DIR}"
+    GPS_RUNTIME_SDK_DIR="${GPS_ROOT}/../runtime_sdk")
 add_library(GstPipeStudio::Application ALIAS gps_application)
 
 set(GPS_BUILD_CHANNEL "Development" CACHE STRING "Application identity: Development or Release")

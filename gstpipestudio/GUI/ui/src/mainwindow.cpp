@@ -7,6 +7,7 @@
 #include <QCloseEvent>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QFileDialog>
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QLabel>
@@ -31,6 +32,7 @@
 #include "canvasview.h"
 #include "contextmenus.h"
 #include "controller.h"
+#include "pipelinecompiler.h"
 #include "document.h"
 #include "documentbackup.h"
 #include "documenttabs.h"
@@ -191,6 +193,8 @@ void MainWindow::buildCommands() {
         {C::CloseTab, "actionCloseTab", "&Close tab", {QKeySequence(Qt::CTRL | Qt::Key_W), QKeySequence(Qt::CTRL | Qt::Key_F4)}, [this] { closeDocument(front()); }},
         {C::NewPlugin, "actionNewPlugin", "New Custom &Plugin…", {}, [this] { files_->newPlugin(); }, environment},
         {C::ImportLaunch, "actionImportLaunch", "New from &gst-launch…", {}, [this] { importLaunch(); }, environment},
+        {C::ExportSharedLibrary, "actionExportSharedLibrary", "Export Shared &Library (.so)…", {}, [this] { exportSharedLibrary(); },
+         [this] { return firstOf(busyReason(), controller()->plan().empty() ? "The canvas is empty" : QString()); }},
         {C::VersionHistory, "actionVersionHistory", "Version &history…", {}, [this] { showVersionHistory(); }, [this] {
              return firstOf(busyReason(), VersionHistory::versions(front()->path()).isEmpty() ? "No earlier versions" : QString());
          }},
@@ -319,7 +323,7 @@ void MainWindow::buildMenus() {
     file->addSeparator();
     file->addActions({c[C::Revert], c[C::CloseTab]});
     file->addSeparator();
-    file->addActions({c[C::ImportLaunch], c[C::VersionHistory]});
+    file->addActions({c[C::ImportLaunch], c[C::ExportSharedLibrary], c[C::VersionHistory]});
     file->addSeparator();
     file->addAction(c[C::Quit]);
 
@@ -746,6 +750,46 @@ void MainWindow::importLaunch() {
     Document* d = tabs_->target();
     d->opening("imported");
     d->controller()->importLaunch(*description);
+}
+
+void MainWindow::exportSharedLibrary() {
+    if (controller()->plan().empty() || controller()->busy()) return;
+    const QString outDir = QFileDialog::getExistingDirectory(this, "Export Shared Library", Settings::lastDir());
+    if (outDir.isEmpty()) return;
+    const QString defaultName = PipelineCompiler::sanitizeModuleName(front()->title());
+    const auto moduleName = Prompt::text(this, "Export Shared Library",
+                                         "Module name (lowercase letters, digits, underscores):", defaultName);
+    if (!moduleName) return;
+    if (const QString nameErr = PipelineCompiler::validateModuleName(*moduleName); !nameErr.isEmpty()) {
+        Prompt::error(this, "Export Shared Library", nameErr);
+        return;
+    }
+
+    PipelineExportOptions opts;
+    opts.moduleName = *moduleName;
+    opts.outputDir = outDir;
+    const gps::Graph plan = controller()->plan();
+    services_.diagnosticLog().info(LogChannel::PluginBuild, opts.moduleName,
+                                   "Exporting shared library to " + opts.outputDir + "…");
+    notify({NoticeSeverity::Info, "Exporting shared library", "Building lib" + opts.moduleName + ".so…", false});
+
+    QPointer<MainWindow> self(this);
+    PipelineCompiler::compileAsync(
+        plan, opts, this,
+        [self, name = opts.moduleName](const QString& line) {
+            if (self) self->services_.diagnosticLog().info(LogChannel::PluginBuild, name, line);
+        },
+        [self, name = opts.moduleName](const PipelineExportResult& result) {
+            if (!self) return;
+            if (result.ok) {
+                self->services_.diagnosticLog().info(LogChannel::PluginBuild, name, "Exported " + result.soPath);
+                self->notify({NoticeSeverity::Info, "Shared library exported", result.soPath, false});
+            } else {
+                self->services_.diagnosticLog().error(LogChannel::PluginBuild, name, result.error);
+                self->notify({NoticeSeverity::Error, "Shared library export failed", result.error, false});
+            }
+        },
+        &services_.plugins());
 }
 
 void MainWindow::addLaunch() {

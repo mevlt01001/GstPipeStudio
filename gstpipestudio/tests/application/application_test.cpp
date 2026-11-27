@@ -3,11 +3,23 @@
 #include "boxplacement.h"
 #include "diagnosticlog.h"
 #include "graph.h"
+#include "pipelinecompiler.h"
 #include "pluginscaffolder.h"
 #include "pluginspec.h"
 #include "plugintoolchain.h"
 #include "runtime.h"
 #include "wire.h"
+
+#ifdef GPS_HAS_RUNTIME_SDK
+#include "gps_runtime/pipeline.hpp"
+#endif
+
+#include <QDir>
+#include <QFileInfo>
+#include <QProcess>
+#include <QProcessEnvironment>
+#include <QStandardPaths>
+#include <QTemporaryDir>
 
 class ApplicationTest : public QObject {
     Q_OBJECT
@@ -124,6 +136,70 @@ private slots:
         QCOMPARE(QString::fromStdString(decoded.diagnostics[0].element), QString("conv_0"));
         QCOMPARE(QString::fromStdString(decoded.diagnostics[0].pad), QString("sink"));
         QVERIFY(decoded.diagnostics[0].isError);
+    }
+
+    void pipelineCompilerProducesDualPersonalitySharedLibrary() {
+        QVERIFY(!PipelineCompiler::validateModuleName("123bad").isEmpty());
+        QVERIFY(!PipelineCompiler::validateModuleName("BadUpper").isEmpty());
+        QVERIFY(PipelineCompiler::validateModuleName("test_export").isEmpty());
+
+#ifndef GPS_HAS_RUNTIME_SDK
+        QSKIP("GpsRuntimeSdk::Runtime not linked in this build");
+#else
+        if (QStandardPaths::findExecutable("cmake").isEmpty()) QSKIP("cmake not available");
+
+        gps::Graph g;
+        const std::string src = g.addSource("videotestsrc", {{"num-buffers", "3"}});
+        const std::string sink = g.addAfter(src, "src", "fakesink", "sink");
+        QVERIFY(!sink.empty());
+        g.setExposed({{"frames", src, "num-buffers"}});
+
+        QTemporaryDir tempDir;
+        QVERIFY(tempDir.isValid());
+
+        PipelineExportOptions opts;
+        opts.moduleName = "test_export";
+        opts.outputDir = tempDir.path();
+        opts.version = "0.2.0";
+        opts.description = "Unit test exported pipeline";
+
+        const PipelineExportResult res = PipelineCompiler::compile(g, opts);
+        QVERIFY2(res.ok, qPrintable(res.error + "\n" + res.output));
+        QVERIFY(QFileInfo::exists(res.soPath));
+        QVERIFY(QFileInfo::exists(res.integrationDocPath));
+        QVERIFY(QFileInfo::exists(res.exampleHostPath));
+        QVERIFY(QFileInfo::exists(QDir(tempDir.path()).filePath("include/gps_runtime/abi.h")));
+        QVERIFY(QFileInfo::exists(QDir(tempDir.path()).filePath("include/gps_runtime/pipeline.hpp")));
+
+        // 1. Load via gps::runtime::Pipeline C++ wrapper
+        std::string err;
+        auto pipe = gps::runtime::Pipeline::open(res.soPath.toStdString(), &err);
+        QVERIFY2(pipe.has_value(), err.c_str());
+        QCOMPARE(QString::fromStdString(pipe->manifest().name), QString("test_export"));
+        QCOMPARE(QString::fromStdString(pipe->manifest().version), QString("0.2.0"));
+        QCOMPARE(pipe->manifest().params.size(), size_t(1));
+        QCOMPARE(QString::fromStdString(pipe->manifest().params[0].name), QString("frames"));
+
+        QVERIFY2(pipe->setParam("frames", "2", &err), err.c_str());
+        QCOMPARE(QString::fromStdString(pipe->getParam("frames").value_or("")), QString("2"));
+        QVERIFY2(pipe->start(&err), err.c_str());
+        QVERIFY2(pipe->waitForEos(5000, &err), err.c_str());
+        pipe->stop();
+
+        // 2. Verify native GStreamer plugin personality via gst-inspect-1.0
+        const QString gstInspect = QStandardPaths::findExecutable("gst-inspect-1.0");
+        if (!gstInspect.isEmpty()) {
+            QProcess proc;
+            auto env = QProcessEnvironment::systemEnvironment();
+            env.insert("GST_PLUGIN_PATH", tempDir.path());
+            proc.setProcessEnvironment(env);
+            proc.start(gstInspect, {"test_export"});
+            QVERIFY(proc.waitForFinished(15000));
+            const QString inspectOut = QString::fromUtf8(proc.readAllStandardOutput());
+            QVERIFY2(proc.exitCode() == 0, qPrintable(inspectOut + "\n" + QString::fromUtf8(proc.readAllStandardError())));
+            QVERIFY(inspectOut.contains("frames"));
+        }
+#endif
     }
 };
 

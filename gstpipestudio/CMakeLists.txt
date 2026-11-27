@@ -38,6 +38,11 @@ if("packaging" IN_LIST GPS_DIRS OR ("tests" IN_LIST GPS_DIRS AND "gui" IN_LIST G
     set(GPS_ELEM_INSTALL_DIR "${GPS_PRIVATE_DIR}/sdk")
     add_subdirectory(../element_sdk sdk)
 endif()
+if("packaging" IN_LIST GPS_DIRS OR ("tests" IN_LIST GPS_DIRS AND "gui" IN_LIST GPS_DIRS AND "tools" IN_LIST GPS_DIRS) OR ("tests" IN_LIST GPS_DIRS AND "application" IN_LIST GPS_TEST_DIRS))
+    set(GPS_RUNTIME_INSTALL_DIR "${GPS_PRIVATE_DIR}/runtime_sdk")
+    set(GPS_RUNTIME_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    add_subdirectory(../runtime_sdk runtime_sdk)
+endif()
 
 foreach(dir ${GPS_DIRS})
     if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${dir}/CMakeLists.txt)

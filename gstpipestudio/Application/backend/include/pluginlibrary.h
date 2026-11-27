@@ -40,6 +40,7 @@ public:
     QString directory(const QString& id) const;
     QString sourcePath(const QString& id) const;
     QString moduleFileName(const QString& id) const;
+    QString publishedModule(const QString& id) const;
     PluginBuildState state(const QString& id) const;
     QString statusText(const QString& id) const;
     PluginBuildResult lastBuild(const QString& id) const;

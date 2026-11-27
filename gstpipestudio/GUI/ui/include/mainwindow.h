@@ -116,6 +116,7 @@ private:
     void showVersionHistory();
     std::optional<QString> askLaunchDescription(const QString& title);
     void importLaunch();
+    void exportSharedLibrary();
     void addLaunch();
     void focusSearch();
     void showAbout();
