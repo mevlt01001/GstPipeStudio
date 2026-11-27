@@ -605,7 +605,7 @@ private slots:
         QString conf = work.filePath("avi.conf");
         QVERIFY(w->saveFlow()->saveAs(w->front(), conf));
         refreshed();
-        QVERIFY(w->findChild<QLabel*>("commandLabel")->text().contains("gst-launch-1.0 avi"));
+        QVERIFY(w->findChild<QLineEdit*>("commandLabel")->text().contains("gst-launch-1.0 avi"));
         QSignalSpy ended(c.get(), &Controller::runFinished);
         QElapsedTimer clock;
         clock.start();
@@ -944,7 +944,7 @@ private slots:
         QString conf = work.filePath("expose.conf");
         QVERIFY(w->saveFlow()->saveAs(w->front(), conf));
         refreshed();
-        QString launch = w->findChild<QLabel*>("commandLabel")->text();
+        QString launch = w->findChild<QLineEdit*>("commandLabel")->text();
         QVERIFY2(launch.contains("gst-launch-1.0 expose"), qPrintable(launch));
         QFile f(conf);
         QVERIFY(f.open(QIODevice::ReadOnly));

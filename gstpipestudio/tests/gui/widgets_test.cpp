@@ -2173,11 +2173,11 @@ private slots:
         w.show();
         QString src = addSource(*c, "videotestsrc");
         QString sink = addAfter(*c, src, "src", "fakesink");
-        QCOMPARE(w.findChild<QLabel*>("commandLabel")->text(), QString());
+        QCOMPARE(w.findChild<QLineEdit*>("commandLabel")->text(), QString());
         QTemporaryDir dir;
         QVERIFY(w.saveFlow()->saveAs(w.front(), dir.filePath("demo.conf")));
         refreshed();
-        const QString command = w.findChild<QLabel*>("commandLabel")->text();
+        const QString command = w.findChild<QLineEdit*>("commandLabel")->text();
         QVERIFY(command.contains("gst-launch-1.0 demo"));
         QVERIFY(command.contains("GPS_PIPELINE_PATH="));
         QVERIFY(w.windowTitle().contains("demo.conf"));
@@ -2577,23 +2577,45 @@ private slots:
         QVERIFY(c->plan().find(sink.toStdString()));
     }
 
-    void deleteKeyOnTheCanvasDeletesTheSelectedSourceAfterAsking() {
+    void deleteKeyKeepsUsingTheCanvasAfterOpeningProperties() {
         MainWindow w(c.get());
         w.show();
+        w.activateWindow();
         QString src, convert, sink;
         buildChain(w, &src, &convert, &sink);
+        w.scene()->rebuild();
+        w.view()->fitAll();
 
-        // Deleting a non-source element removes it with auto-heal!
-        w.scene()->clearSelection();
-        w.scene()->element(convert)->setSelected(true);
-        QTest::keyClick(w.view(), Qt::Key_Delete);
+        const QPointF body = w.scene()->element(convert)->pos() + QPointF(120, 12);
+        QTest::mouseClick(w.view()->viewport(), Qt::LeftButton, Qt::NoModifier, viewPoint(w.view(), body));
+        auto* page = pageOf<PropertyPage>(w);
+        QVERIFY(page);
+        QCOMPARE(w.front()->selection(), QStringList{convert});
+
+        auto* search = page->findChild<QLineEdit*>("searchBox");
+        QVERIFY(search);
+        search->setText("test");
+        search->setCursorPosition(0);
+        search->setFocus();
+        QCOMPARE(QApplication::focusWidget(), search);
+        QTest::keyClick(QApplication::focusWidget(), Qt::Key_Delete);
+        QCOMPARE(search->text(), QString("est"));
+        QCOMPARE(c->plan().elements.size(), size_t(3));
+
+        QTest::mouseClick(w.view()->viewport(), Qt::LeftButton, Qt::NoModifier, viewPoint(w.view(), body));
+        refreshed();
+        QVERIFY(c->editElement(convert, withProps({{"fake-slow", "30000"}})));
+        QVERIFY(c->updating());
+        QCOMPARE(QApplication::focusWidget(), w.view());
+        QTest::keyClick(QApplication::focusWidget(), Qt::Key_Delete);
         QVERIFY(waitFor([&] { return c->plan().elements.size() == 2 && !c->busy(); }, 8000));
         QCOMPARE(c->plan().links.size(), size_t(1));
 
-        // Deleting a source element removes only the source, leaving sink on the canvas!
-        w.scene()->clearSelection();
-        w.scene()->element(src)->setSelected(true);
-        QTest::keyClick(w.view(), Qt::Key_Delete);
+        const QPointF sourceBody = w.scene()->element(src)->pos() + QPointF(120, 12);
+        QTest::mouseClick(w.view()->viewport(), Qt::LeftButton, Qt::NoModifier, viewPoint(w.view(), sourceBody));
+        refreshed();
+        QVERIFY(QApplication::focusWidget());
+        QTest::keyClick(QApplication::focusWidget(), Qt::Key_Delete);
         QVERIFY(waitFor([&] { return c->plan().elements.size() == 1 && !c->busy(); }, 8000));
         QVERIFY(c->plan().find(sink.toStdString()));
     }

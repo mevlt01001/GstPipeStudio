@@ -27,6 +27,7 @@ class Flows;
 class LogPanel;
 class NotificationOverlay;
 class QLabel;
+class QLineEdit;
 class QTabBar;
 class Panels;
 class SaveFlow;
@@ -137,7 +138,7 @@ private:
     NotificationOverlay* notifications_ = nullptr;
     QLabel* state_ = nullptr;
     QLabel* environment_ = nullptr;
-    QLabel* command_ = nullptr;
+    QLineEdit* command_ = nullptr;
     bool built_ = false;         // menus and actions exist: the state can be shown
     bool refreshDue_ = false;    // a refresh is on its way
 };

@@ -16,6 +16,7 @@ public:
     enum Mode { Hidden, Validating, Slow, Stopped };
 
     explicit ValidationIndicator(Controller* controller, QWidget* parent = nullptr);
+    void setActiveDocument(bool active);
     Mode mode() const { return mode_; }
 
 public slots:
@@ -24,6 +25,7 @@ public slots:
 private:
     Controller* controller_;
     Mode mode_ = Hidden;
+    bool activeDocument_ = false;
     Spinner* spinner_;
     QLabel* label_;
     QLabel* elapsed_;

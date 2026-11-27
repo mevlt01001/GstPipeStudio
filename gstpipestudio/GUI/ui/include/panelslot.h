@@ -19,7 +19,7 @@ public:
     QWidget* tab() const { return tab_; }
     QString title() const { return title_; }  // the form's title, "" with no form
 
-    enum class Visibility { BringToFront, Keep };
+    enum class Visibility { BringToFront, ShowWithoutFocus, Keep };
     // The form on the page, in front; false (and the page deleted) when there is no panel to show it in.
     bool present(DrawerPage* page, const QString& title, const QString& subtitle = QString(),
                  Visibility visibility = Visibility::BringToFront);

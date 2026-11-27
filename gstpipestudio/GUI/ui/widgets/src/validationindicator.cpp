@@ -46,6 +46,11 @@ ValidationIndicator::ValidationIndicator(Controller* controller, QWidget* parent
     refresh();
 }
 
+void ValidationIndicator::setActiveDocument(bool active) {
+    activeDocument_ = active;
+    refresh();
+}
+
 void ValidationIndicator::refresh() {
     if (controller_->updating()) mode_ = controller_->slowAsked() ? Slow : Validating;
     else mode_ = controller_->helperStopped() ? Stopped : Hidden;
@@ -59,7 +64,7 @@ void ValidationIndicator::refresh() {
     support_->setVisible(mode_ == Slow || mode_ == Stopped);
     retry_->setVisible(mode_ == Stopped);
     label_->setVisible(mode_ != Hidden);
-    setVisible(mode_ != Hidden);
+    setVisible(activeDocument_ && mode_ != Hidden);
 
     elapsed_->setText(QString("%1 s").arg(controller_->slowWatch()->elapsedMs() / 1000));
     if (controller_->cancelling()) label_->setText("Cancelling…");

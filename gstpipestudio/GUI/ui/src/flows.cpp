@@ -59,7 +59,7 @@ QString Flows::path(const gps::PadRef& pad) const { return controller_->padName(
 
 QString Flows::title(const QString& element) const { return fromStd(controller_->names().element(toStd(element))); }
 
-void Flows::editTemplateParams(const QString& instanceId) {
+void Flows::editTemplateParams(const QString& instanceId, PanelSlot::Visibility visibility) {
     const gps::TemplateInstance* t = controller_->plan().instance(toStd(instanceId));
     if (!t || controller_->editingBlocked()) return;
     std::vector<TemplateParam> rows;
@@ -77,7 +77,7 @@ void Flows::editTemplateParams(const QString& instanceId) {
     connect(page, &TemplateParamsPage::confirmed, this, [this, page, instanceId] {
         if (controller_->setTemplateParams(instanceId, page->values())) closeProperties();
     });
-    presentProperties(page, "Template · " + fromStd(controller_->names().instance(t->id)));
+    presentProperties(page, "Template · " + fromStd(controller_->names().instance(t->id)), visibility);
 }
 
 PropertyPage* Flows::propertyPage() const {
@@ -88,9 +88,9 @@ CapsPage* Flows::capsPage() const {
     return caps_.tab() ? caps_.tab()->findChild<CapsPage*>() : nullptr;
 }
 
-void Flows::presentProperties(DrawerPage* page, const QString& title) {
-    drawer_->dismiss();
-    if (props_.present(page, title)) connect(page, &DrawerPage::cancelled, this, &Flows::closeProperties);
+void Flows::presentProperties(DrawerPage* page, const QString& title, PanelSlot::Visibility visibility) {
+    if (visibility != PanelSlot::Visibility::Keep) drawer_->dismiss();
+    if (props_.present(page, title, {}, visibility)) connect(page, &DrawerPage::cancelled, this, &Flows::closeProperties);
 }
 
 void Flows::closeProperties() {
@@ -98,9 +98,9 @@ void Flows::closeProperties() {
     props_.close();
 }
 
-void Flows::presentCaps(CapsPage* page, const QString& title, const QString& subtitle) {
+void Flows::presentCaps(CapsPage* page, const QString& title, const QString& subtitle, PanelSlot::Visibility visibility) {
     drawer_->dismiss();
-    if (!caps_.present(page, title, subtitle)) return;
+    if (!caps_.present(page, title, subtitle, visibility)) return;
     connect(page, &DrawerPage::cancelled, this, &Flows::closeCaps);
     connect(page, &CapsPage::skipped, this, &Flows::closeCaps);
 }
@@ -278,7 +278,7 @@ void Flows::editThenCaps(const QString& element, const QString& identity, std::f
     if (!edit()) disconnect(*connection);  // refused: the page stays as it is
 }
 
-void Flows::openCaps(const QString& element, const QString& identity, bool afterEdit) {
+void Flows::openCaps(const QString& element, const QString& identity, bool afterEdit, PanelSlot::Visibility visibility) {
     int link = controller_->plan().linkFrom(element.toStdString(), identity.toStdString());
     if (link < 0) {
         closeCaps();
@@ -306,13 +306,13 @@ void Flows::openCaps(const QString& element, const QString& identity, bool after
     });
     QString title = (afterEdit ? "Caps · " : "Edit caps · ") + path(element, identity);
     QString sub = path(element, identity) + "  →  " + path(controller_->plan().sinkOf(static_cast<size_t>(link)));
-    presentCaps(page, title, sub);
+    presentCaps(page, title, sub, visibility);
 }
 
 // ---- link and element actions
 
-void Flows::editCaps(const QString& element, const QString& identity) {
-    if (!controller_->editingBlocked()) openCaps(element, identity, false);
+void Flows::editCaps(const QString& element, const QString& identity, PanelSlot::Visibility visibility) {
+    if (!controller_->editingBlocked()) openCaps(element, identity, false, visibility);
 }
 
 void Flows::replaceBehind(const QString& element, const QString& identity) {
@@ -337,11 +337,11 @@ void Flows::addQueue(const QString& element, const QString& identity) {
     });
 }
 
-void Flows::editProperties(const QString& element) {
-    if (!controller_->editingBlocked()) showElementProperties(element, std::nullopt);
+void Flows::editProperties(const QString& element, PanelSlot::Visibility visibility) {
+    if (!controller_->editingBlocked()) showElementProperties(element, visibility, std::nullopt);
 }
 
-void Flows::showElementProperties(const QString& element, const std::optional<ElementEdit>& pending) {
+void Flows::showElementProperties(const QString& element, PanelSlot::Visibility visibility, const std::optional<ElementEdit>& pending) {
     const QString grp = controller_->outline().collapsedTemplate(element);
     if (!grp.isEmpty()) {
         controller_->setTemplateExpanded(grp, true);
@@ -369,14 +369,9 @@ void Flows::showElementProperties(const QString& element, const std::optional<El
         controller_->deleteElement(element);
     });
     connect(&catalog(), &FactoryCatalog::factoryReloaded, page, [this, page, element, factory = fromStd(e->factory)](const QString& id) {
-        if (factory == id && propertyPage() == page) showElementProperties(element, page->edit());
+        if (factory == id && propertyPage() == page) showElementProperties(element, PanelSlot::Visibility::Keep, page->edit());
     }, Qt::QueuedConnection);
-    const QString heading = "Edit properties · " + title(element);
-    if (!pending) {
-        presentProperties(page, heading);
-    } else if (props_.present(page, heading, {}, PanelSlot::Visibility::Keep)) {
-        connect(page, &DrawerPage::cancelled, this, &Flows::closeProperties);
-    }
+    presentProperties(page, "Edit properties · " + title(element), visibility);
 }
 
 

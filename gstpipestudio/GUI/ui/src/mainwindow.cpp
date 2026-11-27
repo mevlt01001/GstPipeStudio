@@ -9,6 +9,7 @@
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QLabel>
+#include <QLineEdit>
 #include <QListWidget>
 #include <QLocale>
 #include <QMenuBar>
@@ -203,7 +204,7 @@ void MainWindow::buildCommands() {
              return firstOf(editReason(), !clipboard || clipboard->text().isEmpty() ? "The clipboard is empty" : QString());
          }},
         {C::Duplicate, "actionDuplicate", "&Duplicate", {QKeySequence(Qt::CTRL | Qt::Key_D)}, [this] { front()->duplicateSelection(); }, selected},
-        {C::Delete, "actionDelete", "De&lete", {QKeySequence::Delete, QKeySequence(Qt::Key_Backspace)}, [this] { front()->deleteSelection(); }, [this] {
+        {C::Delete, "actionDelete", "De&lete", {}, [this] { front()->deleteSelection(); }, [this] {
              return firstOf(editReason(), front()->hasSelectedItems() ? QString() : "Nothing is selected");
          }},
         {C::SelectAll, "actionSelectAll", "Select &All", {QKeySequence::SelectAll}, [this] { front()->selectAll(); }},
@@ -275,6 +276,7 @@ void MainWindow::buildCommands() {
         return controller()->isTemplateExpanded(id) ? "Collapse '" + copyTitle() + "'"
                                                      : QString("Expand '%1' (%2 elements)").arg(copyTitle()).arg(controller()->outline().membersOf(id).size());
     });
+    commands_->setTip(C::Delete, "Delete the selected items (Delete on the canvas)");
     commands_->setTip(C::Validate, "Validate the pipeline (Ctrl+R)");
     commands_->setTip(C::AddElement, "Add an element: a source, a filter or a sink (Ctrl+E)");
     commands_->setTip(C::AddLaunch, "Add elements from a gst-launch pipeline into the current project (Ctrl+Shift+I)");
@@ -364,17 +366,22 @@ void MainWindow::buildMenus() {
 void MainWindow::buildStatusBar() {
     state_ = new QLabel(this);
     state_->setObjectName("stateLabel");
+    state_->setMinimumWidth(1);
     environment_ = new QLabel(this);
     environment_->setObjectName("environmentLabel");
+    environment_->setMinimumWidth(1);
     environment_->setStyleSheet("color: " + Theme::muted().name() + ";");
-    command_ = new QLabel(this);
+    command_ = new QLineEdit(this);
     command_->setObjectName("commandLabel");
-    command_->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    command_->setStyleSheet("font-family: 'DejaVu Sans Mono'; color: " + Theme::muted().name() + ";");
+    command_->setAccessibleName("Pipeline launch command");
+    command_->setReadOnly(true);
+    command_->setFrame(false);
+    command_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+    command_->setStyleSheet("font-family: 'DejaVu Sans Mono'; background: transparent; border: 0; color: " + Theme::muted().name() + ";");
     statusBar()->setSizeGripEnabled(false);
     statusBar()->addWidget(state_);
     statusBar()->addWidget(environment_);
-    statusBar()->addPermanentWidget(command_);
+    statusBar()->addPermanentWidget(command_, 1);
 }
 
 // ---- documents
@@ -425,7 +432,7 @@ void MainWindow::activate(Document* d) { tabs_->activate(d); }
 // Its pages in the panels, its indicator in the status bar; what was deferred while it was behind is asked now.
 void MainWindow::activated(Document* d) {
     for (QWidget* page : d->panelPages()) panels_->bring(page);
-    for (Document* other : documents()) other->indicator()->setVisible(other == d);
+    for (Document* other : documents()) other->indicator()->setActiveDocument(other == d);
     if (!built_) return;
     onEnvironment();
     const QStringList outdated = d->takeOutdated();
@@ -529,7 +536,13 @@ void MainWindow::showStatus() {
     state_->setStyleSheet("color: " + colour + ";");
     const StartupResult& env = services_.environment().result();
     environment_->setText(env.state == StartupResult::Ready ? env.statusText() : QString());
-    command_->setText(c->launchCommand());
+    const QString command = c->launchCommand();
+    if (command_->text() != command) {
+        command_->setText(command);
+        command_->setCursorPosition(0);
+        command_->setToolTip(command);
+    }
+    command_->setVisible(!command.isEmpty());
 }
 
 // The front tab shows the setup page while GStreamer is not ready.

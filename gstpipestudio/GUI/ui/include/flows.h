@@ -42,15 +42,16 @@ public:
     // Left click on a free src pad (opens PickerPage in the right drawer)
     void fromFreePad(const QString& element, const QString& identity);
     // A link's caps, the element behind a pad replaced, a queue inserted (the link menu)
-    void editCaps(const QString& element, const QString& identity);
+    void editCaps(const QString& element, const QString& identity,
+                  PanelSlot::Visibility visibility = PanelSlot::Visibility::BringToFront);
     void replaceBehind(const QString& element, const QString& identity);
     void addQueue(const QString& element, const QString& identity);
-    void editProperties(const QString& element);
+    void editProperties(const QString& element, PanelSlot::Visibility visibility = PanelSlot::Visibility::BringToFront);
     // Save as template: the selection becomes a template at once (its border is drawn); the Properties tab asks for its
     // name and parameters. Cancel, or leaving the page unsaved, makes the elements plain again.
     void saveAsTemplate(const QStringList& elements);
     // A placed template's Properties tab: its parameters only, as if it were one element.
-    void editTemplateParams(const QString& instanceId);
+    void editTemplateParams(const QString& instanceId, PanelSlot::Visibility visibility = PanelSlot::Visibility::BringToFront);
 
 signals:
     void componentMenuRequested(const ComponentRef& component, const QPoint& at);  // right click on a component
@@ -63,14 +64,15 @@ private:
     QString title(const QString& element) const;
     enum class Mode { Add, Replace };
 
-    void presentProperties(DrawerPage* page, const QString& title);  // the one way a page enters the Properties tab
-    void presentCaps(CapsPage* page, const QString& title, const QString& subtitle);
-    void showElementProperties(const QString& element, const std::optional<ElementEdit>& pending);
+    void presentProperties(DrawerPage* page, const QString& title, PanelSlot::Visibility visibility = PanelSlot::Visibility::BringToFront);
+    void presentCaps(CapsPage* page, const QString& title, const QString& subtitle, PanelSlot::Visibility visibility);
+    void showElementProperties(const QString& element, PanelSlot::Visibility visibility, const std::optional<ElementEdit>& pending);
     void newElementProperties(const QString& factory);
     void newElement(Mode mode, const QString& element, const QString& identity, const QString& factory);
     // Runs an edit; when the validation succeeds the bottom Caps tab opens for the link from (element, identity).
     void editThenCaps(const QString& element, const QString& identity, std::function<bool()> edit);
-    void openCaps(const QString& element, const QString& identity, bool afterEdit);
+    void openCaps(const QString& element, const QString& identity, bool afterEdit,
+                  PanelSlot::Visibility visibility = PanelSlot::Visibility::BringToFront);
     void abandonPending();
     // The catalog's sources (true) or everything that is not a source (false), for a picker.
     std::vector<FactoryEntry> factories(bool sources) const;

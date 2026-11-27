@@ -3,6 +3,10 @@
 #include <QAbstractButton>
 #include <QAction>
 #include <QClipboard>
+#include <QDir>
+#include <QFile>
+#include <QScopeGuard>
+#include "pluginpaths.h"
 #include <QComboBox>
 #include <QGroupBox>
 #include <QLabel>
@@ -291,6 +295,28 @@ private slots:
         MainWindow w(c.get());
         w.show();
         QString src = addSource(*c, "videotestsrc");
+        QTemporaryDir project;
+        QVERIFY(project.isValid());
+        const auto prior = qgetenv("GPS_USER_DIR");
+        const auto restore = qScopeGuard([&] { prior.isNull() ? qunsetenv("GPS_USER_DIR") : qputenv("GPS_USER_DIR", prior); });
+        const QString longFolder = project.filePath(QString(180, 'p'));
+        qputenv("GPS_USER_DIR", longFolder.toUtf8());
+        QVERIFY(QDir().mkpath(PluginPaths::binaries()));
+        QFile marker(QDir(PluginPaths::binaries()).filePath("libgstfixture.so"));
+        QVERIFY(marker.open(QIODevice::WriteOnly));
+        marker.close();
+        QVERIFY(saved(saveAs(*c, QDir(longFolder).filePath("long-command.conf"))));
+        w.setFixedWidth(960);
+        refreshed();
+        QVERIFY(c->launchCommand().startsWith("GST_PLUGIN_PATH_1_0="));
+        QVERIFY(c->launchCommand().size() > 400);
+        auto* command = w.findChild<QLineEdit*>("commandLabel");
+        QVERIFY(command && command->isReadOnly());
+        QCOMPARE(command->text(), c->launchCommand());
+        QVERIFY(command->width() < command->fontMetrics().horizontalAdvance(command->text()));
+        command->selectAll();
+        command->copy();
+        QCOMPARE(QApplication::clipboard()->text(), c->launchCommand());
         QString pidFile = work.filePath("slow.pid");
         qputenv("GPS_FAKE_PIDFILE", pidFile.toUtf8());
         QFile::remove(pidFile);
@@ -307,11 +333,22 @@ private slots:
         c->slowWatch()->check();
         QCOMPARE(ind->mode(), ValidationIndicator::Validating);
         QCOMPARE(ind->findChild<QLabel*>("indicatorElapsed")->text(), QString("%1 s").arg((SlowWatch::kFirstLimitMs - 1) / 1000));
+        auto* validating = w.front();
+        w.newDocument();
         now = SlowWatch::kFirstLimitMs;
         c->slowWatch()->check();
+        QVERIFY(!ind->isVisible());
+        w.activate(validating);
         QCOMPARE(ind->mode(), ValidationIndicator::Slow);
         QCOMPARE(ind->findChild<QLabel*>("indicatorText")->text(), QString("Validation is taking longer than expected"));
-        for (const char* b : {"waitButton", "cancelValidationButton", "supportButton"}) QVERIFY2(ind->findChild<QPushButton*>(b)->isVisible(), b);
+        refreshed();
+        for (const char* name : {"waitButton", "cancelValidationButton", "supportButton"}) {
+            auto* button = ind->findChild<QPushButton*>(name);
+            QVERIFY2(button->isVisible(), name);
+            const QRect bounds(button->mapTo(w.statusBar(), QPoint()), button->size());
+            QVERIFY2(w.statusBar()->rect().contains(bounds), name);
+            QCOMPARE(w.childAt(button->mapTo(&w, button->rect().center())), button);
+        }
         QVERIFY(c->slowAsked());
 
         // Wait: asked again 15 s later, not before.

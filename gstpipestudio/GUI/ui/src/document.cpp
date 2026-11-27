@@ -65,9 +65,15 @@ Document::Document(DocumentSession& session, QWidget* window)
     Controller* c = controller_;
     CanvasScene* scene = scene_;
     connect(scene, &CanvasScene::freeSrcPadClicked, flows, [flows](const QString& e, const QString& id, const QPoint&) { flows->fromFreePad(e, id); }, Qt::QueuedConnection);
-    connect(scene, &CanvasScene::linkClickedSignal, flows, &Flows::editCaps, Qt::QueuedConnection);
-    connect(scene, &CanvasScene::templateActivated, flows, &Flows::editTemplateParams);
-    connect(scene, &CanvasScene::elementActivated, flows, &Flows::editProperties, Qt::QueuedConnection);
+    connect(scene, &CanvasScene::linkClickedSignal, flows, [flows](const QString& element, const QString& pad) {
+        flows->editCaps(element, pad, PanelSlot::Visibility::ShowWithoutFocus);
+    }, Qt::QueuedConnection);
+    connect(scene, &CanvasScene::templateActivated, flows, [flows](const QString& instance) {
+        flows->editTemplateParams(instance, PanelSlot::Visibility::ShowWithoutFocus);
+    });
+    connect(scene, &CanvasScene::elementActivated, flows, [flows](const QString& element) {
+        flows->editProperties(element, PanelSlot::Visibility::ShowWithoutFocus);
+    }, Qt::QueuedConnection);
     connect(scene, &CanvasScene::elementsMoved, this, [c](const auto& positions) { c->setPositions(positions); }, Qt::QueuedConnection);
     connect(scene, &CanvasScene::elementSpliced, this, [scene, c](const QString& element, const QString& linkSrc, const QString& linkPad) {
         const QStringList sel = scene->selectedElementNames();

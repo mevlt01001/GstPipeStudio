@@ -41,10 +41,8 @@ bool PanelSlot::present(DrawerPage* page, const QString& title, const QString& s
     page->setParent(tab_);
     layout->addWidget(page, 1);
     page->show();
-    if (visibility == Visibility::BringToFront) {
-        panels_->show(tab_);
-        page->focusFirst();
-    }
+    if (visibility != Visibility::Keep) panels_->show(tab_);
+    if (visibility == Visibility::BringToFront) page->focusFirst();
     return true;
 }
 
