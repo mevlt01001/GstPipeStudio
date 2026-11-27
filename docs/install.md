@@ -21,6 +21,20 @@ For live charts, download/clone the [repository](https://github.com/mevlt01001/G
 
 For additional plugins: `sudo apt install gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav`. NVIDIA/DeepStream requires its own compatible driver/SDK; ARM packages alone do not prove device support.
 
+## Custom plugins
+
+Use **Plugins → New custom plugin…** in the Explorer or **File → New Custom Plugin…**. Choose the ports and properties, then select **Create & Build**. On Ubuntu, install the build tools and GStreamer development headers before building a plugin.
+
+```bash
+sudo apt install build-essential cmake ninja-build pkg-config libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
+```
+
+The .deb supplies the element SDK under `/usr/lib/gstpipestudio/sdk`. A source build can use its build-tree SDK. Set `GPS_ELEMENT_SDK_DIR` to use a different SDK installation.
+
+Use **Edit code** and **Build & Reload** to publish a new version. The editor links compiler diagnostics to source lines. **Edit specification…** updates the generated regions and preserves the surrounding C++. The factory ID and C++ base class stay fixed for that source. **Rename** changes the display name so pipelines and templates keep their factory reference.
+
+The library stores custom modules in the user's `plugins/.bin` directory. The app passes this directory to its GStreamer helpers and includes it in the displayed `gst-launch-1.0` command when modules are present. To move a pipeline to another installation, export its plugin source folder or compiled module from the Explorer and import it on the destination. Build imported source on that installation. Compiled modules require a compatible architecture, GStreamer installation, and runtime libraries.
+
 ## Docker: what you download
 
 An **image** contains the app and its libraries. A **container** is a running copy of that image. Docker must be installed on your host first. Follow [Docker's Ubuntu installation guide](https://docs.docker.com/engine/install/ubuntu/) for currently supported host releases, then verify `docker run --rm hello-world`. On an older host such as Ubuntu 20.04, check Docker's current support list; the native .deb is the simpler option.

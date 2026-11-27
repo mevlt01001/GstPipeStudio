@@ -10,6 +10,8 @@
 #include <QTemporaryDir>
 #include <QScopeGuard>
 #include <QFile>
+#include <QDateTime>
+#include <QFileInfo>
 #include "pluginscaffolder.h"
 
 #include "canvasscene.h"
@@ -256,6 +258,33 @@ private slots:
         QVERIFY(library.placementError(id).isEmpty());  // the last verified module stays available
     }
 
+    void replacesModulesWithoutWritingToAnOpenFile() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString installed = dir.filePath(".bin/libgsttest.so");
+        QFile candidate(dir.filePath("candidate.so"));
+        QVERIFY(candidate.open(QIODevice::WriteOnly));
+        QCOMPARE(candidate.write("old"), 3);
+        candidate.close();
+        QString error;
+        QVERIFY2(PluginModules::publish(candidate.fileName(), installed, &error), qPrintable(error));
+
+        QFile previous(installed);
+        QVERIFY(previous.open(QIODevice::ReadOnly));
+        const auto future = QDateTime::currentDateTimeUtc().addSecs(30);
+        QVERIFY(previous.setFileTime(future, QFileDevice::FileModificationTime));
+        QVERIFY(candidate.open(QIODevice::WriteOnly));
+        QCOMPARE(candidate.write("new"), 3);
+        candidate.close();
+        QVERIFY2(PluginModules::publish(candidate.fileName(), installed, &error), qPrintable(error));
+        QCOMPARE(previous.readAll(), QByteArray("old"));
+
+        QFile current(installed);
+        QVERIFY(current.open(QIODevice::ReadOnly));
+        QCOMPARE(current.readAll(), QByteArray("new"));
+        QCOMPARE(QFileInfo(current).lastModified().toSecsSinceEpoch(), future.toSecsSinceEpoch() + 1);
+    }
+
     void importsAllFactoriesFromOneModule() {
         QTemporaryDir dir;
         QVERIFY(dir.isValid());
@@ -306,7 +335,9 @@ private slots:
         QVERIFY(imported.plugins().placementError("gps_compiled_alias").isEmpty());
 
         // A reload sees both manifests and one shared file in .bin.
+        QSignalSpy listReady(&imported.catalog(), &FactoryCatalog::ready);
         imported.plugins().reload();
+        QTRY_COMPARE(listReady.size(), 1);
         QCOMPARE(imported.plugins().components().size(), 2);
         QCOMPARE(imported.plugins().moduleFileName(spec.id), imported.plugins().moduleFileName("gps_compiled_alias"));
     }

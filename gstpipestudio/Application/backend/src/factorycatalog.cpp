@@ -42,6 +42,7 @@ void FactoryCatalog::reloadList(std::function<void(bool)> done) {
             return;
         }
         entries_ = std::move(list.elements);
+        ++registryRevision_;
         compatible_.clear();
         loaded_ = true;
         emit logLine(QString("Element list: %1 factories").arg(entries_.size()));

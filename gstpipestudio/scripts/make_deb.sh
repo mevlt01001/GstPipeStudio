@@ -11,6 +11,15 @@ STAGE=${GPS_STAGE_DIR:-/tmp/stage}
 BUILD_DIR=${GPS_BUILD_DIR:-build}
 PRIVATE=$STAGE/usr/lib/gstpipestudio
 
+# The installed package is also the SDK used by the custom plugin builder.
+SDK="$PRIVATE/sdk"
+for file in include/gps_elem/register.h lib/libgps_element_sdk_plugin.a cmake/GpsElementSdkConfig.cmake cmake/GpsElementSdkTargets.cmake; do
+    if [[ ! -f "$SDK/$file" ]]; then
+        printf 'Missing SDK file in the staged installation: %s\n' "$SDK/$file" >&2
+        exit 1
+    fi
+done
+
 # dpkg-shlibdeps asks for a debian/control file in the folder it runs in; an empty one is enough
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT

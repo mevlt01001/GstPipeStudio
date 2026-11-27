@@ -244,6 +244,7 @@ bool PluginLibrary::installEntry(const Entry& entry, const QString& sourceDirect
     if (const auto why = entry.spec.error(); !why.isEmpty()) return fail(error, why);
     const auto& id = entry.spec.id;
     if (const auto why = newIdError(id); !why.isEmpty()) return fail(error, why);
+    if (!entry.binaryOnly && !moduleMembers(entry).isEmpty()) return fail(error, "The module name " + entry.module + " is already in use.");
     if (!QDir().mkpath(root_)) return fail(error, "Unable to create " + root_);
     QTemporaryDir staging(QDir(root_).filePath(".new-XXXXXX"));
     if (!staging.isValid()) return fail(error, staging.errorString());
@@ -503,7 +504,8 @@ void PluginLibrary::importModule(const QString& path, QObject* context, std::fun
             imports << std::move(entry);
         }
         const auto target = modulePath(imports.front());
-        if (QFileInfo::exists(target)) return done({}, "A module named " + module + " already exists.");
+        if (QFileInfo::exists(target) || !moduleMembers(imports.front()).isEmpty())
+            return done({}, "A module named " + module + " already exists.");
         QString error;
         QStringList installed;
         auto rollback = [&] {
