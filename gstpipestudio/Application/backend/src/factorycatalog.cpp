@@ -51,17 +51,21 @@ void FactoryCatalog::reloadList(std::function<void(bool)> done) {
 }
 
 const ElementInfo* FactoryCatalog::info(const QString& factory) const {
+    if (unavailable_.contains(factory)) return nullptr;
     auto found = infos_.find(factory);
     return found == infos_.end() ? nullptr : &found->second;
 }
 
 const gps::FactoryDefinition* FactoryCatalog::definition(const QString& factory) const {
+    if (unavailable_.contains(factory)) return nullptr;
     auto found = definitions_.find(factory);
     return found == definitions_.end() ? nullptr : &found->second;
 }
 
 void FactoryCatalog::forEachInfo(const std::function<void(const QString&, const ElementInfo&)>& visit) const {
-    for (const auto& [factory, info] : infos_) visit(factory, info);
+    for (const auto& [factory, info] : infos_) {
+        if (!unavailable_.contains(factory)) visit(factory, info);
+    }
 }
 
 const FactoryEntry* FactoryCatalog::entry(const QString& factory) const {
@@ -84,6 +88,19 @@ void FactoryCatalog::fetchInfo(const QString& factory, QObject* context, InfoCal
     requestInfo(factory, false, {});
 }
 
+void FactoryCatalog::forgetFactory(const QString& factory) {
+    unavailable_.insert(factory);  // retain the storage of previously returned pointers
+    const auto name = toStd(factory);
+    entries_.erase(std::remove_if(entries_.begin(), entries_.end(),
+        [&](const auto& entry) { return entry.factory == name; }), entries_.end());
+    infoRequests_.remove(factory);
+    compatible_.clear();
+    ++registryRevision_;
+    const auto waiting = pending_.take(factory);
+    for (const auto& cb : waiting) cb(nullptr);
+    emit factoryReloaded(factory);
+}
+
 void FactoryCatalog::reloadFactory(const QString& factory, std::function<void(bool)> done) {
     requestInfo(factory, true, std::move(done));
 }
@@ -101,6 +118,7 @@ void FactoryCatalog::requestInfo(const QString& factory, bool reload, std::funct
         const auto name = toStd(factory);
         const bool ok = r.read(&answer) && answer.entry.factory == name;
         if (ok) {
+            unavailable_.remove(factory);
             definitions_[factory] = gps::definitionOf(answer);
             infos_[factory] = std::move(answer);
             if (reload) {

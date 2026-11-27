@@ -23,7 +23,7 @@ QString findSystemTool(const QString& name) {
 
 HelperClient* HelperClient::run(QObject* parent, const QString& name, const QStringList& args, int killAfterMs,
                                 std::function<void(const QString&)> log, std::function<void(const HelperResult&)> done,
-                                std::function<void(const QString&)> line) {
+                                std::function<void(const QString&)> line, const QProcessEnvironment& overrides) {
     auto* client = new HelperClient(parent);
     connect(client, &HelperClient::stderrLine, parent, [log, name](const QString& text) { log("[" + name + "] " + text); });
     if (line) {
@@ -35,7 +35,7 @@ HelperClient* HelperClient::run(QObject* parent, const QString& name, const QStr
         client->deleteLater();
         done(r);
     });
-    client->start(findHelper(name), args, killAfterMs);
+    client->start(findHelper(name), args, killAfterMs, overrides);
     return client;
 }
 
@@ -58,7 +58,7 @@ HelperClient::HelperClient(QObject* parent)
     });
 }
 
-void HelperClient::start(const QString& program, const QStringList& args, int killAfterMs) {
+void HelperClient::start(const QString& program, const QStringList& args, int killAfterMs, const QProcessEnvironment& overrides) {
     if (program.isEmpty()) {
         QTimer::singleShot(0, this, [this] { finish(HelperResult::NotFound, 0); });
         return;
@@ -66,6 +66,7 @@ void HelperClient::start(const QString& program, const QStringList& args, int ki
     auto environment = QProcessEnvironment::systemEnvironment();
     const QString pluginPath = PluginPaths::searchPath(environment);
     if (!pluginPath.isEmpty()) environment.insert("GST_PLUGIN_PATH_1_0", pluginPath);
+    environment.insert(overrides);
     process_->setProcessEnvironment(environment);
     process_->start(program, args);
     if (killAfterMs > 0) watchdog_->start(killAfterMs);

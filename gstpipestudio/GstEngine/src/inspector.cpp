@@ -276,6 +276,25 @@ std::vector<FactoryEntry> listFactories() {
     return out;
 }
 
+bool inspectPluginFile(const std::string& path, std::vector<FactoryEntry>* out, std::string* error) {
+    GError* why = nullptr;
+    GstPlugin* plugin = gst_plugin_load_file(path.c_str(), &why);
+    if (!plugin) {
+        if (error) *error = why ? why->message : "Unable to load " + path;
+        g_clear_error(&why);
+        return false;
+    }
+    GList* features = gst_registry_get_feature_list_by_plugin(gst_registry_get(), gst_plugin_get_name(plugin));
+    for (auto* item = features; item; item = item->next) {
+        if (GST_IS_ELEMENT_FACTORY(item->data)) out->push_back(entryOf(GST_ELEMENT_FACTORY(item->data)));
+    }
+    gst_plugin_feature_list_free(features);
+    gst_object_unref(plugin);
+    if (!out->empty()) return true;
+    if (error) *error = "The module did not register any element factories.";
+    return false;
+}
+
 bool inspect(const std::string& name, ElementInfo* out, std::string* error) {
     GstElementFactory* found = gst_element_factory_find(name.c_str());
     if (!found) {

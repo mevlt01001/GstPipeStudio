@@ -51,6 +51,7 @@ inline void useUserDir(const QString& folder) {
     if (folder.isEmpty()) qunsetenv("GPS_USER_DIR");
     else qputenv("GPS_USER_DIR", folder.toUtf8());
     services().library().reload();
+    services().plugins().reload();
 }
 
 // A Controller over the shared services. The library is read again, so a test starts from what its folder holds.
@@ -58,6 +59,7 @@ inline std::unique_ptr<Controller> makeController() {
     auto c = std::make_unique<Controller>(services());
     c->setUpdateTimeoutMs(5000);
     services().library().reload();
+    services().plugins().reload();
     return c;
 }
 

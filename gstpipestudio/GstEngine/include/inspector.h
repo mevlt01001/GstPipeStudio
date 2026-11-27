@@ -13,6 +13,7 @@ namespace gps {
 
 // ---- the questions
 std::vector<FactoryEntry> listFactories();
+bool inspectPluginFile(const std::string& path, std::vector<FactoryEntry>* out, std::string* error);
 bool inspect(const std::string& factory, ElementInfo* out, std::string* error);
 // Factories with a sink pad template that intersects the caps, best rank first, then by name.
 // Empty caps text: every factory that has a sink template.

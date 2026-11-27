@@ -219,7 +219,12 @@ QPointF Controller::spotAfter(const gps::Element& from) { return {from.x + metri
 QStringList Controller::land(const ComponentRef& component, const QPointF& at, const std::optional<gps::PadRef>& after,
                              const std::function<void()>& retry) {
     const ComponentProvider* provider = services_.provider(component.provider);
-    const gps::Graph content = provider ? provider->peek(component.id) : gps::Graph();
+    if (!provider) return {};
+    if (const auto why = provider->placementError(component.id); !why.isEmpty()) {
+        report(NoticeSeverity::Warning, "Unable to insert component", why, false);
+        return {};
+    }
+    const gps::Graph content = provider->peek(component.id);
     if (content.empty() || !infosReady(content, retry)) return {};
     QStringList created;
     edits_.transact([&](gps::Graph& g, Edit& edit) {

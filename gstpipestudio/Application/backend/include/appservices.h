@@ -6,6 +6,7 @@
 #pragma once
 
 #include <QObject>
+#include <memory>
 
 #include "backupservice.h"
 #include "documenttiming.h"
@@ -19,13 +20,15 @@ class AppServices : public QObject {
     Q_OBJECT
 public:
     explicit AppServices(QObject* parent = nullptr) : AppServices(DocumentTiming::fromEnvironment(), parent) {}
-    explicit AppServices(DocumentTiming timing, QObject* parent = nullptr) : QObject(parent), timing_(timing) {}
+    explicit AppServices(DocumentTiming timing, QObject* parent = nullptr);
+    AppServices(DocumentTiming timing, std::unique_ptr<IPluginBuilder> builder, QObject* parent = nullptr);
 
     const DocumentTiming& timing() const { return timing_; }
 
     EnvironmentService& environment() { return environment_; }
     FactoryCatalog& catalog() { return catalog_; }
     TemplateLibrary& library() { return library_; }
+    PluginLibrary& plugins() { return plugins_; }
     // Everything that can be placed besides a single element, one section each in the picker and the Explorer.
     QList<ComponentProvider*> providers() { return {&library_, &plugins_}; }
     ComponentProvider* provider(const QString& kind) { return providerOf(providers(), kind); }
@@ -37,6 +40,7 @@ private:
     FactoryCatalog catalog_;
     EnvironmentService environment_{catalog_};
     TemplateLibrary library_{catalog_};
+    std::unique_ptr<IPluginBuilder> pluginBuilder_;
     PluginLibrary plugins_;
     ViewPreferences view_;
     BackupService backups_;

@@ -32,6 +32,12 @@ const Command commands[]{
         const bool ok = gps::inspect(args[1], &info, &error);
         out.json(ok ? gps::toJson(info) : gps::toJson(gps::ErrorReply{error}));
     }},
+    {"plugin-file", " <module>", oneOperand, [](gps::Output& out, const Arguments& args) {
+        gps::FactoryList list;
+        std::string error;
+        out.json(gps::inspectPluginFile(args[1], &list.elements, &error)
+            ? gps::toJson(list) : gps::toJson(gps::ErrorReply{error}));
+    }},
     {"compatible", " [--caps <caps>]", [](const Arguments& args) {
         return noOperands(args) || (args.size() == 3 && args[1] == "--caps");
     }, [](gps::Output& out, const Arguments& args) {

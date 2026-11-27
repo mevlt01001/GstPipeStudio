@@ -8,6 +8,9 @@
 #include <QClipboard>
 #include <QLabel>
 #include <QTemporaryDir>
+#include <QScopeGuard>
+#include <QFile>
+#include "pluginscaffolder.h"
 
 #include "canvasscene.h"
 #include "canvasview.h"
@@ -84,6 +87,129 @@ private slots:
         QVERIFY(need(*c, "compositor")->padTemplate("sink_%u", "sink"));
         QVERIFY(!need(*c, "compositor")->padTemplate("sink_%u", "sink")->padProperties.empty());
         QVERIFY(need(*c, "tee")->padTemplate("src_%u", "src")->isRequest());
+    }
+
+    void pluginDiagnosticsAndProtectedRegions() {
+        const auto diagnostics = DiagnosticParser::parse("/tmp/plugin.cpp:17:9: error: invalid value\n"
+                                                         "/tmp/other:4: warning: unused variable\n"
+                                                         "undefined reference to foo\n");
+        QCOMPARE(diagnostics.size(), 2);
+        QCOMPARE(diagnostics.front().file, QString("/tmp/plugin.cpp"));
+        QCOMPARE(diagnostics.front().line, 17);
+        QCOMPARE(diagnostics.front().column, 9);
+        QCOMPARE(diagnostics.back().severity, QString("warning"));
+
+        PluginSpec spec;
+        spec.id = "gps_regions";
+        spec.longName = "Specification test";
+        auto source = PluginScaffolder::source(spec);
+        source.replace("(void)frame;", "(void)frame; /* user algorithm */");
+        PluginPropertySpec count;
+        count.name = "count";
+        count.type = PluginPropertyType::UInt64;
+        count.defaultValue = "18446744073709551615";
+        spec.properties << count;
+        QString error;
+        QVERIFY(PluginScaffolder::updateSpecRegions(spec, &source, &error));
+        QVERIFY(source.contains("/* user algorithm */"));
+        QVERIFY(source.contains("18446744073709551615ULL"));
+        PluginSpec roundTrip;
+        QVERIFY(PluginSpec::fromJson(spec.toJson(), &roundTrip, &error));
+        QCOMPARE(roundTrip.toJson(), spec.toJson());
+        source.replace("// END GPS_PLUGIN_PROPERTIES", "// marker deleted");
+        const auto broken = source;
+        QVERIFY(!PluginScaffolder::updateSpecRegions(spec, &source, &error));
+        QCOMPARE(source, broken);
+    }
+
+    void buildsReloadsAndRunsGeneratedCustomPlugins() {
+        QTemporaryDir plugins;
+        QVERIFY(plugins.isValid());
+        const auto prior = qgetenv("GPS_USER_DIR");
+        qputenv("GPS_USER_DIR", plugins.path().toUtf8());
+        const auto restore = qScopeGuard([&] { prior.isNull() ? qunsetenv("GPS_USER_DIR") : qputenv("GPS_USER_DIR", prior); });
+        AppServices local;
+        Controller opened(local);
+        auto& library = local.plugins();
+        auto& catalog = local.catalog();
+        catalog.load();
+        QTRY_VERIFY_WITH_TIMEOUT(catalog.loaded(), 30000);
+
+        QString error;
+        for (const auto type : {PluginArchetype::VideoFilter, PluginArchetype::AudioFilter, PluginArchetype::Transform,
+                                PluginArchetype::Source, PluginArchetype::Sink, PluginArchetype::GeneralElement}) {
+            PluginSpec spec;
+            spec.id = "gps_starter_" + QString::number(static_cast<int>(type));
+            spec.longName = "Starter " + spec.id;
+            spec.archetype = type;
+            if (type == PluginArchetype::AudioFilter) {
+                for (auto& port : spec.ports) {
+                    port.capsPreset = PluginCaps::AudioRaw;
+                    port.capsDetail = "S16LE";
+                }
+            }
+            if (type == PluginArchetype::Source) {
+                spec.ports.removeFirst();
+                spec.uriProtocol = "gps-demo";
+            }
+            if (type == PluginArchetype::Sink) spec.ports.removeLast();
+            if (type == PluginArchetype::GeneralElement) {
+                spec.ports.front().inputMode = PluginInput::BoundedQueue;
+                PluginPortSpec param{"alpha", PluginDirection::Sink, PluginPresence::Always, PluginCaps::CustomMime, "application/x-float"};
+                param.inputMode = PluginInput::Mailbox;
+                param.mailboxDefault = "0.5";
+                spec.ports << param;
+            }
+            QVERIFY2(library.createPlugin(spec, &error), qPrintable(error));
+            QCOMPARE(library.state(spec.id), PluginBuildState::Untested);
+            std::optional<PluginBuildResult> result;
+            library.buildPlugin(spec.id, this, [&](PluginBuildResult built) { result = std::move(built); });
+            QCOMPARE(library.state(spec.id), PluginBuildState::Building);
+            QTRY_VERIFY_WITH_TIMEOUT(result.has_value(), 60000);
+            QVERIFY2(result->ok, qPrintable(result->error + "\n" + result->output));
+            QVERIFY2(result->diagnostics.isEmpty(), qPrintable(result->output));
+            QCOMPARE(library.state(spec.id), PluginBuildState::Built);
+            QVERIFY(catalog.info(spec.id));
+        }
+
+        const QString id = "gps_starter_6";
+        QVERIFY(opened.importLaunch("videotestsrc num-buffers=5 ! " + id + " ! fakesink sync=false"));
+        QTRY_VERIFY_WITH_TIMEOUT(opened.plan().elements.size() == 3 && !opened.busy(), 20000);
+        QVERIFY2(opened.result().ok(), opened.result().message.c_str());
+        QVERIFY(opened.result().complete());
+        QSignalSpy ended(&opened, &Controller::runFinished);
+        QVERIFY(opened.run());
+        QTRY_COMPARE_WITH_TIMEOUT(ended.size(), 1, 20000);
+        QCOMPARE(ended.front().front().toString(), QString("eos"));
+
+        auto spec = library.spec(id).value();
+        PluginPropertySpec added;
+        added.name = "gain";
+        added.defaultValue = "25";
+        spec.properties << added;
+        const auto* stable = catalog.info(id);
+        QVERIFY2(library.updateSpec(id, spec, &error), qPrintable(error));
+        QCOMPARE(library.state(id), PluginBuildState::Outdated);
+        std::optional<PluginBuildResult> result;
+        library.buildPlugin(id, this, [&](PluginBuildResult built) { result = std::move(built); });
+        QTRY_VERIFY_WITH_TIMEOUT(result.has_value(), 60000);
+        QVERIFY2(result->ok, qPrintable(result->error + "\n" + result->output));
+        QCOMPARE(catalog.info(id), stable);
+        QVERIFY(std::any_of(stable->properties.begin(), stable->properties.end(), [](const auto& p) { return p.name == "gain"; }));
+        QVERIFY(settle(opened));
+
+        QFile source(library.sourcePath(id));
+        QVERIFY(source.open(QIODevice::ReadOnly));
+        const QString good = QString::fromUtf8(source.readAll());
+        source.close();
+        QVERIFY2(library.saveSource(id, good + "\n#error intentional test failure\n", &error), qPrintable(error));
+        result.reset();
+        library.buildPlugin(id, this, [&](PluginBuildResult built) { result = std::move(built); });
+        QTRY_VERIFY_WITH_TIMEOUT(result.has_value(), 60000);
+        QVERIFY(!result->ok);
+        QVERIFY(!result->diagnostics.isEmpty());
+        QCOMPARE(library.state(id), PluginBuildState::Failed);
+        QVERIFY(library.placementError(id).isEmpty());  // the last verified module stays available
     }
 
     void updateAndRunOnARealPipeline() {

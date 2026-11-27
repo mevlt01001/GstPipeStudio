@@ -20,6 +20,8 @@ struct ComponentRef {
 };
 Q_DECLARE_METATYPE(ComponentRef)
 
+enum class ComponentStatus { None, Ready, Pending, Failed };
+
 // What a list shows of a component, and what it can be linked to.
 struct ComponentInfo {
     ComponentRef ref;
@@ -29,6 +31,7 @@ struct ComponentInfo {
     gps::Role role = gps::Role::Filter;
     bool takesInput = false;   // it can follow a free src pad: a free sink pad, a Request sink, or not known yet
     bool givesOutput = false;  // a free src pad
+    ComponentStatus status = ComponentStatus::None;
 };
 
 // What a component's context menu may offer; the window carries them out (they ask for names and files).
@@ -45,6 +48,7 @@ public:
     virtual QString title() const = 0;      // its section's header: "Templates"
     virtual QString emptyHint() const = 0;  // what its section says while it is empty
     virtual QList<ComponentInfo> components() const = 0;
+    virtual QString placementError(const QString&) const { return {}; }
     virtual gps::Graph peek(const QString& id) const = 0;  // what is inside, for a quick look; empty when there is none
     // Places it on g with the top left corner of its content at (x, y): the node it became, nothing when there is none.
     virtual std::optional<gps::NodeRef> place(gps::Graph& g, const QString& id, double x, double y) const = 0;

@@ -42,10 +42,10 @@ public:
     // line by line as it comes and each line goes there; the result holds the last one.
     static HelperClient* run(QObject* parent, const QString& name, const QStringList& args, int killAfterMs,
                              std::function<void(const QString&)> log, std::function<void(const HelperResult&)> done,
-                             std::function<void(const QString&)> line = {});
+                             std::function<void(const QString&)> line = {}, const QProcessEnvironment& overrides = {});
 
     // killAfterMs <= 0: no watchdog. An empty program (helper not found) finishes with NotFound.
-    void start(const QString& program, const QStringList& args, int killAfterMs);
+    void start(const QString& program, const QStringList& args, int killAfterMs, const QProcessEnvironment& overrides = {});
     void interrupt(int killAfterMs = 0);  // SIGINT, the way a terminal's Ctrl+C stops gst-launch; SIGKILL later when > 0
     void cancel();     // SIGTERM, then SIGKILL after kKillAfterTermMs; finishes with Cancelled
 
